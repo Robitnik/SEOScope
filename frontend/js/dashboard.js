@@ -1,6 +1,6 @@
-import { getDashboard, updateIntegration } from "./api.js";
+import { getClientHistory, getDashboard, updateIntegration } from "./api.js";
 import { clientGroup, filterByClientGroup } from "./client-groups.js";
-import { renderClientCard, renderSkeletons } from "./client-card.js";
+import { renderClientCard, renderHealthTrend, renderSkeletons } from "./client-card.js";
 import { createDetailDrawer } from "./detail-drawer.js";
 import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js";
 import { triggerLogin, watchProviderSession } from "./session-status.js";
@@ -92,6 +92,31 @@ function render(dashboard) {
     return;
   }
   grid.innerHTML = clients.map((client) => renderClientCard(client, dashboard)).join("");
+  mountHealthTrends(clients);
+}
+
+// The dashboard payload only carries current/previous per metric — the
+// sparkline above each card's Ahrefs block needs the fuller history series,
+// so it's fetched per card, after the synchronous grid render, and dropped
+// into the placeholder `renderClientCard` already left in the DOM. Guarded
+// by `requestToken` like `loadDashboard` so a stale filter/period change
+// can't paint a trend into a card that's since been replaced or removed.
+function mountHealthTrends(clients) {
+  const token = requestToken;
+  const period = getState().period;
+  clients
+    .filter((client) => client.providers?.some((provider) => provider.provider === "ahrefs" && provider.metrics?.length))
+    .forEach(async (client) => {
+      let history;
+      try {
+        history = await getClientHistory(client.client_id, period);
+      } catch {
+        return;
+      }
+      if (token !== requestToken) return;
+      const slot = grid.querySelector(`[data-health-trend="${client.client_id}"]`);
+      if (slot) renderHealthTrend(slot, history.series);
+    });
 }
 
 function updateGroupCounts(clients) {

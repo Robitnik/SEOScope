@@ -1,6 +1,7 @@
 const numberFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const compactFormatter = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 const dateFormatter = new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" });
+const shortDateFormatter = new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short" });
 const dateTimeFormatter = new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export const PROVIDERS = {
@@ -102,6 +103,15 @@ export function formatDate(value) {
   if (!value) return null;
   const iso = String(value).length <= 10 ? `${value}T12:00:00` : value;
   return dateFormatter.format(new Date(iso));
+}
+
+// Compact day/month form for table headers ("Current (19 Jul)") — the full
+// range already shows above the table (periodInfoLine); this just anchors
+// which column is which without repeating the year twice per row.
+export function formatShortDate(value) {
+  if (!value) return null;
+  const iso = String(value).length <= 10 ? `${value}T12:00:00` : value;
+  return shortDateFormatter.format(new Date(iso));
 }
 
 export function formatTimestamp(value, fallback = "Never updated") {

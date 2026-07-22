@@ -156,7 +156,7 @@ input::placeholder { color: var(--ink-dim); }
 .client-card { min-width: 0; height: 100%; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--state-color, var(--line)); }
 /* Орієнтир для клавіатури: видно, у якій картці зараз фокус. */
 .client-card:focus-within { border-color: var(--line-accent); }
-.client-card__header { min-height: 128px; padding: 14px; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px 12px; align-items: center; border-bottom: 1px solid var(--line); }
+.client-card__header { position: relative; min-height: 128px; padding: 14px 58px 14px 14px; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px 12px; align-items: center; border-bottom: 1px solid var(--line); }
 .client-logo { width: 48px; height: 48px; object-fit: contain; background: #fff; color: #111; display: grid; place-items: center; font-family: var(--font-display); font-size: 17px; border: 1px solid var(--line); }
 .client-title { min-width: 0; }
 .client-title h2 { font-size: 21px; overflow-wrap: anywhere; }
@@ -170,15 +170,29 @@ input::placeholder { color: var(--ink-dim); }
 .icon--tiny { width: 13px; height: 13px; flex: 0 0 auto; }
 
 /* Health % (PLAN §21.2): value + coverage завжди разом, `—` замість `0`. */
-.health-chip { display: inline-flex; align-items: baseline; gap: 5px; }
-.health-chip .icon { align-self: center; color: var(--ink-dim); }
-.health-chip__label { text-transform: uppercase; letter-spacing: .06em; font-size: 10px; color: var(--ink-dim); }
-.health-chip__value { font-family: var(--font-display); font-size: 15px; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
-.health-chip[data-empty="true"] .health-chip__value { color: var(--ink-dim); }
-.health-chip small { color: var(--ink-dim); font-size: 10px; }
+.health-gauge { position: absolute; top: 10px; right: 10px; width: 42px; height: 42px; display: grid; place-items: center; }
+.health-gauge__ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.health-gauge__track { fill: none; stroke: var(--line); stroke-width: 3.5; }
+.health-gauge__value { fill: none; stroke: var(--success); stroke-width: 3.5; stroke-linecap: round; transition: stroke-dasharray .5s ease; }
+.health-gauge[data-tone="warn"] .health-gauge__value { stroke: var(--warning); }
+.health-gauge[data-tone="bad"] .health-gauge__value { stroke: var(--danger); }
+.health-gauge[data-tone="empty"] .health-gauge__value { stroke: var(--line-soft); stroke-dasharray: 2 5 !important; stroke-linecap: butt; }
+.health-gauge__number { position: relative; font-family: var(--font-display); font-size: 13px; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+.health-gauge__number small { font-size: 8px; margin-left: 1px; color: var(--ink-dim); }
+.health-gauge[data-tone="empty"] .health-gauge__number { color: var(--ink-dim); font-size: 15px; }
 
 .provider-block { padding: 12px 14px 14px; border-bottom: 1px solid var(--line); }
 .provider-block:last-child { border-bottom: 0; }
+.health-trend { min-height: 30px; }
+.health-trend__body { display: flex; align-items: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid var(--line); background: var(--canvas-raised); }
+.health-trend__svg { flex: 1 1 auto; width: 100%; height: 22px; min-width: 0; }
+.health-trend__line { fill: none; stroke: var(--success); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.health-trend__body[data-tone="bad"] .health-trend__line { stroke: var(--danger); }
+.health-trend__body[data-tone="flat"] .health-trend__line { stroke: var(--ink-dim); }
+.health-trend__delta { flex: 0 0 auto; font-family: var(--font-display); font-size: 13px; font-variant-numeric: tabular-nums; color: var(--success); }
+.health-trend__body[data-tone="bad"] .health-trend__delta { color: var(--danger); }
+.health-trend__body[data-tone="flat"] .health-trend__delta { color: var(--ink-dim); }
+.health-trend__empty { display: block; padding: 7px 14px; color: var(--ink-dim); font-size: 10px; border-bottom: 1px solid var(--line); }
 .provider-heading { justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 .provider-identity { display: flex; align-items: center; gap: 9px; min-width: 0; font-weight: 700; }
 .provider-icon { width: 20px; height: 20px; object-fit: contain; filter: invert(1); }
@@ -198,6 +212,7 @@ input::placeholder { color: var(--ink-dim); }
 
 .metric-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
 .metric-table th { padding: 4px 4px 6px; color: var(--ink-dim); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; text-align: right; font-weight: 700; }
+.metric-table th small { display: block; margin-top: 2px; font-size: 9px; letter-spacing: normal; text-transform: none; font-weight: 400; color: var(--ink-dim); opacity: .75; }
 .metric-table th:first-child { width: 35%; text-align: left; padding-left: 0; }
 .metric-table td { padding: 6px 3px; border-top: 1px solid var(--line-soft); text-align: right; white-space: nowrap; }
 .metric-table td:first-child { padding-left: 0; color: var(--ink-muted); text-align: left; white-space: normal; }
