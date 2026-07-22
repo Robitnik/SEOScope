@@ -1,0 +1,40 @@
+{
+  "client_id": "fixture-client",
+  "period_kind": "week",
+  "generated_at": "2026-07-22T08:42:00Z",
+  "series": [
+    {
+      "metric_key": "health_score", "label": "Health Score", "provider": "ahrefs", "unit": "score", "comparison_kind": "snapshot", "precision": 0,
+      "points": [
+        { "period_start": "2026-06-01", "period_end": "2026-06-07", "observed_at": "2026-06-08T09:00:00Z", "value_numeric": "82", "quality": "complete" },
+        { "period_start": "2026-06-08", "period_end": "2026-06-14", "observed_at": "2026-06-15T09:00:00Z", "value_numeric": "84", "quality": "complete" },
+        { "period_start": "2026-06-15", "period_end": "2026-06-21", "observed_at": "2026-06-22T09:00:00Z", "value_numeric": null, "quality": "unavailable" },
+        { "period_start": "2026-06-22", "period_end": "2026-06-28", "observed_at": "2026-06-29T09:00:00Z", "value_numeric": "87", "quality": "complete" },
+        { "period_start": "2026-06-29", "period_end": "2026-07-05", "observed_at": "2026-07-06T09:00:00Z", "value_numeric": "88", "quality": "complete" },
+        { "period_start": "2026-07-06", "period_end": "2026-07-12", "observed_at": "2026-07-13T09:00:00Z", "value_numeric": "91", "quality": "complete" }
+      ]
+    },
+    {
+      "metric_key": "errors", "label": "Errors", "provider": "ahrefs", "unit": "count", "comparison_kind": "snapshot", "precision": 0,
+      "points": [
+        { "period_start": "2026-06-01", "period_end": "2026-06-07", "value_numeric": "29", "quality": "complete" },
+        { "period_start": "2026-06-08", "period_end": "2026-06-14", "value_numeric": "25", "quality": "complete" },
+        { "period_start": "2026-06-15", "period_end": "2026-06-21", "value_numeric": "21", "quality": "complete" },
+        { "period_start": "2026-06-22", "period_end": "2026-06-28", "value_numeric": "19", "quality": "complete" },
+        { "period_start": "2026-06-29", "period_end": "2026-07-05", "value_numeric": "17", "quality": "complete" },
+        { "period_start": "2026-07-06", "period_end": "2026-07-12", "value_numeric": "12", "quality": "complete" }
+      ]
+    },
+    {
+      "metric_key": "clicks", "label": "Clicks", "provider": "gsc", "unit": "count", "comparison_kind": "range", "precision": 0,
+      "points": [
+        { "period_start": "2026-06-01", "period_end": "2026-06-07", "value_numeric": "3780", "quality": "complete" },
+        { "period_start": "2026-06-08", "period_end": "2026-06-14", "value_numeric": "3940", "quality": "complete" },
+        { "period_start": "2026-06-15", "period_end": "2026-06-21", "value_numeric": "4210", "quality": "complete" },
+        { "period_start": "2026-06-22", "period_end": "2026-06-28", "value_numeric": "4380", "quality": "complete" },
+        { "period_start": "2026-06-29", "period_end": "2026-07-05", "value_numeric": "4510", "quality": "complete" },
+        { "period_start": "2026-07-06", "period_end": "2026-07-12", "value_numeric": "4820", "quality": "complete" }
+      ]
+    }
+  ]
+}

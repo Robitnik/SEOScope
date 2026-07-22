@@ -1,0 +1,84 @@
+#!/usr/bin/env node
+/* Browser smoke for task-12. The task-13 harness may provide playwright-core.
+ * Local example:
+ *   NODE_PATH=/tmp/yovth-e2e/node_modules BASE_URL=http://127.0.0.1:4173 \
+ *   node tests/e2e/frontend/frontend-smoke.cjs
+ */
+const assert = require("node:assert/strict");
+const path = require("node:path");
+const { chromium } = require("playwright-core");
+
+const baseUrl = process.env.BASE_URL || "http://127.0.0.1:4173";
+const executablePath = process.env.CHROMIUM_PATH || "/snap/bin/chromium";
+const screenshots = path.join(__dirname, "screenshots");
+
+async function main() {
+  const browser = await chromium.launch({ executablePath, headless: true, args: ["--no-sandbox"] });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: "reduce" });
+  await context.addInitScript(() => localStorage.clear());
+  const page = await context.newPage();
+  const browserErrors = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+
+  await page.goto(`${baseUrl}/?fixture=all-states`, { waitUntil: "networkidle" });
+  await page.locator(".client-card").first().waitFor();
+  assert.equal(await page.locator(".client-card").count(), 3, "fixture renders three client cards");
+  assert.equal(await page.getByText("Немає даних", { exact: true }).count() > 0, true, "null is shown as missing");
+  assert.equal(await page.getByText("0", { exact: true }).count() > 0, true, "numeric zero remains visible");
+  assert.match(await page.locator("#period-copy").innerText(), /13 лип.*19 лип.*06 лип.*12 лип/s, "exact current and previous ranges are visible");
+  for (const [width, height] of [[390, 844], [768, 900], [1024, 900], [1440, 1000], [1920, 1080]]) {
+    await page.setViewportSize({ width, height });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `no page overflow at ${width}px`);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  await page.locator("#client-search").fill("Cleveland");
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator(".client-card").count(), 1, "search filters cards");
+  await page.locator("#clear-filters").click();
+  await page.locator(".client-card").nth(2).waitFor();
+
+  await page.locator('.client-card[data-client-id="client-long-name"] [data-action="integrate"][data-provider="semrush"]').click();
+  assert.equal(await page.locator('[name="domain"]').inputValue(), "advanced-restorative-implant-dentistry.example.com", "domain integration is prefilled from the client");
+  assert.equal(await page.locator("[data-account-field]").first().isHidden(), true, "provider-specific integration fields are hidden");
+  await page.locator("#integration-dialog [data-close]").first().click();
+
+  await page.locator("#sync-all-button").click();
+  assert.equal(await page.locator("#sync-dialog").evaluate((dialog) => dialog.open), true, "sync dialog opens");
+  await page.locator("[data-start]").click();
+  await page.locator(".progress-matrix").waitFor();
+  assert.equal(await page.locator(".progress-matrix tbody tr").count(), 3, "progress is a client by provider matrix");
+  await page.screenshot({ path: path.join(screenshots, "sync-progress-1440.png"), fullPage: false });
+  await page.getByLabel("Закрити вікно").first().click();
+  assert.equal(await page.locator("#job-dock").isVisible(), true, "closing dialog keeps the background job visible");
+  await page.locator("#job-dock-button").click();
+  assert.equal(await page.locator("#sync-dialog").evaluate((dialog) => dialog.open), true, "progress can be reopened");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#job-dock-button").evaluate((button) => document.activeElement === button), true, "dialog returns focus to opener");
+
+  await page.locator('.client-card[data-client-id="client-cleveland"] [data-action="detail"]').click();
+  await page.locator("#history-chart").waitFor();
+  assert.equal(await page.locator("#detail-dialog").evaluate((dialog) => dialog.open), true, "history drawer opens");
+  assert.deepEqual(await page.locator("#history-chart").evaluate((canvas) => window.Chart.getChart(canvas).data.datasets[0].data), [82, 84, null, 87, 88, 91], "history preserves numeric values and missing gaps");
+  await page.screenshot({ path: path.join(screenshots, "history-drawer-1440.png"), fullPage: false });
+  await page.keyboard.press("Escape");
+
+  await page.screenshot({ path: path.join(screenshots, "dashboard-1440.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: path.join(screenshots, "dashboard-390.png"), fullPage: true });
+
+  await page.goto(`${baseUrl}/?fixture=empty`, { waitUntil: "networkidle" });
+  await page.getByText("Клієнтів за цим запитом немає.").waitFor();
+  await page.goto(`${baseUrl}/?fixture=error`, { waitUntil: "networkidle" });
+  await page.getByText("Dashboard не завантажено.").waitFor();
+
+  assert.deepEqual(browserErrors, [], `browser console errors: ${browserErrors.join("; ")}`);
+  await browser.close();
+  console.log("frontend smoke: ok");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

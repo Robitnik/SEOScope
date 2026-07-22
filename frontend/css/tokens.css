@@ -1,0 +1,48 @@
+@font-face {
+  font-family: "League Spartan";
+  src: url("/assets/fonts/league-spartan-black.woff2") format("woff2");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Archivo";
+  src: url("/assets/fonts/archivo-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Archivo";
+  src: url("/assets/fonts/archivo-bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  --canvas: #0e0e0e;
+  --canvas-raised: #141414;
+  --surface: #1e1e1e;
+  --surface-strong: #262626;
+  --line: #383838;
+  --line-soft: #2a2a2a;
+  --ink: #f6f3ee;
+  --ink-muted: #aaa6a0;
+  --ink-dim: #77736e;
+  --accent: #ff4a17;
+  --accent-hover: #ff653d;
+  --success: #65d69a;
+  --warning: #ffc45e;
+  --danger: #ff7474;
+  --info: #7bc7ff;
+  --radius-sm: 2px;
+  --radius-md: 6px;
+  --shadow-dialog: 0 24px 80px rgb(0 0 0 / 55%);
+  --font-display: "League Spartan", Impact, sans-serif;
+  --font-body: "Archivo", Arial, sans-serif;
+  --content-max: 1760px;
+}

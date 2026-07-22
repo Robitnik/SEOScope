@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="uk" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Внутрішня панель контролю SEO-метрик клієнтів The Yovth">
+    <meta name="theme-color" content="#0e0e0e">
+    <title>Client Pulse — The Yovth</title>
+    <link rel="icon" href="/assets/brand/logo.svg" type="image/svg+xml">
+    <link rel="preload" href="/assets/fonts/league-spartan-black.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/tokens.css">
+    <link rel="stylesheet" href="/css/app.css">
+    <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
+    <script type="module" src="/js/dashboard.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#client-grid">До списку клієнтів</a>
+
+    <header class="app-header">
+      <div class="brand-lockup">
+        <img src="/assets/brand/logo.svg" width="205" height="42" alt="The Yovth">
+        <span class="product-name">Client Pulse</span>
+      </div>
+      <div class="header-actions">
+        <div class="connection-status" id="connection-status" role="status">
+          <span class="status-signal" aria-hidden="true"></span>
+          <span>API онлайн</span>
+        </div>
+        <button class="button button--primary" id="sync-all-button" type="button">
+          <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-refresh"></use></svg>
+          Оновити дані
+        </button>
+      </div>
+    </header>
+
+    <main class="app-main" id="main-content">
+      <section class="command-bar" aria-labelledby="page-title">
+        <div class="command-copy">
+          <p class="eyebrow">Операційна панель / SEO</p>
+          <h1 id="page-title">Контроль клієнтів</h1>
+          <p class="period-copy" id="period-copy">Завантажуємо точні періоди…</p>
+        </div>
+        <div class="period-switch" role="group" aria-label="Період звіту">
+          <button type="button" data-period="week" aria-pressed="true">Тиждень</button>
+          <button type="button" data-period="month" aria-pressed="false">Місяць</button>
+        </div>
+      </section>
+
+      <section class="summary-strip" id="summary-strip" aria-label="Огляд стану">
+        <div class="summary-cell"><span>Клієнти</span><strong id="summary-total">—</strong></div>
+        <div class="summary-cell"><span>Без уваги</span><strong id="summary-ok">—</strong></div>
+        <div class="summary-cell"><span>Потребують уваги</span><strong id="summary-attention">—</strong></div>
+        <div class="summary-cell"><span>Останнє оновлення</span><strong id="summary-updated">—</strong></div>
+      </section>
+
+      <section class="filter-bar" aria-label="Фільтри клієнтів">
+        <label class="search-field">
+          <span class="visually-hidden">Пошук клієнта</span>
+          <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-search"></use></svg>
+          <input id="client-search" type="search" placeholder="Клієнт або домен" autocomplete="off">
+        </label>
+        <label>
+          <span class="visually-hidden">Фільтр за станом</span>
+          <select id="status-filter">
+            <option value="">Усі стани</option>
+            <option value="attention">Потребують уваги</option>
+            <option value="stale">Застарілі</option>
+            <option value="failed_all">Збір не вдався</option>
+            <option value="ok">Все гаразд</option>
+          </select>
+        </label>
+        <label>
+          <span class="visually-hidden">Фільтр за сервісом</span>
+          <select id="provider-filter">
+            <option value="">Усі сервіси</option>
+            <option value="ahrefs">Ahrefs</option>
+            <option value="semrush">Semrush</option>
+            <option value="gsc">Google Search Console</option>
+            <option value="reporting_ninja">Reporting Ninja / GA4</option>
+          </select>
+        </label>
+        <button class="button button--quiet" id="clear-filters" type="button">Скинути</button>
+        <p class="result-count" id="result-count" aria-live="polite"></p>
+      </section>
+
+      <section class="dashboard-state" id="dashboard-state" aria-live="polite"></section>
+      <section class="client-grid" id="client-grid" aria-label="Клієнти" aria-busy="true"></section>
+    </main>
+
+    <div class="job-dock" id="job-dock" hidden>
+      <button type="button" id="job-dock-button">
+        <span class="job-dock__pulse" aria-hidden="true"></span>
+        <span><strong id="job-dock-title">Оновлення триває</strong><small id="job-dock-copy">Відкрити прогрес</small></span>
+        <span class="job-dock__percent" id="job-dock-percent">0%</span>
+      </button>
+    </div>
+
+    <dialog class="sync-dialog" id="sync-dialog" aria-labelledby="sync-title">
+      <form method="dialog" class="dialog-shell">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">Збір даних</p>
+            <h2 id="sync-title">Оновити метрики</h2>
+            <p id="sync-subtitle">Оберіть клієнтів і джерела.</p>
+          </div>
+          <button class="icon-button" value="close" aria-label="Закрити вікно">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-x"></use></svg>
+          </button>
+        </header>
+        <div class="dialog-body" id="sync-body"></div>
+        <footer class="dialog-footer" id="sync-footer"></footer>
+      </form>
+    </dialog>
+
+    <dialog class="detail-dialog" id="detail-dialog" aria-labelledby="detail-title">
+      <form method="dialog" class="drawer-shell">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">Історія клієнта</p>
+            <h2 id="detail-title">Метрики</h2>
+            <p id="detail-subtitle"></p>
+          </div>
+          <button class="icon-button" value="close" aria-label="Закрити панель">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-x"></use></svg>
+          </button>
+        </header>
+        <div class="drawer-body" id="detail-body"></div>
+      </form>
+    </dialog>
+
+    <dialog class="integration-dialog" id="integration-dialog" aria-labelledby="integration-title">
+      <form class="dialog-shell dialog-shell--compact" id="integration-form">
+        <header class="dialog-header">
+          <div><p class="eyebrow">Налаштування</p><h2 id="integration-title">Додати інтеграцію</h2></div>
+          <button class="icon-button" type="button" data-close aria-label="Закрити вікно"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-x"></use></svg></button>
+        </header>
+        <div class="dialog-body">
+          <p class="integration-lead" id="integration-lead"></p>
+          <label class="form-field" data-domain-field>Домен<input name="domain" autocomplete="url" placeholder="example.com"></label>
+          <label class="form-field" data-account-field>Ключ з’єднання<input name="connection_key" autocomplete="off" placeholder="Назва з’єднання у Reporting Ninja"></label>
+          <label class="form-field" data-account-field>ID акаунта / ресурсу<input name="account_id" autocomplete="off" placeholder="Наприклад, sc-domain:example.com"></label>
+          <p class="field-help">Секрети не вводяться тут. Вкажіть лише посилання на збережене з’єднання.</p>
+          <p class="form-error" id="integration-error" role="alert"></p>
+        </div>
+        <footer class="dialog-footer"><button class="button button--quiet" type="button" data-close>Скасувати</button><button class="button button--primary" type="submit">Зберегти інтеграцію</button></footer>
+      </form>
+    </dialog>
+
+    <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+  </body>
+</html>
