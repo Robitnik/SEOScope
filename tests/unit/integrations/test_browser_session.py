@@ -64,8 +64,27 @@ class TestAllowlist:
 
 class TestCheckSession:
     def test_no_profile(self, monkeypatch):
+        """On the machine that OWNS the profile, a missing one really is first-time setup.
+
+        The env var is cleared explicitly: this suite also runs INSIDE the dashboard container,
+        where it is set, and `no_profile` is exactly the answer that must not come back there.
+        """
+        monkeypatch.delenv("SEOTOOLS_REMOTE_CDP_HOST", raising=False)
         _patch_profile(monkeypatch, _FakeProfile("ahrefs", exists=False))
         assert bs.check_session(Provider.ahrefs) is bs.SessionState.no_profile
+
+    def test_a_consumer_never_reports_no_profile(self, monkeypatch):
+        """The live 2026-07-22 bug. This container deliberately cannot see the profile directory,
+        so `exists` is False even against a fully logged-in host. Reporting `no_profile` from that
+        made the dashboard offer first-time login for every provider while the live warm Chrome it
+        was already attached to sat right behind it."""
+        monkeypatch.setenv("SEOTOOLS_REMOTE_CDP_HOST", "127.0.0.1")
+        _patch_profile(monkeypatch, _FakeProfile("ahrefs", exists=False))
+        monkeypatch.setattr(
+            "seo_audit.browser.warm.status",
+            lambda provider: _FakeWarmStatus(running=True, authenticated=True),
+        )
+        assert bs.check_session(Provider.ahrefs) is bs.SessionState.alive
 
     def test_expired_when_not_running(self, monkeypatch):
         _patch_profile(monkeypatch, _FakeProfile("ahrefs"))

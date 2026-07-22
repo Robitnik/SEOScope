@@ -61,6 +61,12 @@ services:
       # else, and nothing writable. With `profiles/` simply absent it cannot corrupt a profile
       # even if the attach-only env var is ever lost.
       - ${HOME}/.local/share/seo-audit/state:/seo/runtime/state:ro
+      # The ONE writable exception, nested inside the read-only mount above: zero-byte flock
+      # files. `flock` needs O_RDWR, so a lock we cannot open is a lock we cannot share — and an
+      # unshared lock means this service and a host CLI run would drive the same warm Chrome at
+      # once, clicking in each other's tabs. Nothing but locks lives here; the profile, the
+      # activity counters and every artifact stay out of this container's reach.
+      - ${HOME}/.local/share/seo-audit/state/locks:/seo/runtime/state/locks
       - app_data:/app/app_data
       - artifacts:/app/app_data/artifacts
       - browser_profiles:/app/app_data/browser_profiles
@@ -95,6 +101,12 @@ services:
       - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}:/seo/AISeoTools
       # Read-only warm-session discovery, never the profiles — see the api service above.
       - ${HOME}/.local/share/seo-audit/state:/seo/runtime/state:ro
+      # The ONE writable exception, nested inside the read-only mount above: zero-byte flock
+      # files. `flock` needs O_RDWR, so a lock we cannot open is a lock we cannot share — and an
+      # unshared lock means this service and a host CLI run would drive the same warm Chrome at
+      # once, clicking in each other's tabs. Nothing but locks lives here; the profile, the
+      # activity counters and every artifact stay out of this container's reach.
+      - ${HOME}/.local/share/seo-audit/state/locks:/seo/runtime/state/locks
       - app_data:/app/app_data
       - artifacts:/app/app_data/artifacts
       - browser_profiles:/app/app_data/browser_profiles

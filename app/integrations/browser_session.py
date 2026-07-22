@@ -84,18 +84,25 @@ def _fallback_hint(provider: Provider) -> str:
 def check_session(provider: Provider) -> SessionState:
     """Is the stored session for `provider` still good? Cheap — never runs a full collection.
 
-    `no_profile`: nothing has ever been logged in for this provider (no persistent Chrome profile
-    on disk yet — first-time setup, not a failure). `expired`: a profile exists but the warm Chrome
-    is down, unreachable, or its current tab is not on an authenticated provider URL. `alive`:
-    logged in right now, OR another run is actively driving the warm browser (busy) — busy IS a
-    form of alive, not a reason to report a false expiry mid-collection.
+    `no_profile`: nothing has ever been logged in (no persistent Chrome profile on disk yet —
+    first-time setup, not a failure). `expired`: a profile exists but the warm Chrome is down,
+    unreachable, or its current tab is not on an authenticated provider URL. `alive`: logged in
+    right now, OR another run is actively driving the warm browser (busy) — busy IS a form of
+    alive, not a reason to report a false expiry mid-collection.
+
+    `no_profile` is only ever returned on the machine that OWNS the profile. This container
+    deliberately does not mount the profile directory (see compose.yaml), so `profile.exists` is
+    False here even when the host is fully logged in — returning `no_profile` from that would be
+    a flat lie, and it is what made the dashboard offer first-time login for every provider while
+    a live, logged-in warm Chrome sat right behind it. For a consumer the warm Chrome is the only
+    truth there is, so the probe starts at the warm state instead.
     """
     _require_browser_provider(provider)
     from seo_audit.browser import warm as seo_warm
     from seo_audit.browser.profile import BrowserProfile
 
     profile = BrowserProfile(provider.value)
-    if not profile.exists:
+    if not seo_warm.attach_only() and not profile.exists:
         return SessionState.no_profile
 
     try:
