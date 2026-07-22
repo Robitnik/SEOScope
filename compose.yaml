@@ -1,0 +1,97 @@
+services:
+  api:
+    build:
+      context: .
+      additional_contexts:
+        # Not referenced by the Dockerfile (CI's plain `docker build .` has
+        # no sibling checkout to hand it) — kept for a future pinned/baked
+        # build. Local dev instead gets AISeoTools via the runtime bind
+        # mount below, installed by docker/entrypoint.sh when present.
+        # Override via compose.override.yaml if your checkout lives elsewhere.
+        aiseotools: ${AISEOTOOLS_PATH:-../../seo/AISeoTools}
+    image: yovth-clients-report:latest
+    command: ["api"]
+    env_file:
+      # Provider secrets stay owned by AISeoTools and are injected only at
+      # runtime. They are never copied into this repository or image.
+      - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}/.env
+    environment:
+      SEOTOOLS_ROOT: /seo/runtime
+      # Browser session bridge (task-20): AISeoTools' warm Chrome exposes CDP on the HOST's
+      # 127.0.0.1 only (chrome.py — out of this task's owned paths, not changed) — no bridge or
+      # bind-address widening can reach a loopback-only socket from a separate network namespace.
+      # `network_mode: host` below is what actually makes 127.0.0.1:<port> resolve to the host's
+      # loopback from inside this container; SEOTOOLS_REMOTE_CDP_HOST only needs to tell AISeoTools'
+      # warm.py to stop trusting `_pid_alive` (a HOST pid, meaningless in this container's own PID
+      # namespace) and rely on `_cdp_alive` alone.
+      CHROME_CDP_HOST: ${CHROME_CDP_HOST:-127.0.0.1}
+      SEOTOOLS_REMOTE_CDP_HOST: ${CHROME_CDP_HOST:-127.0.0.1}
+      # With `network_mode: host`, `ports:`/host-port-publishing no longer apply — uvicorn's bind
+      # port IS the host's port directly. API_PORT (read by docker/entrypoint.sh) restores the
+      # project's usual local port instead of defaulting to uvicorn's bare 8000; a clash with
+      # another host listener on this port is the operator's to resolve, not compose's.
+      API_PORT: ${API_PORT:-6524}
+    # Host networking (Linux-only; this project targets Linux dev/deploy) is the price of the CDP
+    # bridge above: api and worker now also share the host's other listening ports.
+    network_mode: host
+    volumes:
+      # Dev-only live-edit mount: host source overlays the image's baked-in
+      # copy. Dependencies live in system site-packages (Dockerfile sets
+      # POETRY_VIRTUALENVS_CREATE=false), never under /app, so this bind
+      # mount can never shadow them.
+      - .:/app
+      # Local AISeoTools checkout (task-08+ providers import `seo_audit`).
+      # Not baked into the image (would leak `.env`/browser-profile state
+      # into a distributable layer) — entrypoint.sh installs it from here
+      # at container start, iff this path exists. Absent on CI/deploy,
+      # where these providers are exercised only via live smoke (PLAN §15).
+      - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}:/seo/AISeoTools
+      # Reuse AISeoTools' authenticated Chrome sessions and isolated Chrome.
+      # The profile lock in AISeoTools prevents concurrent profile corruption.
+      - ${HOME}/.local/share/seo-audit:/seo/runtime
+      - app_data:/app/app_data
+      - artifacts:/app/app_data/artifacts
+      - browser_profiles:/app/app_data/browser_profiles
+    healthcheck:
+      # CMD-SHELL (not exec-form CMD) so the container's own API_PORT env var is substituted at
+      # check time — this must track the port entrypoint.sh actually binds (see comment above).
+      test: ["CMD-SHELL", "curl -f http://localhost:${API_PORT:-6524}/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  worker:
+    image: yovth-clients-report:latest
+    command: ["worker"]
+    env_file:
+      - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}/.env
+    environment:
+      SEOTOOLS_ROOT: /seo/runtime
+      CHROME_CDP_HOST: ${CHROME_CDP_HOST:-127.0.0.1}
+      SEOTOOLS_REMOTE_CDP_HOST: ${CHROME_CDP_HOST:-127.0.0.1}
+    network_mode: host
+    volumes:
+      - .:/app
+      - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}:/seo/AISeoTools
+      - ${HOME}/.local/share/seo-audit:/seo/runtime
+      - app_data:/app/app_data
+      - artifacts:/app/app_data/artifacts
+      - browser_profiles:/app/app_data/browser_profiles
+    shm_size: "1gb"
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'app.jobs.worker|worker_placeholder.py' || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  app_data:
+  artifacts:
+  browser_profiles:

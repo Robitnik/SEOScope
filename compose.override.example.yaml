@@ -1,0 +1,21 @@
+# Copy to compose.override.yaml (gitignored) for local-only tweaks —
+# absolute host paths and secrets belong here, never in compose.yaml.
+#
+# `.env` at the repo root doesn't need wiring here: the `.:/app` bind mount
+# in compose.yaml already exposes it at /app/.env inside the container, and
+# app/core/config.py reads it from there automatically.
+#
+# If your AISeoTools checkout isn't at ../../seo/AISeoTools, set
+# AISEOTOOLS_PATH in your shell/`.env` instead of overriding here — one
+# variable drives both the (currently unused) build context and the
+# runtime bind mount docker/entrypoint.sh installs from.
+#
+# api/worker run with `network_mode: host` (task-20, browser session bridge —
+# AISeoTools' warm Chrome only exposes CDP on the host's 127.0.0.1). This means
+# `ports:`/API_PORT no longer apply — the app is always at the host's own
+# port 8000 — and `network_mode: host` cannot be combined with a `ports:`
+# override here (compose rejects it). If your host Chrome's CDP is reachable
+# under a different name, set CHROME_CDP_HOST in your shell/`.env` instead:
+#
+#   CHROME_CDP_HOST=127.0.0.1
+services: {}

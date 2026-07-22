@@ -1,0 +1,30 @@
+# Secrets / local env
+.env
+compose.override.yaml
+*.session.json
+browser_profiles/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+
+# App data (runtime volumes when run outside Docker)
+app_data/
+artifacts/
+*.db
+*.db-wal
+*.db-shm
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
