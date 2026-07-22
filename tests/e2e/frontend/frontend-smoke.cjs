@@ -33,6 +33,13 @@ async function main() {
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
 
+  await page.locator('[data-group="vertex"]').click();
+  await page.locator(".client-card").nth(1).waitFor();
+  assert.equal(await page.locator(".client-card").count(), 2, "portfolio group filters the client roster");
+  assert.match(page.url(), /group=vertex/, "portfolio group persists in the URL");
+  await page.locator('[data-group="all"]').click();
+  await page.locator(".client-card").nth(2).waitFor();
+
   await page.locator("#client-search").fill("Cleveland");
   await page.waitForTimeout(400);
   assert.equal(await page.locator(".client-card").count(), 1, "search filters cards");

@@ -1,4 +1,5 @@
 import { getDashboard, updateIntegration } from "./api.js";
+import { clientGroup, filterByClientGroup } from "./client-groups.js";
 import { renderClientCard, renderSkeletons } from "./client-card.js";
 import { createDetailDrawer } from "./detail-drawer.js";
 import { PROVIDERS, formatRange, formatTimestamp, icon } from "./formatters.js";
@@ -36,8 +37,10 @@ async function loadDashboard({ quiet = false } = {}) {
     grid.innerHTML = renderSkeletons(innerWidth > 1050 ? 2 : 1);
   }
   try {
-    const dashboard = await getDashboard({ period: state.period, query: state.query, status: state.status, provider: state.provider });
+    const response = await getDashboard({ period: state.period, query: state.query, status: state.status, provider: state.provider });
     if (token !== requestToken) return;
+    updateGroupCounts(response.clients || []);
+    const dashboard = { ...response, clients: filterByClientGroup(response.clients || [], state.group) };
     setState({ dashboard, loading: false, error: null });
     setConnection("online");
     render(dashboard);
@@ -66,6 +69,17 @@ function render(dashboard) {
     return;
   }
   grid.innerHTML = clients.map((client) => renderClientCard(client, dashboard)).join("");
+}
+
+function updateGroupCounts(clients) {
+  const counts = { all: clients.length, vision: 0, vertex: 0 };
+  clients.forEach((client) => {
+    const group = clientGroup(client);
+    if (group) counts[group] += 1;
+  });
+  Object.entries(counts).forEach(([group, count]) => {
+    document.querySelector(`#group-count-${group}`).textContent = count;
+  });
 }
 
 function renderError(error) {
@@ -109,6 +123,13 @@ document.querySelector("#clear-filters").addEventListener("click", clearFilters)
 document.querySelectorAll("[data-period]").forEach((button) => button.addEventListener("click", () => {
   document.querySelectorAll("[data-period]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
   setState({ period: button.dataset.period }, { persist: true });
+  loadDashboard();
+}));
+document.querySelectorAll("[data-group]").forEach((button) => button.addEventListener("click", () => {
+  document.querySelectorAll("[data-group]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+  const group = button.dataset.group;
+  document.querySelector("#group-filter-copy").textContent = group === "all" ? "All client accounts" : `${group.toUpperCase()} accounts`;
+  setState({ group }, { persist: true });
   loadDashboard();
 }));
 search.addEventListener("input", () => {
@@ -158,4 +179,6 @@ integrationForm.addEventListener("submit", async (event) => {
 const initial = getState();
 search.value = initial.query; statusFilter.value = initial.status; providerFilter.value = initial.provider;
 document.querySelectorAll("[data-period]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.period === initial.period)));
+document.querySelectorAll("[data-group]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.group === initial.group)));
+document.querySelector("#group-filter-copy").textContent = initial.group === "all" ? "All client accounts" : `${initial.group.toUpperCase()} accounts`;
 loadDashboard();
