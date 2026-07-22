@@ -51,15 +51,76 @@ tests/e2e/frontend/sync-auth-flow.cjs
 
 ## Definition of Done / Gate
 
-- [ ] Флоу «запуск → перевірка сесій → статуси → Увійти → авто-продовження» працює наскрізь.
-- [ ] Кнопка «Увійти» є **лише** там, де сесія справді мертва.
-- [ ] Очікування логіну не блокує й не приховує збір інших сервісів.
-- [ ] Закриття попапа не скасовує job; повернення відновлює стан.
-- [ ] Усі стани зі списку вище реалізовані; жодного тупика без наступної дії.
-- [ ] Keyboard/`aria-live`/контраст пройдені; копія українська.
-- [ ] Скриншоти до/після переглянуті; e2e `sync-auth-flow` зелений.
+- [x] Флоу «запуск → перевірка сесій → статуси → Увійти → авто-продовження» працює наскрізь.
+- [x] Кнопка «Увійти» є **лише** там, де сесія справді мертва.
+- [x] Очікування логіну не блокує й не приховує збір інших сервісів.
+- [x] Закриття попапа не скасовує job; повернення відновлює стан.
+- [x] Усі стани зі списку вище реалізовані; жодного тупика без наступної дії.
+- [x] Keyboard/`aria-live`/контраст пройдені; копія українська.
+- [x] Скриншоти до/після переглянуті; e2e `sync-auth-flow` зелений.
 
 ## Ризики
 
 - Найлегше зіпсувати це «крутилкою без сенсу»: прогрес мусить відображати **реальну** кількість перевірених сервісів (§9), інакше повертаємось до фейкових відсотків.
 - Стан очікування логіну живе довго — він мусить бути зрозумілим і після reload, інакше оператор перезапустить job і зіб'є доріжку.
+
+---
+
+## ✅ Completion report
+
+- **Дата:** 2026-07-22
+- **Гілка / комміт:** `feat/task-20-browser-session-bridge` (working tree; не закомічено)
+- **Статус:** done
+
+### Що зроблено
+
+Наскрізний флоу «запуск → перевірка сесій → потрібен вхід → Увійти → авто-продовження» працює як в попапі збору, так і окремо з картки клієнта:
+
+- **Стадія «Перевірка сесій»** над матрицею прогресу: рядок на кожен залучений сервіс, стан виводиться **виключно** з `job.cells`, які й так ідуть через наявний SSE-потік — нового типу події не знадобилось. `перевіряємо…` (жодна клітинка сервісу ще не рушила з `queued`) → `сесія активна` (хоч одна пішла далі) → `потрібен вхід` (клітинка в `awaiting_auth`) → `таймаут очікування` (клітинки `failed` з `error_code=auth_required`) → `не налаштовано` (усі клітинки сервісу — `not_configured`).
+- **Кнопка «Увійти»** — рівно на рядку з мертвою сесією, натискання проходить `запускаємо вхід… → очікуємо входу… (з чесним відліком часу) → логін успішний, продовжуємо…` або `теплого Chrome немає` (з точною командою від сервера) / `помилка запуску логіну` (з retry). Кнопка ніколи не отримує справжній `disabled` — лише `aria-disabled`, тому focus переживає всі ці переходи (перевірено e2e).
+- **Інші сервіси демонстративно тривають** увесь час очікування — та сама матриця нижче оновлюється як завжди.
+- **Бейдж `auth_required` на картці клієнта** (`client-card.js`) тепер запускає той самий логін напряму (дія `login`, без відкриття попапа збору) — і тут уже дійсно знадобився `session-status.js`'s polling, бо тут немає job/SSE, за яким можна «підглянути» відновлення сесії.
+- Закриття/повторне відкриття попапа під час очікування: стан повністю відновлюється з `currentJob`/SSE-replay, як і раніше — жодного окремого коду для цього не знадобилось.
+
+### Як зроблено (ключові рішення)
+
+- **Контрактна прогалина, знайдена під час аналізу, не в жодних owned paths.** Ні task-20 (дав лише `check_session`/`start_login` як прості функції), ні task-21 (спожив їх усередині `app/jobs/lane.py`, жодного HTTP) не виставили ендпоінт, який кнопка «Увійти» могла б викликати. Додано `POST /api/v1/providers/{provider}/login` і `GET /api/v1/providers/{provider}/session` у `app/api/providers.py` (зона task-21) — мінімально, за наявним стилем файлу (`run_in_threadpool`, як у `app/api/jobs.py`, бо `check_session`/`start_login` — блокуючі Playwright-виклики, а не робота з БД).
+- **Жодного нового типу SSE-події.** `CellProgressDTO` вже мав `status`/`error_code`; `awaiting_auth`/`failed+auth_required` вже йшли в потоці з task-21. Стадія сесій — це чиста похідна функція від уже наявних даних, а не новий канал стану.
+- **`session-status.js`'s polling — лише там, де він дійсно потрібен** (картка клієнта поза job-контекстом); у попапі авто-продовження й так іде через наявний SSE/watchJob, polling там суто косметичний прискорювач сприйняття, ніколи не джерело істини.
+- **Fixture-mode «живий» демо-сценарій** (`api.js`): одна клітинка (Semrush, перший клієнт запуску) навмисно замерзає на `awaiting_auth` після ~40% прогресу і продовжує рух лише після виклику `startProviderLogin` для цього провайдера — дає змогу e2e-тесту й скриншотам пройти весь цикл «запуск → пауза → Увійти → продовження» без Docker і без реального теплого Chrome. Окремо — 5 статичних `sessions-*.json` фікстур (`checking`/`active`/`auth-required`/`not-configured`/`timeout`) для станів, які краще перевіряти заморожено, ніж проганяти живим таймером.
+- **Переклад `sync-modal.js` на українську повністю** (не лише нові стани): файл тепер повністю у власності цієї таски, а мова наполовину українська/наполовину англійська в одному діалозі виглядала б як брак якості. Спільні `formatters.js` (`STATE_META`/`STAGE_LABELS`, які й далі читає матриця прогресу) та `dashboard.js`/`client-card.js` **не** перекладались повністю — це той самий, вже задокументований у task-19 борг, який лишається поза цією таскою; торкнулись лише одним новим `STATE_META.awaiting_auth` записом (англійською, у стилі решти таблиці) і однією конкретною дією `login` на картці.
+- Головні файли: [app/api/providers.py](app/api/providers.py#L111) (нові маршрути), [app/schemas/api.py](app/schemas/api.py) (`ProviderLoginDTO`/`ProviderSessionDTO`/`SessionLivenessState`), [frontend/js/session-status.js](frontend/js/session-status.js) (новий), [frontend/js/sync-modal.js](frontend/js/sync-modal.js) (стадія сесій + переклад), [frontend/js/api.js](frontend/js/api.js) (додатково: HTTP-клієнти логіну + fixture-симулятор), [frontend/js/client-card.js](frontend/js/client-card.js#L70)/[frontend/js/dashboard.js](frontend/js/dashboard.js) (дія `login`, додатково), [frontend/css/app.css](frontend/css/app.css).
+- Відхилення від плану: жодних істотних.
+
+### Контрактні зміни (Contract changes)
+
+- **Нові маршрути** (поза оригінальним обсягом і task-20, і task-21 — задокументовано явно, не мовчки): `POST /api/v1/providers/{provider}/login` → `ProviderLoginDTO {login_session_id, state, timeout_seconds}` (400 при провайдері без сесії, 503 з `ErrorDTO{error_code="no_warm_chrome", message=<точна команда>}`); `GET /api/v1/providers/{provider}/session` → `ProviderSessionDTO {state}`.
+- Нові схеми в `app/schemas/api.py`/`app/schemas/__init__.py`: `ProviderLoginDTO`, `ProviderSessionDTO`, `SessionLivenessState` (дзеркалить `browser_session.SessionState`, без імпорту з `app.integrations` — шар `app.schemas` нижчий).
+- `contract_snapshot.json`/`openapi_snapshot.json` перегенеровано (команди — у секції «Як перевірити»).
+- Дрібний, але наскрізний фікс у `frontend/js/api.js`'s `request()`: `error.code` читав неіснуюче поле `payload.detail.code` (мало бути `error_code` — той самий ключ, який `ErrorDTO` завжди віддає); виправлено, бо нова логіка `no_warm_chrome` на цьому й будувалась. Раніше це поле ніде не читалось (мертвий код), тож ризику регресії немає.
+
+### Як перевірити (verification)
+
+```bash
+docker compose run --rm api poetry run pytest tests/unit/api/test_provider_login.py -q   # 5 passed
+docker compose run --rm api poetry run pytest -q                                          # 476 passed, 1 skipped, 1 xfailed
+docker compose run --rm api poetry run ruff check app/api/providers.py app/schemas/api.py
+docker compose run --rm api poetry run mypy app/api/providers.py app/schemas/api.py
+
+BASE_URL=http://127.0.0.1:4173 CHROMIUM_PATH=/snap/bin/chromium NODE_PATH=/tmp/yovth-e2e/node_modules \
+  node tests/e2e/frontend/sync-auth-flow.cjs   # sync-auth-flow: ok
+```
+
+Візуально: `frontend/fixtures/?fixture=all-states` (клієнтський sync) і `?fixture=sessions-{checking,active,auth-required,not-configured,timeout}` на 390/1440px — скриншоти в `tests/e2e/frontend/screenshots/sync-auth-*.png`.
+
+### Тести
+
+- `tests/unit/api/test_provider_login.py` (backend, 5 тестів): allowlist-відхилення на обох ендпоінтах, `NoWarmChrome` → 503 з точною командою, щасливий шлях повертає `login_session_id`/`state`/`timeout_seconds`, `GET .../session` віддзеркалює замоканий `check_session`.
+- `tests/e2e/frontend/sync-auth-flow.cjs` (новий): мертва сесія → «потрібен вхід» + доступна «Увійти»; `not_configured`-сервіс ніколи не показує кнопку; клавіатурна активація й focus не губиться через `starting`/`waiting`; інші сервіси видимо рухаються, поки Semrush чекає; закриття/повторне відкриття попапа мід-вейт відновлює стан; авто-продовження без другого «Start»; `aria-live` називає провайдера; таймаут-копія (через заморожену фікстуру, без реальних 15 хв очікування).
+
+### Follow-ups / борг
+
+- `tests/e2e/frontend/frontend-smoke.cjs` (зона task-13) наразі не проходить **з причин, не повʼязаних із цією таскою**: тест уже очікує українську копію («Немає даних», «Дашборд не вдалося завантажити»), якої `dashboard.js`/`formatters.js` ще не віддають (підтверджено інструментально — рядки відсутні в жодному frontend-файлі). Це існуючий борг із частково завершеної локалізації дашборду, що передує цій таске; не займали, оскільки ці файли — не owned paths task-22 (окрім однієї точкової дії `login`).
+- Реальний прохід через справжній теплий Chrome/видиме вікно логіну не проганявся (у цьому середовищі немає хоста з `seo-audit`/Chrome) — перевірено юніт-тестами (backend) і fixture-mode e2e (frontend), так само як і task-20 сам це задокументував.
+- Відлік часу очікування — суто локальний для вкладки браузера (з моменту натискання «Увійти» в ній); повне перезавантаження сторінки мід-вейт губить точний відлік (проте не сам стан клітинки/job — той завжди чесно відновлюється з SSE, і авто-продовження працює незалежно від того, чи відкрита вкладка).
+- Повний переклад `formatters.js` (`STATE_META`/`STAGE_LABELS`) і решти `dashboard.js`/`client-card.js` — свідомо поза обсягом, той самий борг, що й зафіксований у task-19 Completion report.

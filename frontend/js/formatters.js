@@ -17,11 +17,12 @@ export const STATE_META = {
   attention: { label: "Needs attention", icon: "alert-triangle", tone: "var(--warning)" },
   stale: { label: "Stale data", icon: "clock-exclamation", tone: "var(--warning)" },
   failed_all: { label: "Collection failed", icon: "circle-x", tone: "var(--danger)" },
-  complete: { label: "Complete", icon: "circle-check", tone: "var(--success)" },
+  complete: { label: "Complete data", icon: "circle-check", tone: "var(--success)" },
   partial: { label: "Partial data", icon: "alert-triangle", tone: "var(--warning)" },
-  truncated: { label: "Source limit", icon: "cut", tone: "var(--warning)" },
+  truncated: { label: "Limited by source", icon: "cut", tone: "var(--warning)" },
   auth_required: { label: "Authorization required", icon: "key", tone: "var(--danger)" },
-  unavailable: { label: "Source unavailable", icon: "cloud-off", tone: "var(--danger)" },
+  awaiting_auth: { label: "Awaiting sign-in", icon: "key", tone: "var(--warning)" },
+  unavailable: { label: "Data not received", icon: "cloud-off", tone: "var(--warning)" },
   failed: { label: "Collection error", icon: "circle-x", tone: "var(--danger)" },
   not_configured: { label: "Not connected", icon: "plug-off", tone: "var(--ink-dim)" },
   queued: { label: "Queued", icon: "clock", tone: "var(--ink-muted)" },
@@ -59,7 +60,7 @@ export const STAGE_LABELS = {
   fetch_current: "Fetching current period",
   fetch_previous: "Fetching previous period",
   normalize: "Normalizing",
-  validate: "Validating",
+  validate: "Validating data",
   persist: "Saving to database",
   complete: "Done",
 };
@@ -92,6 +93,15 @@ export function metricLabel(metric) {
 export function formatRange(range) {
   if (!range?.start || !range?.end) return "Period unavailable";
   return `${dateFormatter.format(new Date(`${range.start}T12:00:00`))} — ${dateFormatter.format(new Date(`${range.end}T12:00:00`))}`;
+}
+
+// Single-date form for snapshot metrics, which carry one `observed_at`/
+// `data_through` instead of a range (PLAN §21: snapshot vs range must not
+// look the same). Accepts a plain date (`YYYY-MM-DD`) or a datetime.
+export function formatDate(value) {
+  if (!value) return null;
+  const iso = String(value).length <= 10 ? `${value}T12:00:00` : value;
+  return dateFormatter.format(new Date(iso));
 }
 
 export function formatTimestamp(value, fallback = "Never updated") {

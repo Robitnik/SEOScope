@@ -1,0 +1,163 @@
+{
+  "analytics": {
+    "page": {
+      "current": {
+        "client_id": "client-cleveland",
+        "dimension": "page",
+        "period_start": "2026-07-13",
+        "period_end": "2026-07-19",
+        "total_rows_available": 134,
+        "truncated": true,
+        "limit": 500,
+        "offset": 0,
+        "generated_at": "2026-07-22T08:42:00Z",
+        "rows": [
+          { "dimension_value": "/services/gutter-installation", "clicks": 310, "impressions": 5200, "ctr": "0.0596", "position": "6.20", "quality": "complete", "rank": 1 },
+          { "dimension_value": "/services/roofing-repair", "clicks": 120, "impressions": 3400, "ctr": "0.0353", "position": "8.10", "quality": "complete", "rank": 2 },
+          { "dimension_value": "/", "clicks": 96, "impressions": 6100, "ctr": "0.0157", "position": "4.40", "quality": "complete", "rank": 3 },
+          { "dimension_value": "/locations/cleveland-heights", "clicks": 88, "impressions": 1900, "ctr": "0.0463", "position": "7.80", "quality": "complete", "rank": 4 },
+          { "dimension_value": "/promotions/summer-inspection", "clicks": 64, "impressions": 1450, "ctr": "0.0441", "position": "9.30", "quality": "complete", "rank": 5 },
+          { "dimension_value": "/services/roof-inspection", "clicks": 55, "impressions": 2600, "ctr": null, "position": null, "quality": "partial", "rank": 6 },
+          { "dimension_value": "/blog/winter-roof-prep", "clicks": 40, "impressions": 2200, "ctr": "0.0182", "position": "11.40", "quality": "complete", "rank": 7 },
+          { "dimension_value": "/blog/gutter-maintenance-tips", "clicks": 0, "impressions": 810, "ctr": "0.0000", "position": "18.60", "quality": "complete", "rank": 8 },
+          { "dimension_value": "/contact", "clicks": 12, "impressions": 340, "ctr": "0.0353", "position": "5.10", "quality": "complete", "rank": 9 },
+          { "dimension_value": "other", "clicks": 214, "impressions": 9800, "ctr": "0.0218", "position": "14.70", "quality": "truncated", "rank": null }
+        ]
+      },
+      "previous": {
+        "client_id": "client-cleveland",
+        "dimension": "page",
+        "period_start": "2026-07-06",
+        "period_end": "2026-07-12",
+        "total_rows_available": 121,
+        "truncated": true,
+        "limit": 500,
+        "offset": 0,
+        "generated_at": "2026-07-22T08:42:00Z",
+        "rows": [
+          { "dimension_value": "/services/roofing-repair", "clicks": 210, "impressions": 3900, "ctr": "0.0538", "position": "7.60", "quality": "complete", "rank": 1 },
+          { "dimension_value": "/services/gutter-installation", "clicks": 140, "impressions": 4300, "ctr": "0.0326", "position": "7.10", "quality": "complete", "rank": 2 },
+          { "dimension_value": "/", "clicks": 101, "impressions": 5950, "ctr": "0.0170", "position": "4.60", "quality": "complete", "rank": 3 },
+          { "dimension_value": "/blog/winter-roof-prep", "clicks": 95, "impressions": 2500, "ctr": "0.0380", "position": "9.80", "quality": "complete", "rank": 4 },
+          { "dimension_value": "/locations/cleveland-heights", "clicks": 35, "impressions": 1500, "ctr": "0.0233", "position": "9.40", "quality": "complete", "rank": 5 },
+          { "dimension_value": "/services/roof-inspection", "clicks": 49, "impressions": 2350, "ctr": "0.0209", "position": "9.90", "quality": "complete", "rank": 6 },
+          { "dimension_value": "/blog/gutter-maintenance-tips", "clicks": 3, "impressions": 760, "ctr": "0.0039", "position": "19.20", "quality": "complete", "rank": 7 },
+          { "dimension_value": "/contact", "clicks": 10, "impressions": 300, "ctr": "0.0333", "position": "5.40", "quality": "complete", "rank": 8 },
+          { "dimension_value": "other", "clicks": 198, "impressions": 9100, "ctr": "0.0218", "position": "15.10", "quality": "truncated", "rank": null }
+        ]
+      }
+    },
+    "query": {
+      "current": {
+        "client_id": "client-cleveland",
+        "dimension": "query",
+        "period_start": "2026-07-13",
+        "period_end": "2026-07-19",
+        "total_rows_available": 87,
+        "truncated": true,
+        "limit": 500,
+        "offset": 0,
+        "generated_at": "2026-07-22T08:42:00Z",
+        "rows": [
+          { "dimension_value": "gutter installation cleveland", "clicks": 145, "impressions": 2100, "ctr": "0.0690", "position": "3.20", "quality": "complete", "rank": 1 },
+          { "dimension_value": "roof repair cleveland", "clicks": 98, "impressions": 1800, "ctr": "0.0544", "position": "4.10", "quality": "complete", "rank": 2 },
+          { "dimension_value": "roofing company near me", "clicks": 61, "impressions": 3400, "ctr": "0.0179", "position": "8.80", "quality": "complete", "rank": 3 },
+          { "dimension_value": "cleveland heights roofers", "clicks": 47, "impressions": 620, "ctr": "0.0758", "position": "2.90", "quality": "complete", "rank": 4 },
+          { "dimension_value": "emergency roof repair", "clicks": 33, "impressions": 590, "ctr": "0.0559", "position": "5.60", "quality": "complete", "rank": 5 },
+          { "dimension_value": "roof inspection cost", "clicks": 21, "impressions": 1450, "ctr": null, "position": null, "quality": "partial", "rank": 6 },
+          { "dimension_value": "roof leak repair", "clicks": 14, "impressions": 980, "ctr": "0.0143", "position": "12.30", "quality": "complete", "rank": 7 },
+          { "dimension_value": "commercial roofing cleveland", "clicks": 0, "impressions": 410, "ctr": "0.0000", "position": "22.10", "quality": "complete", "rank": 8 },
+          { "dimension_value": "other", "clicks": 96, "impressions": 5200, "ctr": "0.0185", "position": "16.40", "quality": "truncated", "rank": null }
+        ]
+      },
+      "previous": {
+        "client_id": "client-cleveland",
+        "dimension": "query",
+        "period_start": "2026-07-06",
+        "period_end": "2026-07-12",
+        "total_rows_available": 79,
+        "truncated": true,
+        "limit": 500,
+        "offset": 0,
+        "generated_at": "2026-07-22T08:42:00Z",
+        "rows": [
+          { "dimension_value": "roof repair cleveland", "clicks": 90, "impressions": 1700, "ctr": "0.0529", "position": "4.30", "quality": "complete", "rank": 1 },
+          { "dimension_value": "gutter installation cleveland", "clicks": 58, "impressions": 1750, "ctr": "0.0331", "position": "4.90", "quality": "complete", "rank": 2 },
+          { "dimension_value": "roofing company near me", "clicks": 55, "impressions": 3100, "ctr": "0.0177", "position": "9.10", "quality": "complete", "rank": 3 },
+          { "dimension_value": "roof leak repair", "clicks": 52, "impressions": 1600, "ctr": "0.0325", "position": "8.70", "quality": "complete", "rank": 4 },
+          { "dimension_value": "cleveland heights roofers", "clicks": 16, "impressions": 540, "ctr": "0.0296", "position": "4.60", "quality": "complete", "rank": 5 },
+          { "dimension_value": "roof inspection cost", "clicks": 19, "impressions": 1380, "ctr": "0.0138", "position": "12.90", "quality": "complete", "rank": 6 },
+          { "dimension_value": "commercial roofing cleveland", "clicks": 4, "impressions": 390, "ctr": "0.0103", "position": "21.40", "quality": "complete", "rank": 7 },
+          { "dimension_value": "other", "clicks": 88, "impressions": 4900, "ctr": "0.0180", "position": "16.80", "quality": "truncated", "rank": null }
+        ]
+      }
+    }
+  },
+  "alerts": {
+    "page": {
+      "client_id": "client-cleveland",
+      "dimension": "page",
+      "period_current_start": "2026-07-13",
+      "period_current_end": "2026-07-19",
+      "period_previous_start": "2026-07-06",
+      "period_previous_end": "2026-07-12",
+      "declining": [
+        { "dimension_value": "/services/roofing-repair", "clicks_current": 120, "clicks_previous": 210, "delta_abs": -90, "delta_pct": "-42.86" },
+        { "dimension_value": "/blog/winter-roof-prep", "clicks_current": 40, "clicks_previous": 95, "delta_abs": -55, "delta_pct": "-57.89" }
+      ],
+      "rising": [
+        { "dimension_value": "/services/gutter-installation", "clicks_current": 310, "clicks_previous": 140, "delta_abs": 170, "delta_pct": "121.43" },
+        { "dimension_value": "/locations/cleveland-heights", "clicks_current": 88, "clicks_previous": 35, "delta_abs": 53, "delta_pct": "151.43" }
+      ],
+      "new": [
+        { "dimension_value": "/promotions/summer-inspection", "clicks_current": 64, "clicks_previous": null, "delta_abs": 64, "delta_pct": null }
+      ],
+      "skipped_reason": null,
+      "generated_at": "2026-07-22T08:42:00Z"
+    },
+    "query": {
+      "client_id": "client-cleveland",
+      "dimension": "query",
+      "period_current_start": "2026-07-13",
+      "period_current_end": "2026-07-19",
+      "period_previous_start": "2026-07-06",
+      "period_previous_end": "2026-07-12",
+      "declining": [
+        { "dimension_value": "roof leak repair", "clicks_current": 14, "clicks_previous": 52, "delta_abs": -38, "delta_pct": "-73.08" }
+      ],
+      "rising": [
+        { "dimension_value": "gutter installation cleveland", "clicks_current": 145, "clicks_previous": 58, "delta_abs": 87, "delta_pct": "150.00" },
+        { "dimension_value": "cleveland heights roofers", "clicks_current": 47, "clicks_previous": 16, "delta_abs": 31, "delta_pct": "193.75" }
+      ],
+      "new": [
+        { "dimension_value": "emergency roof repair", "clicks_current": 33, "clicks_previous": null, "delta_abs": 33, "delta_pct": null }
+      ],
+      "skipped_reason": null,
+      "generated_at": "2026-07-22T08:42:00Z"
+    }
+  },
+  "history": [
+    {
+      "metric_key": "gsc_clicks", "label": "Clicks", "provider": "gsc", "unit": "count", "comparison_kind": "range", "precision": 0,
+      "points": [
+        { "period_start": "2026-06-08", "period_end": "2026-06-14", "value_numeric": "612", "quality": "complete" },
+        { "period_start": "2026-06-15", "period_end": "2026-06-21", "value_numeric": "588", "quality": "complete" },
+        { "period_start": "2026-06-22", "period_end": "2026-06-28", "value_numeric": null, "quality": "unavailable" },
+        { "period_start": "2026-06-29", "period_end": "2026-07-05", "value_numeric": "701", "quality": "complete" },
+        { "period_start": "2026-07-06", "period_end": "2026-07-12", "value_numeric": "745", "quality": "complete" },
+        { "period_start": "2026-07-13", "period_end": "2026-07-19", "value_numeric": "839", "quality": "complete" }
+      ]
+    },
+    {
+      "metric_key": "gsc_impressions", "label": "Impressions", "provider": "gsc", "unit": "count", "comparison_kind": "range", "precision": 0,
+      "points": [
+        { "period_start": "2026-06-08", "period_end": "2026-06-14", "value_numeric": "18400", "quality": "complete" },
+        { "period_start": "2026-06-15", "period_end": "2026-06-21", "value_numeric": "17950", "quality": "complete" },
+        { "period_start": "2026-06-22", "period_end": "2026-06-28", "value_numeric": null, "quality": "unavailable" },
+        { "period_start": "2026-06-29", "period_end": "2026-07-05", "value_numeric": "20100", "quality": "complete" },
+        { "period_start": "2026-07-06", "period_end": "2026-07-12", "value_numeric": "20830", "quality": "complete" },
+        { "period_start": "2026-07-13", "period_end": "2026-07-19", "value_numeric": "23890", "quality": "complete" }
+      ]
+    }
+  ]
+}

@@ -39,10 +39,40 @@
   --warning: #ffc45e;
   --danger: #ff7474;
   --info: #7bc7ff;
+  --line-accent: rgb(255 74 23 / 46%);
   --radius-sm: 2px;
   --radius-md: 6px;
   --shadow-dialog: 0 24px 80px rgb(0 0 0 / 55%);
   --font-display: "League Spartan", Impact, sans-serif;
   --font-body: "Archivo", Arial, sans-serif;
   --content-max: 1760px;
+
+  /* Фірмовий мотив The Yovth: стрічка-спірограф із theyovth.com. */
+  --brand-ribbon: url("/assets/brand/ribbon.webp");
+  --brand-panel-width: 400px;
+  --brand-ribbon-opacity: .38;
+  --brand-ribbon-height: 1100px;
+  --brand-ribbon-x: -60px;
+  --brand-ribbon-y: -700px;
+}
+
+/* Що вужчий екран, то менше вільного поля праворуч — панель звужується. */
+@media (max-width: 1023px) {
+  :root {
+    --brand-panel-width: 250px;
+    --brand-ribbon-opacity: .42;
+    --brand-ribbon-height: 900px;
+    --brand-ribbon-x: -50px;
+    --brand-ribbon-y: -580px;
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --brand-panel-width: 150px;
+    --brand-ribbon-opacity: .34;
+    --brand-ribbon-height: 520px;
+    --brand-ribbon-x: -20px;
+    --brand-ribbon-y: -120px;
+  }
 }

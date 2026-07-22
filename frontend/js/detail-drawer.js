@@ -26,7 +26,7 @@ export function createDetailDrawer({ onError }) {
       payload = await getClientHistory(client.client_id, period);
       render();
     } catch (error) {
-      body.innerHTML = `<div class="state-panel state-failed"><p><strong>History could not be loaded.</strong><br>${error.message}</p></div>`;
+      body.innerHTML = `<div class="state-panel state-failed"><p><strong>Failed to load history.</strong><br>${error.message}</p></div>`;
       onError(error);
     }
   }
@@ -34,7 +34,7 @@ export function createDetailDrawer({ onError }) {
   function render() {
     const series = payload.series || [];
     if (!series.length) {
-      body.innerHTML = `<div class="state-panel"><p><strong>No history yet.</strong><br>Metric trends will appear after several refreshes.</p></div>`;
+      body.innerHTML = `<div class="state-panel"><p><strong>No history yet.</strong><br>Metric trends will appear after a few collections.</p></div>`;
       return;
     }
     const first = series[0];
@@ -50,7 +50,7 @@ export function createDetailDrawer({ onError }) {
         <label>Metric<select id="history-metric"></select></label>
       </div>
       <div class="chart-wrap"><canvas id="history-chart" aria-label="Metric history chart" role="img"></canvas></div>
-      <p class="history-note">The chart shows API values without forecasts or automated conclusions.</p>`;
+      <p class="history-note">The chart shows raw API values without forecasts or automated conclusions.</p>`;
     const providerSelect = body.querySelector("#history-provider");
     const metricSelect = body.querySelector("#history-metric");
     providerSelect.addEventListener("change", () => { populateMetrics(providerSelect.value, metricSelect); draw(metricSelect.value); });

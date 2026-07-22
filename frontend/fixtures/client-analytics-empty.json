@@ -1,0 +1,94 @@
+{
+  "analytics": {
+    "page": {
+      "current": {
+        "client_id": "client-cleveland",
+        "dimension": "page",
+        "period_start": null,
+        "period_end": null,
+        "total_rows_available": 0,
+        "truncated": false,
+        "limit": 500,
+        "offset": 0,
+        "generated_at": "2026-07-22T08:42:00Z",
+        "rows": []
+      },
+      "previous": {
+        "client_id": "client-cleveland",
+        "dimension": "page",
+        "period_start": null,
+        "period_end": null,
+        "total_rows_available": 0,
+        "truncated": false,
+        "limit": 500,
+        "offset": 0,
+        "generated_at": "2026-07-22T08:42:00Z",
+        "rows": []
+      }
+    },
+    "query": {
+      "current": {
+        "client_id": "client-cleveland",
+        "dimension": "query",
+        "period_start": null,
+        "period_end": null,
+        "total_rows_available": 0,
+        "truncated": false,
+        "limit": 500,
+        "offset": 0,
+        "generated_at": "2026-07-22T08:42:00Z",
+        "rows": []
+      },
+      "previous": {
+        "client_id": "client-cleveland",
+        "dimension": "query",
+        "period_start": null,
+        "period_end": null,
+        "total_rows_available": 0,
+        "truncated": false,
+        "limit": 500,
+        "offset": 0,
+        "generated_at": "2026-07-22T08:42:00Z",
+        "rows": []
+      }
+    }
+  },
+  "alerts": {
+    "page": {
+      "client_id": "client-cleveland",
+      "dimension": "page",
+      "period_current_start": "2026-07-13",
+      "period_current_end": "2026-07-19",
+      "period_previous_start": "2026-07-06",
+      "period_previous_end": "2026-07-12",
+      "declining": [],
+      "rising": [],
+      "new": [],
+      "skipped_reason": "missing_period_data",
+      "generated_at": "2026-07-22T08:42:00Z"
+    },
+    "query": {
+      "client_id": "client-cleveland",
+      "dimension": "query",
+      "period_current_start": "2026-07-13",
+      "period_current_end": "2026-07-19",
+      "period_previous_start": "2026-07-06",
+      "period_previous_end": "2026-07-12",
+      "declining": [],
+      "rising": [],
+      "new": [],
+      "skipped_reason": "missing_period_data",
+      "generated_at": "2026-07-22T08:42:00Z"
+    }
+  },
+  "history": [
+    {
+      "metric_key": "gsc_clicks", "label": "Clicks", "provider": "gsc", "unit": "count", "comparison_kind": "range", "precision": 0,
+      "points": []
+    },
+    {
+      "metric_key": "gsc_impressions", "label": "Impressions", "provider": "gsc", "unit": "count", "comparison_kind": "range", "precision": 0,
+      "points": []
+    }
+  ]
+}

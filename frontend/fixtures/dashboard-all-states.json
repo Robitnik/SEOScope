@@ -21,6 +21,7 @@
       "timezone": "America/New_York",
       "overall_status": "attention",
       "last_synced_at": "2026-07-22T08:38:00Z",
+      "health": { "value": "78.4", "coverage_contributing": 2, "coverage_configured": 3 },
       "providers": [
         {
           "provider": "ahrefs",
@@ -47,7 +48,8 @@
               "better_direction": "up",
               "quality": "complete",
               "source_mode": "pdf",
-              "observed_at": "2026-07-22T08:35:00Z"
+              "observed_at": "2026-07-22T08:35:00Z",
+              "data_through": "2026-07-22"
             },
             {
               "metric_key": "errors",
@@ -228,7 +230,9 @@
               "better_direction": "up",
               "quality": "complete",
               "source_mode": "api",
-              "observed_at": "2026-07-22T08:37:00Z"
+              "observed_at": "2026-07-22T08:37:00Z",
+              "current_range": { "start": "2026-07-13", "end": "2026-07-19" },
+              "previous_range": { "start": "2026-07-06", "end": "2026-07-12" }
             },
             {
               "metric_key": "impressions",
@@ -311,6 +315,7 @@
       "timezone": "America/New_York",
       "overall_status": "stale",
       "last_synced_at": "2026-07-14T17:10:00Z",
+      "health": { "value": "54.1", "coverage_contributing": 1, "coverage_configured": 4 },
       "providers": [
         {
           "provider": "ahrefs",
@@ -337,7 +342,8 @@
               "better_direction": "up",
               "quality": "stale",
               "source_mode": "pdf",
-              "observed_at": "2026-07-14T17:08:00Z"
+              "observed_at": "2026-07-14T17:08:00Z",
+              "data_through": "2026-07-14"
             },
             {
               "metric_key": "errors",
@@ -401,7 +407,9 @@
               "better_direction": "up",
               "quality": "complete",
               "source_mode": "browser",
-              "observed_at": "2026-07-22T08:42:00Z"
+              "observed_at": "2026-07-22T08:42:00Z",
+              "current_range": { "start": "2026-07-13", "end": "2026-07-19" },
+              "previous_range": { "start": "2026-07-06", "end": "2026-07-12" }
             },
             {
               "metric_key": "organic_users",
@@ -477,6 +485,7 @@
       "timezone": "America/New_York",
       "overall_status": "failed_all",
       "last_synced_at": null,
+      "health": { "value": null, "coverage_contributing": 0, "coverage_configured": 2 },
       "providers": [
         {
           "provider": "ahrefs",
@@ -517,7 +526,9 @@
               "better_direction": "up",
               "quality": "partial",
               "source_mode": "api",
-              "observed_at": "2026-07-22T08:42:00Z"
+              "observed_at": "2026-07-22T08:42:00Z",
+              "current_range": { "start": "2026-07-13", "end": "2026-07-19" },
+              "previous_range": { "start": "2026-07-06", "end": "2026-07-12" }
             },
             {
               "metric_key": "impressions",
@@ -548,6 +559,24 @@
           "source_mode": null,
           "metrics": []
         }
+      ]
+    },
+    {
+      "client_id": "client-onboarding",
+      "name": "Onboarding Test Co",
+      "slug": "onboarding-test-co",
+      "domain": "onboarding-test.example.com",
+      "logo_path": null,
+      "market": "US",
+      "timezone": "America/New_York",
+      "overall_status": "attention",
+      "last_synced_at": null,
+      "health": { "value": null, "coverage_contributing": 0, "coverage_configured": 0 },
+      "providers": [
+        { "provider": "ahrefs", "state": "not_configured", "quality": null, "source_mode": null, "metrics": [] },
+        { "provider": "semrush", "state": "not_configured", "quality": null, "source_mode": null, "metrics": [] },
+        { "provider": "gsc", "state": "not_configured", "quality": null, "source_mode": null, "metrics": [] },
+        { "provider": "reporting_ninja", "state": "not_configured", "quality": null, "source_mode": null, "metrics": [] }
       ]
     }
   ]

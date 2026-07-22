@@ -23,28 +23,51 @@ async function main() {
 
   await page.goto(`${baseUrl}/?fixture=all-states`, { waitUntil: "networkidle" });
   await page.locator(".client-card").first().waitFor();
-  assert.equal(await page.locator(".client-card").count(), 3, "fixture renders three client cards");
-  assert.equal(await page.getByText("No data", { exact: true }).count() > 0, true, "null is shown as missing");
+  assert.equal(await page.locator(".client-card").count(), 4, "fixture renders four client cards");
+  assert.equal(await page.getByText("Немає даних", { exact: true }).count() > 0, true, "null is shown as missing, in Ukrainian");
   assert.equal(await page.getByText("0", { exact: true }).count() > 0, true, "numeric zero remains visible");
-  assert.match(await page.locator("#period-copy").innerText(), /Jul 13, 2026.*Jul 19, 2026.*Jul 06, 2026.*Jul 12, 2026/s, "exact current and previous ranges are visible");
+  assert.match(await page.locator("#period-copy").innerText(), /13 лип.*2026.*19 лип.*2026.*06 лип.*2026.*12 лип.*2026/su, "exact current and previous ranges are visible");
+
+  // Inline dates (frontend/AGENTS.md §3/§5): visible as page text, not only in a title attribute.
+  const dateLines = await page.locator(".provider-dates").allInnerTexts();
+  assert.equal(dateLines.length > 0, true, "provider blocks render an inline date line");
+  assert.equal(dateLines.some((text) => text.includes("Знімок на")), true, "snapshot metrics show an as-of date, not a range");
+  assert.equal(dateLines.some((text) => /\d{2} лип\. 2026.*проти.*\d{2} лип\. 2026/su.test(text)), true, "range metrics show exact current vs previous dates");
+  assert.equal(await page.locator(".metric-table th[title]").count(), 0, "date info is not hover-only");
+
+  // Health % + coverage (PLAN §21.2): value and coverage always render together, `null` never as `0`.
+  assert.equal(await page.locator(".health-chip__value", { hasText: "—" }).count() > 0, true, "a client with no complete service shows — for health, never 0");
+  assert.equal(await page.locator(".health-chip", { hasText: "78%" }).count(), 1, "computed health % renders alongside coverage");
+
   for (const [width, height] of [[390, 844], [768, 900], [1024, 900], [1440, 1000], [1920, 1080]]) {
     await page.setViewportSize({ width, height });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `no page overflow at ${width}px`);
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
 
+  // Sort control (PLAN §21.3): default order puts the fully unconfigured client last, and the mode persists in the URL.
+  assert.equal(await page.locator(".client-card").last().getAttribute("data-client-id"), "client-onboarding", "client without connected services sorts last by default");
+  await page.selectOption("#sort-select", "name");
+  await page.waitForTimeout(50);
+  assert.match(page.url(), /sort=name/, "sort mode persists in the URL");
+  await page.reload({ waitUntil: "networkidle" });
+  assert.equal(await page.locator("#sort-select").inputValue(), "name", "sort mode is restored from the URL on reload");
+  await page.selectOption("#sort-select", "quality");
+  await page.waitForTimeout(50);
+  assert.doesNotMatch(page.url(), /sort=/, "default quality sort is not written to the URL");
+
   await page.locator('[data-group="vertex"]').click();
   await page.locator(".client-card").nth(1).waitFor();
   assert.equal(await page.locator(".client-card").count(), 2, "portfolio group filters the client roster");
   assert.match(page.url(), /group=vertex/, "portfolio group persists in the URL");
   await page.locator('[data-group="all"]').click();
-  await page.locator(".client-card").nth(2).waitFor();
+  await page.locator(".client-card").nth(3).waitFor();
 
   await page.locator("#client-search").fill("Cleveland");
   await page.waitForTimeout(400);
   assert.equal(await page.locator(".client-card").count(), 1, "search filters cards");
   await page.locator("#clear-filters").click();
-  await page.locator(".client-card").nth(2).waitFor();
+  await page.locator(".client-card").nth(3).waitFor();
 
   await page.locator('.client-card[data-client-id="client-long-name"] [data-action="integrate"][data-provider="semrush"]').click();
   assert.equal(await page.locator('[name="domain"]').inputValue(), "advanced-restorative-implant-dentistry.example.com", "domain integration is prefilled from the client");
@@ -55,7 +78,7 @@ async function main() {
   assert.equal(await page.locator("#sync-dialog").evaluate((dialog) => dialog.open), true, "sync dialog opens");
   await page.locator("[data-start]").click();
   await page.locator(".progress-matrix").waitFor();
-  assert.equal(await page.locator(".progress-matrix tbody tr").count(), 3, "progress is a client by provider matrix");
+  assert.equal(await page.locator(".progress-matrix tbody tr").count(), 4, "progress is a client by provider matrix");
   await page.screenshot({ path: path.join(screenshots, "sync-progress-1440.png"), fullPage: false });
   await page.getByLabel("Close dialog").first().click();
   assert.equal(await page.locator("#job-dock").isVisible(), true, "closing dialog keeps the background job visible");
@@ -76,9 +99,9 @@ async function main() {
   await page.screenshot({ path: path.join(screenshots, "dashboard-390.png"), fullPage: true });
 
   await page.goto(`${baseUrl}/?fixture=empty`, { waitUntil: "networkidle" });
-  await page.getByText("No clients match this query.").waitFor();
+  await page.getByText("Жодного клієнта не знайдено.").waitFor();
   await page.goto(`${baseUrl}/?fixture=error`, { waitUntil: "networkidle" });
-  await page.getByText("Dashboard could not be loaded.").waitFor();
+  await page.getByText("Дашборд не вдалося завантажити.").waitFor();
 
   assert.deepEqual(browserErrors, [], `browser console errors: ${browserErrors.join("; ")}`);
   await browser.close();

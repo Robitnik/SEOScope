@@ -3,55 +3,64 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="The Yovth client SEO metrics control room">
+    <meta name="description" content="SEO metrics control room for The Yovth clients">
     <meta name="theme-color" content="#0e0e0e">
     <title>Client Pulse — The Yovth</title>
     <link rel="icon" href="/assets/brand/logo.svg" type="image/svg+xml">
     <link rel="preload" href="/assets/fonts/league-spartan-black.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/assets/brand/ribbon.webp" as="image" type="image/webp">
     <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css">
     <link rel="stylesheet" href="/css/tokens.css">
     <link rel="stylesheet" href="/css/app.css">
+    <link rel="stylesheet" href="/css/client-page.css">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/dashboard.js"></script>
+    <script type="module" src="/js/router.js"></script>
   </head>
   <body>
-    <a class="skip-link" href="#client-grid">Skip to clients</a>
+    <a class="skip-link" href="#page-content">Skip to content</a>
 
-    <header class="app-header">
-      <div class="brand-lockup">
-        <img src="/assets/brand/logo.svg" width="205" height="42" alt="The Yovth">
-        <span class="product-name">Client Pulse</span>
+    <div class="masthead">
+      <div class="brand-field" aria-hidden="true"></div>
+
+      <header class="app-header">
+        <div class="brand-lockup">
+          <img src="/assets/brand/logo.svg" width="205" height="42" alt="The Yovth">
+          <span class="product-name">Client Pulse</span>
+        </div>
+        <div class="header-actions" id="dashboard-header-actions" hidden>
+          <div class="connection-status" id="connection-status" role="status">
+            <span class="status-signal" aria-hidden="true"></span>
+            <span>API online</span>
+          </div>
+          <button class="button button--primary" id="sync-all-button" type="button">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-refresh"></use></svg>
+            Refresh data
+          </button>
+        </div>
+      </header>
+
+      <div class="masthead-inner" id="dashboard-command-bar" hidden>
+        <section class="command-bar" aria-labelledby="page-title">
+          <div class="command-copy">
+            <p class="eyebrow">Operations / SEO</p>
+            <h1 id="page-title">Client control</h1>
+            <p class="period-copy" id="period-copy">Loading reporting periods…</p>
+          </div>
+          <div class="period-switch" role="group" aria-label="Reporting period">
+            <button type="button" data-period="week" aria-pressed="true">Week</button>
+            <button type="button" data-period="month" aria-pressed="false">Month</button>
+          </div>
+        </section>
       </div>
-      <div class="header-actions">
-        <div class="connection-status" id="connection-status" role="status">
-          <span class="status-signal" aria-hidden="true"></span>
-          <span>API online</span>
-        </div>
-        <button class="button button--primary" id="sync-all-button" type="button">
-          <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-refresh"></use></svg>
-          Refresh data
-        </button>
-      </div>
-    </header>
+    </div>
 
-    <main class="app-main" id="main-content">
-      <section class="command-bar" aria-labelledby="page-title">
-        <div class="command-copy">
-          <p class="eyebrow">Operations desk / SEO</p>
-          <h1 id="page-title">Client control</h1>
-          <p class="period-copy" id="period-copy">Loading reporting periods…</p>
-        </div>
-        <div class="period-switch" role="group" aria-label="Reporting period">
-          <button type="button" data-period="week" aria-pressed="true">Week</button>
-          <button type="button" data-period="month" aria-pressed="false">Month</button>
-        </div>
-      </section>
-
+    <div id="page-content">
+    <main class="app-main" id="dashboard-view" hidden>
       <section class="summary-strip" id="summary-strip" aria-label="Status overview">
         <div class="summary-cell"><span>Clients</span><strong id="summary-total">—</strong></div>
-        <div class="summary-cell"><span>Healthy</span><strong id="summary-ok">—</strong></div>
-        <div class="summary-cell"><span>Need attention</span><strong id="summary-attention">—</strong></div>
-        <div class="summary-cell"><span>Last updated</span><strong id="summary-updated">—</strong></div>
+        <div class="summary-cell"><span>Reporting</span><strong id="summary-ok">—</strong></div>
+        <div class="summary-cell"><span>No data yet</span><strong id="summary-attention">—</strong></div>
+        <div class="summary-cell"><span>Latest data</span><strong id="summary-updated">—</strong></div>
       </section>
 
       <section class="group-filter" aria-labelledby="group-filter-title">
@@ -76,8 +85,8 @@
           <span class="visually-hidden">Filter by status</span>
           <select id="status-filter">
             <option value="">All statuses</option>
-            <option value="attention">Need attention</option>
-            <option value="stale">Stale</option>
+            <option value="attention">Needs attention</option>
+            <option value="stale">Stale data</option>
             <option value="failed_all">Collection failed</option>
             <option value="ok">Healthy</option>
           </select>
@@ -100,10 +109,13 @@
       <section class="client-grid" id="client-grid" aria-label="Clients" aria-busy="true"></section>
     </main>
 
+    <main class="app-main" id="client-page-root" hidden></main>
+    </div>
+
     <div class="job-dock" id="job-dock" hidden>
       <button type="button" id="job-dock-button">
         <span class="job-dock__pulse" aria-hidden="true"></span>
-        <span><strong id="job-dock-title">Refresh in progress</strong><small id="job-dock-copy">Open progress</small></span>
+        <span><strong id="job-dock-title">Update in progress</strong><small id="job-dock-copy">Open progress</small></span>
         <span class="job-dock__percent" id="job-dock-percent">0%</span>
       </button>
     </div>
@@ -114,7 +126,7 @@
           <div>
             <p class="eyebrow">Data collection</p>
             <h2 id="sync-title">Refresh metrics</h2>
-            <p id="sync-subtitle">Select clients and data sources.</p>
+            <p id="sync-subtitle">Choose clients and data sources.</p>
           </div>
           <button class="icon-button" value="close" aria-label="Close dialog">
             <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-x"></use></svg>
@@ -144,15 +156,15 @@
     <dialog class="integration-dialog" id="integration-dialog" aria-labelledby="integration-title">
       <form class="dialog-shell dialog-shell--compact" id="integration-form">
         <header class="dialog-header">
-          <div><p class="eyebrow">Configuration</p><h2 id="integration-title">Add integration</h2></div>
+          <div><p class="eyebrow">Settings</p><h2 id="integration-title">Connect integration</h2></div>
           <button class="icon-button" type="button" data-close aria-label="Close dialog"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-x"></use></svg></button>
         </header>
         <div class="dialog-body">
           <p class="integration-lead" id="integration-lead"></p>
           <label class="form-field" data-domain-field>Domain<input name="domain" autocomplete="url" placeholder="example.com"></label>
           <label class="form-field" data-account-field>Connection key<input name="connection_key" autocomplete="off" placeholder="Reporting Ninja connection name"></label>
-          <label class="form-field" data-account-field>Account / resource ID<input name="account_id" autocomplete="off" placeholder="For example, sc-domain:example.com"></label>
-          <p class="field-help">Do not enter secrets here. Use a reference to a stored connection.</p>
+          <label class="form-field" data-account-field>Account / resource ID<input name="account_id" autocomplete="off" placeholder="e.g. sc-domain:example.com"></label>
+          <p class="field-help">Do not enter secrets here. Provide a reference to a saved connection.</p>
           <p class="form-error" id="integration-error" role="alert"></p>
         </div>
         <footer class="dialog-footer"><button class="button button--quiet" type="button" data-close>Cancel</button><button class="button button--primary" type="submit">Save integration</button></footer>

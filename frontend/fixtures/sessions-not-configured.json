@@ -1,0 +1,10 @@
+{
+  "status": "running",
+  "progress_percent": 50,
+  "cells": [
+    { "client_id": "client-cleveland", "provider": "ahrefs", "provider_index": 0, "client_index": 0, "status": "succeeded", "progress_percent": 100, "current_stage": "complete" },
+    { "client_id": "client-nyc-hearing", "provider": "ahrefs", "provider_index": 0, "client_index": 1, "status": "running", "progress_percent": 70, "current_stage": "fetch_previous" },
+    { "client_id": "client-cleveland", "provider": "reporting_ninja", "provider_index": 1, "client_index": 0, "status": "not_configured", "progress_percent": 0, "current_stage": "queued" },
+    { "client_id": "client-nyc-hearing", "provider": "reporting_ninja", "provider_index": 1, "client_index": 1, "status": "not_configured", "progress_percent": 0, "current_stage": "queued" }
+  ]
+}
