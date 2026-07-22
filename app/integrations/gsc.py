@@ -39,7 +39,6 @@ CI; see compose.yaml/docker/entrypoint.sh).
 
 from __future__ import annotations
 
-import os
 import tempfile
 from collections.abc import Callable
 from datetime import UTC, date, datetime
@@ -204,9 +203,7 @@ class GscAdapter:
                     out_dir=Path(tmp),
                     profile=cfg.get("profile", "gsc"),
                     account=cfg.get("account"),
-                    virtual_display=not bool(os.environ.get("DISPLAY")),
-                    no_sandbox=os.geteuid() == 0,
-                    clear_stale_singletons=True,
+                    # No launch flags — attach-only consumer; see compose.yaml's volume comment.
                     on_event=on_event,
                 )
             metrics.extend(_map_direct(direct, context.current, context.previous))
@@ -299,9 +296,7 @@ class GscAdapter:
                 top_n=top_n,
                 profile=cfg.get("profile", "gsc"),
                 account=cfg.get("account"),
-                virtual_display=not bool(os.environ.get("DISPLAY")),
-                no_sandbox=os.geteuid() == 0,
-                clear_stale_singletons=True,
+                # No launch flags — attach-only consumer; see compose.yaml's volume comment.
                 on_event=on_event,
             )
 

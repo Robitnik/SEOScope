@@ -248,9 +248,11 @@ class SemrushAdapter:
                 client=client_label,
                 database=database,
                 profile=profile,
-                virtual_display=not bool(os.environ.get("DISPLAY")),
-                no_sandbox=os.geteuid() == 0,
-                clear_stale_singletons=True,
+                # No launch flags: this service ATTACHES to the warm Chrome the human started on
+                # the host, it never starts one. `no_sandbox`/`clear_stale_singletons` described a
+                # browser we own — and on 2026-07-22 that assumption wrecked the operator's
+                # profile (root-owned Preferences; a SingletonLock naming a dead container id).
+                # See the volume comment in compose.yaml.
                 on_event=on_event,
             )
             source_used = "browser"

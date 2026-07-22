@@ -46,9 +46,21 @@ services:
       # at container start, iff this path exists. Absent on CI/deploy,
       # where these providers are exercised only via live smoke (PLAN §15).
       - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}:/seo/AISeoTools
-      # Reuse AISeoTools' authenticated Chrome sessions and isolated Chrome.
-      # The profile lock in AISeoTools prevents concurrent profile corruption.
-      - ${HOME}/.local/share/seo-audit:/seo/runtime
+      # Warm-session DISCOVERY ONLY, read-only, and deliberately NOT the whole runtime dir.
+      #
+      # This used to be `${HOME}/.local/share/seo-audit:/seo/runtime` — the operator's entire
+      # runtime, writable, into a container that runs as root. On 2026-07-22 that is exactly what
+      # destroyed their logins: this container launched Chrome inside the mounted profile and left
+      # root-owned `Local State` / `Preferences` (mode 0600) behind, which the operator could not
+      # even read afterwards. Every Google account appeared logged out, recoverable only by
+      # re-logging in by hand.
+      #
+      # This container is a pure CONSUMER: it attaches over CDP (see network_mode + the CDP env
+      # vars above) to a Chrome the HUMAN started with `seo-audit browser-up` on the host. All it
+      # needs from the host is `state/<provider>_chrome.json` to learn the CDP port — nothing
+      # else, and nothing writable. With `profiles/` simply absent it cannot corrupt a profile
+      # even if the attach-only env var is ever lost.
+      - ${HOME}/.local/share/seo-audit/state:/seo/runtime/state:ro
       - app_data:/app/app_data
       - artifacts:/app/app_data/artifacts
       - browser_profiles:/app/app_data/browser_profiles
@@ -81,7 +93,8 @@ services:
     volumes:
       - .:/app
       - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}:/seo/AISeoTools
-      - ${HOME}/.local/share/seo-audit:/seo/runtime
+      # Read-only warm-session discovery, never the profiles — see the api service above.
+      - ${HOME}/.local/share/seo-audit/state:/seo/runtime/state:ro
       - app_data:/app/app_data
       - artifacts:/app/app_data/artifacts
       - browser_profiles:/app/app_data/browser_profiles
