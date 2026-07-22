@@ -1,5 +1,5 @@
 import { cancelSyncJob, createSyncJob, retrySyncJob } from "./api.js";
-import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, icon, isTerminal, percent } from "./formatters.js";
+import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, icon, isTerminal, percent, stateClass } from "./formatters.js";
 import { loadActiveJob, saveActiveJob } from "./store.js";
 import { watchJob } from "./sse.js";
 
@@ -130,7 +130,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     body.innerHTML = `
       <div class="progress-overview">
         <span class="progress-number">${progressValue}%</span>
-        <div><div class="progress-track" aria-label="Загальний прогрес: ${progressValue}%"><span style="--progress:${progressValue}%"></span></div><div class="progress-copy">${progressSummary(cells)}</div></div>
+        <div><progress class="progress-track" max="100" value="${progressValue}" aria-label="Загальний прогрес: ${progressValue}%"></progress><div class="progress-copy">${progressSummary(cells)}</div></div>
       </div>
       ${clientIds.length ? `<div class="matrix-wrap"><table class="progress-matrix"><thead><tr><th scope="col">Клієнт</th>${providers.map((provider) => `<th scope="col">${PROVIDERS[provider].label}</th>`).join("")}</tr></thead><tbody>${clientIds.map((clientId) => `<tr><td>${clients.get(clientId) || clientId}</td>${providers.map((provider) => matrixCell(cells.find((cell) => String(cell.client_id) === clientId && cell.provider === provider))).join("")}</tr>`).join("")}</tbody></table></div>` : `<div class="state-panel"><p><strong>Готуємо чергу.</strong><br>Матриця з’явиться після відповіді сервера.</p></div>`}`;
     footer.innerHTML = footerActions(job);
@@ -140,10 +140,10 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
   }
 
   function matrixCell(cell) {
-    if (!cell) return `<td><span class="matrix-cell"><strong style="--state-color:var(--ink-dim)">— Не обрано</strong></span></td>`;
+    if (!cell) return `<td><span class="matrix-cell state-not_configured"><strong>— Не обрано</strong></span></td>`;
     const meta = STATE_META[cell.status] || STATE_META.running;
     const value = percent(cell.progress_percent);
-    return `<td><div class="matrix-cell" style="--state-color:${meta.tone}"><strong>${icon(meta.icon)}${meta.label}</strong><small>${cell.status === "not_configured" ? "Інтеграцію не додано" : (cell.error_code || STAGE_LABELS[cell.current_stage] || "Очікуємо статус")}</small><div class="mini-progress"><span style="--progress:${value}%"></span></div></div></td>`;
+    return `<td><div class="matrix-cell ${stateClass(cell.status)}"><strong>${icon(meta.icon)}${meta.label}</strong><small>${cell.status === "not_configured" ? "Інтеграцію не додано" : (cell.error_code || STAGE_LABELS[cell.current_stage] || "Очікуємо статус")}</small><progress class="mini-progress" max="100" value="${value}" aria-label="${meta.label}: ${value}%"></progress></div></td>`;
   }
 
   function progressSummary(cells) {

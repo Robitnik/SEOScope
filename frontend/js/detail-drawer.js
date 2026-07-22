@@ -26,7 +26,7 @@ export function createDetailDrawer({ onError }) {
       payload = await getClientHistory(client.client_id, period);
       render();
     } catch (error) {
-      body.innerHTML = `<div class="state-panel" style="--state-color:var(--danger)"><p><strong>Історію не завантажено.</strong><br>${error.message}</p></div>`;
+      body.innerHTML = `<div class="state-panel state-failed"><p><strong>Історію не завантажено.</strong><br>${error.message}</p></div>`;
       onError(error);
     }
   }

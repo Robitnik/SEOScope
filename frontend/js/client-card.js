@@ -1,4 +1,4 @@
-import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDelta, formatRange, formatTimestamp, formatValue, icon, initials, metricLabel, trend } from "./formatters.js";
+import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDelta, formatRange, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js";
 
 function providerIcon(provider) {
   const meta = PROVIDERS[provider];
@@ -8,7 +8,7 @@ function providerIcon(provider) {
 
 function statusMarkup(state, className = "provider-state") {
   const meta = STATE_META[state] || STATE_META.unavailable;
-  return `<span class="${className}" style="--state-color:${meta.tone}">${meta.label}</span>`;
+  return `<span class="${className} ${stateClass(state)}">${meta.label}</span>`;
 }
 
 function metricCell(metric, field) {
@@ -52,11 +52,10 @@ function stateMessage(summary, provider) {
 function providerBlock(summary, ranges) {
   const provider = summary.provider;
   const meta = PROVIDERS[provider] || { label: provider };
-  const state = STATE_META[summary.state] || STATE_META.unavailable;
   const source = SOURCE_LABELS[summary.source_mode];
   const hasMetrics = Array.isArray(summary.metrics) && summary.metrics.length > 0;
   return `
-    <section class="provider-block" aria-label="${meta.label}" style="--state-color:${state.tone}">
+    <section class="provider-block ${stateClass(summary.state)}" aria-label="${meta.label}">
       <div class="provider-heading">
         <div class="provider-identity">${providerIcon(provider)}<span>${meta.label}</span></div>
         <span>${statusMarkup(summary.state)}${source ? `<small class="provider-source">${source}</small>` : ""}</span>
@@ -73,7 +72,7 @@ export function renderClientCard(client, dashboard) {
     ? `<img class="client-logo" src="${escapeHtml(client.logo_path)}" width="52" height="52" alt="Логотип ${escapeHtml(client.name)}" loading="lazy">`
     : `<span class="client-logo" aria-hidden="true">${escapeHtml(initials(client.name))}</span>`;
   return `
-    <article class="client-card" data-client-id="${client.client_id}" style="--state-color:${state.tone}">
+    <article class="client-card ${stateClass(client.overall_status)}" data-client-id="${client.client_id}">
       <header class="client-card__header">
         ${logo}
         <div class="client-title">
@@ -86,7 +85,7 @@ export function renderClientCard(client, dashboard) {
         </div>
       </header>
       <div class="client-card__meta">
-        <span class="status-label" style="--state-color:${state.tone}">${icon(state.icon)}${state.label}</span>
+        <span class="status-label ${stateClass(client.overall_status)}">${icon(state.icon)}${state.label}</span>
         <span>Синхронізація: ${formatTimestamp(client.last_synced_at)}</span>
       </div>
       <div class="client-card__providers">

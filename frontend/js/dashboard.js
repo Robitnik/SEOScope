@@ -71,7 +71,7 @@ function render(dashboard) {
 function renderError(error) {
   grid.setAttribute("aria-busy", "false");
   grid.innerHTML = "";
-  dashboardState.innerHTML = `<div class="state-panel" style="--state-color:var(--danger)">${icon("wifi-off")}<p><strong>Dashboard не завантажено.</strong><br>${error.message}. Попередні значення не підмінено нулями.</p><button class="button button--primary" type="button" data-retry>Спробувати ще</button></div>`;
+  dashboardState.innerHTML = `<div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Dashboard не завантажено.</strong><br>${error.message}. Попередні значення не підмінено нулями.</p><button class="button button--primary" type="button" data-retry>Спробувати ще</button></div>`;
   dashboardState.querySelector("[data-retry]").addEventListener("click", () => loadDashboard());
 }
 

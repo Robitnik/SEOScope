@@ -77,6 +77,10 @@ export function escapeHtml(value = "") {
   })[character]);
 }
 
+export function stateClass(state = "unavailable") {
+  return `state-${String(state).replace(/[^a-z0-9_-]/gi, "-")}`;
+}
+
 export function icon(name, className = "icon") {
   return `<svg class="${className}" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-${name}"></use></svg>`;
 }
