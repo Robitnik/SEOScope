@@ -19,14 +19,14 @@ export function createDetailDrawer({ onError }) {
   async function open(client, period, trigger) {
     opener = trigger;
     title.textContent = client.name;
-    subtitle.textContent = `${client.domain} · останні 12 закритих періодів`;
+    subtitle.textContent = `${client.domain} · last 12 closed periods`;
     body.innerHTML = `<div class="skeleton-line skeleton-line--title"></div><div class="skeleton-block"></div>`;
     dialog.showModal();
     try {
       payload = await getClientHistory(client.client_id, period);
       render();
     } catch (error) {
-      body.innerHTML = `<div class="state-panel state-failed"><p><strong>Історію не завантажено.</strong><br>${error.message}</p></div>`;
+      body.innerHTML = `<div class="state-panel state-failed"><p><strong>History could not be loaded.</strong><br>${error.message}</p></div>`;
       onError(error);
     }
   }
@@ -34,23 +34,23 @@ export function createDetailDrawer({ onError }) {
   function render() {
     const series = payload.series || [];
     if (!series.length) {
-      body.innerHTML = `<div class="state-panel"><p><strong>Історії ще немає.</strong><br>Після кількох оновлень тут з’явиться динаміка метрик.</p></div>`;
+      body.innerHTML = `<div class="state-panel"><p><strong>No history yet.</strong><br>Metric trends will appear after several refreshes.</p></div>`;
       return;
     }
     const first = series[0];
     const firstPoint = first.points?.at(-1);
     body.innerHTML = `
       <div class="drawer-kpis">
-        <div><span>Період</span><strong>${payload.period_kind === "month" ? "Місяць" : "Тиждень"}</strong></div>
-        <div><span>Серій</span><strong>${series.length}</strong></div>
-        <div><span>Останнє значення</span><strong>${firstPoint ? formatValue({ ...first, current_value: firstPoint.value_numeric }, "current") : "Немає даних"}</strong></div>
+        <div><span>Period</span><strong>${payload.period_kind === "month" ? "Month" : "Week"}</strong></div>
+        <div><span>Series</span><strong>${series.length}</strong></div>
+        <div><span>Latest value</span><strong>${firstPoint ? formatValue({ ...first, current_value: firstPoint.value_numeric }, "current") : "No data"}</strong></div>
       </div>
       <div class="history-toolbar">
-        <label>Сервіс<select id="history-provider">${[...new Set(series.map((item) => item.provider))].map((provider) => `<option value="${provider}">${PROVIDERS[provider]?.label || provider}</option>`).join("")}</select></label>
-        <label>Метрика<select id="history-metric"></select></label>
+        <label>Service<select id="history-provider">${[...new Set(series.map((item) => item.provider))].map((provider) => `<option value="${provider}">${PROVIDERS[provider]?.label || provider}</option>`).join("")}</select></label>
+        <label>Metric<select id="history-metric"></select></label>
       </div>
-      <div class="chart-wrap"><canvas id="history-chart" aria-label="Графік історії метрики" role="img"></canvas></div>
-      <p class="history-note">Графік показує значення з API без прогнозів та автоматичних висновків.</p>`;
+      <div class="chart-wrap"><canvas id="history-chart" aria-label="Metric history chart" role="img"></canvas></div>
+      <p class="history-note">The chart shows API values without forecasts or automated conclusions.</p>`;
     const providerSelect = body.querySelector("#history-provider");
     const metricSelect = body.querySelector("#history-metric");
     providerSelect.addEventListener("change", () => { populateMetrics(providerSelect.value, metricSelect); draw(metricSelect.value); });
@@ -78,7 +78,7 @@ export function createDetailDrawer({ onError }) {
       options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { intersect: false, mode: "index" },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context) => context.raw === null ? "Немає даних" : `${metricLabel(series)}: ${context.formattedValue}` } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context) => context.raw === null ? "No data" : `${metricLabel(series)}: ${context.formattedValue}` } } },
         scales: { x: { grid: { color: "#2a2a2a" }, ticks: { color: "#aaa6a0", maxRotation: 0, autoSkip: true, maxTicksLimit: 5 } }, y: { grid: { color: "#2a2a2a" }, ticks: { color: "#aaa6a0" } } },
       },
     });

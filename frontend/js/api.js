@@ -27,7 +27,7 @@ async function request(path, options = {}, key = path) {
 
 async function fixture(name) {
   const response = await fetch(`/fixtures/${name}.json`);
-  if (!response.ok) throw new Error("Не вдалося завантажити тестові дані");
+  if (!response.ok) throw new Error("Could not load fixture data");
   return response.json();
 }
 
@@ -35,7 +35,7 @@ function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 export async function getDashboard({ period, query, status, provider }) {
   if (FIXTURE_MODE) {
-    if (FIXTURE_MODE === "error") { await wait(500); throw new Error("Тестова помилка з’єднання"); }
+    if (FIXTURE_MODE === "error") { await wait(500); throw new Error("Fixture connection error"); }
     if (FIXTURE_MODE === "loading") await wait(2400);
     const payload = await fixture(FIXTURE_MODE === "empty" ? "dashboard-empty" : "dashboard-all-states");
     const normalizedQuery = query?.toLocaleLowerCase("uk-UA") || "";
@@ -104,7 +104,7 @@ export async function getSyncJob(id) {
   if (!FIXTURE_MODE) return request(`/sync-jobs/${id}`, {}, `job-${id}`);
   const jobs = readMockJobs();
   const job = jobs[id];
-  if (!job) throw new Error("Оновлення не знайдено");
+  if (!job) throw new Error("Refresh job not found");
   if (["cancelled", "succeeded", "partial", "failed"].includes(job.status)) return job;
   const elapsed = Date.now() - job.started_at;
   const cells = job.cells.map((cell) => mockCellStatus(cell, elapsed));

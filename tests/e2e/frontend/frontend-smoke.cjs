@@ -24,9 +24,9 @@ async function main() {
   await page.goto(`${baseUrl}/?fixture=all-states`, { waitUntil: "networkidle" });
   await page.locator(".client-card").first().waitFor();
   assert.equal(await page.locator(".client-card").count(), 3, "fixture renders three client cards");
-  assert.equal(await page.getByText("Немає даних", { exact: true }).count() > 0, true, "null is shown as missing");
+  assert.equal(await page.getByText("No data", { exact: true }).count() > 0, true, "null is shown as missing");
   assert.equal(await page.getByText("0", { exact: true }).count() > 0, true, "numeric zero remains visible");
-  assert.match(await page.locator("#period-copy").innerText(), /13 лип.*19 лип.*06 лип.*12 лип/s, "exact current and previous ranges are visible");
+  assert.match(await page.locator("#period-copy").innerText(), /Jul 13, 2026.*Jul 19, 2026.*Jul 06, 2026.*Jul 12, 2026/s, "exact current and previous ranges are visible");
   for (const [width, height] of [[390, 844], [768, 900], [1024, 900], [1440, 1000], [1920, 1080]]) {
     await page.setViewportSize({ width, height });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `no page overflow at ${width}px`);
@@ -50,7 +50,7 @@ async function main() {
   await page.locator(".progress-matrix").waitFor();
   assert.equal(await page.locator(".progress-matrix tbody tr").count(), 3, "progress is a client by provider matrix");
   await page.screenshot({ path: path.join(screenshots, "sync-progress-1440.png"), fullPage: false });
-  await page.getByLabel("Закрити вікно").first().click();
+  await page.getByLabel("Close dialog").first().click();
   assert.equal(await page.locator("#job-dock").isVisible(), true, "closing dialog keeps the background job visible");
   await page.locator("#job-dock-button").click();
   assert.equal(await page.locator("#sync-dialog").evaluate((dialog) => dialog.open), true, "progress can be reopened");
@@ -69,9 +69,9 @@ async function main() {
   await page.screenshot({ path: path.join(screenshots, "dashboard-390.png"), fullPage: true });
 
   await page.goto(`${baseUrl}/?fixture=empty`, { waitUntil: "networkidle" });
-  await page.getByText("Клієнтів за цим запитом немає.").waitFor();
+  await page.getByText("No clients match this query.").waitFor();
   await page.goto(`${baseUrl}/?fixture=error`, { waitUntil: "networkidle" });
-  await page.getByText("Dashboard не завантажено.").waitFor();
+  await page.getByText("Dashboard could not be loaded.").waitFor();
 
   assert.deepEqual(browserErrors, [], `browser console errors: ${browserErrors.join("; ")}`);
   await browser.close();

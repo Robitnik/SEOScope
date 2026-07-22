@@ -9,7 +9,8 @@
       "domain": "exxxoticaexpo.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "3bd6aa2d-9721-45f9-9dcd-033e22854311"
+      "database_id": "3bd6aa2d-9721-45f9-9dcd-033e22854311",
+      "logo_asset": "/assets/client-logos/3xe.png"
     },
     {
       "group": "VISION",
@@ -19,7 +20,8 @@
       "domain": "alphastyle.store",
       "market": null,
       "timezone": "UTC",
-      "database_id": "d182b771-91cf-4efd-b0dc-b4e1f7fff0d3"
+      "database_id": "d182b771-91cf-4efd-b0dc-b4e1f7fff0d3",
+      "logo_asset": "/assets/client-logos/alpha.png"
     },
     {
       "group": "VISION",
@@ -29,7 +31,8 @@
       "domain": "laxton.se",
       "market": "SE",
       "timezone": "Europe/Stockholm",
-      "database_id": "d092a485-e56c-4061-b09a-a111ac6a6842"
+      "database_id": "d092a485-e56c-4061-b09a-a111ac6a6842",
+      "logo_asset": "/assets/client-logos/laxton.png"
     },
     {
       "group": "VISION",
@@ -39,7 +42,8 @@
       "domain": "goreport.com",
       "market": "GB",
       "timezone": "Europe/London",
-      "database_id": "b8945de7-1963-41cd-8549-126309554be6"
+      "database_id": "b8945de7-1963-41cd-8549-126309554be6",
+      "logo_asset": "/assets/client-logos/goreport.png"
     },
     {
       "group": "VISION",
@@ -49,7 +53,8 @@
       "domain": "pjclarkes.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "a7b5439a-d6e6-4401-9183-521a2fb9c3f2"
+      "database_id": "a7b5439a-d6e6-4401-9183-521a2fb9c3f2",
+      "logo_asset": "/assets/client-logos/pjc.png"
     },
     {
       "group": "VISION",
@@ -59,7 +64,8 @@
       "domain": "shorelinedentalstudio.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "0f61e7c8-f0ca-4f89-ba04-f19ccb692549"
+      "database_id": "0f61e7c8-f0ca-4f89-ba04-f19ccb692549",
+      "logo_asset": "/assets/client-logos/sds.png"
     },
     {
       "group": "VISION",
@@ -69,7 +75,8 @@
       "domain": "smashhouseburgers.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "d99449ed-20e9-4ef5-83cd-47d944dba937"
+      "database_id": "d99449ed-20e9-4ef5-83cd-47d944dba937",
+      "logo_asset": "/assets/client-logos/shb.png"
     },
     {
       "group": "VERTEX",
@@ -79,7 +86,8 @@
       "domain": "19cleveland.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "6f6cde15-0055-467e-89ce-21ad4128f0f6"
+      "database_id": "6f6cde15-0055-467e-89ce-21ad4128f0f6",
+      "logo_asset": "/assets/client-logos/19clv.png"
     },
     {
       "group": "VERTEX",
@@ -89,7 +97,8 @@
       "domain": "effyscafe.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "338e0b08-6c51-4d48-b856-a368a3319ca8"
+      "database_id": "338e0b08-6c51-4d48-b856-a368a3319ca8",
+      "logo_asset": "/assets/client-logos/effys.png"
     },
     {
       "group": "VERTEX",
@@ -99,7 +108,8 @@
       "domain": "grillpointnyc.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "18b5d9c8-52a4-49cb-84c1-986f77e069e6"
+      "database_id": "18b5d9c8-52a4-49cb-84c1-986f77e069e6",
+      "logo_asset": "/assets/client-logos/grp.png"
     },
     {
       "group": "VERTEX",
@@ -109,7 +119,8 @@
       "domain": "hearwellservices.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "f519c589-4018-4035-abaa-0c951c825857"
+      "database_id": "f519c589-4018-4035-abaa-0c951c825857",
+      "logo_asset": "/assets/client-logos/hwell.png"
     },
     {
       "group": "VERTEX",
@@ -119,7 +130,8 @@
       "domain": "nychearing.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "7a60fe97-e1ec-4613-8ec3-953e0c5b278e"
+      "database_id": "7a60fe97-e1ec-4613-8ec3-953e0c5b278e",
+      "logo_asset": "/assets/client-logos/nycha.png"
     },
     {
       "group": "VERTEX",
@@ -129,7 +141,8 @@
       "domain": "nysapphire.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "5bd8658b-d1e5-4195-8b10-1cd4c315fe58"
+      "database_id": "5bd8658b-d1e5-4195-8b10-1cd4c315fe58",
+      "logo_asset": "/assets/client-logos/saphny.png"
     },
     {
       "group": "VERTEX",
@@ -139,7 +152,8 @@
       "domain": "shawarma-mia.com",
       "market": "US",
       "timezone": "America/New_York",
-      "database_id": "0bd6f2f2-e9f4-4657-b583-07ab6e66e285"
+      "database_id": "0bd6f2f2-e9f4-4657-b583-07ab6e66e285",
+      "logo_asset": "/assets/client-logos/swm.png"
     }
   ]
 }

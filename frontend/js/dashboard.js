@@ -16,14 +16,14 @@ let searchTimer = null;
 const detailDrawer = createDetailDrawer({ onError: () => setConnection("offline") });
 const syncModal = createSyncModal({
   getDashboard: () => getState().dashboard,
-  onFinished: async () => { await loadDashboard({ quiet: true }); toast("Дані клієнтів оновлено."); },
+  onFinished: async () => { await loadDashboard({ quiet: true }); toast("Client data refreshed."); },
   onToast: toast,
 });
 
 function setConnection(state) {
   const element = document.querySelector("#connection-status");
   element.dataset.state = state;
-  element.querySelector("span:last-child").textContent = state === "online" ? "API онлайн" : "API недоступний";
+  element.querySelector("span:last-child").textContent = state === "online" ? "API online" : "API unavailable";
 }
 
 async function loadDashboard({ quiet = false } = {}) {
@@ -52,7 +52,7 @@ async function loadDashboard({ quiet = false } = {}) {
 function render(dashboard) {
   const clients = dashboard.clients || [];
   grid.setAttribute("aria-busy", "false");
-  document.querySelector("#period-copy").textContent = `Поточний: ${formatRange(dashboard.current_range)} · Порівняння: ${formatRange(dashboard.previous_range)}`;
+  document.querySelector("#period-copy").textContent = `Current: ${formatRange(dashboard.current_range)} · Comparison: ${formatRange(dashboard.previous_range)}`;
   document.querySelector("#summary-total").textContent = clients.length;
   document.querySelector("#summary-ok").textContent = clients.filter((client) => client.overall_status === "ok").length;
   document.querySelector("#summary-attention").textContent = clients.filter((client) => client.overall_status !== "ok").length;
@@ -61,7 +61,7 @@ function render(dashboard) {
   dashboardState.innerHTML = "";
   if (!clients.length) {
     grid.innerHTML = "";
-    dashboardState.innerHTML = `<div class="state-panel"><span>${icon("database-off")}</span><p><strong>Клієнтів за цим запитом немає.</strong><br>Скиньте фільтри або додайте клієнта через API.</p><button class="button button--quiet" type="button" data-reset>Скинути фільтри</button></div>`;
+    dashboardState.innerHTML = `<div class="state-panel"><span>${icon("database-off")}</span><p><strong>No clients match this query.</strong><br>Reset the filters or add a client through the API.</p><button class="button button--quiet" type="button" data-reset>Reset filters</button></div>`;
     dashboardState.querySelector("[data-reset]").addEventListener("click", clearFilters);
     return;
   }
@@ -71,16 +71,11 @@ function render(dashboard) {
 function renderError(error) {
   grid.setAttribute("aria-busy", "false");
   grid.innerHTML = "";
-  dashboardState.innerHTML = `<div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Dashboard не завантажено.</strong><br>${error.message}. Попередні значення не підмінено нулями.</p><button class="button button--primary" type="button" data-retry>Спробувати ще</button></div>`;
+  dashboardState.innerHTML = `<div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Dashboard could not be loaded.</strong><br>${error.message}. Previous values were not replaced with zeroes.</p><button class="button button--primary" type="button" data-retry>Try again</button></div>`;
   dashboardState.querySelector("[data-retry]").addEventListener("click", () => loadDashboard());
 }
 
-function clientWord(count) {
-  const mod10 = count % 10, mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return "клієнт";
-  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "клієнти";
-  return "клієнтів";
-}
+function clientWord(count) { return count === 1 ? "client" : "clients"; }
 
 function clearFilters() {
   search.value = ""; statusFilter.value = ""; providerFilter.value = "";
@@ -129,8 +124,8 @@ let integrationContext = null;
 
 function openIntegration(client, provider, trigger) {
   integrationContext = { client, provider, trigger };
-  document.querySelector("#integration-title").textContent = `Підключити ${PROVIDERS[provider]?.label || provider}`;
-  document.querySelector("#integration-lead").textContent = `${client.name}: вкажіть посилання на серверне з’єднання. Токени та паролі у браузері не зберігаються.`;
+  document.querySelector("#integration-title").textContent = `Connect ${PROVIDERS[provider]?.label || provider}`;
+  document.querySelector("#integration-lead").textContent = `${client.name}: enter a reference to the server-side connection. Tokens and passwords are never stored in the browser.`;
   document.querySelector("#integration-error").textContent = "";
   integrationForm.reset();
   integrationForm.elements.domain.value = client.domain;
@@ -149,13 +144,13 @@ integrationForm.addEventListener("submit", async (event) => {
   const usesDomain = ["ahrefs", "semrush"].includes(integrationContext.provider);
   const invalid = usesDomain ? !payload.domain : (!payload.connection_key || !payload.account_id);
   if (invalid) {
-    document.querySelector("#integration-error").textContent = usesDomain ? "Вкажіть домен клієнта." : "Вкажіть ключ з’єднання та ID акаунта.";
+    document.querySelector("#integration-error").textContent = usesDomain ? "Enter the client domain." : "Enter both the connection key and account ID.";
     return;
   }
   submit.disabled = true;
   try {
     await updateIntegration(integrationContext.client.client_id, integrationContext.provider, payload);
-    integrationDialog.close(); toast("Інтеграцію збережено."); await loadDashboard({ quiet: true });
+    integrationDialog.close(); toast("Integration saved."); await loadDashboard({ quiet: true });
   } catch (error) { document.querySelector("#integration-error").textContent = error.message; }
   finally { submit.disabled = false; }
 });

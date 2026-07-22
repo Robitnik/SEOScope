@@ -13,39 +13,39 @@ function statusMarkup(state, className = "provider-state") {
 
 function metricCell(metric, field) {
   const empty = metric[`${field}_value`] === null && !metric[`${field}_text`];
-  return `<td class="${empty ? "metric-null" : ""}" title="${empty ? "API не повернув значення" : ""}">${formatValue(metric, field)}</td>`;
+  return `<td class="${empty ? "metric-null" : ""}" title="${empty ? "No value returned by the API" : ""}">${formatValue(metric, field)}</td>`;
 }
 
 function metricsTable(summary, ranges) {
   return `
     <table class="metric-table">
       <thead><tr>
-        <th scope="col">Метрика</th>
-        <th scope="col" title="${formatRange(ranges.current)}">Поточний</th>
-        <th scope="col" title="${formatRange(ranges.previous)}">Попередній</th>
-        <th scope="col">Зміна</th>
+        <th scope="col">Metric</th>
+        <th scope="col" title="${formatRange(ranges.current)}">Current</th>
+        <th scope="col" title="${formatRange(ranges.previous)}">Previous</th>
+        <th scope="col">Change</th>
       </tr></thead>
       <tbody>${summary.metrics.slice(0, 4).map((metric) => `
         <tr>
           <td>${escapeHtml(metricLabel(metric))}</td>
           ${metricCell(metric, "current")}
           ${metricCell(metric, "previous")}
-          <td class="delta" data-trend="${trend(metric)}" title="${metric.delta_reason || "Порівняння надане API"}">${formatDelta(metric)}</td>
+          <td class="delta" data-trend="${trend(metric)}" title="${metric.delta_reason || "Comparison supplied by the API"}">${formatDelta(metric)}</td>
         </tr>`).join("")}</tbody>
     </table>`;
 }
 
 function stateMessage(summary, provider) {
   const messages = {
-    not_configured: ["Інтеграцію не додано", "Підключіть джерело, щоб почати збір."],
-    auth_required: ["Авторизація втрачена", "Оновіть з’єднання з сервісом."],
-    failed: ["Збір завершився помилкою", summary.last_error_code || "Перегляньте налаштування і повторіть."],
-    unavailable: ["Джерело тимчасово недоступне", "Збережені значення не підміняються нулями."],
+    not_configured: ["Integration not configured", "Connect this source to start collecting data."],
+    auth_required: ["Authorization lost", "Reconnect the service to continue."],
+    failed: ["Collection failed", summary.last_error_code || "Review the configuration and retry."],
+    unavailable: ["Source temporarily unavailable", "Stored values are never replaced with zeroes."],
   };
-  const [title, copy] = messages[summary.state] || ["Даних ще немає", "Запустіть оновлення для цього клієнта."];
+  const [title, copy] = messages[summary.state] || ["No data yet", "Run a refresh for this client." ];
   const action = summary.state === "not_configured" || summary.state === "auth_required"
-    ? `<button class="text-button" type="button" data-action="integrate" data-provider="${provider}">${summary.state === "not_configured" ? "Додати" : "Перепідключити"}</button>`
-    : `<button class="text-button" type="button" data-action="sync-provider" data-provider="${provider}">Повторити</button>`;
+    ? `<button class="text-button" type="button" data-action="integrate" data-provider="${provider}">${summary.state === "not_configured" ? "Connect" : "Reconnect"}</button>`
+    : `<button class="text-button" type="button" data-action="sync-provider" data-provider="${provider}">Retry</button>`;
   return `<div class="provider-message"><p><strong>${title}</strong>${copy}</p>${action}</div>`;
 }
 
@@ -69,7 +69,7 @@ export function renderClientCard(client, dashboard) {
   const providers = new Map((client.providers || []).map((item) => [item.provider, item]));
   const ordered = PROVIDER_ORDER.map((provider) => providers.get(provider) || { provider, state: "not_configured", metrics: [] });
   const logo = client.logo_path
-    ? `<img class="client-logo" src="${escapeHtml(client.logo_path)}" width="52" height="52" alt="Логотип ${escapeHtml(client.name)}" loading="lazy">`
+    ? `<img class="client-logo" src="${escapeHtml(client.logo_path)}" width="52" height="52" alt="${escapeHtml(client.name)} logo" loading="lazy">`
     : `<span class="client-logo" aria-hidden="true">${escapeHtml(initials(client.name))}</span>`;
   return `
     <article class="client-card ${stateClass(client.overall_status)}" data-client-id="${client.client_id}">
@@ -80,13 +80,13 @@ export function renderClientCard(client, dashboard) {
           <a href="https://${encodeURI(client.domain)}" target="_blank" rel="noreferrer">${escapeHtml(client.domain)}</a>
         </div>
         <div class="card-actions">
-          <button class="button button--quiet" type="button" data-action="detail">Історія</button>
-          <button class="button button--primary" type="button" data-action="sync">Оновити</button>
+          <button class="button button--quiet" type="button" data-action="detail">History</button>
+          <button class="button button--primary" type="button" data-action="sync">Refresh</button>
         </div>
       </header>
       <div class="client-card__meta">
         <span class="status-label ${stateClass(client.overall_status)}">${icon(state.icon)}${state.label}</span>
-        <span>Синхронізація: ${formatTimestamp(client.last_synced_at)}</span>
+        <span>Last sync: ${formatTimestamp(client.last_synced_at)}</span>
       </div>
       <div class="client-card__providers">
         ${ordered.map((summary) => providerBlock(summary, { current: dashboard.current_range, previous: dashboard.previous_range })).join("")}
