@@ -372,7 +372,7 @@ class GscDimensionMetric(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
-DIMENSION_OTHER_VALUE = "other"
+DIMENSION_OTHER_VALUE = "інше"
 
 
 class ClientHealthDaily(Base):
