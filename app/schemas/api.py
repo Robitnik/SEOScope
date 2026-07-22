@@ -15,7 +15,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.adapter import DateRange
 from app.schemas.enums import (
@@ -105,17 +105,35 @@ class ProviderSummaryDTO(BaseModel):
     warnings: list[str] = []
 
 
+class HealthPointDTO(BaseModel):
+    """One day's composite health score.
+
+    Days with no contributing service are absent from the series rather than
+    present with a `0` — a consumer must render a gap, not a crash to zero.
+    """
+
+    day: date
+    value: Decimal
+
+
 class ClientHealthDTO(BaseModel):
     """Composite performance signal for a client card (PLAN §21.2).
 
     `value` is `None` — never `0` — when no service contributed. `coverage_*`
-    is shown alongside it so the operator can tell "72% · 3/4 сервіси" apart
+    is shown alongside it so the operator can tell "72% · 3/4 services" apart
     from a client that only has one service configured at all.
     """
 
     value: Decimal | None = None
     coverage_contributing: int
     coverage_configured: int
+
+    # Trend, added for the card's week-over-week arrow and daily sparkline.
+    # All three stay optional so a caller that never recorded history still
+    # gets a valid card: `None` means "no comparison basis", never "0% change".
+    value_previous: Decimal | None = None
+    delta_pct: Decimal | None = None
+    history: list[HealthPointDTO] = Field(default_factory=list)
 
 
 class ClientCardDTO(BaseModel):
@@ -344,7 +362,7 @@ class ProviderLoginDTO(BaseModel):
     """`POST /providers/{provider}/login` response. Neither task-20 (owned
     `check_session`/`start_login` as plain functions, no route) nor task-21
     (owned the auth-pause job-engine plumbing that *consumes* `check_session`)
-    put a route on these — task-22's «Увійти» button has nothing to call
+    put a route on these — task-22's «Log in» button has nothing to call
     without one, so it's added here, additively, against this file's existing
     style."""
 
@@ -359,7 +377,7 @@ class ProviderLoginDTO(BaseModel):
 class ProviderSessionDTO(BaseModel):
     """`GET /providers/{provider}/session` response — a live liveness probe,
     not derived from stored cell history like `ProviderStatusCellDTO`. Used
-    by the standalone client-card «Увійти» action, which runs outside any
+    by the standalone client-card «Log in» action, which runs outside any
     job/SSE context."""
 
     state: SessionLivenessState
@@ -403,7 +421,7 @@ class ClientMetricsHistoryDTO(BaseModel):
 # Added by task-14 (period engine v2). Extended periods (quarter/year/custom)
 # are served by aggregating stored history rather than by new collection
 # (PLAN §21.1), so the depth of that history is a first-class part of the
-# answer: the UI must be able to say "дані за 47 з 92 днів" instead of
+# answer: the UI must be able to say "data for 47 of 92 days" instead of
 # quietly presenting a hole as a complete period (§12).
 # Placed in its own section, appended at the end, so task-15's additions to
 # this file (health fields, sort) do not collide with it.
@@ -440,7 +458,7 @@ class DimensionRowDTO(BaseModel):
     position: Decimal | None = None
     quality: Quality
     # 1-based rank in this period's impressions ordering; `None` for the
-    # top-N cut's aggregated remainder row (`dimension_value` = "інше").
+    # top-N cut's aggregated remainder row (`dimension_value` = "other").
     rank: int | None = None
 
 
@@ -493,7 +511,7 @@ class AlertsResponseDTO(BaseModel):
     percentage (PLAN §21.5: a 5000->4000 drop outranks a 20->10 one).
     Period dates are the exact calendar ranges `resolve_periods` resolved,
     always present regardless of whether data exists for them — so the UI
-    can show "недостатньо даних за 6-12 січня" instead of a blank state.
+    can show "insufficient data for 6-12 January" instead of a blank state.
     `skipped_reason` is set (with all three lists empty) when either period
     carries `partial`/`truncated` data or has no stored data at all — a
     false alert is worse than no alert.

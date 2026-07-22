@@ -1,8 +1,8 @@
 """ORM models for all tables in PLAN.md §6.
 
 Only foreign keys are modeled — no `relationship()` attributes. Repositories
-own every query and transaction boundary (CLAUDE.md: "ніякого сирого SQL у
-верхніх шарах"); ORM-level lazy-loading traversal would bypass that boundary
+own every query and transaction boundary (CLAUDE.md: "no raw SQL in the
+upper layers"); ORM-level lazy-loading traversal would bypass that boundary
 and is easy to get wrong under the async engine, so it is deliberately not
 offered here.
 """
@@ -302,7 +302,7 @@ class ImportedSource(Base):
 #
 # Inherited-zone addition to an otherwise task-03-owned file: task-16's plan
 # takes over migration/model ownership for exactly this one table (see its
-# "Успадкована зона" note) and touches nothing else here. `dimension_value`
+# "Inherited zone" note) and touches nothing else here. `dimension_value`
 # is the GSC URL or search query; `DIMENSION_OTHER_VALUE` below is the
 # reserved sentinel for a top-N cut's aggregated remainder row, never a real
 # URL/query.
@@ -372,7 +372,42 @@ class GscDimensionMetric(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
-DIMENSION_OTHER_VALUE = "інше"
+DIMENSION_OTHER_VALUE = "other"
+
+
+class ClientHealthDaily(Base):
+    """One composite health % per client per day (PLAN §21.2).
+
+    The composite score is derived, not collected: `compute_health()` recomputes
+    it from whatever provider snapshots are current, and nothing used to keep
+    the result. That left the dashboard card able to show *today's* number but
+    no trend at all — neither "which way is this client moving" nor a series to
+    chart. This table is that missing history.
+
+    Deliberately NOT immutable, unlike `ProviderSnapshot`/`MetricValue`: a day's
+    score is a running summary of that day's best-known data, so a later
+    collection on the same day legitimately supersedes it. Hence the unique
+    `(client_id, date)` and an upsert on write, rather than an append.
+
+    Only real scores are ever stored — a day with no contributing service is
+    absent from the series, never persisted as `0` (PLAN §12, None != 0).
+    """
+
+    __tablename__ = "client_health_daily"
+    __table_args__ = (
+        UniqueConstraint("client_id", "day", name="uq_client_health_daily_client_id_day"),
+        Index("ix_client_health_daily_client_day", "client_id", "day"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
+    # `day`, not `date`: a column named `date` would shadow the `date` type in
+    # its own `Mapped[date]` annotation.
+    day: Mapped[date] = mapped_column(Date)
+    value: Mapped[Decimal] = mapped_column(DecimalString)
+    coverage_contributing: Mapped[int] = mapped_column(Integer, default=0)
+    coverage_configured: Mapped[int] = mapped_column(Integer, default=0)
+    computed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
 def _reject_update(mapper: Any, connection: Any, target: Base) -> None:

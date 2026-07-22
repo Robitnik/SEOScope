@@ -1,6 +1,6 @@
-import { getClientHistory, getDashboard, updateIntegration } from "./api.js";
+import { getDashboard, updateIntegration } from "./api.js";
 import { clientGroup, filterByClientGroup } from "./client-groups.js";
-import { renderClientCard, renderHealthTrend, renderSkeletons } from "./client-card.js";
+import { renderClientCard, renderSkeletons } from "./client-card.js";
 import { createDetailDrawer } from "./detail-drawer.js";
 import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js";
 import { triggerLogin, watchProviderSession } from "./session-status.js";
@@ -92,31 +92,6 @@ function render(dashboard) {
     return;
   }
   grid.innerHTML = clients.map((client) => renderClientCard(client, dashboard)).join("");
-  mountHealthTrends(clients);
-}
-
-// The dashboard payload only carries current/previous per metric — the
-// sparkline above each card's Ahrefs block needs the fuller history series,
-// so it's fetched per card, after the synchronous grid render, and dropped
-// into the placeholder `renderClientCard` already left in the DOM. Guarded
-// by `requestToken` like `loadDashboard` so a stale filter/period change
-// can't paint a trend into a card that's since been replaced or removed.
-function mountHealthTrends(clients) {
-  const token = requestToken;
-  const period = getState().period;
-  clients
-    .filter((client) => client.providers?.some((provider) => provider.provider === "ahrefs" && provider.metrics?.length))
-    .forEach(async (client) => {
-      let history;
-      try {
-        history = await getClientHistory(client.client_id, period);
-      } catch {
-        return;
-      }
-      if (token !== requestToken) return;
-      const slot = grid.querySelector(`[data-health-trend="${client.client_id}"]`);
-      if (slot) renderHealthTrend(slot, history.series);
-    });
 }
 
 function updateGroupCounts(clients) {
@@ -172,7 +147,7 @@ grid.addEventListener("click", (event) => {
   if (button.dataset.action === "integrate") openIntegration(client, button.dataset.provider, button);
 });
 
-// task-22: standalone «Увійти» on the client card's auth_required badge —
+// task-22: standalone «Log in» on the client card's auth_required badge —
 // runs outside any sync job, so unlike the modal (which leans on the job's
 // own SSE stream), this is the one place that actually needs
 // `watchProviderSession`'s polling to learn the session came back alive.
@@ -180,15 +155,15 @@ async function handleProviderLogin(provider, button) {
   const label = button.querySelector(".source-setup__action");
   const originalLabel = label.textContent;
   button.setAttribute("aria-disabled", "true");
-  label.textContent = "Очікуємо входу…";
+  label.textContent = "Waiting for login…";
   const result = await triggerLogin(provider);
   const providerLabel = PROVIDERS[provider]?.label || provider;
   if (!result.ok) {
     button.removeAttribute("aria-disabled");
     label.textContent = originalLabel;
     toast(result.reason === "no_warm_chrome"
-      ? `Немає доступу до теплого Chrome для ${providerLabel}.`
-      : `Не вдалося запустити вхід: ${result.message}`);
+      ? `No access to a warm Chrome for ${providerLabel}.`
+      : `Could not start login: ${result.message}`);
     return;
   }
   watchProviderSession(provider, {
@@ -196,7 +171,7 @@ async function handleProviderLogin(provider, button) {
       if (state !== "alive") return;
       button.removeAttribute("aria-disabled");
       label.textContent = originalLabel;
-      toast(`Сесію ${providerLabel} відновлено. Запустіть збір, щоб оновити дані.`);
+      toast(`${providerLabel} session restored. Run a collection to refresh the data.`);
       loadDashboard({ quiet: true });
     },
   });

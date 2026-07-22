@@ -1,4 +1,5 @@
 import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js";
+import { buildClientHash } from "./router.js";
 
 function providerIcon(provider) {
   const meta = PROVIDERS[provider];
@@ -87,7 +88,7 @@ function setupAction(summary) {
   const isAuthRequired = summary.state === "auth_required";
   const needsConnection = summary.state === "not_configured" || isAuthRequired;
   const action = isAuthRequired ? "login" : needsConnection ? "integrate" : "sync-provider";
-  const actionLabel = summary.state === "not_configured" ? "Connect" : isAuthRequired ? "Увійти" : "Retry";
+  const actionLabel = summary.state === "not_configured" ? "Connect" : isAuthRequired ? "Log in" : "Retry";
   return `
     <button class="source-setup ${stateClass(summary.state)}" type="button" data-action="${action}" data-provider="${provider}" aria-disabled="false" title="${escapeHtml(`${meta.label}: ${state.label}`)}">
       ${providerIcon(provider)}
@@ -107,7 +108,7 @@ function setupPanel(summaries) {
 
 // Composite performance signal (PLAN §21.2). `value` is `None` — never `0`
 // — when no service contributed; coverage is always shown alongside so
-// "72% · 3/4 сервіси" reads differently from a client with one service total.
+// "72% · 3/4 services" reads differently from a client with one service total.
 // Corner speedometer (moved off the meta row per feedback: a glanceable dial
 // reads faster than an inline number). Ring is an SVG circle whose visible
 // arc length is set from the health percentage; tone bands mirror the same
@@ -143,14 +144,71 @@ function healthGauge(health) {
     </div>`;
 }
 
-// Sparkline slot: a placeholder above the Ahrefs block, filled in later by
-// `renderHealthTrend` once `getClientHistory` resolves (dashboard.js calls
-// it per card after the initial synchronous render — the dashboard payload
-// itself only carries current/previous, not the ~12-period series a "rises
-// and falls" line needs). Kept a plain empty box until then so layout
-// doesn't jump when the fetch lands.
-function healthTrendSlot(clientId) {
-  return `<div class="health-trend" data-health-trend="${clientId}"></div>`;
+// Two blocks above the Ahrefs section, both driven by the composite health
+// score the corner gauge shows — the same number, so the dial, the arrow and
+// the line always tell one story:
+//
+//   1. `healthDeltaBlock` — which way this client moved over the past week.
+//   2. `healthSparkline`  — the daily shape of that move.
+//
+// Both read `client.health` straight from the dashboard payload (the backend
+// records a point per client per day and returns `delta_pct` + `history`), so
+// they render synchronously with the card. That replaces the previous slot,
+// which fetched a *per-card* history request after paint and charted Ahrefs'
+// own Health Score — a different series from the gauge it sat under.
+function healthTrendBlocks(health) {
+  return `<div class="health-trend">${healthDeltaBlock(health)}${healthSparkline(health)}</div>`;
+}
+
+// Direction is not read off the sign alone (AGENTS.md §5): health is an
+// explicitly "higher is better" score, which is what makes up == good here.
+// A missing delta renders as "—", never as 0% (PLAN §12, None != 0).
+function healthDeltaBlock(health) {
+  const raw = health?.delta_pct;
+  if (raw === null || raw === undefined) {
+    return `
+      <div class="health-delta" data-tone="flat">
+        ${icon("minus", "icon icon--tiny")}
+        <span class="health-delta__value">—</span>
+        <span class="health-delta__caption">no week-over-week basis yet</span>
+      </div>`;
+  }
+  const delta = Number(raw);
+  const tone = delta > 0 ? "good" : delta < 0 ? "bad" : "flat";
+  const glyph = delta > 0 ? "trending-up" : delta < 0 ? "trending-down" : "minus";
+  const formatted = `${delta > 0 ? "+" : ""}${delta.toFixed(1)}%`;
+  const caption = delta > 0 ? "up over the week" : delta < 0 ? "down over the week" : "flat over the week";
+  return `
+    <div class="health-delta" data-tone="${tone}">
+      ${icon(glyph, "icon icon--tiny")}
+      <span class="health-delta__value">${escapeHtml(formatted)}</span>
+      <span class="health-delta__caption">${escapeHtml(caption)}</span>
+    </div>`;
+}
+
+// Daily line. Days with no contributing service are absent from `history`
+// rather than zero, so the line is drawn over the points that exist and the
+// a11y summary states the real span instead of implying an unbroken series.
+function healthSparkline(health) {
+  const width = 120;
+  const height = 28;
+  const pad = 3;
+  const points = (health?.history || []).filter((p) => p.value !== null && p.value !== undefined);
+  if (points.length < 2) {
+    return `<span class="health-trend__empty">Daily trend appears once there are two days of history</span>`;
+  }
+  const values = points.map((p) => Number(p.value));
+  const first = values[0];
+  const last = values.at(-1);
+  const tone = last > first ? "good" : last < first ? "bad" : "flat";
+  const a11yLabel = `Composite health over ${points.length} days, ${points[0].day} to ${points.at(-1).day}: from ${first}% to ${last}%.`;
+  return `
+    <div class="health-trend__body" data-tone="${tone}">
+      <svg class="health-trend__svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+        <polyline class="health-trend__line" points="${sparklinePoints(values, width, height, pad)}"></polyline>
+      </svg>
+      <span class="visually-hidden">${escapeHtml(a11yLabel)}</span>
+    </div>`;
 }
 
 function sparklinePoints(values, width, height, pad) {
@@ -165,38 +223,6 @@ function sparklinePoints(values, width, height, pad) {
   }).join(" ");
 }
 
-// Renders into a slot produced by `healthTrendSlot`. `series` is the raw
-// `ClientMetricsHistoryDTO.series` array from `getClientHistory`; we chart
-// Ahrefs' own Health Score (the metric already shown in the table right
-// below) rather than the composite `client.health` value, which has no
-// history endpoint of its own.
-export function renderHealthTrend(container, series) {
-  const width = 120;
-  const height = 28;
-  const pad = 3;
-  const healthSeries = (series || []).find((item) => item.provider === "ahrefs" && item.metric_key === "health_score");
-  const points = (healthSeries?.points || []).filter((point) => point.value_numeric !== null && point.value_numeric !== undefined);
-  if (points.length < 2) {
-    container.innerHTML = `<span class="health-trend__empty">Not enough history for a trend yet</span>`;
-    return;
-  }
-  const values = points.map((point) => Number(point.value_numeric));
-  const first = values[0];
-  const last = values.at(-1);
-  const deltaPct = first !== 0 ? ((last - first) / first) * 100 : null;
-  const tone = last > first ? "good" : last < first ? "bad" : "flat";
-  const deltaLabel = deltaPct === null ? "—" : `${deltaPct > 0 ? "+" : ""}${deltaPct.toFixed(1)}%`;
-  const a11yLabel = `Ahrefs Health Score over ${points.length} periods: from ${first} to ${last}${deltaPct === null ? "" : ` (${deltaLabel})`}.`;
-  container.innerHTML = `
-    <div class="health-trend__body" data-tone="${tone}">
-      <svg class="health-trend__svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
-        <polyline class="health-trend__line" points="${sparklinePoints(values, width, height, pad)}"></polyline>
-      </svg>
-      <span class="health-trend__delta">${deltaLabel}</span>
-      <span class="visually-hidden">${escapeHtml(a11yLabel)}</span>
-    </div>`;
-}
-
 export function renderClientCard(client, dashboard) {
   const state = STATE_META[client.overall_status] || STATE_META.attention;
   const ordered = [...(client.providers || [])].sort((a, b) => PROVIDER_ORDER.indexOf(a.provider) - PROVIDER_ORDER.indexOf(b.provider));
@@ -205,13 +231,22 @@ export function renderClientCard(client, dashboard) {
   const logo = client.logo_path
     ? `<img class="client-logo" src="${escapeHtml(client.logo_path)}" width="52" height="52" alt="Logo of ${escapeHtml(client.name)}" loading="lazy">`
     : `<span class="client-logo" aria-hidden="true">${escapeHtml(initials(client.name))}</span>`;
+  // Вхід на сторінку клієнта (router.js `#/client/<id>`) з трьох цілей: лого,
+  // назва і «відкрити» біля домену. Назва — єдина точка табуляції з іменем
+  // клієнта; лого й іконка дублюють її для миші, тому вони приховані від
+  // скрінрідера й прибрані з tab-порядку (AGENTS.md §15: без дублів у
+  // послідовності фокуса). Домен лишається зовнішнім посиланням на сайт.
+  const pageHref = buildClientHash(client.client_id);
   return `
     <article class="client-card ${stateClass(client.overall_status)}" data-client-id="${client.client_id}">
       <header class="client-card__header">
-        ${logo}
+        <a class="client-logo-link" href="${pageHref}" tabindex="-1" aria-hidden="true">${logo}</a>
         <div class="client-title">
-          <h2>${escapeHtml(client.name)}</h2>
-          <a href="https://${encodeURI(client.domain)}" target="_blank" rel="noreferrer">${escapeHtml(client.domain)}</a>
+          <h2><a class="client-open-name" href="${pageHref}">${escapeHtml(client.name)}</a></h2>
+          <p class="client-domain">
+            <a href="https://${encodeURI(client.domain)}" target="_blank" rel="noreferrer">${escapeHtml(client.domain)}</a>
+            <a class="client-open" href="${pageHref}" tabindex="-1" aria-hidden="true" title="${escapeHtml(`Open ${client.name} page`)}">${icon("external-link", "icon icon--tiny")}</a>
+          </p>
         </div>
         ${healthGauge(client.health)}
         <div class="card-actions">
@@ -224,7 +259,7 @@ export function renderClientCard(client, dashboard) {
         <span>Last collection: ${formatTimestamp(client.last_synced_at)}</span>
       </div>
       <div class="client-card__providers">
-        ${withMetrics.map((summary) => `${summary.provider === "ahrefs" ? healthTrendSlot(client.client_id) : ""}${providerBlock(summary, { current: dashboard.current_range, previous: dashboard.previous_range })}`).join("")}
+        ${withMetrics.map((summary) => `${summary.provider === "ahrefs" ? healthTrendBlocks(client.health) : ""}${providerBlock(summary, { current: dashboard.current_range, previous: dashboard.previous_range })}`).join("")}
         ${setupPanel(withoutMetrics)}
       </div>
     </article>`;

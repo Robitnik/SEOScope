@@ -160,7 +160,14 @@ input::placeholder { color: var(--ink-dim); }
 .client-logo { width: 48px; height: 48px; object-fit: contain; background: #fff; color: #111; display: grid; place-items: center; font-family: var(--font-display); font-size: 17px; border: 1px solid var(--line); }
 .client-title { min-width: 0; }
 .client-title h2 { font-size: 21px; overflow-wrap: anywhere; }
-.client-title a { color: var(--ink-muted); display: inline-block; margin-top: 5px; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.client-domain { margin: 5px 0 0; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.client-title a { color: var(--ink-muted); display: inline-block; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+/* Лого + назва + «відкрити» ведуть на сторінку клієнта (#/client/<id>). */
+.client-logo-link { display: block; width: 48px; height: 48px; }
+.client-title h2 a { color: inherit; text-decoration: none; }
+.client-title h2 a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.client-open { color: var(--ink-dim); text-decoration: none; display: inline-flex; flex: 0 0 auto; }
+.client-open:hover, .client-logo-link:hover + .client-title .client-open { color: var(--accent); }
 .card-actions { grid-column: 1 / -1; gap: 8px; }
 .card-actions .button { flex: 1; }
 .client-card__meta { padding: 9px 16px; border-bottom: 1px solid var(--line-soft); display: grid; gap: 4px; color: var(--ink-muted); font-size: 11px; }
@@ -189,9 +196,15 @@ input::placeholder { color: var(--ink-dim); }
 .health-trend__line { fill: none; stroke: var(--success); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .health-trend__body[data-tone="bad"] .health-trend__line { stroke: var(--danger); }
 .health-trend__body[data-tone="flat"] .health-trend__line { stroke: var(--ink-dim); }
-.health-trend__delta { flex: 0 0 auto; font-family: var(--font-display); font-size: 13px; font-variant-numeric: tabular-nums; color: var(--success); }
-.health-trend__body[data-tone="bad"] .health-trend__delta { color: var(--danger); }
-.health-trend__body[data-tone="flat"] .health-trend__delta { color: var(--ink-dim); }
+/* Week-over-week block above the Ahrefs section. Tone comes from the backend
+   delta against health's "higher is better" direction, never from the sign
+   alone; the icon carries the same meaning as the colour so the state is
+   never colour-only (AGENTS.md §5/§7). */
+.health-delta { display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-bottom: 1px solid var(--line); color: var(--ink-dim); }
+.health-delta__value { font-family: var(--font-display); font-size: 15px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+.health-delta__caption { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
+.health-delta[data-tone="good"] .health-delta__value, .health-delta[data-tone="good"] .icon { color: var(--success); }
+.health-delta[data-tone="bad"] .health-delta__value, .health-delta[data-tone="bad"] .icon { color: var(--danger); }
 .health-trend__empty { display: block; padding: 7px 14px; color: var(--ink-dim); font-size: 10px; border-bottom: 1px solid var(--line); }
 .provider-heading { justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 .provider-identity { display: flex; align-items: center; gap: 9px; min-width: 0; font-weight: 700; }
@@ -372,7 +385,7 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
   .filter-bar .button { flex: 1; }
   .result-count { margin-left: 0; width: 100%; }
   .client-card__header { grid-template-columns: 46px minmax(0, 1fr); }
-  .client-logo { width: 46px; height: 46px; }
+  .client-logo, .client-logo-link { width: 46px; height: 46px; }
   .card-actions { grid-column: 1 / -1; }
   .card-actions .button { flex: 1; }
   .client-card__meta { display: block; }

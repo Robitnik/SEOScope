@@ -7,7 +7,8 @@ semantics (PLAN §12, CLAUDE.md).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -18,10 +19,12 @@ from app.api.deps import SessionDep
 from app.db.models import Client, MetricValue, SyncJobProvider
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.clients import ClientRepository
+from app.db.repositories.health import HealthHistoryRepository
 from app.db.repositories.metrics import MetricRepository
 from app.db.repositories.snapshots import SnapshotRepository
 from app.metrics import (
     CATALOG,
+    HealthResult,
     Periods,
     assess_quality,
     compute_delta,
@@ -38,6 +41,7 @@ from app.schemas.api import (
     DashboardResponse,
     DashboardSortMode,
     ErrorDTO,
+    HealthPointDTO,
     MetricCardValue,
     MetricHistoryPointDTO,
     MetricHistorySeriesDTO,
@@ -48,7 +52,7 @@ from app.schemas.enums import CellStatus, ComparisonMode, PeriodKind, PeriodRole
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
 # Header current/previous range shown alongside the client cards is a single
-# display reference for the whole page (e.g. "13-19 липня"); every card's
+# display reference for the whole page (e.g. "13-19 July"); every card's
 # own metrics still carry their *own* exact current/previous range computed
 # in that client's timezone (`MetricCardValue.current_range`), which is what
 # actually governs the numbers shown, not this header value.
@@ -89,7 +93,12 @@ def _build_provider_summary(
     provider: Provider,
     periods: Periods,
     now: datetime,
+    as_of: datetime | None = None,
 ) -> ProviderSummaryDTO:
+    """`as_of` bounds which snapshots are visible, so this can rebuild what a
+    card *would have shown* on a past date (used by the health backfill).
+    `None` — the normal request path — means "everything known now".
+    """
     clients = ClientRepository(session)
     integration = clients.get_integration(client_id, provider)
     if integration is None or not integration.enabled:
@@ -99,7 +108,7 @@ def _build_provider_summary(
     snapshots = SnapshotRepository(session)
     metrics_repo = MetricRepository(session)
 
-    current_snapshot = snapshots.latest_success(client_id, provider)
+    current_snapshot = snapshots.latest_success(client_id, provider, before=as_of)
     latest_cell = cells.latest_for_client_provider(client_id, provider)
 
     last_attempt_at = None
@@ -235,6 +244,123 @@ def _build_provider_summary(
     )
 
 
+# How much daily history the card's sparkline gets, and how far back the
+# week-over-week arrow compares.
+HEALTH_HISTORY_DAYS = 30
+HEALTH_TREND_LOOKBACK_DAYS = 7
+
+
+def _health_with_trend(
+    session: Session,
+    *,
+    client_id: str,
+    health: HealthResult,
+    today: date,
+) -> ClientHealthDTO:
+    """Persist today's composite score, then read the trend back out.
+
+    The composite is derived on every dashboard read and was never stored, so
+    there was no series to chart and no basis for "up or down since last week".
+    Recording it here — where it has just been computed — is what builds that
+    history over time; the write is an idempotent upsert keyed on
+    `(client, day)`, so repeated dashboard loads refresh today's point rather
+    than appending duplicates.
+
+    A `None` score is never recorded: a day with no contributing service has no
+    health, and persisting `0` would later render as a crash to zero rather
+    than as the absence of a signal (PLAN §12).
+
+    Known limitation: the series only gains a point on days the dashboard is
+    actually opened (or collected). A worker-side daily tick would make it
+    unconditional — see this task's follow-ups.
+    """
+    repo = HealthHistoryRepository(session)
+
+    if health.value is not None:
+        repo.record(
+            client_id,
+            today,
+            health.value,
+            coverage_contributing=health.contributing,
+            coverage_configured=health.configured,
+        )
+
+    points = repo.history(client_id, since=today - timedelta(days=HEALTH_HISTORY_DAYS), until=today)
+    previous_row = repo.value_on_or_before(
+        client_id, today - timedelta(days=HEALTH_TREND_LOOKBACK_DAYS)
+    )
+
+    # Relative change, so the copy reads "-5% over the week" rather than
+    # "-4 points". No basis (never collected before, or a zero baseline) means
+    # no trend at all — `None`, never a fabricated 0%.
+    previous_value = previous_row.value if previous_row is not None else None
+    delta_pct: Decimal | None = None
+    if health.value is not None and previous_value is not None and previous_value != 0:
+        delta_pct = ((health.value - previous_value) / previous_value * 100).quantize(
+            Decimal("0.1")
+        )
+
+    return ClientHealthDTO(
+        value=health.value,
+        coverage_contributing=health.contributing,
+        coverage_configured=health.configured,
+        value_previous=previous_value,
+        delta_pct=delta_pct,
+        history=[HealthPointDTO(day=p.day, value=p.value) for p in points],
+    )
+
+
+def backfill_health_history(session: Session, *, days: int, now: datetime) -> int:
+    """Reconstruct the daily composite-health series from snapshots already in
+    the database, so the card's trend works on day one instead of only after a
+    month of dashboard visits.
+
+    For each past day this rebuilds the card as it *would have looked then* —
+    `as_of` hides snapshots collected later — and records the resulting score.
+    That is a real measurement, not interpolation: between two collections the
+    best-known health genuinely did not change, so the line correctly sits flat
+    and steps on collection days.
+
+    Days whose score is `None` (nothing contributing yet) are skipped, never
+    written as `0`. Idempotent — re-running rewrites the same days.
+    """
+    clients = ClientRepository(session).list_active()
+    repo = HealthHistoryRepository(session)
+    written = 0
+
+    for client in clients:
+        for offset in range(days, -1, -1):
+            day = now.date() - timedelta(days=offset)
+            as_of = datetime.combine(day, time(23, 59), tzinfo=UTC)
+            periods = resolve_periods(
+                PeriodKind.week, as_of, tz=client.timezone, mode=ComparisonMode.closed
+            )
+            summaries = [
+                _build_provider_summary(
+                    session,
+                    client_id=client.id,
+                    provider=provider,
+                    periods=periods,
+                    now=as_of,
+                    as_of=as_of,
+                )
+                for provider in Provider
+            ]
+            health = compute_health(summaries, CATALOG)
+            if health.value is None:
+                continue
+            repo.record(
+                client.id,
+                day,
+                health.value,
+                coverage_contributing=health.contributing,
+                coverage_configured=health.configured,
+            )
+            written += 1
+
+    return written
+
+
 def _build_client_card(
     session: Session,
     client: Client,
@@ -268,6 +394,7 @@ def _build_client_card(
 
     successes = [s.last_success_at for s in summaries if s.last_success_at is not None]
     health = compute_health(summaries, CATALOG)
+    health_dto = _health_with_trend(session, client_id=client.id, health=health, today=now.date())
 
     return ClientCardDTO(
         client_id=client.id,
@@ -280,11 +407,7 @@ def _build_client_card(
         overall_status=overall_status,
         providers=summaries,
         last_synced_at=max(successes) if successes else None,
-        health=ClientHealthDTO(
-            value=health.value,
-            coverage_contributing=health.contributing,
-            coverage_configured=health.configured,
-        ),
+        health=health_dto,
     )
 
 

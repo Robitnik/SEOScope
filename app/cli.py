@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.db.session import get_sync_sessionmaker
@@ -37,6 +38,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Report what would be imported without writing to the database",
     )
 
+    backfill_cmd = subparsers.add_parser(
+        "backfill-health-history",
+        help=(
+            "Rebuild the daily composite-health series from snapshots already "
+            "stored, so the dashboard card's trend works without waiting for "
+            "new history to accumulate (idempotent)"
+        ),
+    )
+    backfill_cmd.add_argument(
+        "--days",
+        type=int,
+        default=30,
+        help="How many days back to reconstruct (default: 30)",
+    )
+
     return parser
 
 
@@ -54,6 +70,24 @@ def main(argv: list[str] | None = None) -> int:
             source=source, dry_run=args.dry_run, session_factory=get_sync_sessionmaker()
         )
         print(render_report(report, dry_run=args.dry_run))
+        return 0
+
+    if args.command == "backfill-health-history":
+        # Imported here, not at module scope: this pulls in the API layer,
+        # which the import command has no reason to load.
+        from app.api.dashboard import backfill_health_history
+
+        if args.days < 1:
+            print("error: --days must be >= 1", file=sys.stderr)
+            return 2
+
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            written = backfill_health_history(
+                session, days=args.days, now=datetime.now(UTC)
+            )
+            session.commit()
+        print(f"recorded {written} daily health point(s) across the last {args.days} day(s)")
         return 0
 
     parser.error(f"unknown command: {args.command}")
