@@ -56,6 +56,11 @@ class JobStatus(StrEnum):
     failed="failed"; cancel_requested="cancel_requested"; cancelled="cancelled"
 class StageStatus(StrEnum):
     pending="pending"; running="running"; succeeded="succeeded"; failed="failed"; skipped="skipped"
+class CellStatus(StrEnum):                 # статус клітинки (client, provider) — PLAN §9.1 / sync_job_providers
+    queued="queued"; running="running"; succeeded="succeeded"; partial="partial"
+    failed="failed"; failed_interrupted="failed_interrupted"
+    not_configured="not_configured"; skipped="skipped"      # not_configured ≠ failed, ≠ нуль
+    cancel_requested="cancel_requested"; cancelled="cancelled"
 class MetricUnit(StrEnum):
     count="count"; percent="percent"; score="score"; position="position"; currency="currency"; ratio="ratio"
 ```
@@ -126,7 +131,7 @@ class CollectionResult(BaseModel):
 class PreflightResult(BaseModel):
     provider: Provider
     ok: bool
-    reason_code: str | None = None       # auth_required|no_project|no_units|no_profile|...
+    reason_code: str | None = None       # not_configured|auth_required|no_project|no_units|no_profile|...
     message: str = ""
     units_estimated: int | None = None
     details: dict[str, Any] = {}
@@ -172,6 +177,9 @@ class MetricSpec(BaseModel):
 
 ### API DTO (`app/schemas/api.py`) — форма REST-відповідей (PLAN §10)
 Мінімум: `MetricCardValue` (current/previous/delta/quality/source/ranges), `ProviderSummaryDTO`, `ClientCardDTO`, `DashboardResponse`, `ClientDTO`, `IntegrationDTO`, `JobDTO`, `JobStepDTO`, `ProvidersStatusDTO`.
+- `SyncJobRequest`: `client_ids: list[str] | "all"`, `providers: list[Provider] | "all"`, `period_kind`, `comparison_mode`, `anchor`, `mode: collect_missing | force_refresh`, `source_mode`. Підтримує **один клієнт і batch** (PLAN §9.1).
+- `CellProgressDTO` (клітинка `(client, provider)`): `client_id`, `provider`, `status: CellStatus`, `progress_percent`, `current_stage`, `error_code`, `units_*`; `BatchProgressDTO` агрегує клітинки для матриці прогресу у фронті (task-12).
+- `ProviderSummaryDTO.state` включає `not_configured` (окремо від `unavailable`/`auth_required`/`failed`) — картка показує «не налаштовано» + CTA, не нуль.
 - Delta рахує backend (`delta_abs`, `delta_pct: Decimal | None`); при previous `0/null` → `delta_pct=None` + `delta_reason`. Фронт бізнес-семантику **не** рахує.
 
 ## Кроки реалізації
@@ -187,12 +195,61 @@ class MetricSpec(BaseModel):
 - Registry: register/get/duplicate/ missing.
 
 ## Definition of Done / Gate
-- [ ] Усі типи імпортуються без циклів; `mypy` чистий.
-- [ ] JSON-schema snapshot зафіксований (щоб зміни контракту були помітні в diff).
-- [ ] Docstring кожного інваріанта присутній.
-- [ ] Немає жодної реалізації провайдера/логіки — лише контракти.
-- [ ] task-04/05/06/09/10/11 можуть імпортувати все потрібне звідси.
+- [x] Усі типи імпортуються без циклів; `mypy` чистий.
+- [x] JSON-schema snapshot зафіксований (щоб зміни контракту були помітні в diff).
+- [x] Docstring кожного інваріанта присутній.
+- [x] Немає жодної реалізації провайдера/логіки — лише контракти.
+- [x] task-04/05/06/09/10/11 можуть імпортувати все потрібне звідси.
 
 ## Ризики
 - Недовизначений контракт → пізніші болючі зміни в усіх споживачів. Краще перекрити поля наперед (usage/units, provenance, data_through вже враховані).
 - Розбіжність назв полів DTO ↔ ORM (task-03) ↔ API (task-06): узгодь нейминг у цьому файлі як канон.
+
+---
+
+## ✅ Completion report
+
+- **Дата:** 2026-07-22
+- **Гілка / комміт:** main (не закомічено — див. примітку в кінці)
+- **Статус:** done
+
+### Що зроблено
+Зафіксовано весь integration contract і DTO-шар, проти якого кодують task-04/05/06/09/10/11:
+- Усі 11 enum'ів + `CellStatus` + `STAGE_ORDER` (`app/schemas/enums.py`).
+- Adapter-межа: `ProgressEvent`, `DateRange`, `CollectionContext`, `MetricValueResult`, `RawArtifactRef`, `CollectionResult`, `PreflightResult` (`app/schemas/adapter.py`).
+- `ProviderAdapter` Protocol (`app/integrations/contract.py`) + порожній потокобезпечний-в-межах-одного-процесу реєстр (`app/integrations/registry.py`).
+- `MetricSpec` (тип запису каталогу) + `MetricValueDTO` (persisted-значення, дзеркалить `metric_values`) у `app/schemas/metrics.py`.
+- Повний набір REST DTO у `app/schemas/api.py`: `MetricCardValue`, `ProviderSummaryDTO`, `ClientCardDTO`, `DashboardResponse`, `ClientDTO`/`ClientCreateRequest`/`ClientUpdateRequest`, `IntegrationDTO`/`IntegrationUpsertRequest`, `SyncJobRequest`/`SyncJobAcceptedDTO`, `CellProgressDTO`/`BatchProgressDTO`, `JobDTO`/`JobStepDTO`, `ProviderStatusCellDTO`/`ProvidersStatusDTO`, `ErrorDTO`.
+- `app/schemas/__init__.py` реекспортує всі публічні імена одним імпортом.
+
+### Як зроблено (ключові рішення)
+- **`extra="forbid"`** на всіх adapter-boundary моделях (`adapter.py`, `metrics.py`) і на request-DTO (`SyncJobRequest`, `ClientCreateRequest`, `ClientUpdateRequest`, `IntegrationUpsertRequest`) — найчутливіші до дрейфу межі мають падати гучно на тайпо, а не мовчки губити поле. Response-DTO лишені permissive (pydantic default), бо їх ніхто не парсить ззовні.
+- **`ProviderCardState`** — це `Literal[...]` у `app/schemas/api.py`, не окремий enum: це composed view-стан (`Quality` + pre-attempt/auth стани з PLAN §9.2), а не значення, що зберігається в БД, тому не входить у канонічний enum-список task-02.
+- **`MetricValueResult` vs `MetricValueDTO`** — свідомо різні типи: перший — те, що adapter повертає *до* persist (без id/snapshot_id), другий — те, що читають *після* persist (мінлять `metric_values`). Задокументовано докстрінгом у `metrics.py`, щоб task-03/05 не плутали.
+- **`ProviderAdapter`** позначений `@runtime_checkable`, щоб task-05 міг перевіряти зареєстровані адаптери через `isinstance` за потреби (структурна перевірка наявності методів).
+- `MetricUnit.count` конфліктує з `str.count` при `mypy --strict` (StrEnum member затінює метод базового класу) → точковий `# type: ignore[assignment]` з коментарем-причиною на цьому рядку; лишили назву `count` як у специфікації task-02, а не перейменовували під mypy.
+- JSON-schema snapshot: `tests/unit/schemas/test_contract_snapshot.py` генерує `model_json_schema()` для всіх публічних DTO + список значень усіх enum'ів + `STAGE_ORDER`, порівнює з `tests/unit/schemas/data/contract_snapshot.json`. Оновлення знімку — усвідомлена дія (`python -m tests.unit.schemas.test_contract_snapshot`), не автогенерація в тесті.
+
+### Контрактні зміни (Contract changes)
+Немає — це першоджерело контракту (task-02 сам є "Consumes: Немає").
+
+### Як перевірити (verification)
+```bash
+docker compose build api
+docker compose run --rm api poetry run ruff check app/schemas app/integrations tests/unit/schemas tests/unit/integrations
+docker compose run --rm api poetry run mypy app
+docker compose run --rm api poetry run pytest -q
+```
+Усі три команди мали пройти чисто на момент закриття таски (`ruff` — 0 помилок, `mypy` — 0 помилок на 20 файлах `app/`, `pytest` — 47 passed, включно з наявними task-01 тестами).
+
+### Тести
+- `tests/unit/schemas/test_enums.py` — стабільність значень усіх enum'ів + `STAGE_ORDER` + що `not_configured != failed`.
+- `tests/unit/schemas/test_adapter.py` — `ProgressEvent` дефолти/`extra=forbid`, `None ≠ 0` для `MetricValueResult.value_numeric`, Decimal-точність, partial `CollectionResult` без exception, `PreflightResult` reason_code.
+- `tests/unit/schemas/test_metrics.py` — `MetricSpec` дефолти/невалідний `comparison_kind`, `MetricValueDTO` `None`≠0 і snapshot без дат.
+- `tests/unit/schemas/test_api.py` — `SyncJobRequest` `"all"` vs список, `extra=forbid` на request DTO, `delta_pct=None` + `delta_reason` (не infinity), `ProviderSummaryDTO.state="not_configured"` без quality, невалідний state.
+- `tests/unit/schemas/test_contract_snapshot.py` — JSON-schema snapshot усього публічного контракту.
+- `tests/unit/integrations/test_registry.py` — register/get/duplicate/missing/available_providers.
+
+### Follow-ups / борг
+- Жодних свідомо відкладених пунктів. Майбутні DTO-потреби (напр. нові поля `ProviderStatusCellDTO`) — це контрактні зміни, які проходять через оновлення цього файлу (canon) + JSON-schema snapshot.
+- **Не закомічено.** За CLAUDE.md таска після DoD комітиться логічним коммітом (без push) — цього кроку свідомо не виконано в цій сесії, бо користувач явно комміт не запитував (harness-правило "commit лише на явний запит"). Комміт лишається на розсуд користувача.

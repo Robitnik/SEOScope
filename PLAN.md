@@ -158,7 +158,7 @@
 - Кожен provider row має офіційну/впізнавану іконку, status dot та дві підколонки `Поточний / Попередній`.
 - Біля current value: delta chip (`+12.4%`, `−8`), semantic color та accessible icon; колір не є єдиним носієм змісту.
 - `—` означає unavailable, ніколи не zero.
-- `partial`, `stale`, `truncated`, `auth required`, `failed` мають окремі badges/tooltips.
+- `not configured`, `partial`, `stale`, `truncated`, `auth required`, `failed` мають окремі badges/tooltips; `not configured` = сервіс ще не заведено для клієнта → CTA додати інтеграцію, а не нуль/помилка.
 - Click по provider відкриває деталі: history chart, source, exact dates, raw artifact link, warnings.
 - “Sync” доступний з клавіатури й не запускається випадково при кліку по всій картці.
 
@@ -235,6 +235,8 @@ FastAPI `BackgroundTasks` не є durable queue: задача губиться �
 - heartbeat/lease дозволяє після restart перевести “завислу” job назад у queue або failed;
 - один worker відповідає обмеженню SQLite “один writer у момент часу” та захищає browser profiles;
 - у майбутньому PostgreSQL + Redis queue можна додати за adapter boundary без зміни UI API.
+
+**Один процес worker, але паралельні per-provider доріжки.** «Один worker» означає один процес-writer, а не послідовний збір усього. Всередині процесу диспетчер тримає окрему доріжку (lane) на кожен сервіс — Ahrefs, Semrush, GSC, Reporting Ninja. Доріжки виконуються **одночасно**, а всередині доріжки клієнти йдуть **послідовно**: цього вимагає persistent browser-профіль/сесія та metered API кожного сервісу (lock `(provider, profile_name)`, §8.3). Мережевий/browser-збір відбувається поза транзакціями; у БД пише лише короткий atomic-persist крок, тож обмеження SQLite «один writer у момент часу» зберігається — конкурентність живе в I/O, не в записах. Повна модель — §9.1.
 
 SQLite працює в `WAL`, з `foreign_keys=ON`, `busy_timeout`, короткими транзакціями та одним write-heavy worker. Це відповідний компроміс для внутрішнього single-host застосунку; SQLite WAL дозволяє readers працювати одночасно з writer, але writer все одно один.
 
@@ -339,7 +341,8 @@ API keys, passwords і session secrets не зберігати в цій таб�
 - `attempt`, `idempotency_key`;
 - `lease_owner`, `lease_expires_at`, `heartbeat_at`;
 - `created_at`, `started_at`, `finished_at`;
-- safe public `error_code`, `error_message` без secret payload.
+- safe public `error_code`, `error_message` без secret payload;
+- `status`/`progress_percent` **виводяться з клітинок** `sync_job_providers` (нижче); `not_configured`/`skipped` не рахуються за провал.
 
 ### `sync_job_steps`
 
@@ -348,6 +351,19 @@ API keys, passwords і session secrets не зберігати в цій таб�
 - warning/error summary;
 - units spent/estimated nullable;
 - unique `(job_id, provider, stage, attempt)`.
+
+### `sync_job_providers`
+
+- «клітинка» матриці збору `(client, provider)` — атомарна одиниця планування, прогресу й retry (§9.1);
+- `id`, `job_id`, optional `batch_id`, `client_id`, `provider`;
+- `status`: `queued/running/succeeded/partial/failed/failed_interrupted/not_configured/skipped/cancel_requested/cancelled`;
+- `progress_percent`, `current_stage`, `attempt`;
+- `lease_owner`, `lease_expires_at`, `heartbeat_at` — per-cell lease доріжки;
+- `profile_key` — `(provider, profile_name)` для serialization/browser lock;
+- `units_spent`/`units_estimated` nullable;
+- safe `error_code`, `error_message` без secret payload; `last_success_at`;
+- `created_at`, `started_at`, `finished_at`;
+- unique `(job_id, provider)`; index `(provider, status)` для вибірки доріжкою; index `(batch_id, status)`.
 
 ### `job_events`
 
@@ -465,16 +481,52 @@ Browser lock key: `(provider, profile_name)`. Один lock на профіль 
 
 ## 9. Job flow і live progress
 
-1. `POST /sync-jobs` валідує client/integrations/period і створює idempotent queued job.
-2. API повертає `202 Accepted`, `job_id`, status URL та events URL.
-3. Worker через коротку транзакцію claim-ить одну job і виставляє lease.
-4. Для кожного provider: preflight → collect → normalize → validate → atomic persist snapshot + metrics.
-5. Після кожної значущої дії worker пише `job_events` і heartbeat.
+### 9.1 Модель збору: матриця «клієнт × сервіс»
+
+Ми маємо чотири сервіси (Ahrefs, Semrush, GSC, Reporting Ninja), і в кожному з них заведені наші клієнти. Робота одного запуску — це набір **клітинок** декартового добутку обраних клієнтів і сервісів: `cell = (client, provider)`. Клітинка — атомарна одиниця збору зі своїм статусом, прогресом, стадіями, подіями, lease і attempt.
+
+**Правило конкурентності:**
+
+- **Між сервісами — паралельно.** Диспетчер тримає одну доріжку (lane) на кожен сервіс; доріжки виконуються одночасно (до 4 активних зборів).
+- **Усередині сервісу — послідовно.** Доріжка бере наступну `queued`-клітинку свого сервісу лише коли попередня завершилась. Причина — один persistent browser-профіль/сесія та metered API на сервіс: паралельний запуск того самого профілю псує сесію або змішує downloads (lock `(provider, profile_name)`, §8.3).
+- Отже, у будь-який момент: **максимум один активний збір на сервіс** і до `min(N_providers, N_profiles)` зборів разом.
+- Для одного клієнта всі його сервіси стартують одночасно; для batch кожна доріжка йде клієнтами послідовно, а доріжки — паралельно.
+
+```text
+час →
+Ahrefs :  [ client A ][ client B ][ client C ]
+Semrush:  [ client A ][ client B ][ client C ]
+GSC    :  [ client A ][ client B ][ client C ]
+RN     :  [ client A ][ client B ][ client C ]
+          ↑ 4 доріжки стартують разом (стовпці — паралельно);
+            усередині доріжки клієнти — послідовно (рядок зліва направо)
+```
+
+Планувальник: `POST /sync-jobs` (один клієнт або batch) створює всі клітинки у `queued`; кожна доріжка атомарно claim-ить наступну свою клітинку (коротка транзакція + lease, профіль зайнятий на час клітинки), збирає, робить короткий atomic-persist, звільняє профіль і бере наступного клієнта. Порядок клієнтів у доріжці детермінований (за пріоритетом/іменем), щоб прогрес був передбачуваний.
+
+### 9.2 Стійкість до помилок і нові клієнти
+
+Ціль: **жодних падінь узагалі**; прогрес зберігається безперервно; нові клієнти, ще не заведені в частині сервісів, обробляються штатно.
+
+1. **Ізоляція клітинки.** Кожна `(client, provider)` виконується в повній ізоляції. Будь-який виняток, timeout, auth-збій чи некоректні дані локалізуються в межах клітинки: вона стає `failed` з безпечним `error_code`, а доріжка спокійно бере наступного клієнта. Помилка **ніколи** не валить доріжку, інші сервіси чи весь запуск.
+2. **Новий клієнт, не заведений усюди.** Перед збором клітинка проходить preflight по `client_integrations`. Якщо інтеграції немає / вона вимкнена / бракує обов'язкових (non-secret) ідентифікаторів → клітинка одразу дістає термінальний стан **`not_configured`**: збір не запускається, помилки немає, запуск не стає `failed`. UI показує «не налаштовано» з CTA додати інтеграцію — це не нуль і не збій. Розрізняємо чотири різні речі: `not_configured` (ніколи не налаштовано) / `auth_required` (налаштовано, але сесія протухла) / `unavailable` (сервіс не має даних) / `failed` (була спроба, стався збій).
+3. **Без падінь — оборона в глибину.** Кожна клітинка обгорнута так, що будь-який виняток конвертується в записаний `failed` без витоку секретів; є per-cell і per-stage timeouts (зависла клітинка не блокує доріжку назавжди); диспетчер супервізорить доріжки — якщо задача доріжки впала, вона перезапускається, а її in-flight клітинка відновлюється через lease; process-level recovery (lease/heartbeat) не лишає «вічних» running після kill процесу.
+4. **Безперервне збереження прогресу.** Прогрес пишеться в БД після кожної значущої дії (події `job_events` з монотонним `seq` + оновлення статусу/прогресу клітинки), не лише в кінці. Оскільки клітинки незалежні, а успішний snapshot immutable пишеться per-cell, краш втрачає щонайбільше одну незакомічену клітинку — усе вже зібране лишається. Після рестарту: завершені клітинки лишаються done, перервана ідемпотентно повторюється або стає `failed_interrupted`, pending — тривають. **`Retry failed only`** повторює лише `failed`/`failed_interrupted` клітинки, не чіпаючи успішні (і не витрачаючи повторно units/browser-сесії, де це можливо). Режими `collect missing` (пропустити клітинки, де вже є свіжий успішний snapshot за період) і `force refresh`; `collect missing` дає швидкий backfill саме тих сервісів, куди клієнта щойно додали.
+
+**Агрегатний статус** per-client job і batch виводиться з клітинок. `not_configured`/`skipped` **не** рахуються за провал: запуск `succeeded`, якщо всі *спробувані* клітинки успішні; `partial`, якщо частина спроб успішна, а частина — ні; `failed`, лише якщо всі спроби впали.
+
+### 9.3 Життєвий цикл запуску
+
+1. `POST /sync-jobs` (один клієнт або batch) валідує client/integrations/period, розкладає запит на клітинки `(client, provider)` і створює їх `queued` (idempotent за ключем).
+2. API повертає `202 Accepted`, `job_id`/`batch_id`, status URL та events URL.
+3. Диспетчер тримає доріжку на кожен сервіс; доріжка через коротку транзакцію claim-ить наступну свою клітинку і виставляє lease (профіль зайнятий на час клітинки).
+4. Для клітинки: preflight → (якщо не `not_configured`) collect → normalize → validate → короткий atomic persist snapshot + metrics; далі профіль звільняється, доріжка бере наступного клієнта.
+5. Після кожної значущої дії worker пише `job_events` і heartbeat (прогрес зберігається безперервно).
 6. SSE endpoint читає events `seq > Last-Event-ID`, віддає `text/event-stream` та keepalive.
 7. Після reconnect browser автоматично продовжує з останнього event id.
-8. Якщо один provider failed, інші успішні snapshots зберігаються, job стає `partial`.
-9. Retry створює нову attempt/job лише для failed providers і посилається на parent job.
-10. Recovery на startup знаходить expired leases: retry safe stages або завершує `failed_interrupted`.
+8. Клітинки незалежні: `failed`/`not_configured` одного сервісу не впливають на інші; успішні snapshots зберігаються, job/batch стає `partial`, якщо частина спроб не вдалася.
+9. `Retry failed only` створює нову attempt лише для failed-клітинок і посилається на parent, не чіпаючи успішні.
+10. Recovery на startup знаходить expired leases: ідемпотентно повторює безпечні стадії або завершує клітинку `failed_interrupted`; «вічних» running не лишається.
 
 SSE тут кращий за WebSocket: канал потрібен переважно server → browser, native `EventSource` має reconnect, а control actions лишаються звичайними POST. Додати fallback polling `GET /sync-jobs/{id}`.
 
@@ -547,6 +599,9 @@ poetry run yovth-report import-ai-seo-history \
 - Свіжі partial дані не перетирають останній complete snapshot у summary; вони доступні в details.
 - Всі dates зберігаються UTC, period boundaries — як local dates timezone клієнта.
 - Dashboard показує `last successful` окремо від `last attempt`.
+- `not_configured` (інтеграції немає) — окремий стан від `unavailable` (сервіс без даних), `auth_required` (сесія протухла) і `failed` (спроба з помилкою); новий клієнт не дає ні краш, ні нуль.
+- Збій в одній клітинці `(client, provider)` ізольований і не впливає на інші клітинки, доріжки чи весь запуск (§9.2).
+- Прогрес персистентний: статус/події пишуться після кожної значущої дії; краш втрачає щонайбільше одну незакомічену клітинку.
 
 ## 13. Безпека
 
@@ -729,6 +784,10 @@ Image startup:
 | Partial data виглядає complete | хибне рішення | quality gates на metric/snapshot/card рівнях |
 | Зміна AISeoTools ламає dashboard | regression | additive namespace, commit pin, contract fixtures, full old suite |
 | Занадто щільні квадратні cards | поганий UX | 3–4 KPI/service, detail drawer, responsive auto-height |
+| Новий клієнт не заведений у частині сервісів | помилки/порожні картки | preflight → `not_configured` cell + CTA, без краху й без нуля |
+| Виняток під час збору одного сервісу | падіння всього запуску | ізоляція клітинки + глобальний guard → `failed` cell, доріжка триває |
+| Один сервіс повільний/завис | блокує весь batch | per-provider доріжки паралельні, per-cell/stage timeout |
+| Краш процесу під час batch | втрата прогресу | per-cell persist + монотонні події + lease recovery; втрата максимум однієї клітинки |
 
 ## 18. Definition of Done для MVP
 
@@ -739,6 +798,9 @@ Image startup:
 - З UI можна запустити sync одного клієнта й вибраних providers.
 - Live progress переживає reload/reconnect; закриття modal не зупиняє job.
 - Partial run зберігає успішні provider snapshots і дозволяє retry failed only.
+- Збір одного клієнта запускає всі його сервіси паралельно; batch збирає сервіси паралельними доріжками, а клієнтів усередині сервісу — послідовно (§9.1).
+- Новий клієнт, не заведений у частині сервісів, дає `not_configured` (не краш і не нуль); решта сервісів збирається штатно.
+- Жодна помилка окремого сервісу/клієнта не валить запуск; прогрес переживає рестарт (§9.2).
 - Restart API/worker не пошкоджує БД і не залишає job назавжди running.
 - Старі AISeoTools CLI-команди й tests не зламані.
 - У БД немає API keys/passwords/session cookies.
@@ -766,3 +828,60 @@ Image startup:
 - [SQLite Write-Ahead Logging](https://www.sqlite.org/wal.html) — reader/writer concurrency та single-writer constraint.
 - [Docker Compose build additional contexts](https://docs.docker.com/reference/compose-file/build/#additional_contexts) — локальне підключення AISeoTools поза build context.
 - Локальні джерела істини: `AISeoTools/docs/AhrefsAudit.md`, `docs/GSC_Audit.md`, `docs/Semrush.md`, `docs/NinjaReport.md`, `docs/BrowserAuto.md` та відповідні Python modules/tests.
+
+## 21. Розширення v2 (періоди, health %, аналітика сторінок, алерти)
+
+Затверджено після MVP. Реалізується тасками 14–19 (`doc/dev/new/`).
+
+### 21.1 Розширені періоди: квартал, рік, кастом
+
+`PeriodKind` розширюється: `week | month | quarter | year | custom`.
+
+- `quarter` — останній повний календарний квартал проти попереднього;
+- `year` — останній повний календарний рік проти попереднього;
+- `custom` — довільні `start`/`end`; previous = діапазон **тієї самої довжини**, що безпосередньо передує current.
+
+**Джерело даних — агрегація вже збереженої історії, без нового збору.** Розширені періоди не витрачають API units і не запускають browser-сесії. Наслідок, який UI зобов'язаний показувати чесно: глибина обмежена тим, що ми встигли зібрати.
+
+**Правила агрегації (доповнення до §12):**
+
+- адитивні range-метрики (clicks, impressions, users, conversions) — сума по збережених підперіодах;
+- **CTR = Σclicks / Σimpressions**, ніколи не середнє від CTR;
+- **avg position** — середнє, зважене за impressions; позначається `is_derived=True` і трактується як наближення;
+- snapshot-метрики (Ahrefs Health, Semrush Authority) **не сумуються**: береться останній valid snapshot усередині діапазону, previous — останній у попередньому діапазоні;
+- якщо збережена історія покриває діапазон **не повністю** → `quality = partial`, а UI показує фактичне покриття («дані за 47 з 92 днів»). Неповне ніколи не видається за повне;
+- розширені періоди доступні **на сторінці клієнта** (§21.6); на головному дашборді лишаються `Тиждень / Місяць`.
+
+### 21.2 Health % на картці клієнта
+
+Композитний показник **перформансу** з явним покриттям. Формула:
+
+- у розрахунок входять **лише сервіси зі `complete`** даними (не `partial/stale/unavailable/not_configured`);
+- для кожної метрики з повними current і previous — бал 0..100, де **50 = без змін**; напрямок задає `better_direction` (спад Errors — це покращення), відносна зміна клампиться (напр. ±50% → 0/100), щоб викиди не ламали шкалу;
+- **Ahrefs Site Health** входить напряму як абсолютний 0..100, а не через дельту;
+- sub-score сервісу = середнє його метрик; **health % = зважене середнє sub-scores** (ваги — у metric catalog);
+- **coverage** = скільки сервісів внесли внесок зі скількох налаштованих; показується поруч: `72% · 3/4 сервіси`;
+- якщо жоден сервіс не вніс внеску → `—`, **ніколи `0`** (§12).
+
+### 21.3 Сортування дашборду за якістю даних
+
+Зараз сортування немає взагалі, тому клієнти без під'єднаних сервісів опиняються вгорі. Вводиться детермінований default-порядок **за якістю даних**: `coverage ↓ → quality rank ↓ → freshness ↓ → name ↑`. Клієнти з `not_configured`/без даних **завжди в кінці**. Явний контрол сортування: якість (default), health %, назва, останній збір, найбільше просідання.
+
+### 21.4 Розмірні дані GSC (сторінки та запити)
+
+Чинна `metric_values` зберігає лише плоскі KPI і **не має розмірності**. Для аналітики й алертів додаються розмірні таблиці per-page та per-query (клієнт, період, `clicks/impressions/ctr/position`, quality). Джерело — **тільки GSC**: це єдиний провайдер, що дає всі три метрики консистентно.
+
+Обмеження обсягу обов'язкові (SQLite, багато клієнтів × періодів): top-N рядків за impressions на період, решта — агрегований залишок; окремий (коротший) retention; індекси за `(client, dimension, period)`. Обрізаний набір позначається `truncated` і **не видається за повний список** (§12).
+
+### 21.5 Алерти: просідання та зростання сторінок
+
+Блок на сторінці клієнта: сторінки, що **втрачають** темп, і ті, що **набирають**.
+
+- база — per-page clicks/impressions за два суміжні періоди;
+- поріг спрацювання: відносна зміна ≥ порогу (default 20%) **І** мінімальний обсяг у базовому періоді (щоб `1→2` кліки не шуміли);
+- сортування — за **абсолютним впливом** (втрачені/здобуті кліки), не за відсотком;
+- показуються точні дати обох періодів; на `partial` даних алерт не будується.
+
+### 21.6 Сторінка клієнта
+
+Окрема сторінка (не drawer): розширені періоди §21.1, таби аналітики (кліки / імпресії / запити у розрізі сторінок і запитів), блок алертів §21.5 і графіки. Стан (клієнт, період, таб, фільтри) зберігається в URL, щоб переживати reload/share/back (`frontend/AGENTS.md §12`).

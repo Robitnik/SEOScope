@@ -38,11 +38,13 @@
 - Snapshot- і range-метрики не порівнюються однаково (див. PLAN §12).
 - Секрети (API keys, паролі, session cookies) **не** потрапляють у БД, events, логи чи в помилки, віддані UI.
 - Browser-профілі одного провайдера не запускаються паралельно (lock `(provider, profile_name)`).
+- Збір: **між сервісами паралельно, усередині сервісу послідовно** (доріжки, PLAN §9.1). Клітинка `(client, provider)` ізольована — її збій ніколи не валить інші клітинки, доріжки чи весь запуск.
+- Новий клієнт без інтеграції в сервісі → стан `not_configured` (не краш, не нуль, не `failed`). Прогрес зберігається безперервно й переживає рестарт (PLAN §9.2).
 - Зміни в `AISeoTools` — **тільки адитивні** (див. PLAN §8): не перейменовувати наявні функції/CLI, не міняти return shapes, нові аргументи — optional keyword-only з дефолтами. Перед злиттям — уся стара test suite зелена.
 
 ### 5. Перевірити якість
 - Напиши тести свого рівня у `tests/unit/<module>/` (юніти модуля — відповідальність власника модуля).
-- Прогони лінт, type-check і `pytest` свого модуля. Для фронту — візуальний loop і чекліст із `AGENTS.md §15–16`.
+- Прогони лінт, type-check і `pytest` свого модуля **у Docker** (див. «Середовище виконання» нижче). Для фронту — візуальний loop і чекліст із `AGENTS.md §15–16`.
 - Пройди **Definition of Done / Gate** своєї таски. Якщо gate не виконано — таска не готова.
 
 ## Коли таска готова — перенести new → done і задокументувати
@@ -106,13 +108,39 @@
 - Посилання на код у відповідях — клікабельні markdown-лінки виду `[file.py:42](app/file.py#L42)`.
 - Провайдер/метрика називаються **однаково** скрізь: catalog → API → фронт → фільтри → помилки.
 
-## Команди (як буде готовий скелет — task-01)
+## Середовище виконання — ТІЛЬКИ Docker
+
+Увесь Python виконується **лише всередині Docker-контейнера**, ніколи на хості. Це стосується застосунку, worker, тестів, міграцій, лінтера, type-check, CLI-скриптів і навіть разового REPL. Хост використовується тільки для редагування файлів і git.
+
+**NEVER (release blocker):**
+
+- запускати на хості `python`, `pip`, `poetry`, `pytest`, `alembic`, `uvicorn`, `ruff`, `mypy`;
+- створювати host-віртуалку або робити `poetry install` на хості;
+- «швидко перевірити» щось системним Python (він дасть хибний результат).
+
+**MUST:**
+
+- будь-яка Python-команда — через `docker compose exec <service> …` (стек піднятий) або `docker compose run --rm <service> …` (ефемерно);
+- залежності живуть в образі (poetry install на build-етапі); у контейнері виклик — `poetry run <cmd>`;
+- редагування файлів — на хості (код bind-mounted у контейнер), **виконання — у контейнері**.
+
+**Чому так (продумано):** образ пінить Python `>=3.11`, конкретний commit AISeoTools і встановлює Playwright/Chromium — саме як у проді. Системний Python цього не має: browser-збір і частина тестів на хості або впадуть, або дадуть хибний «works on my machine». Docker-only прибирає дрейф середовища й тримає dev = prod.
+
+### Канонічні команди
 
 ```bash
-poetry install                     # залежності
-poetry run alembic upgrade head    # міграції (task-03)
-poetry run uvicorn app.main:app --reload   # API
-poetry run python -m app.jobs.worker       # worker (task-05)
-poetry run pytest                  # тести
-docker compose up --build          # повний стек
+docker compose up -d --build                              # підняти стек (api + worker)
+docker compose exec api bash                              # інтерактивна оболонка в контейнері
+docker compose exec api poetry run pytest                 # усі тести
+docker compose exec api poetry run pytest tests/unit/metrics -q
+docker compose exec api poetry run alembic upgrade head   # міграції (task-03)
+docker compose exec api poetry run ruff check .           # lint
+docker compose exec api poetry run mypy app               # types
+docker compose exec worker poetry run python -m app.jobs.worker   # worker (task-05)
+docker compose run --rm api poetry run yovth-report import-ai-seo-history --source /mnt/ai-seo-tools --dry-run
+docker compose run --rm api poetry run pytest             # ефемерно, коли стек не піднятий
+docker compose logs -f api                                # логи
+docker compose down                                       # зупинити
 ```
+
+`api` і `worker` — один образ, різні команди; для разових скриптів/CLI/тестів бери `api`. Якщо змінив залежності (`pyproject.toml`) — перебудуй образ: `docker compose build` / `up --build`.
