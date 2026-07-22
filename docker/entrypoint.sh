@@ -3,16 +3,12 @@
 # built in the Dockerfile's builder stage — no `poetry run` needed here.
 set -euo pipefail
 
-# Local AISeoTools checkout (task-08+ providers import `seo_audit`), bind-
-# mounted at /seo/AISeoTools by compose.yaml when the sibling repo exists on
-# the host. Absent on CI/deploy (docker/Dockerfile builds and runs fine
-# without it — these providers are exercised only via live smoke, PLAN §15).
-# Installed here at container start, not baked into the image, so the image
-# never ships AISeoTools' `.env`/session/profile state.
-if [ -d "/seo/AISeoTools/seo_audit" ] && ! python -c "import seo_audit" >/dev/null 2>&1; then
-  echo "Installing local AISeoTools checkout (--with local)..."
-  poetry install --no-root --with local
-fi
+# NOTE — AISeoTools is NOT installed here any more. Its dependencies are baked
+# into the image at build time (see Dockerfile), and its own code arrives via
+# the /seo/AISeoTools bind mount, which the build-time editable install already
+# points at. Running `poetry install --with local` here re-installed 65 packages
+# on every container recreate and was ~8s of the ~16s `compose up --wait` took;
+# nothing about it needed to happen at runtime.
 
 echo "Checking configuration..."
 python -c "from app.core.config import get_settings; get_settings()"

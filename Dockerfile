@@ -53,7 +53,43 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     && pip install "poetry==2.4.1"
 
 COPY pyproject.toml poetry.lock ./
-RUN poetry install --no-root
+
+# AISeoTools itself is never baked in — it carries `.env`, browser profiles and
+# session state, and compose bind-mounts the real checkout at /seo/AISeoTools.
+# Its 65 locked DEPENDENCIES, though, are ordinary PyPI packages with nothing
+# secret about them, and installing them at *container start* (the old
+# entrypoint step) cost ~8s on every `compose up` that recreated the container.
+#
+# `seo-audit` is a `develop = true` path dependency resolving to /seo/AISeoTools,
+# so `--with local` only needs *something* at that path to install the whole
+# dependency set from the lock. This stub is that something; at runtime the bind
+# mount covers it and the editable install resolves to the real code.
+#
+# If the mount is ever missing (CI/deploy), the stub raises on import with a
+# clear message instead of silently importing an empty package.
+RUN mkdir -p /seo/AISeoTools/seo_audit \
+ && printf '%s\n' \
+      '[project]' \
+      'name = "seo-audit"' \
+      'version = "0.1.0"' \
+      'description = "build-time stub, replaced by the bind-mounted checkout"' \
+      'requires-python = ">=3.11"' \
+      '' \
+      '[tool.poetry]' \
+      'packages = [{ include = "seo_audit" }]' \
+      '' \
+      '[build-system]' \
+      'requires = ["poetry-core>=2.0.0"]' \
+      'build-backend = "poetry.core.masonry.api"' \
+    > /seo/AISeoTools/pyproject.toml \
+ && printf '%s\n' \
+      'raise ImportError(' \
+      '    "seo_audit is the build-time stub: the AISeoTools checkout is not mounted at "' \
+      '    "/seo/AISeoTools. Start via compose (which bind-mounts it) or set AISEOTOOLS_PATH."' \
+      ')' \
+    > /seo/AISeoTools/seo_audit/__init__.py
+
+RUN poetry install --no-root --with local
 
 COPY app ./app
 COPY frontend ./frontend
