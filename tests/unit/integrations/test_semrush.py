@@ -80,6 +80,49 @@ class _AlwaysCancel:
         return True
 
 
+# ── browser readiness ────────────────────────────────────────────────────────
+# Every preflight test below monkeypatches `_browser_profile_ready` wholesale, so its own logic
+# had no coverage at all — which is exactly how the 2026-07-22 failure shipped: Semrush reported
+# "Integration not connected" for all 14 configured clients while a warm, logged-in Chrome sat one
+# CDP call away. These cover the helper itself.
+
+
+def test_browser_readiness_in_a_consumer_follows_the_warm_chrome(monkeypatch):
+    """This container is never given the profile directory, so directory existence is not a
+    question it can answer — a reachable warm Chrome is what readiness means here."""
+    monkeypatch.setattr("seo_audit.browser.warm.attach_only", lambda: True)
+    monkeypatch.setattr(
+        "seo_audit.browser.warm.warm_cdp_url", lambda provider: "http://127.0.0.1:9222"
+    )
+    assert adapter_module._browser_profile_ready("semrush") is True
+
+
+def test_browser_readiness_in_a_consumer_is_false_without_a_warm_chrome(monkeypatch):
+    monkeypatch.setattr("seo_audit.browser.warm.attach_only", lambda: True)
+    monkeypatch.setattr("seo_audit.browser.warm.warm_cdp_url", lambda provider: None)
+    assert adapter_module._browser_profile_ready("semrush") is False
+
+
+def test_browser_readiness_on_the_owning_machine_still_follows_the_profile_dir(monkeypatch):
+    """The host CAN launch its own Chrome, so there an absent profile really does mean the
+    one-time manual login was never done."""
+    monkeypatch.setattr("seo_audit.browser.warm.attach_only", lambda: False)
+
+    class _Profile:
+        def __init__(self, present):
+            self.user_data_dir = type("_D", (), {"is_dir": lambda _s: present})()
+
+    monkeypatch.setattr(
+        "seo_audit.browser.profile.BrowserProfile", lambda provider: _Profile(True)
+    )
+    assert adapter_module._browser_profile_ready("semrush") is True
+
+    monkeypatch.setattr(
+        "seo_audit.browser.profile.BrowserProfile", lambda provider: _Profile(False)
+    )
+    assert adapter_module._browser_profile_ready("semrush") is False
+
+
 # ── preflight ────────────────────────────────────────────────────────────────
 
 def test_preflight_missing_domain_is_not_configured():

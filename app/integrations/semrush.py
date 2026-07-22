@@ -71,15 +71,30 @@ def _dash_quality_rank(value: str) -> int:
 
 
 def _browser_profile_ready(profile: str) -> bool:
-    """Best-effort, cheap readiness check — never launches a browser. A profile directory
-    existing does not guarantee a live session (a stale/expired session only surfaces as
-    `auth_required` once `collect()` actually opens it), but its ABSENCE is a reliable
-    `not_configured` signal pointing at the one-time manual login flow."""
+    """Can we actually drive a Semrush browser session? Cheap — never launches a browser.
+
+    The answer depends on WHICH machine is asking, because the two have different capabilities:
+
+      * the machine that owns the profile can launch its own Chrome, so an existing profile
+        directory is the right signal. Its absence reliably means "the one-time manual login has
+        never been done" and points at `seo-audit browser-login`.
+      * this container cannot launch anything and is deliberately not given the profile directory
+        at all, so `user_data_dir.is_dir()` is False here no matter how logged-in the host is.
+        What it can do is attach to a warm Chrome — so a reachable warm session IS readiness.
+
+    Asking only the first question was the live 2026-07-22 failure: Semrush came back
+    "Integration not connected" for every one of the 14 configured clients while a warm,
+    logged-in Chrome sat one CDP call away. Note this is still a readiness check, not a liveness
+    one — an expired session only surfaces as `auth_required` once `collect()` opens it.
+    """
     try:
+        from seo_audit.browser import warm
         from seo_audit.browser.profile import BrowserProfile
     except ImportError:
         return False
     try:
+        if warm.attach_only():
+            return warm.warm_cdp_url(profile) is not None
         return bool(BrowserProfile(profile).user_data_dir.is_dir())
     except ValueError:
         return False
