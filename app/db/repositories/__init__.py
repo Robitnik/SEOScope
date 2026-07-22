@@ -1,8 +1,8 @@
 """Repository layer (PLAN §6): the only place that runs queries against the ORM.
 
 All repositories are written against a plain synchronous `sqlalchemy.orm.Session`
-— this is the one implementation both runtimes share (CLAUDE.md: "repository-шар,
-через який працюють і API, і worker"):
+— this is the one implementation both runtimes share (CLAUDE.md: "the repository
+layer that both the API and the worker operate through"):
 
 - The **worker** is a sync process (PLAN §5.1) and calls repositories directly
   with a `Session` from `app.db.session.worker_session_scope()`.

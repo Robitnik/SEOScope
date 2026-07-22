@@ -50,13 +50,13 @@ async function run(browser) {
   await page.locator("[data-start]").click();
   await page.locator(".session-stage").waitFor();
 
-  // 1. Dead session -> "потрібен вхід" row + an available "Увійти" button.
-  await page.locator(semrushRow).getByText("Потрібен вхід", { exact: true }).waitFor({ timeout: 10000 });
-  assert.equal(await page.locator(semrushButton).getAttribute("aria-disabled"), "false", "«Увійти» is enabled once the session is actually dead");
+  // 1. Dead session -> "Login required" row + an available login button.
+  await page.locator(semrushRow).getByText("Login required", { exact: true }).waitFor({ timeout: 10000 });
+  assert.equal(await page.locator(semrushButton).getAttribute("aria-disabled"), "false", "the login button is enabled once the session is actually dead");
   assert.equal(await page.locator(semrushButton).isVisible(), true, "the login button is keyboard/pointer reachable");
 
   // A not_configured provider (reporting_ninja for this client) never gets a login button.
-  await page.locator(rnRow).getByText("Не налаштовано", { exact: true }).waitFor();
+  await page.locator(rnRow).getByText("Not configured", { exact: true }).waitFor();
   assert.equal(await page.locator(`${rnRow} [data-session-action]`).count(), 0, "not_configured never shows a login action");
 
   // Other services are visibly still collecting while Semrush waits — the matrix isn't frozen.
@@ -69,10 +69,10 @@ async function run(browser) {
   assert.equal(await page.evaluate(() => document.activeElement?.dataset?.sessionAction), "semrush", "focus stays on the same control right after activation (starting phase)");
 
   // 3. Waiting state: busy button (aria-disabled, still focusable), countdown copy, other work continues.
-  await page.locator(semrushRow).getByText("Очікуємо входу…", { exact: true }).waitFor({ timeout: 5000 });
+  await page.locator(semrushRow).getByText("Waiting for login…", { exact: true }).waitFor({ timeout: 5000 });
   assert.equal(await page.locator(semrushButton).getAttribute("aria-disabled"), "true", "the button reports busy while waiting");
   assert.equal(await page.evaluate(() => document.activeElement?.dataset?.sessionAction), "semrush", "focus still hasn't moved once in the waiting phase");
-  await page.locator(semrushRow).getByText(/Залишилось \d{2}:\d{2}/).waitFor();
+  await page.locator(semrushRow).getByText(/\d{2}:\d{2} remaining\./).waitFor();
   const ahrefsCellDuringWait = await page.locator(".progress-matrix tbody td").nth(1).innerText();
   assert.notEqual(ahrefsCellBefore, ahrefsCellDuringWait, "other providers keep visibly progressing while Semrush is parked, not frozen");
 
@@ -87,7 +87,7 @@ async function run(browser) {
   await page.getByLabel("Close dialog").first().click();
   assert.equal(await page.locator("#job-dock").isVisible(), true, "closing the dialog mid-wait keeps the background job alive");
   await page.locator("#job-dock-button").click();
-  await page.locator(semrushRow).getByText(/Очікуємо входу…|Логін успішний|Сесія активна/).waitFor();
+  await page.locator(semrushRow).getByText(/Waiting for login…|Login succeeded|Session active/).waitFor();
 
   // 5. Auto-continue: no manual restart. Ahrefs/GSC for this single client
   // finish long before the parked Semrush cell resumes, so the whole job
@@ -95,7 +95,7 @@ async function run(browser) {
   // the session-stage panel is then correctly hidden (job done, matrix covers
   // it) rather than lingering on "active". Assert the terminal outcome
   // itself, not a transient row that may legitimately never render.
-  await page.locator("#sync-title").getByText(/Збір завершено/).waitFor({ timeout: 15000 });
+  await page.locator("#sync-title").getByText(/Collection finished/).waitFor({ timeout: 15000 });
   assert.equal(await page.locator('[data-start]').count(), 0, "collection never needed a second manual start");
   await page.locator(".progress-matrix").getByText("Completed").first().waitFor();
 
@@ -105,9 +105,9 @@ async function run(browser) {
   await page.goto(`${baseUrl}/?fixture=sessions-timeout`, { waitUntil: "networkidle" });
   await page.locator("#sync-all-button").click();
   await page.locator("[data-start]").click();
-  await page.locator(semrushRow).getByText("Таймаут очікування", { exact: true }).waitFor();
+  await page.locator(semrushRow).getByText("Wait timed out", { exact: true }).waitFor();
   assert.equal(await page.locator(`${semrushRow} [data-session-action]`).count(), 0, "a timed-out row is not actionable again from here — Retry failed covers it");
-  await page.locator(semrushRow).getByText(/Інші сервіси й клієнти не постраждали/).waitFor();
+  await page.locator(semrushRow).getByText(/Other services and clients were not affected/).waitFor();
 
   assert.deepEqual(browserErrors, [], `browser console errors: ${browserErrors.join("; ")}`);
   console.log("sync-auth-flow: ok");

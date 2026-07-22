@@ -3,7 +3,7 @@ import { formatUaNumber, formatUaRange } from "./client-page.js";
 
 const uaShortDay = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short" });
 
-// Compact tick label ("8–14 черв") — the full "8 черв. – 14 черв. 2026 р."
+// Compact tick label ("8–14 Jun") — the full "8 Jun – 14 Jun 2026"
 // from `formatUaRange` overlaps at narrow widths with `maxRotation: 0`
 // (chosen to keep labels flat/readable rather than diagonal).
 function shortChartLabel(start, end) {

@@ -176,7 +176,7 @@ CATALOG: dict[str, MetricSpec] = {
 # Derived-metric rules: `derived_key -> (numerator_key, denominator_key)`.
 # Only computed by `normalize.normalize_result` when both components are
 # present with `quality == complete` for the same `period_role` (PLAN §12:
-# "CTR = clicks / impressions лише якщо обидва complete").
+# "CTR = clicks / impressions only if both are complete").
 DERIVED_RATIO_RULES: dict[str, tuple[str, str]] = {
     "gsc_ctr": ("gsc_clicks", "gsc_impressions"),
 }

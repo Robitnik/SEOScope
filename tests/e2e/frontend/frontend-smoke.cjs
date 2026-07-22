@@ -24,20 +24,30 @@ async function main() {
   await page.goto(`${baseUrl}/?fixture=all-states`, { waitUntil: "networkidle" });
   await page.locator(".client-card").first().waitFor();
   assert.equal(await page.locator(".client-card").count(), 4, "fixture renders four client cards");
-  assert.equal(await page.getByText("Немає даних", { exact: true }).count() > 0, true, "null is shown as missing, in Ukrainian");
+  assert.equal(await page.getByText("No data", { exact: true }).count() > 0, true, "null is shown as missing, never as a number");
   assert.equal(await page.getByText("0", { exact: true }).count() > 0, true, "numeric zero remains visible");
-  assert.match(await page.locator("#period-copy").innerText(), /13 лип.*2026.*19 лип.*2026.*06 лип.*2026.*12 лип.*2026/su, "exact current and previous ranges are visible");
+  assert.match(await page.locator("#period-copy").innerText(), /Jul 13, 2026.*Jul 19, 2026.*Jul 06, 2026.*Jul 12, 2026/su, "exact current and previous ranges are visible");
 
   // Inline dates (frontend/AGENTS.md §3/§5): visible as page text, not only in a title attribute.
   const dateLines = await page.locator(".provider-dates").allInnerTexts();
   assert.equal(dateLines.length > 0, true, "provider blocks render an inline date line");
-  assert.equal(dateLines.some((text) => text.includes("Знімок на")), true, "snapshot metrics show an as-of date, not a range");
-  assert.equal(dateLines.some((text) => /\d{2} лип\. 2026.*проти.*\d{2} лип\. 2026/su.test(text)), true, "range metrics show exact current vs previous dates");
+  assert.equal(dateLines.some((text) => text.includes("Snapshot as of")), true, "snapshot metrics show an as-of date, not a range");
+  assert.equal(dateLines.some((text) => /\w{3} \d{2}, 2026.*vs.*\w{3} \d{2}, 2026/su.test(text)), true, "range metrics show exact current vs previous dates");
   assert.equal(await page.locator(".metric-table th[title]").count(), 0, "date info is not hover-only");
 
-  // Health % + coverage (PLAN §21.2): value and coverage always render together, `null` never as `0`.
-  assert.equal(await page.locator(".health-chip__value", { hasText: "—" }).count() > 0, true, "a client with no complete service shows — for health, never 0");
-  assert.equal(await page.locator(".health-chip", { hasText: "78%" }).count(), 1, "computed health % renders alongside coverage");
+  // Health % + coverage (PLAN §21.2): the corner gauge always carries the value,
+  // and coverage rides along in its accessible label. `null` never renders as `0`.
+  assert.equal(await page.locator(".health-gauge__number", { hasText: "—" }).count() > 0, true, "a client with no complete service shows — for health, never 0");
+  assert.equal(await page.locator(".health-gauge", { hasText: "78%" }).count(), 1, "computed health % renders on the gauge");
+  assert.equal(await page.locator('.health-gauge[title*="2/3 services"]').count(), 1, "coverage travels with the health value");
+
+  // Card -> client page (router.js `#/client/<id>`): logo, name, and the open icon are all entry points.
+  const firstCard = page.locator(".client-card").first();
+  const cardId = await firstCard.getAttribute("data-client-id");
+  for (const selector of [".client-logo-link", ".client-title h2 a", ".client-open"]) {
+    assert.equal(await firstCard.locator(selector).getAttribute("href"), `#/client/${cardId}`, `${selector} links to the client page`);
+  }
+  assert.match(await firstCard.locator(".client-domain > a").first().getAttribute("href"), /^https:\/\//, "the domain itself still links to the client's site");
 
   for (const [width, height] of [[390, 844], [768, 900], [1024, 900], [1440, 1000], [1920, 1080]]) {
     await page.setViewportSize({ width, height });
@@ -99,9 +109,9 @@ async function main() {
   await page.screenshot({ path: path.join(screenshots, "dashboard-390.png"), fullPage: true });
 
   await page.goto(`${baseUrl}/?fixture=empty`, { waitUntil: "networkidle" });
-  await page.getByText("Жодного клієнта не знайдено.").waitFor();
+  await page.getByText("No clients found.").waitFor();
   await page.goto(`${baseUrl}/?fixture=error`, { waitUntil: "networkidle" });
-  await page.getByText("Дашборд не вдалося завантажити.").waitFor();
+  await page.getByText("Failed to load dashboard.").waitFor();
 
   assert.deepEqual(browserErrors, [], `browser console errors: ${browserErrors.join("; ")}`);
   await browser.close();

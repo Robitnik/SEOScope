@@ -17,12 +17,13 @@ class Provider(StrEnum):
 
 
 class PeriodKind(StrEnum):
-    """Період порівняння (PLAN §3.1, §21.1).
+    """Comparison period (PLAN §3.1, §21.1).
 
-    `week`/`month` — базові періоди дашборду. `quarter`/`year`/`custom`
-    додані task-14 і рахуються **агрегацією вже збереженої історії** (нуль
-    нового збору), тому доступні лише там, де UI чесно показує покриття —
-    на сторінці клієнта (§21.1/§21.6), не на головному дашборді.
+    `week`/`month` are the dashboard's base periods. `quarter`/`year`/`custom`
+    were added by task-14 and are computed **by aggregating already-stored
+    history** (zero new collection), so they are only available where the UI
+    honestly shows coverage — on the client page (§21.1/§21.6), not on the
+    main dashboard.
     """
 
     week = "week"

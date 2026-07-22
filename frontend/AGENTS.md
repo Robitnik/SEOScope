@@ -236,7 +236,7 @@ Every empty or failed state gives a specific next action. Never end at “Someth
 
 ## 14. Copy rules
 
-- UI copy is Ukrainian unless the product specification explicitly selects another locale.
+- UI copy is English. Ukrainian is used only for docs, code comments, and chat replies to the user — never for rendered UI strings.
 - Code identifiers remain English.
 - Write from the operator's point of view with active, plain verbs.
 - A label labels; helper text explains; a button acts. Do not make one string do all three jobs.

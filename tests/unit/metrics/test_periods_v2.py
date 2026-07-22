@@ -111,7 +111,7 @@ def test_custom_previous_has_the_same_length_and_ends_the_day_before():
     assert periods.previous.end == date(2026, 3, 31)
     assert periods.previous.start == date(2026, 2, 15)
     assert (periods.previous.end - periods.previous.start).days + 1 == length
-    assert periods.label == "1 квіт – 15 трав 2026 vs 15 лют – 31 бер 2026"
+    assert periods.label == "Apr 1 – May 15 2026 vs Feb 15 – Mar 31 2026"
 
 
 def test_custom_odd_length_range_of_one_day():
@@ -124,7 +124,7 @@ def test_custom_odd_length_range_of_one_day():
 
     assert periods.current.start == periods.current.end == date(2026, 3, 1)
     assert periods.previous.start == periods.previous.end == date(2026, 2, 28)
-    assert periods.label == "1–1 бер 2026 vs 28–28 лют 2026"
+    assert periods.label == "Mar 1–1 2026 vs Feb 28–28 2026"
 
 
 def test_custom_previous_may_cross_a_year_boundary():
@@ -137,7 +137,7 @@ def test_custom_previous_may_cross_a_year_boundary():
 
     assert periods.previous.start == date(2025, 12, 11)
     assert periods.previous.end == date(2026, 1, 9)
-    assert periods.label == "10 січ – 8 лют 2026 vs 11 груд 2025 – 9 січ 2026"
+    assert periods.label == "Jan 10 – Feb 8 2026 vs Dec 11 2025 – Jan 9 2026"
 
 
 def test_custom_ignores_the_anchor():
@@ -182,7 +182,7 @@ def test_quarter_to_date_compares_equal_elapsed_days():
     assert (periods.previous.end - periods.previous.start).days + 1 == elapsed
     # A partial quarter must not be labelled "Q2 2026" — that would claim a
     # full quarter we do not have.
-    assert periods.label == "1 лип – 10 серп 2026 vs 1 квіт – 11 трав 2026"
+    assert periods.label == "Jul 1 – Aug 10 2026 vs Apr 1 – May 11 2026"
 
 
 def test_year_to_date_clamps_previous_to_the_year_end():

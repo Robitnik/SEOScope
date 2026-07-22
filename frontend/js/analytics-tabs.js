@@ -12,7 +12,7 @@ const SORT_OPTIONS = [
 // One row = current period's own row (always present, since it drives the
 // list) joined with the matching previous-period row by dimension_value, if
 // any. A page/query absent from the previous period keeps `*_previous` as
-// `null` — never `0` — and is flagged "вперше" (PLAN §12).
+// `null` — never `0` — and is flagged "new" (PLAN §12).
 export function mergeRows(currentRows, previousRows) {
   const byValue = new Map((previousRows || []).map((row) => [row.dimension_value, row]));
   return (currentRows || []).map((row) => {

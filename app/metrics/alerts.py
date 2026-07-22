@@ -193,7 +193,7 @@ def detect_alerts(
 
     for row in pages_current:
         if row.rank is None:
-            continue  # aggregated top-N remainder ("інше"), not one real page/query
+            continue  # aggregated top-N remainder ("other"), not one real page/query
 
         previous_row = previous_by_value.get(row.dimension_value)
         if previous_row is None:

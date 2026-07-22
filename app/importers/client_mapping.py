@@ -1,7 +1,7 @@
 """AISeoTools `clients.json` -> client/domain mapping (task-07).
 
 Builds a `code -> domain` map for conflict/ambiguity detection *before* any
-DB write happens (PLAN §11: "показує конфлікти мапінгу... перед записом").
+DB write happens (PLAN §11: "shows mapping conflicts... before writing").
 Ahrefs/Semrush have no representation in `clients.json` at all — confirmed
 against the AISeoTools source, those pipelines take a bare domain argument
 and never consult this file — so this module only ever maps `gsc`/`ga4`

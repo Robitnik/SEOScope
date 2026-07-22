@@ -25,7 +25,7 @@ Each collection attempt gets its OWN, freshly created directory under
 `settings.artifacts_dir` (never AISeoTools' shared CLI `out/` tree, and never reused across
 attempts) — this is what makes a retry structurally unable to mix an earlier attempt's
 downloads into a new one, and what keeps a stale CSV from a previous run out of the snapshot
-(PLAN §17 risk; PLAN Етап 6 gate).
+(PLAN §17 risk; PLAN Stage 6 gate).
 
 `seo_audit` is only imported lazily, inside method bodies — never at module import time — so
 merely importing/registering this adapter (which `app/integrations/__init__.py` does
@@ -224,7 +224,7 @@ class SemrushAdapter:
         on_event = _bridge_emit(emit)
 
         browser_allowed = context.source_mode in (SourceMode.browser, SourceMode.auto)
-        # "явна політика/бюджет": in `auto` mode the metered API is only tried when a budget
+        # "explicit policy/budget": in `auto` mode the metered API is only tried when a budget
         # was explicitly configured; in explicit `api` mode it is always allowed.
         api_allowed = context.source_mode == SourceMode.api or (
             context.source_mode == SourceMode.auto and bool(unit_budget)

@@ -25,7 +25,7 @@ def test_closed_week_matches_plan_example():
     assert periods.current.end == date(2026, 7, 19)
     assert periods.previous.start == date(2026, 7, 6)
     assert periods.previous.end == date(2026, 7, 12)
-    assert periods.label == "13–19 липня vs 6–12 липня"
+    assert periods.label == "Jul 13–19 vs Jul 6–12"
 
 
 def test_closed_week_crosses_year_boundary():
@@ -35,7 +35,7 @@ def test_closed_week_crosses_year_boundary():
     assert periods.current.end == date(2027, 1, 3)
     assert periods.previous.start == date(2026, 12, 21)
     assert periods.previous.end == date(2026, 12, 27)
-    assert periods.label == "28 грудня 2026 – 3 січня 2027 vs 21–27 грудня"
+    assert periods.label == "Dec 28 2026 – Jan 3 2027 vs Dec 21–27"
 
 
 # --- closed month --------------------------------------------------------

@@ -41,7 +41,7 @@ function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function sortFixtureClients(clients, sort) {
   const qualityRank = { ok: 3, stale: 2, attention: 1, failed_all: 0 };
   const coverage = (client) => client.providers.filter((item) => item.state !== "not_configured").length;
-  const byName = (a, b) => a.name.localeCompare(b.name, "uk-UA");
+  const byName = (a, b) => a.name.localeCompare(b.name, "en-US");
   const sorted = [...clients];
   if (sort === "health") {
     sorted.sort((a, b) => Number(b.health?.value ?? -1) - Number(a.health?.value ?? -1) || byName(a, b));
@@ -63,9 +63,9 @@ export async function getDashboard({ period, query, status, provider, sort = "qu
     if (FIXTURE_MODE === "error") { await wait(500); throw new Error("Fixture connection error"); }
     if (FIXTURE_MODE === "loading") await wait(2400);
     const payload = await fixture(FIXTURE_MODE === "empty" ? "dashboard-empty" : "dashboard-all-states");
-    const normalizedQuery = query?.toLocaleLowerCase("uk-UA") || "";
+    const normalizedQuery = query?.toLocaleLowerCase("en-US") || "";
     const clients = sortFixtureClients(payload.clients.filter((client) => {
-      const matchesQuery = !normalizedQuery || `${client.name} ${client.domain}`.toLocaleLowerCase("uk-UA").includes(normalizedQuery);
+      const matchesQuery = !normalizedQuery || `${client.name} ${client.domain}`.toLocaleLowerCase("en-US").includes(normalizedQuery);
       const matchesStatus = !status || client.overall_status === status;
       const matchesProvider = !provider || client.providers.some((item) => item.provider === provider);
       return matchesQuery && matchesStatus && matchesProvider;
@@ -172,8 +172,8 @@ function readMockJobs() {
 function writeMockJobs(jobs) { localStorage.setItem("theyovth.mock-jobs.v1", JSON.stringify(jobs)); }
 
 // task-22 fixture-mode auth demo: one cell (Semrush, first client) parks at
-// `awaiting_auth` instead of always resolving, so the whole "запуск ->
-// перевірка -> Увійти -> авто-продовження" loop is demoable/e2e-testable
+// `awaiting_auth` instead of always resolving, so the whole "start ->
+// check -> Log in -> auto-continue" loop is demoable/e2e-testable
 // without Docker or a real warm Chrome. `startProviderLogin`/`getProviderSession`
 // below read/write the same login-trigger timestamp this reads.
 const MOCK_LOGINS_KEY = "theyovth.mock-logins.v1";
@@ -282,7 +282,7 @@ export async function getSyncJob(id) {
 }
 
 // task-22 HTTP surface for task-20's `check_session`/`start_login`
-// (`app/api/providers.py`) — the modal's «Увійти» button and the standalone
+// (`app/api/providers.py`) — the modal's «Log in» button and the standalone
 // client-card badge both go through these two.
 const AUTH_PAUSE_TIMEOUT_SECONDS = 15 * 60; // mirrors `app.jobs.lane.DEFAULT_AUTH_PAUSE_TIMEOUT_SECONDS`
 

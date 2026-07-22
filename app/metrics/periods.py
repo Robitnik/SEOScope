@@ -30,39 +30,41 @@ from pydantic import BaseModel, ConfigDict
 from app.schemas.adapter import DateRange
 from app.schemas.enums import ComparisonMode, PeriodKind
 
-# Genitive-case Ukrainian month names, as used in "13–19 липня" (PLAN §3.1).
-_MONTH_GENITIVE: tuple[str, ...] = (
-    "січня",
-    "лютого",
-    "березня",
-    "квітня",
-    "травня",
-    "червня",
-    "липня",
-    "серпня",
-    "вересня",
-    "жовтня",
-    "листопада",
-    "грудня",
+# Month names, as used in "Jul 13-19" (PLAN §3.1 originally specified
+# Ukrainian genitive-case names; translated to English per explicit request —
+# all frontend-facing text must be English).
+_MONTH_NAMES: tuple[str, ...] = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
 )
 
 # Abbreviated month names for the compact `custom`/`to_date` label form from
-# PLAN §21.1 ("1 квіт – 15 трав 2026"): arbitrary ranges can span months and
+# PLAN §21.1 ("Apr 1 - May 15 2026"): arbitrary ranges can span months and
 # years, so the year is always spelled out and the month name is shortened
 # to keep the label one line.
 _MONTH_ABBR: tuple[str, ...] = (
-    "січ",
-    "лют",
-    "бер",
-    "квіт",
-    "трав",
-    "черв",
-    "лип",
-    "серп",
-    "вер",
-    "жовт",
-    "лист",
-    "груд",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
 )
 
 
@@ -86,18 +88,18 @@ def _to_local_date(anchor: datetime, tz: str) -> date:
 
 
 def _month_label(month: int) -> str:
-    return _MONTH_GENITIVE[month - 1]
+    return _MONTH_NAMES[month - 1]
 
 
 def _format_range(dr: DateRange) -> str:
     start, end = dr.start, dr.end
     if start.year == end.year and start.month == end.month:
-        return f"{start.day}–{end.day} {_month_label(start.month)}"
+        return f"{_month_label(start.month)} {start.day}–{end.day}"
     if start.year == end.year:
-        return f"{start.day} {_month_label(start.month)} – {end.day} {_month_label(end.month)}"
+        return f"{_month_label(start.month)} {start.day} – {_month_label(end.month)} {end.day}"
     return (
-        f"{start.day} {_month_label(start.month)} {start.year} – "
-        f"{end.day} {_month_label(end.month)} {end.year}"
+        f"{_month_label(start.month)} {start.day} {start.year} – "
+        f"{_month_label(end.month)} {end.day} {end.year}"
     )
 
 
@@ -107,9 +109,9 @@ def _format_compact_range(dr: DateRange) -> str:
     start_month, end_month = _MONTH_ABBR[start.month - 1], _MONTH_ABBR[end.month - 1]
     if start.year == end.year:
         if start.month == end.month:
-            return f"{start.day}–{end.day} {start_month} {start.year}"
-        return f"{start.day} {start_month} – {end.day} {end_month} {start.year}"
-    return f"{start.day} {start_month} {start.year} – {end.day} {end_month} {end.year}"
+            return f"{start_month} {start.day}–{end.day} {start.year}"
+        return f"{start_month} {start.day} – {end_month} {end.day} {start.year}"
+    return f"{start_month} {start.day} {start.year} – {end_month} {end.day} {end.year}"
 
 
 def _quarter_index(d: date) -> int:

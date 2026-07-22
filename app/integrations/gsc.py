@@ -75,15 +75,15 @@ _DIRECT_METRIC_KEY = "gsc_avg_position"
 # it returns per-page/per-query rows, a different shape than `CollectionResult
 # .metrics: list[MetricValueResult]`, and nothing in the live job pipeline
 # (`app.jobs.runner`, task-05's owned file) calls it yet — wiring a trigger
-# for it into that pipeline is out of this task's scope (its "Кроки
-# реалізації" list has no dispatcher step; see this task's Completion report
+# for it into that pipeline is out of this task's scope (its "Implementation
+# steps" list has no dispatcher step; see this task's Completion report
 # follow-ups). It is a plain extra method callers can already use directly —
 # e.g. `app/api/analytics.py`'s tests exercise it without any worker
 # involved — ready for task-05 (or a later task) to schedule it.
 
 
 class DimensionValueResult(BaseModel):
-    """One normalized page/query row, pre-persistence — the "розмірний рядок"
+    """One normalized page/query row, pre-persistence — the "dimension row"
     the task-16 plan describes the adapter as producing. `rank=None` marks
     the top-N cut's aggregated remainder row (`DIMENSION_OTHER_VALUE`)."""
 

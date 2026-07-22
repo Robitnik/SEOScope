@@ -10,8 +10,8 @@ started, so nothing from a previous instance can still be alive):
 - `running` with an expired lease: the previous process died or was killed
   mid-collection. `runner.run_cell` never writes a snapshot/metrics until
   its very last step, so nothing partial was committed — it is always safe
-  to requeue for an automatic, idempotent retry (PLAN §9.2 "ідемпотентно
-  повторюється"), after first recording the interruption as
+  to requeue for an automatic, idempotent retry (PLAN §9.2 "retried
+  idempotently"), after first recording the interruption as
   `failed_interrupted` for the audit trail.
 - `cancel_requested` left over from a previous instance: no lane is watching
   it anymore, so it is finalized straight to `cancelled` instead of being

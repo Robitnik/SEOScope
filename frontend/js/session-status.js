@@ -7,7 +7,7 @@
 //   * `watchProviderSession(provider, ...)` — polls the live
 //     `GET /providers/{provider}/session` liveness probe. This is only ever
 //     needed where there is no job/SSE stream to lean on already: the
-//     standalone client-card «Увійти» action. Inside the sync modal, the
+//     standalone client-card «Log in» action. Inside the sync modal, the
 //     job's own SSE stream is authoritative and already flowing (the lane
 //     auto-resumes and emits normal cell progress once it sees the session
 //     alive) — polling there is a purely cosmetic head start, never the

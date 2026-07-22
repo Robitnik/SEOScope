@@ -26,7 +26,7 @@ async function main() {
   await page.locator("#cp-header h1").waitFor();
   assert.equal(await page.locator("#cp-header h1").innerText(), "19 CLEVELAND", "client identity loads from the dashboard fixture");
   assert.equal(await page.locator("#dashboard-command-bar").isHidden(), true, "dashboard-only masthead chrome stays hidden on the client route");
-  assert.match(await page.locator("#cp-period-dates").innerText(), /Поточний:.*Попередній:/s, "exact current and previous dates are visible without hover");
+  assert.match(await page.locator("#cp-period-dates").innerText(), /Current:.*Previous:/s, "exact current and previous dates are visible without hover");
 
   // null vs 0 (PLAN §12): a partial-quality row shows "—" for CTR/position,
   // a genuine zero-click row still shows "0".
@@ -34,7 +34,7 @@ async function main() {
   assert.match(await roofInspectionRow.innerText(), /—/, "partial-quality CTR/position render as em dash, not 0 or blank");
   const gutterTipsRow = page.locator("tr", { hasText: "/blog/gutter-maintenance-tips" });
   assert.match(await gutterTipsRow.innerText(), /\b0\b/, "a real zero-click row still renders 0, not em dash");
-  assert.equal(await page.getByText("вперше").count() > 0, true, "a page with no previous-period row is flagged, not shown as a fabricated delta");
+  assert.equal(await page.locator(".tag-new").count() > 0, true, "a page with no previous-period row is flagged, not shown as a fabricated delta");
   assert.equal(await page.locator(".truncated-note").count(), 1, "truncated top-N is disclosed, not silently presented as the full list");
 
   // Tabs: keyboard-operable, switches dataset and persists to the URL.
@@ -49,7 +49,7 @@ async function main() {
 
   // Alerts block: absolute impact, exact dates, both periods always shown.
   assert.match(await page.locator(".alerts-section__dates").innerText(), /\d{4}/, "alerts show exact calendar dates for both periods");
-  assert.equal(await page.locator(".alert-group", { hasText: "ПРОСІДАЮТЬ" }).locator(".alert-row").count() > 0, true, "declining group lists entries");
+  assert.equal(await page.locator(".alert-group", { hasText: "Declining" }).locator(".alert-row").count() > 0, true, "declining group lists entries");
 
   // Extended periods: quarter selection is honest about missing aggregation
   // rather than fabricating a coverage percentage.
@@ -82,12 +82,12 @@ async function main() {
   // Insufficient-data state (task-16/17's live collection is not wired to
   // jobs yet, so this is today's honest real-API answer for any client).
   await page.goto(`${baseUrl}/?fixture=empty-analytics#/client/client-cleveland`, { waitUntil: "networkidle" });
-  await page.getByText("Дані ще не зібрані за цей період.").waitFor();
-  await page.getByText("Недостатньо даних для алертів.").waitFor();
+  await page.getByText("No data collected for this period yet.").waitFor();
+  await page.getByText("Not enough data for alerts.").waitFor();
 
   // GSC not connected at all vs GSC needs reauth are distinct, explained states.
   await page.goto(`${baseUrl}/?fixture=normal#/client/client-nyc-hearing`, { waitUntil: "networkidle" });
-  await page.getByText("Потрібна повторна авторизація GSC.").waitFor();
+  await page.getByText("GSC re-authorization required.").waitFor();
 
   // Back link returns to the dashboard route and it renders normally.
   await page.goto(`${baseUrl}/?fixture=all-states#/client/client-cleveland`, { waitUntil: "networkidle" });
