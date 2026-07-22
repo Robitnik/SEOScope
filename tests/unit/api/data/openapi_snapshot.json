@@ -1,0 +1,3928 @@
+{
+  "components": {
+    "schemas": {
+      "AISeoToolsImportRequest": {
+        "additionalProperties": false,
+        "description": "Import only the selected dashboard roster from the fixed checkout.",
+        "properties": {
+          "client_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "const": "all",
+                "type": "string"
+              }
+            ],
+            "default": "all",
+            "title": "Client Ids"
+          },
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "AISeoToolsImportRequest",
+        "type": "object"
+      },
+      "AISeoToolsImportResponse": {
+        "properties": {
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "imported_artifacts": {
+            "default": 0,
+            "title": "Imported Artifacts",
+            "type": "integer"
+          },
+          "integrations_configured": {
+            "default": 0,
+            "title": "Integrations Configured",
+            "type": "integer"
+          },
+          "outcomes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Outcomes",
+            "type": "object"
+          },
+          "scanned_artifacts": {
+            "default": 0,
+            "title": "Scanned Artifacts",
+            "type": "integer"
+          },
+          "source_available": {
+            "title": "Source Available",
+            "type": "boolean"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_available",
+          "dry_run"
+        ],
+        "title": "AISeoToolsImportResponse",
+        "type": "object"
+      },
+      "AlertEntryDTO": {
+        "description": "One flagged page/query. `clicks_previous`/`delta_pct` are `None` for\na `new` entry (no previous-period row exists) \u2014 never a fabricated `0`\nor `inf` (PLAN \u00a712).",
+        "properties": {
+          "clicks_current": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks Current"
+          },
+          "clicks_previous": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks Previous"
+          },
+          "delta_abs": {
+            "title": "Delta Abs",
+            "type": "integer"
+          },
+          "delta_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Pct"
+          },
+          "dimension_value": {
+            "title": "Dimension Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dimension_value",
+          "delta_abs"
+        ],
+        "title": "AlertEntryDTO",
+        "type": "object"
+      },
+      "AlertsResponseDTO": {
+        "description": "`GET /clients/{id}/alerts` response.\n\n`declining`/`rising`/`new` are sorted by absolute click impact, never by\npercentage (PLAN \u00a721.5: a 5000->4000 drop outranks a 20->10 one).\nPeriod dates are the exact calendar ranges `resolve_periods` resolved,\nalways present regardless of whether data exists for them \u2014 so the UI\ncan show \"\u043d\u0435\u0434\u043e\u0441\u0442\u0430\u0442\u043d\u044c\u043e \u0434\u0430\u043d\u0438\u0445 \u0437\u0430 6-12 \u0441\u0456\u0447\u043d\u044f\" instead of a blank state.\n`skipped_reason` is set (with all three lists empty) when either period\ncarries `partial`/`truncated` data or has no stored data at all \u2014 a\nfalse alert is worse than no alert.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "declining": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AlertEntryDTO"
+            },
+            "title": "Declining",
+            "type": "array"
+          },
+          "dimension": {
+            "enum": [
+              "page",
+              "query"
+            ],
+            "title": "Dimension",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "new": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AlertEntryDTO"
+            },
+            "title": "New",
+            "type": "array"
+          },
+          "period_current_end": {
+            "format": "date",
+            "title": "Period Current End",
+            "type": "string"
+          },
+          "period_current_start": {
+            "format": "date",
+            "title": "Period Current Start",
+            "type": "string"
+          },
+          "period_previous_end": {
+            "format": "date",
+            "title": "Period Previous End",
+            "type": "string"
+          },
+          "period_previous_start": {
+            "format": "date",
+            "title": "Period Previous Start",
+            "type": "string"
+          },
+          "rising": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AlertEntryDTO"
+            },
+            "title": "Rising",
+            "type": "array"
+          },
+          "skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped Reason"
+          }
+        },
+        "required": [
+          "client_id",
+          "dimension",
+          "period_current_start",
+          "period_current_end",
+          "period_previous_start",
+          "period_previous_end",
+          "generated_at"
+        ],
+        "title": "AlertsResponseDTO",
+        "type": "object"
+      },
+      "BatchProgressDTO": {
+        "description": "Aggregates cells for the frontend's progress matrix (task-12).",
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "cells": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CellProgressDTO"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "progress_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Percent"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "BatchProgressDTO",
+        "type": "object"
+      },
+      "BetterDirection": {
+        "enum": [
+          "up",
+          "down",
+          "neutral"
+        ],
+        "title": "BetterDirection",
+        "type": "string"
+      },
+      "CellProgressDTO": {
+        "description": "Progress of one `(client, provider)` cell \u2014 PLAN \u00a79.1.",
+        "properties": {
+          "attempt": {
+            "default": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Stage"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "progress_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Percent"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CellStatus"
+          },
+          "units_estimated": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units Estimated"
+          },
+          "units_spent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units Spent"
+          }
+        },
+        "required": [
+          "client_id",
+          "provider",
+          "status"
+        ],
+        "title": "CellProgressDTO",
+        "type": "object"
+      },
+      "CellStatus": {
+        "description": "Status of one `(client, provider)` collection cell (PLAN \u00a79.1/\u00a79.2).\n\n`not_configured` is terminal and distinct from `failed`: the integration\nwas never set up for this client, nothing was attempted, and it must\nnever be rendered as a failure or as zero. It is also distinct from\n`unavailable` (attempted, provider has no data) and `auth_required`\n(configured, but the session/credentials expired).\n\n`awaiting_auth` (task-21) is **not terminal**: a live session check (or\nan adapter reporting `error_code=\"auth_required\"`) found the session for\nthis provider dead. The cell is parked here \u2014 releasing its browser\nprofile lock and stopping its lease clock, since neither `claim_next_cell`\nnor startup recovery watch anything but `running` \u2014 while its lane waits\nfor the operator to log back in, then auto-resumes by requeuing this same\ncell. It only ever becomes terminal (`failed`, `error_code=\"auth_required\"`)\nif the wait times out.",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "partial",
+          "failed",
+          "failed_interrupted",
+          "not_configured",
+          "awaiting_auth",
+          "skipped",
+          "cancel_requested",
+          "cancelled"
+        ],
+        "title": "CellStatus",
+        "type": "string"
+      },
+      "ClientCardDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "health": {
+            "$ref": "#/components/schemas/ClientHealthDTO"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
+          "logo_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Path"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "overall_status": {
+            "enum": [
+              "ok",
+              "attention",
+              "stale",
+              "failed_all"
+            ],
+            "title": "Overall Status",
+            "type": "string"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderSummaryDTO"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "name",
+          "slug",
+          "domain",
+          "timezone",
+          "overall_status",
+          "providers",
+          "health"
+        ],
+        "title": "ClientCardDTO",
+        "type": "object"
+      },
+      "ClientCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug",
+          "domain",
+          "timezone"
+        ],
+        "title": "ClientCreateRequest",
+        "type": "object"
+      },
+      "ClientDTO": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "logo_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Path"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "domain",
+          "timezone",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ClientDTO",
+        "type": "object"
+      },
+      "ClientHealthDTO": {
+        "description": "Composite performance signal for a client card (PLAN \u00a721.2).\n\n`value` is `None` \u2014 never `0` \u2014 when no service contributed. `coverage_*`\nis shown alongside it so the operator can tell \"72% \u00b7 3/4 \u0441\u0435\u0440\u0432\u0456\u0441\u0438\" apart\nfrom a client that only has one service configured at all.",
+        "properties": {
+          "coverage_configured": {
+            "title": "Coverage Configured",
+            "type": "integer"
+          },
+          "coverage_contributing": {
+            "title": "Coverage Contributing",
+            "type": "integer"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "coverage_contributing",
+          "coverage_configured"
+        ],
+        "title": "ClientHealthDTO",
+        "type": "object"
+      },
+      "ClientMetricsHistoryDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "period_kind": {
+            "$ref": "#/components/schemas/PeriodKind"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/MetricHistorySeriesDTO"
+            },
+            "title": "Series",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id",
+          "period_kind",
+          "series",
+          "generated_at"
+        ],
+        "title": "ClientMetricsHistoryDTO",
+        "type": "object"
+      },
+      "ClientUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          }
+        },
+        "title": "ClientUpdateRequest",
+        "type": "object"
+      },
+      "ComparisonMode": {
+        "enum": [
+          "closed",
+          "to_date"
+        ],
+        "title": "ComparisonMode",
+        "type": "string"
+      },
+      "DashboardResponse": {
+        "properties": {
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/ClientCardDTO"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "comparison_mode": {
+            "$ref": "#/components/schemas/ComparisonMode"
+          },
+          "current_range": {
+            "$ref": "#/components/schemas/DateRange"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "period_kind": {
+            "$ref": "#/components/schemas/PeriodKind"
+          },
+          "previous_range": {
+            "$ref": "#/components/schemas/DateRange"
+          }
+        },
+        "required": [
+          "period_kind",
+          "comparison_mode",
+          "current_range",
+          "previous_range",
+          "clients",
+          "generated_at"
+        ],
+        "title": "DashboardResponse",
+        "type": "object"
+      },
+      "DateRange": {
+        "additionalProperties": false,
+        "description": "Inclusive date range; the UI always renders the exact start/end.",
+        "properties": {
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "DateRange",
+        "type": "object"
+      },
+      "DimensionAnalyticsResponseDTO": {
+        "description": "`GET /clients/{id}/analytics/{pages,queries}` response.\n\n`truncated` is derived from the stored rows' own `quality`, not\ninferred from row count, so a caller can never mistake a short-but-\ncomplete list for a cut one (PLAN \u00a712: truncated must never pass as\nthe full list). `total_rows_available` is the pre-cap count for the\nmatched period, independent of this response's own `limit`/`offset`.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "dimension": {
+            "enum": [
+              "page",
+              "query"
+            ],
+            "title": "Dimension",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DimensionRowDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total_rows_available": {
+            "default": 0,
+            "title": "Total Rows Available",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_id",
+          "dimension",
+          "limit",
+          "offset",
+          "generated_at"
+        ],
+        "title": "DimensionAnalyticsResponseDTO",
+        "type": "object"
+      },
+      "DimensionRowDTO": {
+        "description": "One page/query row \u2014 CTR/position keep GSC's own precision (PLAN \u00a712:\nnever truncated to int); `None` means no data, never `0`.",
+        "properties": {
+          "clicks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks"
+          },
+          "ctr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctr"
+          },
+          "dimension_value": {
+            "title": "Dimension Value",
+            "type": "string"
+          },
+          "impressions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impressions"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/Quality"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          }
+        },
+        "required": [
+          "dimension_value",
+          "quality"
+        ],
+        "title": "DimensionRowDTO",
+        "type": "object"
+      },
+      "ErrorDTO": {
+        "description": "Safe error payload \u2014 never contains secrets, stack traces or paths.",
+        "properties": {
+          "details": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Details",
+            "type": "object"
+          },
+          "error_code": {
+            "title": "Error Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_code",
+          "message"
+        ],
+        "title": "ErrorDTO",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IntegrationDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "integration_config": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Integration Config",
+            "type": "object"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "source_mode": {
+            "$ref": "#/components/schemas/SourceMode"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "provider",
+          "enabled",
+          "source_mode"
+        ],
+        "title": "IntegrationDTO",
+        "type": "object"
+      },
+      "IntegrationUpsertRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "integration_config": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Integration Config",
+            "type": "object"
+          },
+          "source_mode": {
+            "$ref": "#/components/schemas/SourceMode",
+            "default": "auto"
+          }
+        },
+        "title": "IntegrationUpsertRequest",
+        "type": "object"
+      },
+      "JobDTO": {
+        "properties": {
+          "anchor_date": {
+            "format": "date",
+            "title": "Anchor Date",
+            "type": "string"
+          },
+          "attempt": {
+            "default": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "cells": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CellProgressDTO"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "comparison_mode": {
+            "$ref": "#/components/schemas/ComparisonMode"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Stage"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "period_kind": {
+            "$ref": "#/components/schemas/PeriodKind"
+          },
+          "progress_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Percent"
+          },
+          "requested_providers": {
+            "items": {
+              "$ref": "#/components/schemas/Provider"
+            },
+            "title": "Requested Providers",
+            "type": "array"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/JobStepDTO"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "period_kind",
+          "comparison_mode",
+          "anchor_date",
+          "requested_providers",
+          "status",
+          "created_at"
+        ],
+        "title": "JobDTO",
+        "type": "object"
+      },
+      "JobStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "partial",
+          "failed",
+          "cancel_requested",
+          "cancelled"
+        ],
+        "title": "JobStatus",
+        "type": "string"
+      },
+      "JobStepDTO": {
+        "properties": {
+          "attempt": {
+            "default": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "progress_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Percent"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StageStatus"
+          },
+          "units_estimated": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units Estimated"
+          },
+          "units_spent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units Spent"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "provider",
+          "stage",
+          "status"
+        ],
+        "title": "JobStepDTO",
+        "type": "object"
+      },
+      "MetricCardValue": {
+        "description": "One metric on a client card: fully rendered, no frontend math needed.",
+        "properties": {
+          "better_direction": {
+            "$ref": "#/components/schemas/BetterDirection"
+          },
+          "comparison_kind": {
+            "enum": [
+              "range",
+              "snapshot"
+            ],
+            "title": "Comparison Kind",
+            "type": "string"
+          },
+          "current_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Text"
+          },
+          "current_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value"
+          },
+          "data_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Through"
+          },
+          "delta_abs": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Abs"
+          },
+          "delta_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Pct"
+          },
+          "delta_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Reason"
+          },
+          "is_derived": {
+            "default": false,
+            "title": "Is Derived",
+            "type": "boolean"
+          },
+          "is_improvement": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Improvement"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "metric_key": {
+            "title": "Metric Key",
+            "type": "string"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "precision": {
+            "default": 0,
+            "title": "Precision",
+            "type": "integer"
+          },
+          "previous_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "previous_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Text"
+          },
+          "previous_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Value"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/Quality"
+          },
+          "source_mode": {
+            "$ref": "#/components/schemas/SourceMode"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/MetricUnit"
+          }
+        },
+        "required": [
+          "metric_key",
+          "label",
+          "unit",
+          "comparison_kind",
+          "better_direction",
+          "quality",
+          "source_mode"
+        ],
+        "title": "MetricCardValue",
+        "type": "object"
+      },
+      "MetricHistoryPointDTO": {
+        "properties": {
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/Quality"
+          },
+          "value_numeric": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Numeric"
+          }
+        },
+        "required": [
+          "quality"
+        ],
+        "title": "MetricHistoryPointDTO",
+        "type": "object"
+      },
+      "MetricHistorySeriesDTO": {
+        "properties": {
+          "comparison_kind": {
+            "enum": [
+              "range",
+              "snapshot"
+            ],
+            "title": "Comparison Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "metric_key": {
+            "title": "Metric Key",
+            "type": "string"
+          },
+          "points": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MetricHistoryPointDTO"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/MetricUnit"
+          }
+        },
+        "required": [
+          "metric_key",
+          "label",
+          "provider",
+          "unit",
+          "comparison_kind"
+        ],
+        "title": "MetricHistorySeriesDTO",
+        "type": "object"
+      },
+      "MetricUnit": {
+        "enum": [
+          "count",
+          "percent",
+          "score",
+          "position",
+          "currency",
+          "ratio"
+        ],
+        "title": "MetricUnit",
+        "type": "string"
+      },
+      "PeriodKind": {
+        "description": "\u041f\u0435\u0440\u0456\u043e\u0434 \u043f\u043e\u0440\u0456\u0432\u043d\u044f\u043d\u043d\u044f (PLAN \u00a73.1, \u00a721.1).\n\n`week`/`month` \u2014 \u0431\u0430\u0437\u043e\u0432\u0456 \u043f\u0435\u0440\u0456\u043e\u0434\u0438 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0443. `quarter`/`year`/`custom`\n\u0434\u043e\u0434\u0430\u043d\u0456 task-14 \u0456 \u0440\u0430\u0445\u0443\u044e\u0442\u044c\u0441\u044f **\u0430\u0433\u0440\u0435\u0433\u0430\u0446\u0456\u0454\u044e \u0432\u0436\u0435 \u0437\u0431\u0435\u0440\u0435\u0436\u0435\u043d\u043e\u0457 \u0456\u0441\u0442\u043e\u0440\u0456\u0457** (\u043d\u0443\u043b\u044c\n\u043d\u043e\u0432\u043e\u0433\u043e \u0437\u0431\u043e\u0440\u0443), \u0442\u043e\u043c\u0443 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0456 \u043b\u0438\u0448\u0435 \u0442\u0430\u043c, \u0434\u0435 UI \u0447\u0435\u0441\u043d\u043e \u043f\u043e\u043a\u0430\u0437\u0443\u0454 \u043f\u043e\u043a\u0440\u0438\u0442\u0442\u044f \u2014\n\u043d\u0430 \u0441\u0442\u043e\u0440\u0456\u043d\u0446\u0456 \u043a\u043b\u0456\u0454\u043d\u0442\u0430 (\u00a721.1/\u00a721.6), \u043d\u0435 \u043d\u0430 \u0433\u043e\u043b\u043e\u0432\u043d\u043e\u043c\u0443 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0456.",
+        "enum": [
+          "week",
+          "month",
+          "quarter",
+          "year",
+          "custom"
+        ],
+        "title": "PeriodKind",
+        "type": "string"
+      },
+      "PreflightResult": {
+        "additionalProperties": false,
+        "description": "Result of `preflight()`: can this cell even attempt a collection?",
+        "properties": {
+          "details": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Details",
+            "type": "object"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "units_estimated": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units Estimated"
+          }
+        },
+        "required": [
+          "provider",
+          "ok"
+        ],
+        "title": "PreflightResult",
+        "type": "object"
+      },
+      "Provider": {
+        "enum": [
+          "ahrefs",
+          "semrush",
+          "gsc",
+          "reporting_ninja"
+        ],
+        "title": "Provider",
+        "type": "string"
+      },
+      "ProviderLoginDTO": {
+        "description": "`POST /providers/{provider}/login` response. Neither task-20 (owned\n`check_session`/`start_login` as plain functions, no route) nor task-21\n(owned the auth-pause job-engine plumbing that *consumes* `check_session`)\nput a route on these \u2014 task-22's \u00ab\u0423\u0432\u0456\u0439\u0442\u0438\u00bb button has nothing to call\nwithout one, so it's added here, additively, against this file's existing\nstyle.",
+        "properties": {
+          "login_session_id": {
+            "title": "Login Session Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "alive",
+              "expired",
+              "no_profile"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "login_session_id",
+          "state",
+          "timeout_seconds"
+        ],
+        "title": "ProviderLoginDTO",
+        "type": "object"
+      },
+      "ProviderSessionDTO": {
+        "description": "`GET /providers/{provider}/session` response \u2014 a live liveness probe,\nnot derived from stored cell history like `ProviderStatusCellDTO`. Used\nby the standalone client-card \u00ab\u0423\u0432\u0456\u0439\u0442\u0438\u00bb action, which runs outside any\njob/SSE context.",
+        "properties": {
+          "state": {
+            "enum": [
+              "alive",
+              "expired",
+              "no_profile"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "ProviderSessionDTO",
+        "type": "object"
+      },
+      "ProviderStatusCellDTO": {
+        "description": "One `(client, provider)` row for `GET /providers/status` \u2014 no secrets.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "source_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "enum": [
+              "not_configured",
+              "auth_required",
+              "unavailable",
+              "failed",
+              "complete",
+              "partial",
+              "truncated",
+              "stale"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "units_estimated": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units Estimated"
+          }
+        },
+        "required": [
+          "client_id",
+          "provider",
+          "configured",
+          "state"
+        ],
+        "title": "ProviderStatusCellDTO",
+        "type": "object"
+      },
+      "ProviderSummaryDTO": {
+        "description": "One provider's row on a client card.",
+        "properties": {
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MetricCardValue"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quality"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "enum": [
+              "not_configured",
+              "auth_required",
+              "unavailable",
+              "failed",
+              "complete",
+              "partial",
+              "truncated",
+              "stale"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "provider",
+          "state"
+        ],
+        "title": "ProviderSummaryDTO",
+        "type": "object"
+      },
+      "ProvidersStatusDTO": {
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderStatusCellDTO"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "cells"
+        ],
+        "title": "ProvidersStatusDTO",
+        "type": "object"
+      },
+      "Quality": {
+        "enum": [
+          "complete",
+          "partial",
+          "truncated",
+          "stale",
+          "unavailable"
+        ],
+        "title": "Quality",
+        "type": "string"
+      },
+      "SourceMode": {
+        "enum": [
+          "auto",
+          "api",
+          "browser",
+          "pdf"
+        ],
+        "title": "SourceMode",
+        "type": "string"
+      },
+      "StageStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "succeeded",
+          "failed",
+          "skipped"
+        ],
+        "title": "StageStatus",
+        "type": "string"
+      },
+      "SyncJobAcceptedDTO": {
+        "description": "`202 Accepted` body for `POST /sync-jobs`.",
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "events_url": {
+            "title": "Events Url",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status_url",
+          "events_url"
+        ],
+        "title": "SyncJobAcceptedDTO",
+        "type": "object"
+      },
+      "SyncJobRequest": {
+        "additionalProperties": false,
+        "description": "Accepts a single client or a batch (PLAN \u00a79.1).",
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "client_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "const": "all",
+                "type": "string"
+              }
+            ],
+            "title": "Client Ids"
+          },
+          "comparison_mode": {
+            "$ref": "#/components/schemas/ComparisonMode",
+            "default": "closed"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "mode": {
+            "default": "collect_missing",
+            "enum": [
+              "collect_missing",
+              "force_refresh"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "period_kind": {
+            "$ref": "#/components/schemas/PeriodKind"
+          },
+          "providers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Provider"
+                },
+                "type": "array"
+              },
+              {
+                "const": "all",
+                "type": "string"
+              }
+            ],
+            "title": "Providers"
+          },
+          "source_mode": {
+            "$ref": "#/components/schemas/SourceMode",
+            "default": "auto"
+          }
+        },
+        "required": [
+          "client_ids",
+          "providers",
+          "period_kind"
+        ],
+        "title": "SyncJobRequest",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "The Yovth Clients Report",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/artifacts/{artifact_id}": {
+      "get": {
+        "description": "Raw diagnostic artifact download (PLAN \u00a713): only ever serves a path\n`ArtifactRepository.get_for_download` has already verified resolves\ninside the artifacts root \u2014 never a caller-controlled path.",
+        "operationId": "download_artifact_api_v1_artifacts__artifact_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Artifact",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/clients": {
+      "get": {
+        "operationId": "list_clients_api_v1_clients_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ClientDTO"
+                  },
+                  "title": "Response List Clients Api V1 Clients Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Clients",
+        "tags": [
+          "clients"
+        ]
+      },
+      "post": {
+        "operationId": "create_client_api_v1_clients_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Client",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}": {
+      "get": {
+        "operationId": "get_client_api_v1_clients__client_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Client",
+        "tags": [
+          "clients"
+        ]
+      },
+      "patch": {
+        "operationId": "update_client_api_v1_clients__client_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Client",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/alerts": {
+      "get": {
+        "operationId": "get_alerts_api_v1_clients__client_id__alerts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PeriodKind",
+              "default": "week"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dimension",
+            "required": false,
+            "schema": {
+              "default": "page",
+              "enum": [
+                "page",
+                "query"
+              ],
+              "title": "Dimension",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "anchor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Anchor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "comparison_mode",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ComparisonMode",
+              "default": "closed"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertsResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Alerts",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/analytics/pages": {
+      "get": {
+        "operationId": "get_page_analytics_api_v1_clients__client_id__analytics_pages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PeriodKind",
+              "default": "week"
+            }
+          },
+          {
+            "in": "query",
+            "name": "anchor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Anchor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "comparison_mode",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ComparisonMode",
+              "default": "closed"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "default": "clicks",
+              "enum": [
+                "clicks",
+                "impressions",
+                "ctr",
+                "position"
+              ],
+              "title": "Sort By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DimensionAnalyticsResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Page Analytics",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/analytics/queries": {
+      "get": {
+        "operationId": "get_query_analytics_api_v1_clients__client_id__analytics_queries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PeriodKind",
+              "default": "week"
+            }
+          },
+          {
+            "in": "query",
+            "name": "anchor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Anchor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "comparison_mode",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ComparisonMode",
+              "default": "closed"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "default": "clicks",
+              "enum": [
+                "clicks",
+                "impressions",
+                "ctr",
+                "position"
+              ],
+              "title": "Sort By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DimensionAnalyticsResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Query Analytics",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/integrations/{provider}": {
+      "put": {
+        "operationId": "upsert_integration_api_v1_clients__client_id__integrations__provider__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationUpsertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upsert Integration",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/integrations/{provider}/preflight": {
+      "post": {
+        "operationId": "preflight_integration_api_v1_clients__client_id__integrations__provider__preflight_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreflightResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preflight Integration",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/logo": {
+      "get": {
+        "operationId": "get_logo_api_v1_clients__client_id__logo_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Logo",
+        "tags": [
+          "clients"
+        ]
+      },
+      "post": {
+        "description": "Accepts the raw image bytes as the request body (`Content-Type:\nimage/png` or `image/jpeg`) rather than a `multipart/form-data` upload \u2014\na logo is a single file with no other form fields, so there is nothing\nmultipart buys here, and it keeps this endpoint free of the extra\n`python-multipart` dependency `UploadFile` would otherwise require.",
+        "operationId": "upload_logo_api_v1_clients__client_id__logo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Logo",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/metrics": {
+      "get": {
+        "operationId": "get_client_metrics_history_api_v1_clients__client_id__metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PeriodKind",
+              "default": "week"
+            }
+          },
+          {
+            "in": "query",
+            "name": "history",
+            "required": false,
+            "schema": {
+              "default": 12,
+              "maximum": 104,
+              "minimum": 1,
+              "title": "History",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientMetricsHistoryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Client Metrics History",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard": {
+      "get": {
+        "operationId": "get_dashboard_api_v1_dashboard_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PeriodKind",
+              "default": "week"
+            }
+          },
+          {
+            "in": "query",
+            "name": "anchor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Anchor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ok",
+                    "attention",
+                    "stale",
+                    "failed_all"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Provider"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "quality",
+              "enum": [
+                "quality",
+                "health",
+                "name",
+                "last_sync",
+                "biggest_drop"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Dashboard",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/imports/ai-seo-tools": {
+      "post": {
+        "operationId": "import_ai_seo_tools_api_v1_imports_ai_seo_tools_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AISeoToolsImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISeoToolsImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Import Ai Seo Tools",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/v1/providers/status": {
+      "get": {
+        "operationId": "get_providers_status_api_v1_providers_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvidersStatusDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Providers Status",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/api/v1/providers/{provider}/login": {
+      "post": {
+        "operationId": "start_provider_login_api_v1_providers__provider__login_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderLoginDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Start Provider Login",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/api/v1/providers/{provider}/session": {
+      "get": {
+        "operationId": "get_provider_session_api_v1_providers__provider__session_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderSessionDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Provider Session",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/api/v1/sync-jobs": {
+      "get": {
+        "operationId": "list_sync_jobs_api_v1_sync_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/JobStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "batch_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JobDTO"
+                  },
+                  "title": "Response List Sync Jobs Api V1 Sync Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sync Jobs",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "post": {
+        "operationId": "create_sync_job_api_v1_sync_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncJobAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Sync Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/sync-jobs/{id}": {
+      "get": {
+        "operationId": "get_sync_job_api_v1_sync_jobs__id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/JobDTO"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BatchProgressDTO"
+                    }
+                  ],
+                  "title": "Response Get Sync Job Api V1 Sync Jobs  Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Sync Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/sync-jobs/{id}/cancel": {
+      "post": {
+        "operationId": "cancel_sync_job_api_v1_sync_jobs__id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/JobDTO"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BatchProgressDTO"
+                    }
+                  ],
+                  "title": "Response Cancel Sync Job Api V1 Sync Jobs  Id  Cancel Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Sync Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/sync-jobs/{id}/events": {
+      "get": {
+        "operationId": "stream_sync_job_events_api_v1_sync_jobs__id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Sync Job Events",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/sync-jobs/{id}/retry": {
+      "post": {
+        "operationId": "retry_sync_job_api_v1_sync_jobs__id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/JobDTO"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BatchProgressDTO"
+                    }
+                  ],
+                  "title": "Response Retry Sync Job Api V1 Sync Jobs  Id  Retry Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Sync Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Healthz Healthz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "readyz_readyz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Readyz",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,69 @@
+[tool.poetry]
+name = "yovth-clients-report"
+version = "0.1.0"
+description = "Внутрішній dashboard агенції для SEO/marketing-метрик (Ahrefs, Semrush, GSC, Reporting Ninja/GA4)"
+authors = ["The Yovth"]
+readme = "README.md"
+package-mode = true
+packages = [{ include = "app" }]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+fastapi = "^0.115.0"
+uvicorn = { extras = ["standard"], version = "^0.32.0" }
+pydantic-settings = "^2.6.0"
+sqlalchemy = "^2.0.0"
+alembic = "^1.13.0"
+aiosqlite = "^0.20.0"
+# Added by task-07 (importer): reads the AISeoTools `client_report_*.xlsx`
+# "Historical Data" sheet. Was previously present only transitively via the
+# optional `local` group, which the production Dockerfile never installs —
+# promoted to a direct dependency, flagged per CLAUDE.md's "нова залежність"
+# escape hatch (task-01 owns pyproject.toml; see this task's Completion
+# report, "Контрактні зміни").
+openpyxl = "^3.1"
+
+[tool.poetry.scripts]
+# Added by task-07 (importer), as flagged in the task plan itself
+# ("+ реєстрація в pyproject scripts — запит до task-01").
+yovth-report = "app.cli:main"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.7.0"
+mypy = "^1.13.0"
+pytest = "^8.3.0"
+pytest-asyncio = "^0.24.0"
+httpx = "^0.27.0"
+
+# Not installed at image build time (CI/deploy don't have this sibling
+# checkout). Local dev: docker/entrypoint.sh runs `poetry install --with
+# local` automatically at container start when the AISeoTools bind mount
+# (compose.yaml) is present. For CI/deploy, task-01 should eventually pin
+# AISeoTools to a commit/tag (git dependency) instead of this local path —
+# see PLAN.md §8/§14 and doc/dev/done/task-08-aiseotools-core.md.
+[tool.poetry.group.local]
+optional = true
+
+[tool.poetry.group.local.dependencies]
+seo-audit = { path = "../../seo/AISeoTools", develop = true }
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

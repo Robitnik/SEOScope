@@ -1,0 +1,4318 @@
+{
+  "enums": {
+    "BetterDirection": [
+      "down",
+      "neutral",
+      "up"
+    ],
+    "CellStatus": [
+      "awaiting_auth",
+      "cancel_requested",
+      "cancelled",
+      "failed",
+      "failed_interrupted",
+      "not_configured",
+      "partial",
+      "queued",
+      "running",
+      "skipped",
+      "succeeded"
+    ],
+    "ComparisonMode": [
+      "closed",
+      "to_date"
+    ],
+    "JobStatus": [
+      "cancel_requested",
+      "cancelled",
+      "failed",
+      "partial",
+      "queued",
+      "running",
+      "succeeded"
+    ],
+    "MetricUnit": [
+      "count",
+      "currency",
+      "percent",
+      "position",
+      "ratio",
+      "score"
+    ],
+    "PeriodKind": [
+      "custom",
+      "month",
+      "quarter",
+      "week",
+      "year"
+    ],
+    "PeriodRole": [
+      "current",
+      "previous",
+      "snapshot"
+    ],
+    "Provider": [
+      "ahrefs",
+      "gsc",
+      "reporting_ninja",
+      "semrush"
+    ],
+    "Quality": [
+      "complete",
+      "partial",
+      "stale",
+      "truncated",
+      "unavailable"
+    ],
+    "SourceMode": [
+      "api",
+      "auto",
+      "browser",
+      "pdf"
+    ],
+    "StageStatus": [
+      "failed",
+      "pending",
+      "running",
+      "skipped",
+      "succeeded"
+    ]
+  },
+  "models": {
+    "BatchProgressDTO": {
+      "$defs": {
+        "CellProgressDTO": {
+          "description": "Progress of one `(client, provider)` cell \u2014 PLAN \u00a79.1.",
+          "properties": {
+            "attempt": {
+              "default": 1,
+              "title": "Attempt",
+              "type": "integer"
+            },
+            "client_id": {
+              "title": "Client Id",
+              "type": "string"
+            },
+            "current_stage": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Stage"
+            },
+            "error_code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error Code"
+            },
+            "finished_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Finished At"
+            },
+            "progress_percent": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Progress Percent"
+            },
+            "provider": {
+              "$ref": "#/$defs/Provider"
+            },
+            "started_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Started At"
+            },
+            "status": {
+              "$ref": "#/$defs/CellStatus"
+            },
+            "units_estimated": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Units Estimated"
+            },
+            "units_spent": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Units Spent"
+            }
+          },
+          "required": [
+            "client_id",
+            "provider",
+            "status"
+          ],
+          "title": "CellProgressDTO",
+          "type": "object"
+        },
+        "CellStatus": {
+          "description": "Status of one `(client, provider)` collection cell (PLAN \u00a79.1/\u00a79.2).\n\n`not_configured` is terminal and distinct from `failed`: the integration\nwas never set up for this client, nothing was attempted, and it must\nnever be rendered as a failure or as zero. It is also distinct from\n`unavailable` (attempted, provider has no data) and `auth_required`\n(configured, but the session/credentials expired).\n\n`awaiting_auth` (task-21) is **not terminal**: a live session check (or\nan adapter reporting `error_code=\"auth_required\"`) found the session for\nthis provider dead. The cell is parked here \u2014 releasing its browser\nprofile lock and stopping its lease clock, since neither `claim_next_cell`\nnor startup recovery watch anything but `running` \u2014 while its lane waits\nfor the operator to log back in, then auto-resumes by requeuing this same\ncell. It only ever becomes terminal (`failed`, `error_code=\"auth_required\"`)\nif the wait times out.",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "partial",
+            "failed",
+            "failed_interrupted",
+            "not_configured",
+            "awaiting_auth",
+            "skipped",
+            "cancel_requested",
+            "cancelled"
+          ],
+          "title": "CellStatus",
+          "type": "string"
+        },
+        "JobStatus": {
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "partial",
+            "failed",
+            "cancel_requested",
+            "cancelled"
+          ],
+          "title": "JobStatus",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        }
+      },
+      "description": "Aggregates cells for the frontend's progress matrix (task-12).",
+      "properties": {
+        "batch_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch Id"
+        },
+        "cells": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CellProgressDTO"
+          },
+          "title": "Cells",
+          "type": "array"
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Id"
+        },
+        "progress_percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Progress Percent"
+        },
+        "status": {
+          "$ref": "#/$defs/JobStatus"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "BatchProgressDTO",
+      "type": "object"
+    },
+    "CellProgressDTO": {
+      "$defs": {
+        "CellStatus": {
+          "description": "Status of one `(client, provider)` collection cell (PLAN \u00a79.1/\u00a79.2).\n\n`not_configured` is terminal and distinct from `failed`: the integration\nwas never set up for this client, nothing was attempted, and it must\nnever be rendered as a failure or as zero. It is also distinct from\n`unavailable` (attempted, provider has no data) and `auth_required`\n(configured, but the session/credentials expired).\n\n`awaiting_auth` (task-21) is **not terminal**: a live session check (or\nan adapter reporting `error_code=\"auth_required\"`) found the session for\nthis provider dead. The cell is parked here \u2014 releasing its browser\nprofile lock and stopping its lease clock, since neither `claim_next_cell`\nnor startup recovery watch anything but `running` \u2014 while its lane waits\nfor the operator to log back in, then auto-resumes by requeuing this same\ncell. It only ever becomes terminal (`failed`, `error_code=\"auth_required\"`)\nif the wait times out.",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "partial",
+            "failed",
+            "failed_interrupted",
+            "not_configured",
+            "awaiting_auth",
+            "skipped",
+            "cancel_requested",
+            "cancelled"
+          ],
+          "title": "CellStatus",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        }
+      },
+      "description": "Progress of one `(client, provider)` cell \u2014 PLAN \u00a79.1.",
+      "properties": {
+        "attempt": {
+          "default": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "current_stage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Stage"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finished At"
+        },
+        "progress_percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Progress Percent"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "status": {
+          "$ref": "#/$defs/CellStatus"
+        },
+        "units_estimated": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Units Estimated"
+        },
+        "units_spent": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Units Spent"
+        }
+      },
+      "required": [
+        "client_id",
+        "provider",
+        "status"
+      ],
+      "title": "CellProgressDTO",
+      "type": "object"
+    },
+    "ClientCardDTO": {
+      "$defs": {
+        "BetterDirection": {
+          "enum": [
+            "up",
+            "down",
+            "neutral"
+          ],
+          "title": "BetterDirection",
+          "type": "string"
+        },
+        "ClientHealthDTO": {
+          "description": "Composite performance signal for a client card (PLAN \u00a721.2).\n\n`value` is `None` \u2014 never `0` \u2014 when no service contributed. `coverage_*`\nis shown alongside it so the operator can tell \"72% \u00b7 3/4 \u0441\u0435\u0440\u0432\u0456\u0441\u0438\" apart\nfrom a client that only has one service configured at all.",
+          "properties": {
+            "coverage_configured": {
+              "title": "Coverage Configured",
+              "type": "integer"
+            },
+            "coverage_contributing": {
+              "title": "Coverage Contributing",
+              "type": "integer"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Value"
+            }
+          },
+          "required": [
+            "coverage_contributing",
+            "coverage_configured"
+          ],
+          "title": "ClientHealthDTO",
+          "type": "object"
+        },
+        "DateRange": {
+          "additionalProperties": false,
+          "description": "Inclusive date range; the UI always renders the exact start/end.",
+          "properties": {
+            "end": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            },
+            "start": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "title": "DateRange",
+          "type": "object"
+        },
+        "MetricCardValue": {
+          "description": "One metric on a client card: fully rendered, no frontend math needed.",
+          "properties": {
+            "better_direction": {
+              "$ref": "#/$defs/BetterDirection"
+            },
+            "comparison_kind": {
+              "enum": [
+                "range",
+                "snapshot"
+              ],
+              "title": "Comparison Kind",
+              "type": "string"
+            },
+            "current_range": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DateRange"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "current_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Text"
+            },
+            "current_value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Value"
+            },
+            "data_through": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Data Through"
+            },
+            "delta_abs": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delta Abs"
+            },
+            "delta_pct": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delta Pct"
+            },
+            "delta_reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delta Reason"
+            },
+            "is_derived": {
+              "default": false,
+              "title": "Is Derived",
+              "type": "boolean"
+            },
+            "is_improvement": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Is Improvement"
+            },
+            "label": {
+              "title": "Label",
+              "type": "string"
+            },
+            "metric_key": {
+              "title": "Metric Key",
+              "type": "string"
+            },
+            "observed_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Observed At"
+            },
+            "precision": {
+              "default": 0,
+              "title": "Precision",
+              "type": "integer"
+            },
+            "previous_range": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DateRange"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "previous_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Previous Text"
+            },
+            "previous_value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Previous Value"
+            },
+            "quality": {
+              "$ref": "#/$defs/Quality"
+            },
+            "source_mode": {
+              "$ref": "#/$defs/SourceMode"
+            },
+            "unit": {
+              "$ref": "#/$defs/MetricUnit"
+            }
+          },
+          "required": [
+            "metric_key",
+            "label",
+            "unit",
+            "comparison_kind",
+            "better_direction",
+            "quality",
+            "source_mode"
+          ],
+          "title": "MetricCardValue",
+          "type": "object"
+        },
+        "MetricUnit": {
+          "enum": [
+            "count",
+            "percent",
+            "score",
+            "position",
+            "currency",
+            "ratio"
+          ],
+          "title": "MetricUnit",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "ProviderSummaryDTO": {
+          "description": "One provider's row on a client card.",
+          "properties": {
+            "last_attempt_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Attempt At"
+            },
+            "last_error_code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Error Code"
+            },
+            "last_success_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Success At"
+            },
+            "metrics": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/MetricCardValue"
+              },
+              "title": "Metrics",
+              "type": "array"
+            },
+            "provider": {
+              "$ref": "#/$defs/Provider"
+            },
+            "quality": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quality"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "source_mode": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "state": {
+              "enum": [
+                "not_configured",
+                "auth_required",
+                "unavailable",
+                "failed",
+                "complete",
+                "partial",
+                "truncated",
+                "stale"
+              ],
+              "title": "State",
+              "type": "string"
+            },
+            "warnings": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Warnings",
+              "type": "array"
+            }
+          },
+          "required": [
+            "provider",
+            "state"
+          ],
+          "title": "ProviderSummaryDTO",
+          "type": "object"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
+          "type": "string"
+        },
+        "SourceMode": {
+          "enum": [
+            "auto",
+            "api",
+            "browser",
+            "pdf"
+          ],
+          "title": "SourceMode",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "domain": {
+          "title": "Domain",
+          "type": "string"
+        },
+        "health": {
+          "$ref": "#/$defs/ClientHealthDTO"
+        },
+        "last_synced_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Synced At"
+        },
+        "logo_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logo Path"
+        },
+        "market": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Market"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "overall_status": {
+          "enum": [
+            "ok",
+            "attention",
+            "stale",
+            "failed_all"
+          ],
+          "title": "Overall Status",
+          "type": "string"
+        },
+        "providers": {
+          "items": {
+            "$ref": "#/$defs/ProviderSummaryDTO"
+          },
+          "title": "Providers",
+          "type": "array"
+        },
+        "slug": {
+          "title": "Slug",
+          "type": "string"
+        },
+        "timezone": {
+          "title": "Timezone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "client_id",
+        "name",
+        "slug",
+        "domain",
+        "timezone",
+        "overall_status",
+        "providers",
+        "health"
+      ],
+      "title": "ClientCardDTO",
+      "type": "object"
+    },
+    "ClientCreateRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "title": "Domain",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "market": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Market"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "slug": {
+          "title": "Slug",
+          "type": "string"
+        },
+        "timezone": {
+          "title": "Timezone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "slug",
+        "domain",
+        "timezone"
+      ],
+      "title": "ClientCreateRequest",
+      "type": "object"
+    },
+    "ClientDTO": {
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "domain": {
+          "title": "Domain",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "logo_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logo Path"
+        },
+        "market": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Market"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "slug": {
+          "title": "Slug",
+          "type": "string"
+        },
+        "timezone": {
+          "title": "Timezone",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "slug",
+        "domain",
+        "timezone",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "ClientDTO",
+      "type": "object"
+    },
+    "ClientUpdateRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain"
+        },
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enabled"
+        },
+        "market": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Market"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone"
+        }
+      },
+      "title": "ClientUpdateRequest",
+      "type": "object"
+    },
+    "CollectionContext": {
+      "$defs": {
+        "ComparisonMode": {
+          "enum": [
+            "closed",
+            "to_date"
+          ],
+          "title": "ComparisonMode",
+          "type": "string"
+        },
+        "DateRange": {
+          "additionalProperties": false,
+          "description": "Inclusive date range; the UI always renders the exact start/end.",
+          "properties": {
+            "end": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            },
+            "start": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "title": "DateRange",
+          "type": "object"
+        },
+        "PeriodKind": {
+          "description": "\u041f\u0435\u0440\u0456\u043e\u0434 \u043f\u043e\u0440\u0456\u0432\u043d\u044f\u043d\u043d\u044f (PLAN \u00a73.1, \u00a721.1).\n\n`week`/`month` \u2014 \u0431\u0430\u0437\u043e\u0432\u0456 \u043f\u0435\u0440\u0456\u043e\u0434\u0438 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0443. `quarter`/`year`/`custom`\n\u0434\u043e\u0434\u0430\u043d\u0456 task-14 \u0456 \u0440\u0430\u0445\u0443\u044e\u0442\u044c\u0441\u044f **\u0430\u0433\u0440\u0435\u0433\u0430\u0446\u0456\u0454\u044e \u0432\u0436\u0435 \u0437\u0431\u0435\u0440\u0435\u0436\u0435\u043d\u043e\u0457 \u0456\u0441\u0442\u043e\u0440\u0456\u0457** (\u043d\u0443\u043b\u044c\n\u043d\u043e\u0432\u043e\u0433\u043e \u0437\u0431\u043e\u0440\u0443), \u0442\u043e\u043c\u0443 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0456 \u043b\u0438\u0448\u0435 \u0442\u0430\u043c, \u0434\u0435 UI \u0447\u0435\u0441\u043d\u043e \u043f\u043e\u043a\u0430\u0437\u0443\u0454 \u043f\u043e\u043a\u0440\u0438\u0442\u0442\u044f \u2014\n\u043d\u0430 \u0441\u0442\u043e\u0440\u0456\u043d\u0446\u0456 \u043a\u043b\u0456\u0454\u043d\u0442\u0430 (\u00a721.1/\u00a721.6), \u043d\u0435 \u043d\u0430 \u0433\u043e\u043b\u043e\u0432\u043d\u043e\u043c\u0443 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0456.",
+          "enum": [
+            "week",
+            "month",
+            "quarter",
+            "year",
+            "custom"
+          ],
+          "title": "PeriodKind",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "SourceMode": {
+          "enum": [
+            "auto",
+            "api",
+            "browser",
+            "pdf"
+          ],
+          "title": "SourceMode",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Everything an adapter needs to run one `(client, provider)` cell.",
+      "properties": {
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "comparison_mode": {
+          "$ref": "#/$defs/ComparisonMode"
+        },
+        "current": {
+          "$ref": "#/$defs/DateRange"
+        },
+        "force_refresh": {
+          "default": false,
+          "title": "Force Refresh",
+          "type": "boolean"
+        },
+        "integration_config": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Integration Config",
+          "type": "object"
+        },
+        "period_kind": {
+          "$ref": "#/$defs/PeriodKind"
+        },
+        "previous": {
+          "$ref": "#/$defs/DateRange"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "session_paths": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Session Paths",
+          "type": "object"
+        },
+        "source_mode": {
+          "$ref": "#/$defs/SourceMode"
+        },
+        "timezone": {
+          "title": "Timezone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "client_id",
+        "provider",
+        "source_mode",
+        "period_kind",
+        "comparison_mode",
+        "current",
+        "previous",
+        "timezone"
+      ],
+      "title": "CollectionContext",
+      "type": "object"
+    },
+    "CollectionResult": {
+      "$defs": {
+        "MetricUnit": {
+          "enum": [
+            "count",
+            "percent",
+            "score",
+            "position",
+            "currency",
+            "ratio"
+          ],
+          "title": "MetricUnit",
+          "type": "string"
+        },
+        "MetricValueResult": {
+          "additionalProperties": false,
+          "description": "One normalized metric value returned by an adapter, pre-persistence.",
+          "properties": {
+            "is_derived": {
+              "default": false,
+              "title": "Is Derived",
+              "type": "boolean"
+            },
+            "metric_key": {
+              "title": "Metric Key",
+              "type": "string"
+            },
+            "period_end": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Period End"
+            },
+            "period_role": {
+              "$ref": "#/$defs/PeriodRole"
+            },
+            "period_start": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Period Start"
+            },
+            "quality": {
+              "$ref": "#/$defs/Quality"
+            },
+            "unit": {
+              "$ref": "#/$defs/MetricUnit"
+            },
+            "value_numeric": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Value Numeric"
+            },
+            "value_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Value Text"
+            }
+          },
+          "required": [
+            "metric_key",
+            "period_role",
+            "unit",
+            "quality"
+          ],
+          "title": "MetricValueResult",
+          "type": "object"
+        },
+        "PeriodRole": {
+          "enum": [
+            "current",
+            "previous",
+            "snapshot"
+          ],
+          "title": "PeriodRole",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
+          "type": "string"
+        },
+        "RawArtifactRef": {
+          "additionalProperties": false,
+          "description": "Reference to a raw diagnostic artifact (JSON/CSV/PDF/screenshot).",
+          "properties": {
+            "kind": {
+              "title": "Kind",
+              "type": "string"
+            },
+            "mime": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Mime"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "sha256": {
+              "title": "Sha256",
+              "type": "string"
+            },
+            "size_bytes": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Size Bytes"
+            }
+          },
+          "required": [
+            "kind",
+            "path",
+            "sha256"
+          ],
+          "title": "RawArtifactRef",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Result of one `collect()` call.\n\n`collect()` never raises on partial data: any shortfall is expressed as\n`quality in {partial, truncated, unavailable}` plus `warnings`, not an\nexception. Only truly unexpected failures propagate, and the worker\n(task-05) still converts those into a `failed` cell rather than crashing.",
+      "properties": {
+        "artifacts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RawArtifactRef"
+          },
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "data_through": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data Through"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        },
+        "metrics": {
+          "items": {
+            "$ref": "#/$defs/MetricValueResult"
+          },
+          "title": "Metrics",
+          "type": "array"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "provenance": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Provenance",
+          "type": "object"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "quality": {
+          "$ref": "#/$defs/Quality"
+        },
+        "units_estimated": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Units Estimated"
+        },
+        "units_spent": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Units Spent"
+        },
+        "warnings": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "provider",
+        "quality",
+        "observed_at",
+        "metrics"
+      ],
+      "title": "CollectionResult",
+      "type": "object"
+    },
+    "CoverageDTO": {
+      "$defs": {
+        "DateRange": {
+          "additionalProperties": false,
+          "description": "Inclusive date range; the UI always renders the exact start/end.",
+          "properties": {
+            "end": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            },
+            "start": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "title": "DateRange",
+          "type": "object"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
+          "type": "string"
+        }
+      },
+      "description": "How much of a requested range is actually backed by stored data.",
+      "properties": {
+        "days_covered": {
+          "title": "Days Covered",
+          "type": "integer"
+        },
+        "days_total": {
+          "title": "Days Total",
+          "type": "integer"
+        },
+        "gaps": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DateRange"
+          },
+          "title": "Gaps",
+          "type": "array"
+        },
+        "quality": {
+          "$ref": "#/$defs/Quality"
+        }
+      },
+      "required": [
+        "days_total",
+        "days_covered",
+        "quality"
+      ],
+      "title": "CoverageDTO",
+      "type": "object"
+    },
+    "DashboardResponse": {
+      "$defs": {
+        "BetterDirection": {
+          "enum": [
+            "up",
+            "down",
+            "neutral"
+          ],
+          "title": "BetterDirection",
+          "type": "string"
+        },
+        "ClientCardDTO": {
+          "properties": {
+            "client_id": {
+              "title": "Client Id",
+              "type": "string"
+            },
+            "domain": {
+              "title": "Domain",
+              "type": "string"
+            },
+            "health": {
+              "$ref": "#/$defs/ClientHealthDTO"
+            },
+            "last_synced_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Synced At"
+            },
+            "logo_path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Logo Path"
+            },
+            "market": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Market"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "overall_status": {
+              "enum": [
+                "ok",
+                "attention",
+                "stale",
+                "failed_all"
+              ],
+              "title": "Overall Status",
+              "type": "string"
+            },
+            "providers": {
+              "items": {
+                "$ref": "#/$defs/ProviderSummaryDTO"
+              },
+              "title": "Providers",
+              "type": "array"
+            },
+            "slug": {
+              "title": "Slug",
+              "type": "string"
+            },
+            "timezone": {
+              "title": "Timezone",
+              "type": "string"
+            }
+          },
+          "required": [
+            "client_id",
+            "name",
+            "slug",
+            "domain",
+            "timezone",
+            "overall_status",
+            "providers",
+            "health"
+          ],
+          "title": "ClientCardDTO",
+          "type": "object"
+        },
+        "ClientHealthDTO": {
+          "description": "Composite performance signal for a client card (PLAN \u00a721.2).\n\n`value` is `None` \u2014 never `0` \u2014 when no service contributed. `coverage_*`\nis shown alongside it so the operator can tell \"72% \u00b7 3/4 \u0441\u0435\u0440\u0432\u0456\u0441\u0438\" apart\nfrom a client that only has one service configured at all.",
+          "properties": {
+            "coverage_configured": {
+              "title": "Coverage Configured",
+              "type": "integer"
+            },
+            "coverage_contributing": {
+              "title": "Coverage Contributing",
+              "type": "integer"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Value"
+            }
+          },
+          "required": [
+            "coverage_contributing",
+            "coverage_configured"
+          ],
+          "title": "ClientHealthDTO",
+          "type": "object"
+        },
+        "ComparisonMode": {
+          "enum": [
+            "closed",
+            "to_date"
+          ],
+          "title": "ComparisonMode",
+          "type": "string"
+        },
+        "DateRange": {
+          "additionalProperties": false,
+          "description": "Inclusive date range; the UI always renders the exact start/end.",
+          "properties": {
+            "end": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            },
+            "start": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "title": "DateRange",
+          "type": "object"
+        },
+        "MetricCardValue": {
+          "description": "One metric on a client card: fully rendered, no frontend math needed.",
+          "properties": {
+            "better_direction": {
+              "$ref": "#/$defs/BetterDirection"
+            },
+            "comparison_kind": {
+              "enum": [
+                "range",
+                "snapshot"
+              ],
+              "title": "Comparison Kind",
+              "type": "string"
+            },
+            "current_range": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DateRange"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "current_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Text"
+            },
+            "current_value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Value"
+            },
+            "data_through": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Data Through"
+            },
+            "delta_abs": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delta Abs"
+            },
+            "delta_pct": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delta Pct"
+            },
+            "delta_reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delta Reason"
+            },
+            "is_derived": {
+              "default": false,
+              "title": "Is Derived",
+              "type": "boolean"
+            },
+            "is_improvement": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Is Improvement"
+            },
+            "label": {
+              "title": "Label",
+              "type": "string"
+            },
+            "metric_key": {
+              "title": "Metric Key",
+              "type": "string"
+            },
+            "observed_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Observed At"
+            },
+            "precision": {
+              "default": 0,
+              "title": "Precision",
+              "type": "integer"
+            },
+            "previous_range": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DateRange"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "previous_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Previous Text"
+            },
+            "previous_value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Previous Value"
+            },
+            "quality": {
+              "$ref": "#/$defs/Quality"
+            },
+            "source_mode": {
+              "$ref": "#/$defs/SourceMode"
+            },
+            "unit": {
+              "$ref": "#/$defs/MetricUnit"
+            }
+          },
+          "required": [
+            "metric_key",
+            "label",
+            "unit",
+            "comparison_kind",
+            "better_direction",
+            "quality",
+            "source_mode"
+          ],
+          "title": "MetricCardValue",
+          "type": "object"
+        },
+        "MetricUnit": {
+          "enum": [
+            "count",
+            "percent",
+            "score",
+            "position",
+            "currency",
+            "ratio"
+          ],
+          "title": "MetricUnit",
+          "type": "string"
+        },
+        "PeriodKind": {
+          "description": "\u041f\u0435\u0440\u0456\u043e\u0434 \u043f\u043e\u0440\u0456\u0432\u043d\u044f\u043d\u043d\u044f (PLAN \u00a73.1, \u00a721.1).\n\n`week`/`month` \u2014 \u0431\u0430\u0437\u043e\u0432\u0456 \u043f\u0435\u0440\u0456\u043e\u0434\u0438 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0443. `quarter`/`year`/`custom`\n\u0434\u043e\u0434\u0430\u043d\u0456 task-14 \u0456 \u0440\u0430\u0445\u0443\u044e\u0442\u044c\u0441\u044f **\u0430\u0433\u0440\u0435\u0433\u0430\u0446\u0456\u0454\u044e \u0432\u0436\u0435 \u0437\u0431\u0435\u0440\u0435\u0436\u0435\u043d\u043e\u0457 \u0456\u0441\u0442\u043e\u0440\u0456\u0457** (\u043d\u0443\u043b\u044c\n\u043d\u043e\u0432\u043e\u0433\u043e \u0437\u0431\u043e\u0440\u0443), \u0442\u043e\u043c\u0443 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0456 \u043b\u0438\u0448\u0435 \u0442\u0430\u043c, \u0434\u0435 UI \u0447\u0435\u0441\u043d\u043e \u043f\u043e\u043a\u0430\u0437\u0443\u0454 \u043f\u043e\u043a\u0440\u0438\u0442\u0442\u044f \u2014\n\u043d\u0430 \u0441\u0442\u043e\u0440\u0456\u043d\u0446\u0456 \u043a\u043b\u0456\u0454\u043d\u0442\u0430 (\u00a721.1/\u00a721.6), \u043d\u0435 \u043d\u0430 \u0433\u043e\u043b\u043e\u0432\u043d\u043e\u043c\u0443 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0456.",
+          "enum": [
+            "week",
+            "month",
+            "quarter",
+            "year",
+            "custom"
+          ],
+          "title": "PeriodKind",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "ProviderSummaryDTO": {
+          "description": "One provider's row on a client card.",
+          "properties": {
+            "last_attempt_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Attempt At"
+            },
+            "last_error_code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Error Code"
+            },
+            "last_success_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Success At"
+            },
+            "metrics": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/MetricCardValue"
+              },
+              "title": "Metrics",
+              "type": "array"
+            },
+            "provider": {
+              "$ref": "#/$defs/Provider"
+            },
+            "quality": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quality"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "source_mode": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "state": {
+              "enum": [
+                "not_configured",
+                "auth_required",
+                "unavailable",
+                "failed",
+                "complete",
+                "partial",
+                "truncated",
+                "stale"
+              ],
+              "title": "State",
+              "type": "string"
+            },
+            "warnings": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Warnings",
+              "type": "array"
+            }
+          },
+          "required": [
+            "provider",
+            "state"
+          ],
+          "title": "ProviderSummaryDTO",
+          "type": "object"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
+          "type": "string"
+        },
+        "SourceMode": {
+          "enum": [
+            "auto",
+            "api",
+            "browser",
+            "pdf"
+          ],
+          "title": "SourceMode",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "clients": {
+          "items": {
+            "$ref": "#/$defs/ClientCardDTO"
+          },
+          "title": "Clients",
+          "type": "array"
+        },
+        "comparison_mode": {
+          "$ref": "#/$defs/ComparisonMode"
+        },
+        "current_range": {
+          "$ref": "#/$defs/DateRange"
+        },
+        "generated_at": {
+          "format": "date-time",
+          "title": "Generated At",
+          "type": "string"
+        },
+        "period_kind": {
+          "$ref": "#/$defs/PeriodKind"
+        },
+        "previous_range": {
+          "$ref": "#/$defs/DateRange"
+        }
+      },
+      "required": [
+        "period_kind",
+        "comparison_mode",
+        "current_range",
+        "previous_range",
+        "clients",
+        "generated_at"
+      ],
+      "title": "DashboardResponse",
+      "type": "object"
+    },
+    "ErrorDTO": {
+      "description": "Safe error payload \u2014 never contains secrets, stack traces or paths.",
+      "properties": {
+        "details": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Details",
+          "type": "object"
+        },
+        "error_code": {
+          "title": "Error Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "error_code",
+        "message"
+      ],
+      "title": "ErrorDTO",
+      "type": "object"
+    },
+    "IntegrationDTO": {
+      "$defs": {
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "SourceMode": {
+          "enum": [
+            "auto",
+            "api",
+            "browser",
+            "pdf"
+          ],
+          "title": "SourceMode",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "integration_config": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Integration Config",
+          "type": "object"
+        },
+        "last_attempt_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Attempt At"
+        },
+        "last_success_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Success At"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "source_mode": {
+          "$ref": "#/$defs/SourceMode"
+        }
+      },
+      "required": [
+        "id",
+        "client_id",
+        "provider",
+        "enabled",
+        "source_mode"
+      ],
+      "title": "IntegrationDTO",
+      "type": "object"
+    },
+    "IntegrationUpsertRequest": {
+      "$defs": {
+        "SourceMode": {
+          "enum": [
+            "auto",
+            "api",
+            "browser",
+            "pdf"
+          ],
+          "title": "SourceMode",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "integration_config": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Integration Config",
+          "type": "object"
+        },
+        "source_mode": {
+          "$ref": "#/$defs/SourceMode",
+          "default": "auto"
+        }
+      },
+      "title": "IntegrationUpsertRequest",
+      "type": "object"
+    },
+    "JobDTO": {
+      "$defs": {
+        "CellProgressDTO": {
+          "description": "Progress of one `(client, provider)` cell \u2014 PLAN \u00a79.1.",
+          "properties": {
+            "attempt": {
+              "default": 1,
+              "title": "Attempt",
+              "type": "integer"
+            },
+            "client_id": {
+              "title": "Client Id",
+              "type": "string"
+            },
+            "current_stage": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Stage"
+            },
+            "error_code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error Code"
+            },
+            "finished_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Finished At"
+            },
+            "progress_percent": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Progress Percent"
+            },
+            "provider": {
+              "$ref": "#/$defs/Provider"
+            },
+            "started_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Started At"
+            },
+            "status": {
+              "$ref": "#/$defs/CellStatus"
+            },
+            "units_estimated": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Units Estimated"
+            },
+            "units_spent": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Units Spent"
+            }
+          },
+          "required": [
+            "client_id",
+            "provider",
+            "status"
+          ],
+          "title": "CellProgressDTO",
+          "type": "object"
+        },
+        "CellStatus": {
+          "description": "Status of one `(client, provider)` collection cell (PLAN \u00a79.1/\u00a79.2).\n\n`not_configured` is terminal and distinct from `failed`: the integration\nwas never set up for this client, nothing was attempted, and it must\nnever be rendered as a failure or as zero. It is also distinct from\n`unavailable` (attempted, provider has no data) and `auth_required`\n(configured, but the session/credentials expired).\n\n`awaiting_auth` (task-21) is **not terminal**: a live session check (or\nan adapter reporting `error_code=\"auth_required\"`) found the session for\nthis provider dead. The cell is parked here \u2014 releasing its browser\nprofile lock and stopping its lease clock, since neither `claim_next_cell`\nnor startup recovery watch anything but `running` \u2014 while its lane waits\nfor the operator to log back in, then auto-resumes by requeuing this same\ncell. It only ever becomes terminal (`failed`, `error_code=\"auth_required\"`)\nif the wait times out.",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "partial",
+            "failed",
+            "failed_interrupted",
+            "not_configured",
+            "awaiting_auth",
+            "skipped",
+            "cancel_requested",
+            "cancelled"
+          ],
+          "title": "CellStatus",
+          "type": "string"
+        },
+        "ComparisonMode": {
+          "enum": [
+            "closed",
+            "to_date"
+          ],
+          "title": "ComparisonMode",
+          "type": "string"
+        },
+        "JobStatus": {
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "partial",
+            "failed",
+            "cancel_requested",
+            "cancelled"
+          ],
+          "title": "JobStatus",
+          "type": "string"
+        },
+        "JobStepDTO": {
+          "properties": {
+            "attempt": {
+              "default": 1,
+              "title": "Attempt",
+              "type": "integer"
+            },
+            "error_code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error Code"
+            },
+            "finished_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Finished At"
+            },
+            "progress_percent": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Progress Percent"
+            },
+            "provider": {
+              "$ref": "#/$defs/Provider"
+            },
+            "stage": {
+              "title": "Stage",
+              "type": "string"
+            },
+            "started_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Started At"
+            },
+            "status": {
+              "$ref": "#/$defs/StageStatus"
+            },
+            "units_estimated": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Units Estimated"
+            },
+            "units_spent": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Units Spent"
+            },
+            "warning": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Warning"
+            }
+          },
+          "required": [
+            "provider",
+            "stage",
+            "status"
+          ],
+          "title": "JobStepDTO",
+          "type": "object"
+        },
+        "PeriodKind": {
+          "description": "\u041f\u0435\u0440\u0456\u043e\u0434 \u043f\u043e\u0440\u0456\u0432\u043d\u044f\u043d\u043d\u044f (PLAN \u00a73.1, \u00a721.1).\n\n`week`/`month` \u2014 \u0431\u0430\u0437\u043e\u0432\u0456 \u043f\u0435\u0440\u0456\u043e\u0434\u0438 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0443. `quarter`/`year`/`custom`\n\u0434\u043e\u0434\u0430\u043d\u0456 task-14 \u0456 \u0440\u0430\u0445\u0443\u044e\u0442\u044c\u0441\u044f **\u0430\u0433\u0440\u0435\u0433\u0430\u0446\u0456\u0454\u044e \u0432\u0436\u0435 \u0437\u0431\u0435\u0440\u0435\u0436\u0435\u043d\u043e\u0457 \u0456\u0441\u0442\u043e\u0440\u0456\u0457** (\u043d\u0443\u043b\u044c\n\u043d\u043e\u0432\u043e\u0433\u043e \u0437\u0431\u043e\u0440\u0443), \u0442\u043e\u043c\u0443 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0456 \u043b\u0438\u0448\u0435 \u0442\u0430\u043c, \u0434\u0435 UI \u0447\u0435\u0441\u043d\u043e \u043f\u043e\u043a\u0430\u0437\u0443\u0454 \u043f\u043e\u043a\u0440\u0438\u0442\u0442\u044f \u2014\n\u043d\u0430 \u0441\u0442\u043e\u0440\u0456\u043d\u0446\u0456 \u043a\u043b\u0456\u0454\u043d\u0442\u0430 (\u00a721.1/\u00a721.6), \u043d\u0435 \u043d\u0430 \u0433\u043e\u043b\u043e\u0432\u043d\u043e\u043c\u0443 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0456.",
+          "enum": [
+            "week",
+            "month",
+            "quarter",
+            "year",
+            "custom"
+          ],
+          "title": "PeriodKind",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "StageStatus": {
+          "enum": [
+            "pending",
+            "running",
+            "succeeded",
+            "failed",
+            "skipped"
+          ],
+          "title": "StageStatus",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "anchor_date": {
+          "format": "date",
+          "title": "Anchor Date",
+          "type": "string"
+        },
+        "attempt": {
+          "default": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "batch_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch Id"
+        },
+        "cells": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CellProgressDTO"
+          },
+          "title": "Cells",
+          "type": "array"
+        },
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "comparison_mode": {
+          "$ref": "#/$defs/ComparisonMode"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "current_stage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Stage"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        },
+        "error_message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Message"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finished At"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "period_kind": {
+          "$ref": "#/$defs/PeriodKind"
+        },
+        "progress_percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Progress Percent"
+        },
+        "requested_providers": {
+          "items": {
+            "$ref": "#/$defs/Provider"
+          },
+          "title": "Requested Providers",
+          "type": "array"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "status": {
+          "$ref": "#/$defs/JobStatus"
+        },
+        "steps": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/JobStepDTO"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "client_id",
+        "period_kind",
+        "comparison_mode",
+        "anchor_date",
+        "requested_providers",
+        "status",
+        "created_at"
+      ],
+      "title": "JobDTO",
+      "type": "object"
+    },
+    "MetricCardValue": {
+      "$defs": {
+        "BetterDirection": {
+          "enum": [
+            "up",
+            "down",
+            "neutral"
+          ],
+          "title": "BetterDirection",
+          "type": "string"
+        },
+        "DateRange": {
+          "additionalProperties": false,
+          "description": "Inclusive date range; the UI always renders the exact start/end.",
+          "properties": {
+            "end": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            },
+            "start": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "title": "DateRange",
+          "type": "object"
+        },
+        "MetricUnit": {
+          "enum": [
+            "count",
+            "percent",
+            "score",
+            "position",
+            "currency",
+            "ratio"
+          ],
+          "title": "MetricUnit",
+          "type": "string"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
+          "type": "string"
+        },
+        "SourceMode": {
+          "enum": [
+            "auto",
+            "api",
+            "browser",
+            "pdf"
+          ],
+          "title": "SourceMode",
+          "type": "string"
+        }
+      },
+      "description": "One metric on a client card: fully rendered, no frontend math needed.",
+      "properties": {
+        "better_direction": {
+          "$ref": "#/$defs/BetterDirection"
+        },
+        "comparison_kind": {
+          "enum": [
+            "range",
+            "snapshot"
+          ],
+          "title": "Comparison Kind",
+          "type": "string"
+        },
+        "current_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DateRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "current_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Text"
+        },
+        "current_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Value"
+        },
+        "data_through": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data Through"
+        },
+        "delta_abs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delta Abs"
+        },
+        "delta_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delta Pct"
+        },
+        "delta_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delta Reason"
+        },
+        "is_derived": {
+          "default": false,
+          "title": "Is Derived",
+          "type": "boolean"
+        },
+        "is_improvement": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Improvement"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "metric_key": {
+          "title": "Metric Key",
+          "type": "string"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "precision": {
+          "default": 0,
+          "title": "Precision",
+          "type": "integer"
+        },
+        "previous_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DateRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "previous_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Text"
+        },
+        "previous_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Value"
+        },
+        "quality": {
+          "$ref": "#/$defs/Quality"
+        },
+        "source_mode": {
+          "$ref": "#/$defs/SourceMode"
+        },
+        "unit": {
+          "$ref": "#/$defs/MetricUnit"
+        }
+      },
+      "required": [
+        "metric_key",
+        "label",
+        "unit",
+        "comparison_kind",
+        "better_direction",
+        "quality",
+        "source_mode"
+      ],
+      "title": "MetricCardValue",
+      "type": "object"
+    },
+    "MetricSpec": {
+      "$defs": {
+        "BetterDirection": {
+          "enum": [
+            "up",
+            "down",
+            "neutral"
+          ],
+          "title": "BetterDirection",
+          "type": "string"
+        },
+        "MetricUnit": {
+          "enum": [
+            "count",
+            "percent",
+            "score",
+            "position",
+            "currency",
+            "ratio"
+          ],
+          "title": "MetricUnit",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "One catalog row: how a metric is measured, compared and displayed.",
+      "properties": {
+        "allow_derived": {
+          "default": false,
+          "title": "Allow Derived",
+          "type": "boolean"
+        },
+        "better_direction": {
+          "$ref": "#/$defs/BetterDirection"
+        },
+        "comparison_kind": {
+          "enum": [
+            "range",
+            "snapshot"
+          ],
+          "title": "Comparison Kind",
+          "type": "string"
+        },
+        "freshness_sla_hours": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Freshness Sla Hours"
+        },
+        "health_weight": {
+          "default": 1.0,
+          "title": "Health Weight",
+          "type": "number"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "min_quality_to_show": {
+          "$ref": "#/$defs/Quality",
+          "default": "partial"
+        },
+        "precision": {
+          "default": 0,
+          "title": "Precision",
+          "type": "integer"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "unit": {
+          "$ref": "#/$defs/MetricUnit"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "provider",
+        "unit",
+        "comparison_kind",
+        "better_direction"
+      ],
+      "title": "MetricSpec",
+      "type": "object"
+    },
+    "MetricValueDTO": {
+      "$defs": {
+        "MetricUnit": {
+          "enum": [
+            "count",
+            "percent",
+            "score",
+            "position",
+            "currency",
+            "ratio"
+          ],
+          "title": "MetricUnit",
+          "type": "string"
+        },
+        "PeriodRole": {
+          "enum": [
+            "current",
+            "previous",
+            "snapshot"
+          ],
+          "title": "PeriodRole",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Persisted metric value, mirrors the `metric_values` table (PLAN \u00a76).",
+      "properties": {
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "is_derived": {
+          "default": false,
+          "title": "Is Derived",
+          "type": "boolean"
+        },
+        "metric_key": {
+          "title": "Metric Key",
+          "type": "string"
+        },
+        "period_end": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Period End"
+        },
+        "period_role": {
+          "$ref": "#/$defs/PeriodRole"
+        },
+        "period_start": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Period Start"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "quality": {
+          "$ref": "#/$defs/Quality"
+        },
+        "snapshot_id": {
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/MetricUnit"
+        },
+        "value_numeric": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Numeric"
+        },
+        "value_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Text"
+        }
+      },
+      "required": [
+        "id",
+        "snapshot_id",
+        "client_id",
+        "provider",
+        "metric_key",
+        "period_role",
+        "unit",
+        "quality"
+      ],
+      "title": "MetricValueDTO",
+      "type": "object"
+    },
+    "PreflightResult": {
+      "$defs": {
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Result of `preflight()`: can this cell even attempt a collection?",
+      "properties": {
+        "details": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Details",
+          "type": "object"
+        },
+        "message": {
+          "default": "",
+          "title": "Message",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason Code"
+        },
+        "units_estimated": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Units Estimated"
+        }
+      },
+      "required": [
+        "provider",
+        "ok"
+      ],
+      "title": "PreflightResult",
+      "type": "object"
+    },
+    "ProgressEvent": {
+      "$defs": {
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Emitted by an adapter during `collect()`.\n\nFields are stable and structured; `message` is a redacted, human-readable\nstring for display only \u2014 it is never a source of control-flow logic for\nthe worker or UI.",
+      "properties": {
+        "completed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed"
+        },
+        "details": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Details",
+          "type": "object"
+        },
+        "level": {
+          "default": "info",
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ],
+          "title": "Level",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "title": "Message",
+          "type": "string"
+        },
+        "percent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Percent"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "total": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total"
+        }
+      },
+      "required": [
+        "provider",
+        "stage"
+      ],
+      "title": "ProgressEvent",
+      "type": "object"
+    },
+    "ProviderStatusCellDTO": {
+      "$defs": {
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "SourceMode": {
+          "enum": [
+            "auto",
+            "api",
+            "browser",
+            "pdf"
+          ],
+          "title": "SourceMode",
+          "type": "string"
+        }
+      },
+      "description": "One `(client, provider)` row for `GET /providers/status` \u2014 no secrets.",
+      "properties": {
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "configured": {
+          "title": "Configured",
+          "type": "boolean"
+        },
+        "last_checked_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Checked At"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason Code"
+        },
+        "source_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "enum": [
+            "not_configured",
+            "auth_required",
+            "unavailable",
+            "failed",
+            "complete",
+            "partial",
+            "truncated",
+            "stale"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "units_estimated": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Units Estimated"
+        }
+      },
+      "required": [
+        "client_id",
+        "provider",
+        "configured",
+        "state"
+      ],
+      "title": "ProviderStatusCellDTO",
+      "type": "object"
+    },
+    "ProviderSummaryDTO": {
+      "$defs": {
+        "BetterDirection": {
+          "enum": [
+            "up",
+            "down",
+            "neutral"
+          ],
+          "title": "BetterDirection",
+          "type": "string"
+        },
+        "DateRange": {
+          "additionalProperties": false,
+          "description": "Inclusive date range; the UI always renders the exact start/end.",
+          "properties": {
+            "end": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            },
+            "start": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "title": "DateRange",
+          "type": "object"
+        },
+        "MetricCardValue": {
+          "description": "One metric on a client card: fully rendered, no frontend math needed.",
+          "properties": {
+            "better_direction": {
+              "$ref": "#/$defs/BetterDirection"
+            },
+            "comparison_kind": {
+              "enum": [
+                "range",
+                "snapshot"
+              ],
+              "title": "Comparison Kind",
+              "type": "string"
+            },
+            "current_range": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DateRange"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "current_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Text"
+            },
+            "current_value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Current Value"
+            },
+            "data_through": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Data Through"
+            },
+            "delta_abs": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delta Abs"
+            },
+            "delta_pct": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delta Pct"
+            },
+            "delta_reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Delta Reason"
+            },
+            "is_derived": {
+              "default": false,
+              "title": "Is Derived",
+              "type": "boolean"
+            },
+            "is_improvement": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Is Improvement"
+            },
+            "label": {
+              "title": "Label",
+              "type": "string"
+            },
+            "metric_key": {
+              "title": "Metric Key",
+              "type": "string"
+            },
+            "observed_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Observed At"
+            },
+            "precision": {
+              "default": 0,
+              "title": "Precision",
+              "type": "integer"
+            },
+            "previous_range": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DateRange"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "previous_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Previous Text"
+            },
+            "previous_value": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Previous Value"
+            },
+            "quality": {
+              "$ref": "#/$defs/Quality"
+            },
+            "source_mode": {
+              "$ref": "#/$defs/SourceMode"
+            },
+            "unit": {
+              "$ref": "#/$defs/MetricUnit"
+            }
+          },
+          "required": [
+            "metric_key",
+            "label",
+            "unit",
+            "comparison_kind",
+            "better_direction",
+            "quality",
+            "source_mode"
+          ],
+          "title": "MetricCardValue",
+          "type": "object"
+        },
+        "MetricUnit": {
+          "enum": [
+            "count",
+            "percent",
+            "score",
+            "position",
+            "currency",
+            "ratio"
+          ],
+          "title": "MetricUnit",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
+          "type": "string"
+        },
+        "SourceMode": {
+          "enum": [
+            "auto",
+            "api",
+            "browser",
+            "pdf"
+          ],
+          "title": "SourceMode",
+          "type": "string"
+        }
+      },
+      "description": "One provider's row on a client card.",
+      "properties": {
+        "last_attempt_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Attempt At"
+        },
+        "last_error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Error Code"
+        },
+        "last_success_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Success At"
+        },
+        "metrics": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MetricCardValue"
+          },
+          "title": "Metrics",
+          "type": "array"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "quality": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Quality"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "enum": [
+            "not_configured",
+            "auth_required",
+            "unavailable",
+            "failed",
+            "complete",
+            "partial",
+            "truncated",
+            "stale"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "warnings": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "provider",
+        "state"
+      ],
+      "title": "ProviderSummaryDTO",
+      "type": "object"
+    },
+    "ProvidersStatusDTO": {
+      "$defs": {
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "ProviderStatusCellDTO": {
+          "description": "One `(client, provider)` row for `GET /providers/status` \u2014 no secrets.",
+          "properties": {
+            "client_id": {
+              "title": "Client Id",
+              "type": "string"
+            },
+            "configured": {
+              "title": "Configured",
+              "type": "boolean"
+            },
+            "last_checked_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Last Checked At"
+            },
+            "provider": {
+              "$ref": "#/$defs/Provider"
+            },
+            "reason_code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reason Code"
+            },
+            "source_mode": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "state": {
+              "enum": [
+                "not_configured",
+                "auth_required",
+                "unavailable",
+                "failed",
+                "complete",
+                "partial",
+                "truncated",
+                "stale"
+              ],
+              "title": "State",
+              "type": "string"
+            },
+            "units_estimated": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Units Estimated"
+            }
+          },
+          "required": [
+            "client_id",
+            "provider",
+            "configured",
+            "state"
+          ],
+          "title": "ProviderStatusCellDTO",
+          "type": "object"
+        },
+        "SourceMode": {
+          "enum": [
+            "auto",
+            "api",
+            "browser",
+            "pdf"
+          ],
+          "title": "SourceMode",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "cells": {
+          "items": {
+            "$ref": "#/$defs/ProviderStatusCellDTO"
+          },
+          "title": "Cells",
+          "type": "array"
+        },
+        "generated_at": {
+          "format": "date-time",
+          "title": "Generated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "generated_at",
+        "cells"
+      ],
+      "title": "ProvidersStatusDTO",
+      "type": "object"
+    },
+    "SyncJobAcceptedDTO": {
+      "description": "`202 Accepted` body for `POST /sync-jobs`.",
+      "properties": {
+        "batch_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch Id"
+        },
+        "events_url": {
+          "title": "Events Url",
+          "type": "string"
+        },
+        "job_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Id"
+        },
+        "status_url": {
+          "title": "Status Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status_url",
+        "events_url"
+      ],
+      "title": "SyncJobAcceptedDTO",
+      "type": "object"
+    },
+    "SyncJobRequest": {
+      "$defs": {
+        "ComparisonMode": {
+          "enum": [
+            "closed",
+            "to_date"
+          ],
+          "title": "ComparisonMode",
+          "type": "string"
+        },
+        "PeriodKind": {
+          "description": "\u041f\u0435\u0440\u0456\u043e\u0434 \u043f\u043e\u0440\u0456\u0432\u043d\u044f\u043d\u043d\u044f (PLAN \u00a73.1, \u00a721.1).\n\n`week`/`month` \u2014 \u0431\u0430\u0437\u043e\u0432\u0456 \u043f\u0435\u0440\u0456\u043e\u0434\u0438 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0443. `quarter`/`year`/`custom`\n\u0434\u043e\u0434\u0430\u043d\u0456 task-14 \u0456 \u0440\u0430\u0445\u0443\u044e\u0442\u044c\u0441\u044f **\u0430\u0433\u0440\u0435\u0433\u0430\u0446\u0456\u0454\u044e \u0432\u0436\u0435 \u0437\u0431\u0435\u0440\u0435\u0436\u0435\u043d\u043e\u0457 \u0456\u0441\u0442\u043e\u0440\u0456\u0457** (\u043d\u0443\u043b\u044c\n\u043d\u043e\u0432\u043e\u0433\u043e \u0437\u0431\u043e\u0440\u0443), \u0442\u043e\u043c\u0443 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0456 \u043b\u0438\u0448\u0435 \u0442\u0430\u043c, \u0434\u0435 UI \u0447\u0435\u0441\u043d\u043e \u043f\u043e\u043a\u0430\u0437\u0443\u0454 \u043f\u043e\u043a\u0440\u0438\u0442\u0442\u044f \u2014\n\u043d\u0430 \u0441\u0442\u043e\u0440\u0456\u043d\u0446\u0456 \u043a\u043b\u0456\u0454\u043d\u0442\u0430 (\u00a721.1/\u00a721.6), \u043d\u0435 \u043d\u0430 \u0433\u043e\u043b\u043e\u0432\u043d\u043e\u043c\u0443 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0456.",
+          "enum": [
+            "week",
+            "month",
+            "quarter",
+            "year",
+            "custom"
+          ],
+          "title": "PeriodKind",
+          "type": "string"
+        },
+        "Provider": {
+          "enum": [
+            "ahrefs",
+            "semrush",
+            "gsc",
+            "reporting_ninja"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "SourceMode": {
+          "enum": [
+            "auto",
+            "api",
+            "browser",
+            "pdf"
+          ],
+          "title": "SourceMode",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Accepts a single client or a batch (PLAN \u00a79.1).",
+      "properties": {
+        "anchor": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor"
+        },
+        "client_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "const": "all",
+              "type": "string"
+            }
+          ],
+          "title": "Client Ids"
+        },
+        "comparison_mode": {
+          "$ref": "#/$defs/ComparisonMode",
+          "default": "closed"
+        },
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Key"
+        },
+        "mode": {
+          "default": "collect_missing",
+          "enum": [
+            "collect_missing",
+            "force_refresh"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "period_kind": {
+          "$ref": "#/$defs/PeriodKind"
+        },
+        "providers": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Provider"
+              },
+              "type": "array"
+            },
+            {
+              "const": "all",
+              "type": "string"
+            }
+          ],
+          "title": "Providers"
+        },
+        "source_mode": {
+          "$ref": "#/$defs/SourceMode",
+          "default": "auto"
+        }
+      },
+      "required": [
+        "client_ids",
+        "providers",
+        "period_kind"
+      ],
+      "title": "SyncJobRequest",
+      "type": "object"
+    }
+  },
+  "stage_order": [
+    "queued",
+    "preflight",
+    "authenticate",
+    "fetch_current",
+    "fetch_previous",
+    "normalize",
+    "validate",
+    "persist",
+    "complete"
+  ]
+}

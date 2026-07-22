@@ -1,0 +1,512 @@
+"""REST API v1 request/response DTOs (PLAN §10).
+
+These shapes are the contract between `task-06` (routers) and `task-12`
+(frontend); OpenAPI generated from these is the source of truth for both.
+
+Design rule carried over from PLAN §12: the backend computes business
+semantics (delta, quality, `not_configured` vs `unavailable` vs `failed`,
+which direction is an improvement) and hands the frontend a value that is
+ready to render. The frontend must not recompute any of this.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict
+
+from app.schemas.adapter import DateRange
+from app.schemas.enums import (
+    BetterDirection,
+    CellStatus,
+    ComparisonMode,
+    JobStatus,
+    MetricUnit,
+    PeriodKind,
+    Provider,
+    Quality,
+    SourceMode,
+    StageStatus,
+)
+
+# Composed view state for a provider card/status cell — not a stored value,
+# so it lives here as a Literal rather than in app.schemas.enums. Combines
+# `Quality` outcomes with the pre-attempt/auth states from PLAN §9.2/§12.
+ProviderCardState = Literal[
+    "not_configured",
+    "auth_required",
+    "unavailable",
+    "failed",
+    "complete",
+    "partial",
+    "truncated",
+    "stale",
+]
+
+
+class ErrorDTO(BaseModel):
+    """Safe error payload — never contains secrets, stack traces or paths."""
+
+    error_code: str
+    message: str
+    details: dict[str, Any] = {}
+
+
+# --- Dashboard -------------------------------------------------------------
+
+
+class MetricCardValue(BaseModel):
+    """One metric on a client card: fully rendered, no frontend math needed."""
+
+    metric_key: str
+    label: str
+    unit: MetricUnit
+    comparison_kind: Literal["range", "snapshot"]
+    precision: int = 0
+    is_derived: bool = False
+
+    current_value: Decimal | None = None
+    current_text: str | None = None
+    previous_value: Decimal | None = None
+    previous_text: str | None = None
+
+    delta_abs: Decimal | None = None
+    delta_pct: Decimal | None = None
+    # Set whenever delta_pct is None despite having a current value, e.g.
+    # "previous_zero" or "previous_missing" (PLAN §12) — never "infinity".
+    delta_reason: str | None = None
+
+    better_direction: BetterDirection
+    # Backend-computed semantic verdict for coloring; None when there is
+    # nothing to compare against yet (no previous value).
+    is_improvement: bool | None = None
+
+    quality: Quality
+    source_mode: SourceMode
+    observed_at: datetime | None = None
+    data_through: date | None = None
+    current_range: DateRange | None = None  # None for snapshot metrics
+    previous_range: DateRange | None = None
+
+
+class ProviderSummaryDTO(BaseModel):
+    """One provider's row on a client card."""
+
+    provider: Provider
+    state: ProviderCardState
+    metrics: list[MetricCardValue] = []
+    quality: Quality | None = None  # None when not_configured
+    source_mode: SourceMode | None = None
+    last_success_at: datetime | None = None
+    last_attempt_at: datetime | None = None
+    last_error_code: str | None = None
+    warnings: list[str] = []
+
+
+class ClientHealthDTO(BaseModel):
+    """Composite performance signal for a client card (PLAN §21.2).
+
+    `value` is `None` — never `0` — when no service contributed. `coverage_*`
+    is shown alongside it so the operator can tell "72% · 3/4 сервіси" apart
+    from a client that only has one service configured at all.
+    """
+
+    value: Decimal | None = None
+    coverage_contributing: int
+    coverage_configured: int
+
+
+class ClientCardDTO(BaseModel):
+    client_id: str
+    name: str
+    slug: str
+    domain: str
+    logo_path: str | None = None
+    market: str | None = None
+    timezone: str
+    overall_status: Literal["ok", "attention", "stale", "failed_all"]
+    providers: list[ProviderSummaryDTO]
+    last_synced_at: datetime | None = None
+    health: ClientHealthDTO
+
+
+# Dashboard sort modes (PLAN §21.3). `quality` is the default: clients
+# without connected services no longer land at the top by accident.
+DashboardSortMode = Literal["quality", "health", "name", "last_sync", "biggest_drop"]
+
+
+class DashboardResponse(BaseModel):
+    period_kind: PeriodKind
+    comparison_mode: ComparisonMode
+    current_range: DateRange
+    previous_range: DateRange
+    clients: list[ClientCardDTO]
+    generated_at: datetime
+
+
+# --- Clients & integrations -------------------------------------------------
+
+
+class ClientDTO(BaseModel):
+    id: str
+    name: str
+    slug: str
+    domain: str
+    logo_path: str | None = None
+    market: str | None = None
+    timezone: str
+    enabled: bool = True
+    created_at: datetime
+    updated_at: datetime
+
+
+class ClientCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    slug: str
+    domain: str
+    market: str | None = None
+    timezone: str
+    enabled: bool = True
+
+
+class ClientUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    domain: str | None = None
+    market: str | None = None
+    timezone: str | None = None
+    enabled: bool | None = None
+
+
+class IntegrationDTO(BaseModel):
+    id: str
+    client_id: str
+    provider: Provider
+    enabled: bool
+    source_mode: SourceMode
+    # Non-secret external ids only: property/account/project id,
+    # database/country, report name. Never API keys/passwords/cookies.
+    integration_config: dict[str, Any] = {}
+    last_success_at: datetime | None = None
+    last_attempt_at: datetime | None = None
+
+
+class IntegrationUpsertRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    source_mode: SourceMode = SourceMode.auto
+    integration_config: dict[str, Any] = {}
+
+
+class AISeoToolsImportRequest(BaseModel):
+    """Import only the selected dashboard roster from the fixed checkout."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_ids: list[str] | Literal["all"] = "all"
+    dry_run: bool = False
+
+
+class AISeoToolsImportResponse(BaseModel):
+    source_available: bool
+    dry_run: bool
+    scanned_artifacts: int = 0
+    imported_artifacts: int = 0
+    integrations_configured: int = 0
+    outcomes: dict[str, int] = {}
+    warnings: list[str] = []
+
+
+# --- Jobs --------------------------------------------------------------
+
+
+class SyncJobRequest(BaseModel):
+    """Accepts a single client or a batch (PLAN §9.1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_ids: list[str] | Literal["all"]
+    providers: list[Provider] | Literal["all"]
+    period_kind: PeriodKind
+    comparison_mode: ComparisonMode = ComparisonMode.closed
+    anchor: date | None = None
+    mode: Literal["collect_missing", "force_refresh"] = "collect_missing"
+    source_mode: SourceMode = SourceMode.auto
+    idempotency_key: str | None = None
+
+
+class SyncJobAcceptedDTO(BaseModel):
+    """`202 Accepted` body for `POST /sync-jobs`."""
+
+    job_id: str | None = None
+    batch_id: str | None = None
+    status_url: str
+    events_url: str
+
+
+class CellProgressDTO(BaseModel):
+    """Progress of one `(client, provider)` cell — PLAN §9.1."""
+
+    client_id: str
+    provider: Provider
+    status: CellStatus
+    progress_percent: float | None = None
+    current_stage: str | None = None
+    attempt: int = 1
+    error_code: str | None = None
+    units_spent: int | None = None
+    units_estimated: int | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class BatchProgressDTO(BaseModel):
+    """Aggregates cells for the frontend's progress matrix (task-12)."""
+
+    job_id: str | None = None
+    batch_id: str | None = None
+    status: JobStatus
+    progress_percent: float | None = None
+    cells: list[CellProgressDTO] = []
+
+
+class JobStepDTO(BaseModel):
+    provider: Provider
+    stage: str
+    status: StageStatus
+    progress_percent: float | None = None
+    attempt: int = 1
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    warning: str | None = None
+    error_code: str | None = None
+    units_spent: int | None = None
+    units_estimated: int | None = None
+
+
+class JobDTO(BaseModel):
+    id: str
+    batch_id: str | None = None
+    client_id: str
+    period_kind: PeriodKind
+    comparison_mode: ComparisonMode
+    anchor_date: date
+    requested_providers: list[Provider]
+    status: JobStatus
+    progress_percent: float | None = None
+    current_stage: str | None = None
+    attempt: int = 1
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    steps: list[JobStepDTO] = []
+    cells: list[CellProgressDTO] = []
+
+
+# --- Operations --------------------------------------------------------
+
+
+class ProviderStatusCellDTO(BaseModel):
+    """One `(client, provider)` row for `GET /providers/status` — no secrets."""
+
+    client_id: str
+    provider: Provider
+    configured: bool
+    source_mode: SourceMode | None = None
+    state: ProviderCardState
+    reason_code: str | None = None
+    units_estimated: int | None = None
+    last_checked_at: datetime | None = None
+
+
+class ProvidersStatusDTO(BaseModel):
+    generated_at: datetime
+    cells: list[ProviderStatusCellDTO]
+
+
+# --- Browser session bridge (task-20 primitives, task-22 HTTP surface) -----
+#
+# Mirrors `app.integrations.browser_session.SessionState` as a plain Literal
+# rather than importing that module here: `app.integrations` depends on
+# `app.schemas`, never the reverse (PLAN §5.2 layering).
+SessionLivenessState = Literal["alive", "expired", "no_profile"]
+
+
+class ProviderLoginDTO(BaseModel):
+    """`POST /providers/{provider}/login` response. Neither task-20 (owned
+    `check_session`/`start_login` as plain functions, no route) nor task-21
+    (owned the auth-pause job-engine plumbing that *consumes* `check_session`)
+    put a route on these — task-22's «Увійти» button has nothing to call
+    without one, so it's added here, additively, against this file's existing
+    style."""
+
+    login_session_id: str
+    state: SessionLivenessState
+    # Echoes `app.jobs.lane.DEFAULT_AUTH_PAUSE_TIMEOUT_SECONDS` — the same
+    # number the lane actually waits before giving up — so the UI's countdown
+    # can never drift from the real timeout.
+    timeout_seconds: int
+
+
+class ProviderSessionDTO(BaseModel):
+    """`GET /providers/{provider}/session` response — a live liveness probe,
+    not derived from stored cell history like `ProviderStatusCellDTO`. Used
+    by the standalone client-card «Увійти» action, which runs outside any
+    job/SSE context."""
+
+    state: SessionLivenessState
+
+
+# --- Client metrics history ------------------------------------------------
+#
+# Added by task-06 (REST API): task-02 left `GET /clients/{id}/metrics`'s
+# response shape open for the owning router task to define. Additive only —
+# no existing DTO above is touched. See this task's Completion report,
+# "Contract changes", for the rationale.
+
+
+class MetricHistoryPointDTO(BaseModel):
+    period_start: date | None = None
+    period_end: date | None = None
+    observed_at: datetime | None = None
+    value_numeric: Decimal | None = None
+    quality: Quality
+
+
+class MetricHistorySeriesDTO(BaseModel):
+    metric_key: str
+    label: str
+    provider: Provider
+    unit: MetricUnit
+    comparison_kind: Literal["range", "snapshot"]
+    # Oldest -> newest.
+    points: list[MetricHistoryPointDTO] = []
+
+
+class ClientMetricsHistoryDTO(BaseModel):
+    client_id: str
+    period_kind: PeriodKind
+    series: list[MetricHistorySeriesDTO]
+    generated_at: datetime
+
+
+# --- Coverage of an aggregated range ---------------------------------------
+#
+# Added by task-14 (period engine v2). Extended periods (quarter/year/custom)
+# are served by aggregating stored history rather than by new collection
+# (PLAN §21.1), so the depth of that history is a first-class part of the
+# answer: the UI must be able to say "дані за 47 з 92 днів" instead of
+# quietly presenting a hole as a complete period (§12).
+# Placed in its own section, appended at the end, so task-15's additions to
+# this file (health fields, sort) do not collide with it.
+
+
+class CoverageDTO(BaseModel):
+    """How much of a requested range is actually backed by stored data."""
+
+    days_total: int
+    days_covered: int
+    # Maximal uncovered sub-ranges, oldest first; empty when complete.
+    gaps: list[DateRange] = []
+    # `complete` only when `gaps` is empty; `unavailable` when nothing at
+    # all was stored for the range — never reported as `complete` with zeros.
+    quality: Quality
+
+
+# --- GSC dimensional analytics (pages/queries) ------------------------------
+#
+# Added by task-16 (GSC dimensional data, PLAN §21.4): task-02 left this
+# response shape open for the owning task to define, same precedent as
+# task-06/task-14's additions above. Additive only — nothing existing here
+# is touched. See task-16's Completion report, "Contract changes".
+
+
+class DimensionRowDTO(BaseModel):
+    """One page/query row — CTR/position keep GSC's own precision (PLAN §12:
+    never truncated to int); `None` means no data, never `0`."""
+
+    dimension_value: str
+    clicks: int | None = None
+    impressions: int | None = None
+    ctr: Decimal | None = None
+    position: Decimal | None = None
+    quality: Quality
+    # 1-based rank in this period's impressions ordering; `None` for the
+    # top-N cut's aggregated remainder row (`dimension_value` = "інше").
+    rank: int | None = None
+
+
+class DimensionAnalyticsResponseDTO(BaseModel):
+    """`GET /clients/{id}/analytics/{pages,queries}` response.
+
+    `truncated` is derived from the stored rows' own `quality`, not
+    inferred from row count, so a caller can never mistake a short-but-
+    complete list for a cut one (PLAN §12: truncated must never pass as
+    the full list). `total_rows_available` is the pre-cap count for the
+    matched period, independent of this response's own `limit`/`offset`.
+    """
+
+    client_id: str
+    dimension: Literal["page", "query"]
+    period_start: date | None = None  # None when no stored period matched the request
+    period_end: date | None = None
+    rows: list[DimensionRowDTO] = []
+    total_rows_available: int = 0
+    truncated: bool = False
+    limit: int
+    offset: int
+    generated_at: datetime
+
+
+# --- Alerts: pages/queries declining or rising ------------------------------
+#
+# Added by task-17 (alerts engine, PLAN §21.5): task-02 left this response
+# shape open for the owning task, same precedent as task-06/14/16's additions
+# above. Additive only — nothing existing here is touched. See task-17's
+# Completion report, "Contract changes".
+
+
+class AlertEntryDTO(BaseModel):
+    """One flagged page/query. `clicks_previous`/`delta_pct` are `None` for
+    a `new` entry (no previous-period row exists) — never a fabricated `0`
+    or `inf` (PLAN §12)."""
+
+    dimension_value: str
+    clicks_current: int | None = None
+    clicks_previous: int | None = None
+    delta_abs: int
+    delta_pct: Decimal | None = None
+
+
+class AlertsResponseDTO(BaseModel):
+    """`GET /clients/{id}/alerts` response.
+
+    `declining`/`rising`/`new` are sorted by absolute click impact, never by
+    percentage (PLAN §21.5: a 5000->4000 drop outranks a 20->10 one).
+    Period dates are the exact calendar ranges `resolve_periods` resolved,
+    always present regardless of whether data exists for them — so the UI
+    can show "недостатньо даних за 6-12 січня" instead of a blank state.
+    `skipped_reason` is set (with all three lists empty) when either period
+    carries `partial`/`truncated` data or has no stored data at all — a
+    false alert is worse than no alert.
+    """
+
+    client_id: str
+    dimension: Literal["page", "query"]
+    period_current_start: date
+    period_current_end: date
+    period_previous_start: date
+    period_previous_end: date
+    declining: list[AlertEntryDTO] = []
+    rising: list[AlertEntryDTO] = []
+    new: list[AlertEntryDTO] = []
+    skipped_reason: str | None = None
+    generated_at: datetime
