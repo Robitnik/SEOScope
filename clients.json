@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "clients": [
+    {
+      "group": "VISION",
+      "code": "3XE",
+      "name": "3XE",
+      "url": "https://www.exxxoticaexpo.com/",
+      "domain": "exxxoticaexpo.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "3bd6aa2d-9721-45f9-9dcd-033e22854311"
+    },
+    {
+      "group": "VISION",
+      "code": "ALPHA",
+      "name": "ALPHA",
+      "url": "https://www.alphastyle.store/",
+      "domain": "alphastyle.store",
+      "market": null,
+      "timezone": "UTC",
+      "database_id": "d182b771-91cf-4efd-b0dc-b4e1f7fff0d3"
+    },
+    {
+      "group": "VISION",
+      "code": "LAXTON",
+      "name": "LAXTON",
+      "url": "https://www.laxton.se/",
+      "domain": "laxton.se",
+      "market": "SE",
+      "timezone": "Europe/Stockholm",
+      "database_id": "d092a485-e56c-4061-b09a-a111ac6a6842"
+    },
+    {
+      "group": "VISION",
+      "code": "GOREPORT",
+      "name": "GOREPORT",
+      "url": "https://goreport.com/",
+      "domain": "goreport.com",
+      "market": "GB",
+      "timezone": "Europe/London",
+      "database_id": "b8945de7-1963-41cd-8549-126309554be6"
+    },
+    {
+      "group": "VISION",
+      "code": "PJC",
+      "name": "PJC",
+      "url": "https://pjclarkes.com/",
+      "domain": "pjclarkes.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "a7b5439a-d6e6-4401-9183-521a2fb9c3f2"
+    },
+    {
+      "group": "VISION",
+      "code": "SDS",
+      "name": "SDS",
+      "url": "https://www.shorelinedentalstudio.com/",
+      "domain": "shorelinedentalstudio.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "0f61e7c8-f0ca-4f89-ba04-f19ccb692549"
+    },
+    {
+      "group": "VISION",
+      "code": "SHB",
+      "name": "SHB",
+      "url": "https://www.smashhouseburgers.com/",
+      "domain": "smashhouseburgers.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "d99449ed-20e9-4ef5-83cd-47d944dba937"
+    },
+    {
+      "group": "VERTEX",
+      "code": "19CLV",
+      "name": "19CLV",
+      "url": "https://19cleveland.com/",
+      "domain": "19cleveland.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "6f6cde15-0055-467e-89ce-21ad4128f0f6"
+    },
+    {
+      "group": "VERTEX",
+      "code": "EFFYS",
+      "name": "EFFYS",
+      "url": "https://effyscafe.com/",
+      "domain": "effyscafe.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "338e0b08-6c51-4d48-b856-a368a3319ca8"
+    },
+    {
+      "group": "VERTEX",
+      "code": "GRP",
+      "name": "GRP",
+      "url": "https://grillpointnyc.com/",
+      "domain": "grillpointnyc.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "18b5d9c8-52a4-49cb-84c1-986f77e069e6"
+    },
+    {
+      "group": "VERTEX",
+      "code": "HWELL",
+      "name": "HWELL",
+      "url": "https://hearwellservices.com/",
+      "domain": "hearwellservices.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "f519c589-4018-4035-abaa-0c951c825857"
+    },
+    {
+      "group": "VERTEX",
+      "code": "NYCHA",
+      "name": "NYCHA",
+      "url": "https://nychearing.com/",
+      "domain": "nychearing.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "7a60fe97-e1ec-4613-8ec3-953e0c5b278e"
+    },
+    {
+      "group": "VERTEX",
+      "code": "SAPHNY",
+      "name": "SAPHNY",
+      "url": "https://www.nysapphire.com/",
+      "domain": "nysapphire.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "5bd8658b-d1e5-4195-8b10-1cd4c315fe58"
+    },
+    {
+      "group": "VERTEX",
+      "code": "SWM",
+      "name": "SWM",
+      "url": "https://shawarma-mia.com/",
+      "domain": "shawarma-mia.com",
+      "market": "US",
+      "timezone": "America/New_York",
+      "database_id": "0bd6f2f2-e9f4-4657-b583-07ab6e66e285"
+    }
+  ]
+}
