@@ -2,7 +2,7 @@
 
 Every `ProgressEvent` an adapter emits during `collect()` is written here as
 a `job_events` row (monotonic `seq`, doubling as the SSE id) plus a cell
-progress/heartbeat update — this is the "безперервне збереження прогресу"
+progress/heartbeat update — this is the "continuous progress persistence"
 invariant: a crash loses at most the one cell whose persist step never ran.
 
 Redaction is defense-in-depth. `ProviderAdapter.collect()` is contractually
@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.events import EventRepository
 from app.schemas.adapter import ProgressEvent
+from app.schemas.enums import CellStatus, Provider
 
 _REDACT_KEYS = {
     "authorization",
@@ -110,6 +111,61 @@ def make_emitter(
             pass
 
     return _emit
+
+
+# Stage/level a cell-status transition is reported under. `stage` is
+# free-form by contract, but these names stay inside `STAGE_ORDER` so the UI
+# can keep ordering them alongside adapter-emitted stages.
+_CELL_STATUS_STAGE = {
+    CellStatus.queued: "queued",
+    CellStatus.not_configured: "preflight",
+    CellStatus.skipped: "preflight",
+    CellStatus.awaiting_auth: "authenticate",
+}
+
+_CELL_STATUS_LEVEL = {
+    CellStatus.failed: "error",
+    CellStatus.failed_interrupted: "error",
+    CellStatus.awaiting_auth: "warning",
+    CellStatus.not_configured: "warning",
+}
+
+
+def append_cell_status_event(
+    session: Session,
+    *,
+    job_id: str,
+    provider: Provider,
+    status: CellStatus,
+    error_code: str | None = None,
+    message: str | None = None,
+) -> None:
+    """Record a `job_events` row for a cell **status** transition.
+
+    Why this exists (the "session check hangs" defect): the SSE stream
+    `GET /sync-jobs/{id}/events` ships nothing but `job_events` rows, and the
+    frontend re-reads the job snapshot — the only place cell *statuses* live —
+    exclusively when such a row arrives (`frontend/js/sse.js`). Until now the
+    only writer was `make_emitter`, which runs *inside* `adapter.collect()`.
+    So a cell resolved during preflight (`not_configured`, `awaiting_auth`,
+    freshness `skipped`) produced zero events, the stream stayed silent, and
+    the sync modal was frozen on its initial all-`queued` snapshot forever —
+    every provider stuck on «Checking…» even though the worker had already
+    parked the lane awaiting login.
+
+    The payload is deliberately thin: the frontend re-fetches the full job DTO
+    on *any* event, so this only has to be a truthful wake-up, not a second
+    source of truth for status. Runs inside the caller's session/transaction so
+    the row and the status change commit together.
+    """
+    EventRepository(session).append(
+        job_id,
+        _CELL_STATUS_LEVEL.get(status, "info"),
+        provider=provider,
+        stage=_CELL_STATUS_STAGE.get(status, "complete"),
+        message=_redact_text(message or f"cell {status.value}"),
+        details=_redact_value({"cell_status": status.value, "error_code": error_code}),
+    )
 
 
 @contextmanager

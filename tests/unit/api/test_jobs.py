@@ -101,7 +101,12 @@ def test_list_jobs_filters_by_client_id(client, db):
     assert body[0]["client_id"] == a
 
 
-def test_cancel_job_flags_cancel_requested(client, db):
+def test_cancel_job_finalizes_never_claimed_cells(client, db):
+    """No runner is polling the cancel flag for a cell that was never claimed
+    (and once flagged it can no longer be claimed), so `cancel_run` finalizes
+    it itself — the job reaches a terminal `cancelled` instead of sitting at
+    `cancel_requested` forever, which also lets its SSE stream close.
+    """
     client_id = _seed_client(db)
     created = client.post(
         "/api/v1/sync-jobs", json=_base_request([client_id], [Provider.gsc.value])
@@ -110,7 +115,7 @@ def test_cancel_job_flags_cancel_requested(client, db):
 
     response = client.post(f"/api/v1/sync-jobs/{job_id}/cancel")
     assert response.status_code == 200
-    assert response.json()["status"] == "cancel_requested"
+    assert response.json()["status"] == "cancelled"
 
 
 def test_cancel_unknown_job_is_404(client):

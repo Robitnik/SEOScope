@@ -1,6 +1,6 @@
 """Execute one `(client, provider)` cell end-to-end (PLAN §9.2/§9.3).
 
-`run_cell` is the "нуль падінь" boundary: preflight -> (not_configured?) ->
+`run_cell` is the "zero crashes" boundary: preflight -> (not_configured?) ->
 collect -> normalize -> validate -> short atomic persist, with a guard around
 the *entire* sequence so that literally any exception, timeout or garbage
 adapter return value becomes a recorded `failed` cell instead of taking down
@@ -26,7 +26,7 @@ from app.db.repositories.metrics import MetricRepository
 from app.db.repositories.snapshots import SnapshotRepository
 from app.integrations.browser_session import BROWSER_PROVIDERS, SessionState
 from app.integrations.registry import get_adapter
-from app.jobs.events import make_emitter
+from app.jobs.events import append_cell_status_event, make_emitter
 from app.metrics import CATALOG, normalize_result, resolve_periods
 from app.schemas.adapter import CollectionContext, CollectionResult
 from app.schemas.enums import CellStatus, PeriodRole, Provider, Quality
@@ -149,6 +149,14 @@ def run_cell(
                     CellStatus.failed,
                     error_code=error_code,
                     error_message=error_message,
+                )
+                append_cell_status_event(
+                    session,
+                    job_id=handle.job_id,
+                    provider=handle.provider,
+                    status=CellStatus.failed,
+                    error_code=error_code,
+                    message=error_message,
                 )
                 JobRepository(session).sync_status_from_cells(handle.job_id)
         except Exception:  # noqa: BLE001 - persisting the failure must not itself crash the lane
@@ -327,6 +335,13 @@ def _run_cell_unguarded(
         CellRepository(session).set_status(
             handle.cell_id, final_status, error_code=result.error_code, error_message=None
         )
+        append_cell_status_event(
+            session,
+            job_id=handle.job_id,
+            provider=handle.provider,
+            status=final_status,
+            error_code=result.error_code,
+        )
         JobRepository(session).sync_status_from_cells(handle.job_id)
     return final_status
 
@@ -394,6 +409,17 @@ def _terminate(
     with session_scope() as session:
         CellRepository(session).set_status(
             handle.cell_id, status, error_code=error_code, error_message=error_message
+        )
+        # Same transaction as the status change: a terminal/parked cell that
+        # never reached `collect()` has no other way onto the SSE stream, and
+        # without a row here the sync modal never re-reads this status.
+        append_cell_status_event(
+            session,
+            job_id=handle.job_id,
+            provider=handle.provider,
+            status=status,
+            error_code=error_code,
+            message=error_message,
         )
         JobRepository(session).sync_status_from_cells(handle.job_id)
     return status

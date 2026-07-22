@@ -72,7 +72,7 @@ function formatCountdown(overlay) {
   const remaining = Math.max(0, Math.round(overlay.timeoutSeconds - (Date.now() - overlay.startedAt) / 1000));
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
-  return `Залишилось ${mm}:${ss}.`;
+  return `${mm}:${ss} remaining.`;
 }
 
 function sessionPhaseIcon(phase) {
@@ -89,16 +89,16 @@ function sessionPhaseIcon(phase) {
 function sessionPhaseCopy(provider, phase, overlay) {
   const meta = PROVIDERS[provider] || { label: provider };
   switch (phase) {
-    case "checking": return { label: "Перевіряємо…" };
-    case "active": return { label: "Сесія активна" };
-    case "not_configured": return { label: "Не налаштовано" };
-    case "auth_required": return { label: "Потрібен вхід", detail: `Сесія ${meta.label} протухла — потрібен повторний вхід.` };
-    case "starting": return { label: "Запускаємо вхід…" };
-    case "waiting": return { label: "Очікуємо входу…", detail: `Вікно входу відкрито на комп'ютері з теплим Chrome. ${formatCountdown(overlay)} Збір інших сервісів триває.` };
-    case "no_chrome": return { label: "Теплого Chrome немає", detail: "Запустіть на комп'ютері з теплим Chrome:", command: overlay?.message ? overlay.message.replace(/^.*?— /, "") : `seo-audit browser-up --provider ${provider}` };
-    case "error": return { label: "Помилка запуску логіну", detail: overlay?.message || "Спробуйте ще раз." };
-    case "succeeded": return { label: "Логін успішний, продовжуємо…" };
-    case "auth_timeout": return { label: "Таймаут очікування", detail: "Вхід не завершено вчасно — ці клітинки закрито як «Потрібен вхід». Інші сервіси й клієнти не постраждали." };
+    case "checking": return { label: "Checking…" };
+    case "active": return { label: "Session active" };
+    case "not_configured": return { label: "Not configured" };
+    case "auth_required": return { label: "Login required", detail: `${meta.label} session expired — please log in again.` };
+    case "starting": return { label: "Starting login…" };
+    case "waiting": return { label: "Waiting for login…", detail: `The login window is open on the machine with the warm Chrome. ${formatCountdown(overlay)} Other services keep collecting.` };
+    case "no_chrome": return { label: "No warm Chrome available", detail: "Run this on the machine with the warm Chrome:", command: overlay?.message ? overlay.message.replace(/^.*?— /, "") : `seo-audit browser-up --provider ${provider}` };
+    case "error": return { label: "Login start failed", detail: overlay?.message || "Please try again." };
+    case "succeeded": return { label: "Login succeeded, resuming…" };
+    case "auth_timeout": return { label: "Wait timed out", detail: "Login was not completed in time — these cells were closed as «Login required». Other services and clients were not affected." };
     default: return { label: phase };
   }
 }
@@ -109,12 +109,12 @@ function sessionPhaseCopy(provider, phase, overlay) {
 // the tab order and can't be refocused by `renderProgress`'s restore step,
 // which is exactly the "focus lost on state change" failure the DoD calls out.
 const SESSION_BUTTON_BY_PHASE = {
-  auth_required: { label: "Увійти", busy: false },
-  starting: { label: "Запускаємо…", busy: true },
-  waiting: { label: "Очікуємо…", busy: true },
-  no_chrome: { label: "Спробувати ще раз", busy: false },
-  error: { label: "Спробувати ще раз", busy: false },
-  succeeded: { label: "Виконано", busy: true },
+  auth_required: { label: "Log in", busy: false },
+  starting: { label: "Starting…", busy: true },
+  waiting: { label: "Waiting…", busy: true },
+  no_chrome: { label: "Try again", busy: false },
+  error: { label: "Try again", busy: false },
+  succeeded: { label: "Done", busy: true },
 };
 
 function sessionRowMarkup(provider, phase) {
@@ -146,9 +146,9 @@ function renderSessionStagePanel(job, rerender) {
     .map(({ provider, phase }) => `${(PROVIDERS[provider] || { label: provider }).label}: ${sessionPhaseCopy(provider, phase, sessionOverlays.get(provider)).label}`)
     .join(". ");
   return `
-    <section class="session-stage" aria-label="Перевірка сесій">
-      <div class="session-stage__heading"><span>Перевірка сесій</span><span class="session-stage__count">${resolved}/${rows.length}</span></div>
-      <progress class="session-stage__progress" max="${rows.length}" value="${resolved}" aria-label="Перевірено сесій: ${resolved} із ${rows.length}"></progress>
+    <section class="session-stage" aria-label="Session check">
+      <div class="session-stage__heading"><span>Session check</span><span class="session-stage__count">${resolved}/${rows.length}</span></div>
+      <progress class="session-stage__progress" max="${rows.length}" value="${resolved}" aria-label="Sessions checked: ${resolved} of ${rows.length}"></progress>
       <ul class="session-row-list">${rows.map(({ provider, phase }) => sessionRowMarkup(provider, phase)).join("")}</ul>
       <p class="visually-hidden" aria-live="polite">${escapeHtml(liveSummary)}</p>
     </section>`;
@@ -204,20 +204,20 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     const clientIds = [...body.querySelectorAll('input[name="sync-client"]:checked')].map((input) => input.value);
     const providers = [...body.querySelectorAll('input[name="sync-provider"]:checked')].map((input) => input.value);
     if (!clientIds.length || !providers.length) {
-      onToast("Оберіть щонайменше одного клієнта й одне джерело.");
+      onToast("Select at least one client and one source.");
       return;
     }
     sessionOverlays.clear();
     event.currentTarget.disabled = true;
     try {
       const dashboard = getDashboard();
-      title.textContent = "Імпорт історії";
-      subtitle.textContent = "Читаємо наявні звіти AISeoTools перед живим збором.";
-      body.innerHTML = `<div class="state-panel state-running">${icon("database-import")}<p><strong>Синхронізація AISeoTools</strong><br>Імпортуємо нові артефакти й застосовуємо збережені відповідності клієнтів.</p></div>`;
-      footer.innerHTML = `<button class="button button--quiet" type="button" disabled>Готуємо збір…</button>`;
+      title.textContent = "History import";
+      subtitle.textContent = "Reading existing AISeoTools reports before the live collection.";
+      body.innerHTML = `<div class="state-panel state-running">${icon("database-import")}<p><strong>Syncing AISeoTools</strong><br>Importing new artifacts and applying stored client matches.</p></div>`;
+      footer.innerHTML = `<button class="button button--quiet" type="button" disabled>Preparing collection…</button>`;
       const imported = await importAISeoToolsHistory(clientIds);
       if (imported.imported_artifacts > 0) {
-        onToast(`Імпортовано ${imported.imported_artifacts} нових артефактів AISeoTools.`);
+        onToast(`Imported ${imported.imported_artifacts} new AISeoTools artifacts.`);
       }
       const accepted = await createSyncJob({
         client_ids: clientIds,
@@ -231,12 +231,12 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       active = { id: accepted.batch_id || accepted.job_id, eventsUrl: accepted.events_url, lastEventId: "" };
       saveActiveJob(active);
       beginWatch();
-      title.textContent = "Збір даних";
-      subtitle.textContent = "Сервіси працюють паралельно; клієнти всередині сервісу — послідовно.";
+      title.textContent = "Data collection";
+      subtitle.textContent = "Services run in parallel; clients within a service run sequentially.";
       renderProgress({ status: "queued", progress_percent: 0, cells: [] });
     } catch (error) {
       openSelection({ trigger: opener });
-      onToast(`Не вдалося запустити збір: ${error.message}`);
+      onToast(`Could not start collection: ${error.message}`);
     }
   }
 
@@ -257,7 +257,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       },
       onConnection(state) {
         connection.dataset.state = state === "connected" ? "online" : "offline";
-        connection.querySelector("span:last-child").textContent = state === "connected" ? "API онлайн" : "Перепідключення SSE";
+        connection.querySelector("span:last-child").textContent = state === "connected" ? "API online" : "Reconnecting SSE";
         if (dialog.open && state !== "connected") renderOfflineNotice();
       },
       async onTerminal(job) {
@@ -268,13 +268,13 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
         if (dialog.open) renderProgress(job);
         await onFinished(job);
       },
-      onError(error) { onToast(`Прогрес тимчасово недоступний: ${error.message}`); },
+      onError(error) { onToast(`Progress temporarily unavailable: ${error.message}`); },
     });
   }
 
   function renderOfflineNotice() {
     if (body.querySelector(".job-alert")) return;
-    body.insertAdjacentHTML("afterbegin", `<div class="job-alert"><strong>Живе з'єднання перервано.</strong> Статус відновиться автоматично; збір триває на сервері.</div>`);
+    body.insertAdjacentHTML("afterbegin", `<div class="job-alert"><strong>Live connection interrupted.</strong> Status will resume automatically; the collection keeps running on the server.</div>`);
   }
 
   function renderProgress(job) {
@@ -287,16 +287,22 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     const progressValue = percent(job.progress_percent);
     const state = STATE_META[job.status] || STATE_META.running;
     title.textContent = terminalTitle(job);
+    // A lane parked on `awaiting_auth` still aggregates to a job-level
+    // `queued` — truthful (it really is waiting), but «Queued» reads as "not
+    // started yet" when the run is actually blocked on the operator.
+    const awaitingAuth = cells.some((cell) => cell.status === "awaiting_auth");
     subtitle.textContent = isTerminal(job.status) && hasAttentionCells(cells)
-      ? "Отримані дані збережено. Перевірте клітинки, що потребують уваги."
-      : state.label;
+      ? "Collected data has been saved. Review cells that need attention."
+      : awaitingAuth
+        ? "Collection paused: a service login is required."
+        : state.label;
     body.innerHTML = `
       ${renderSessionStagePanel(job, () => { if (dialog.open) renderProgress(currentJob); })}
       <div class="progress-overview">
         <span class="progress-number">${progressValue}%</span>
-        <div><progress class="progress-track" max="100" value="${progressValue}" aria-label="Загальний прогрес: ${progressValue}%"></progress><div class="progress-copy">${progressSummary(cells)}</div></div>
+        <div><progress class="progress-track" max="100" value="${progressValue}" aria-label="Overall progress: ${progressValue}%"></progress><div class="progress-copy">${progressSummary(cells)}</div></div>
       </div>
-      ${clientIds.length ? `<div class="matrix-wrap"><table class="progress-matrix"><thead><tr><th scope="col">Клієнт</th>${providers.map((provider) => `<th scope="col">${PROVIDERS[provider].label}</th>`).join("")}</tr></thead><tbody>${clientIds.map((clientId) => `<tr><td>${clients.get(clientId) || clientId}</td>${providers.map((provider) => matrixCell(cells.find((cell) => String(cell.client_id) === clientId && cell.provider === provider))).join("")}</tr>`).join("")}</tbody></table></div>` : `<div class="state-panel"><p><strong>Формуємо чергу.</strong><br>Таблиця з'явиться, щойно відповість сервер.</p></div>`}`;
+      ${clientIds.length ? `<div class="matrix-wrap"><table class="progress-matrix"><thead><tr><th scope="col">Client</th>${providers.map((provider) => `<th scope="col">${PROVIDERS[provider].label}</th>`).join("")}</tr></thead><tbody>${clientIds.map((clientId) => `<tr><td>${clients.get(clientId) || clientId}</td>${providers.map((provider) => matrixCell(cells.find((cell) => String(cell.client_id) === clientId && cell.provider === provider))).join("")}</tr>`).join("")}</tbody></table></div>` : `<div class="state-panel"><p><strong>Building the queue.</strong><br>The table will appear once the server responds.</p></div>`}`;
     footer.innerHTML = footerActions(job);
     footer.querySelector("[data-close]")?.addEventListener("click", () => dialog.close());
     footer.querySelector("[data-cancel]")?.addEventListener("click", () => cancelJob());
@@ -324,15 +330,15 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
   }
 
   function matrixCell(cell) {
-    if (!cell) return `<td><span class="matrix-cell state-not_configured"><strong>— Не обрано</strong></span></td>`;
+    if (!cell) return `<td><span class="matrix-cell state-not_configured"><strong>— Not selected</strong></span></td>`;
     const meta = STATE_META[cell.status] || STATE_META.running;
     const value = percent(cell.progress_percent);
-    return `<td><div class="matrix-cell ${stateClass(cell.status)}"><strong>${icon(meta.icon)}${meta.label}</strong><small>${cell.status === "not_configured" ? "Інтеграцію не підключено" : (cell.error_code || STAGE_LABELS[cell.current_stage] || "Очікуємо статусу")}</small><progress class="mini-progress" max="100" value="${value}" aria-label="${meta.label}: ${value}%"></progress></div></td>`;
+    return `<td><div class="matrix-cell ${stateClass(cell.status)}"><strong>${icon(meta.icon)}${meta.label}</strong><small>${cell.status === "not_configured" ? "Integration not connected" : (cell.error_code || STAGE_LABELS[cell.current_stage] || "Waiting for status")}</small><progress class="mini-progress" max="100" value="${value}" aria-label="${meta.label}: ${value}%"></progress></div></td>`;
   }
 
   function progressSummary(cells) {
     const done = cells.filter((cell) => ["succeeded", "partial", "failed", "failed_interrupted", "not_configured", "cancelled", "skipped"].includes(cell.status)).length;
-    return `Завершено ${done} із ${cells.length} клітинок. Закриття цього вікна не зупинить збір.`;
+    return `Completed ${done} of ${cells.length} cells. Closing this window will not stop the collection.`;
   }
 
   function hasAttentionCells(cells) {
@@ -340,21 +346,21 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
   }
 
   function terminalTitle(job) {
-    if (!isTerminal(job.status)) return "Збір даних";
-    return hasAttentionCells(job.cells || []) ? "Збір завершено з проблемами" : "Збір завершено";
+    if (!isTerminal(job.status)) return "Data collection";
+    return hasAttentionCells(job.cells || []) ? "Collection finished with issues" : "Collection finished";
   }
 
   function footerActions(job) {
     const failed = (job.cells || []).some((cell) => ["failed", "failed_interrupted"].includes(cell.status));
-    if (isTerminal(job.status)) return `${failed ? `<button class="button button--quiet" type="button" data-retry>${icon("refresh")}Повторити невдалі</button>` : ""}<button class="button button--primary" type="button" data-close>Готово</button>`;
-    return `<button class="button button--quiet" type="button" data-close>Сховати</button><button class="button button--quiet" type="button" data-cancel>${icon("player-stop")}Зупинити</button>`;
+    if (isTerminal(job.status)) return `${failed ? `<button class="button button--quiet" type="button" data-retry>${icon("refresh")}Retry failed</button>` : ""}<button class="button button--primary" type="button" data-close>Done</button>`;
+    return `<button class="button button--quiet" type="button" data-close>Hide</button><button class="button button--quiet" type="button" data-cancel>${icon("player-stop")}Stop</button>`;
   }
 
   async function cancelJob() {
     if (!active?.id) return;
     footer.querySelector("[data-cancel]").disabled = true;
     try { currentJob = await cancelSyncJob(active.id); renderProgress(currentJob); }
-    catch (error) { onToast(`Не вдалося зупинити збір: ${error.message}`); }
+    catch (error) { onToast(`Could not stop the collection: ${error.message}`); }
   }
 
   async function retryFailed() {
@@ -365,14 +371,14 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       active = { id: accepted.batch_id || accepted.job_id, eventsUrl: accepted.events_url, lastEventId: "" };
       saveActiveJob(active);
       beginWatch();
-    } catch (error) { onToast(`Не вдалося запустити повтор: ${error.message}`); }
+    } catch (error) { onToast(`Could not start the retry: ${error.message}`); }
   }
 
   function updateDock(job) {
     const terminal = isTerminal(job.status);
     dock.hidden = false;
-    dockTitle.textContent = terminal ? terminalTitle(job) : "Оновлення триває";
-    dockCopy.textContent = terminal ? "Переглянути результати" : "Переглянути прогрес";
+    dockTitle.textContent = terminal ? terminalTitle(job) : "Update in progress";
+    dockCopy.textContent = terminal ? "View results" : "View progress";
     dockPercent.textContent = `${percent(job.progress_percent)}%`;
   }
 

@@ -138,17 +138,12 @@ def test_cancel_stops_an_in_flight_cell(temp_db, api_client, fake_adapters, seed
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Знахідка task-13 для task-05/06: cancel клітинки, яка ще `queued`, "
-        "лишає її в `cancel_requested` — доріжка claim-ає лише `queued`, тож "
-        "фіналізує таку клітинку тільки startup recovery. Поки що job такого "
-        "запуску ніколи не стає термінальним (і SSE-стрім не закривається). "
-        "Коли task-05 це полагодить, xfail впаде як XPASS — тест треба зняти."
-    ),
-)
 def test_cancel_finalizes_a_queued_cell(temp_db, api_client, fake_adapters, seed_client):
+    """Був `xfail(strict)` — знахідка task-13 про клітинку, що застрягала в
+    `cancel_requested` назавжди. `cancel_run` тепер сам фіналізує клітинки, за
+    якими не стежить жоден раннер, тож job чесно доходить до термінального
+    стану, а SSE-стрім закривається.
+    """
     client_id = seed_client(scenarios={Provider.gsc: FakeScenario()})
     job_id = _post_run(api_client, client_id, [Provider.gsc])["job_id"]
 

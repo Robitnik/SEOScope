@@ -258,7 +258,11 @@ class CellRepository:
         """
         if job_id is None and batch_id is None:
             raise ValueError("request_cancel requires job_id or batch_id")
-        non_terminal = (CellStatus.queued, CellStatus.running)
+        # `awaiting_auth` is non-terminal too (task-21): a lane parked waiting
+        # for a login must be cancellable, otherwise «Stop» silently did
+        # nothing and the cell stayed non-terminal forever. The parked lane
+        # re-reads its own cell and honours this flag (`app/jobs/lane.py`).
+        non_terminal = (CellStatus.queued, CellStatus.running, CellStatus.awaiting_auth)
         stmt = (
             update(SyncJobProvider)
             .where(SyncJobProvider.status.in_(non_terminal))

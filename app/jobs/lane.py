@@ -27,6 +27,7 @@ from typing import Any
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.jobs import JobRepository
 from app.integrations.browser_session import SessionState
+from app.jobs.events import append_cell_status_event
 from app.jobs.runner import DEFAULT_CELL_TIMEOUT_SECONDS, CellHandle, assume_session_alive, run_cell
 from app.schemas.enums import CellStatus, Provider
 
@@ -35,8 +36,8 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL_SECONDS = 1.0
 
 # How long a lane waits for the operator to log back in before giving up on
-# the whole remaining queue for this provider (task-21: "таймаут очікування
-# (напр. 15 хв)").
+# the whole remaining queue for this provider (task-21: "wait timeout
+# (e.g. 15 min)").
 DEFAULT_AUTH_PAUSE_TIMEOUT_SECONDS = 15 * 60
 
 
@@ -48,8 +49,8 @@ class _MemoizedCheckSession:
     (PLAN §12, `runner.py`'s `result.error_code == "auth_required"` path).
     But the lane hands every cell *this* wrapper, not the raw function, so a
     healthy session is confirmed once and every other queued client in the
-    same pass reuses that answer instead of re-probing (task-21: "один раз на
-    провайдера, а не N разів на клієнтів"). `invalidate()` clears the cache
+    same pass reuses that answer instead of re-probing (task-21: "once per
+    provider, not N times per client"). `invalidate()` clears the cache
     after a pause resolves (resume or timeout), so whatever comes next gets a
     fresh read instead of trusting a stale one.
     """
@@ -161,11 +162,58 @@ def _await_auth_and_resume(
     )
 
     while not stop_event.is_set():
+        # A parked lane is not looping through `claim_next_cell`, so this is
+        # the only place that can notice someone else moving this cell while
+        # we wait — most importantly an operator pressing «Stop», which
+        # flags it `cancel_requested`. Without this re-read the cancel was
+        # never honoured and the cell stayed non-terminal forever, so the job
+        # could never finish (and neither could its SSE stream).
+        with session_scope() as session:
+            cells = CellRepository(session)
+            cell = cells.get(handle.cell_id)
+            if cell is None:
+                return
+            if cell.status == CellStatus.cancel_requested:
+                cells.set_status(
+                    handle.cell_id, CellStatus.cancelled, error_code=None, error_message=None
+                )
+                append_cell_status_event(
+                    session,
+                    job_id=handle.job_id,
+                    provider=provider,
+                    status=CellStatus.cancelled,
+                )
+                JobRepository(session).sync_status_from_cells(handle.job_id)
+                logger.info(
+                    "lane_auth_pause_cancelled provider=%s cell_id=%s",
+                    provider.value,
+                    handle.cell_id,
+                )
+                return
+            if cell.status != CellStatus.awaiting_auth:
+                # Requeued by retry/recovery elsewhere — stop parking and let
+                # the normal claim loop pick it back up.
+                logger.info(
+                    "lane_auth_pause_released provider=%s cell_id=%s status=%s",
+                    provider.value,
+                    handle.cell_id,
+                    cell.status.value,
+                )
+                return
+
         if check_session(provider) == SessionState.alive:
             with session_scope() as session:
                 CellRepository(session).set_status(
                     handle.cell_id, CellStatus.queued, error_code=None, error_message=None
                 )
+                append_cell_status_event(
+                    session,
+                    job_id=handle.job_id,
+                    provider=provider,
+                    status=CellStatus.queued,
+                    message="session restored; cell requeued",
+                )
+                JobRepository(session).sync_status_from_cells(handle.job_id)
             logger.info(
                 "lane_resumed_after_login provider=%s cell_id=%s", provider.value, handle.cell_id
             )
@@ -183,6 +231,14 @@ def _await_auth_and_resume(
                     error_code="auth_required",
                     error_message="login not completed before timeout",
                 )
+                append_cell_status_event(
+                    session,
+                    job_id=handle.job_id,
+                    provider=provider,
+                    status=CellStatus.failed,
+                    error_code="auth_required",
+                    message="login not completed before timeout",
+                )
                 # The rest of this provider's queue is behind the same dead
                 # session: close it out now, honestly, rather than each cell
                 # re-pausing for another full `timeout_seconds` in turn.
@@ -193,6 +249,13 @@ def _await_auth_and_resume(
                         CellStatus.failed,
                         error_code="auth_required",
                         error_message="upstream session still expired after auth-pause timeout",
+                    )
+                    append_cell_status_event(
+                        session,
+                        job_id=cell.job_id,
+                        provider=provider,
+                        status=CellStatus.failed,
+                        error_code="auth_required",
                     )
                     affected_job_ids.add(cell.job_id)
 

@@ -77,7 +77,15 @@ def test_stream_replays_only_events_after_last_event_id(
     assert seqs == sorted(seqs), "seq має бути монотонним"
     assert len(set(seqs)) == len(seqs), "seq не має повторюватись"
     assert all(payload["provider"] == "ahrefs" for _, payload in full)
-    assert all(payload["percent"] is not None for _, payload in full)
+    # Stage-progress events (adapter-emitted) always carry a percent. Cell
+    # *status* events do not: percent is collection progress, and inventing a
+    # number for "parked awaiting login" would break None ≠ 0 (PLAN §12).
+    progress = [p for _, p in full if not (p["details"] or {}).get("cell_status")]
+    assert progress, "адаптер має емітити стадійні події з відсотком"
+    assert all(payload["percent"] is not None for payload in progress)
+    assert any((p["details"] or {}).get("cell_status") for _, p in full), (
+        "фінальний статус клітинки теж має потрапляти в потік — інакше UI його не побачить"
+    )
 
     cut = seqs[len(seqs) // 2]
     replayed = _read_stream(api_client, job_id, last_event_id=cut)

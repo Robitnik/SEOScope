@@ -167,6 +167,12 @@ class JobRepository:
             # Every cell was not_configured/skipped: nothing was attempted.
             return JobStatus.succeeded
 
+        if all(s == CellStatus.cancelled for s in attempted):
+            # A deliberately stopped run is `cancelled`, never `failed` — the
+            # "zero succeeded" branch below would otherwise report an operator
+            # pressing «Stop» as a collection failure.
+            return JobStatus.cancelled
+
         succeeded = sum(1 for s in attempted if s in (CellStatus.succeeded, CellStatus.partial))
         if succeeded == len(attempted):
             return JobStatus.succeeded

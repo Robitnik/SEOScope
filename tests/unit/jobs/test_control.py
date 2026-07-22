@@ -9,15 +9,20 @@ from app.jobs.runner import CellHandle, run_cell
 from app.schemas.enums import CellStatus, JobStatus, Provider
 
 
-def test_cancel_run_flags_queued_cell_and_job(session_scope, make_cell):
+def test_cancel_run_finalizes_a_never_claimed_cell(session_scope, make_cell):
+    """A `queued` cell has no runner polling the cancel flag on its behalf, and
+    once flagged it can never be claimed — so `cancel_run` finalizes it itself
+    instead of leaving it stuck at `cancel_requested` (which is neither
+    terminal nor running, so the job could never finish).
+    """
     job_id, cell_id, _client_id = make_cell(Provider.ahrefs)
 
     status = cancel_run(session_scope, job_id=job_id)
 
-    assert status == JobStatus.queued  # transient: not yet claimed by any lane
+    assert status == JobStatus.cancelled
     with session_scope() as session:
-        assert CellRepository(session).get(cell_id).status == CellStatus.cancel_requested
-        assert JobRepository(session).get(job_id).status == JobStatus.cancel_requested
+        assert CellRepository(session).get(cell_id).status == CellStatus.cancelled
+        assert JobRepository(session).get(job_id).status == JobStatus.cancelled
 
 
 def test_cancel_run_never_touches_already_succeeded_cells(session_scope, make_cell, register_fake):
