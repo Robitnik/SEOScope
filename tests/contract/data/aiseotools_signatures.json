@@ -1,0 +1,69 @@
+{
+  "__consumed_legacy__": {
+    "seo_audit.ahrefs_site_audit.collect.collect": "collect(domain: 'str', *, client: 'str' = '', country: 'str' = 'us', market: 'str' = '', audit_date: 'str' = '', csv_dir: 'str | Path | None' = None, limit: 'int' = 1000, fetch_affected: 'bool' = True, api_key: 'str | None' = None, cache_dir: 'str | Path | None' = None, on_event: 'OnEvent | None' = None) -> 'AhrefsMachineFindings'",
+    "seo_audit.ahrefs_site_audit.verify.pipeline.verify_issues": "verify_issues(machine: 'AhrefsMachineFindings', screenshot_dir: 'Path | None' = None, max_browser: 'int' = 40, per_issue_cap: 'int' = 100, max_link_targets: 'int' = 800, timeout: 'float' = 12.0, speed_budget_s: 'float | None' = None, progress=None) -> 'dict[str, Any]'",
+    "seo_audit.blog_strategy.ahrefs_cache.BudgetExceeded": "BudgetExceeded(<опис недоступний>)",
+    "seo_audit.browser.errors.AccountLacksAccess": "AccountLacksAccess(prop: 'str', authuser: 'int | None', signed_in_as: 'str' = '')",
+    "seo_audit.browser.errors.BotChallenge": "BotChallenge(provider: 'str', url: 'str', evidence: 'str' = '')",
+    "seo_audit.browser.errors.BrowserAutomationError": "BrowserAutomationError(<опис недоступний>)",
+    "seo_audit.browser.errors.ChromeLaunchError": "ChromeLaunchError(<опис недоступний>)",
+    "seo_audit.browser.errors.ExportEmpty": "ExportEmpty(report: 'str', detail: 'str' = '')",
+    "seo_audit.browser.errors.ExportFailed": "ExportFailed(report: 'str', detail: 'str' = '')",
+    "seo_audit.browser.errors.ExportTruncated": "ExportTruncated(report: 'str', rows: 'int', cap: 'int')",
+    "seo_audit.browser.errors.ProfileLocked": "ProfileLocked(<опис недоступний>)",
+    "seo_audit.browser.errors.SelectorDrift": "SelectorDrift(what: 'str', selector: 'str', url: 'str' = '')",
+    "seo_audit.browser.errors.SessionExpired": "SessionExpired(provider: 'str', detail: 'str' = '')",
+    "seo_audit.browser.providers.gsc.GSCConsole": "GSCConsole(session, *, authuser: 'int | None' = None)",
+    "seo_audit.browser.providers.gsc.resolve_authuser": "resolve_authuser(session, profile: 'str', prop: 'str', *, override: 'int | None' = None, max_accounts: 'int' = 6, forget: 'bool' = False, cache_path: 'Path | None' = None) -> 'tuple[int | None, list[str], bool]'",
+    "seo_audit.browser.providers.semrush.SemrushSiteExplorer": "SemrushSiteExplorer(session: 'Any')",
+    "seo_audit.browser.session.BrowserSession": "BrowserSession(provider: 'str', *, pacing: 'HumanPacing | None' = None, downloads_dir: 'Path | None' = None, virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, require_auth: 'bool' = True, allow_warm: 'bool' = True)",
+    "seo_audit.clientreport.api_client.APIError": "APIError(error_code: 'str', message: 'str')",
+    "seo_audit.clientreport.api_client.RateLimitError": "RateLimitError(retry_after: 'float')",
+    "seo_audit.clientreport.api_client.ReportingNinjaClient": "ReportingNinjaClient(api_key: 'str | None' = None)",
+    "seo_audit.clientreport.ga4_fetcher.discover_ga4_fields": "discover_ga4_fields(client: 'ReportingNinjaClient') -> 'dict[str, str]'",
+    "seo_audit.clientreport.ga4_fetcher.fetch_ga4_period": "fetch_ga4_period(client: 'ReportingNinjaClient', connection_key: 'str', account_id: 'str', date_from: 'date', date_to: 'date', field_ids: 'dict[str, str]') -> 'dict[str, int | None]'",
+    "seo_audit.clientreport.gsc_fetcher.discover_gsc_fields": "discover_gsc_fields(client: 'ReportingNinjaClient') -> 'dict[str, str]'",
+    "seo_audit.clientreport.gsc_fetcher.fetch_gsc_period": "fetch_gsc_period(client: 'ReportingNinjaClient', connection_key: 'str', account_id: 'str', date_from: 'date', date_to: 'date', field_ids: 'dict[str, str]') -> 'dict[str, int | None]'",
+    "seo_audit.rank_movement.collect_manual.ManualIngestError": "ManualIngestError(<опис недоступний>)",
+    "seo_audit.rank_movement.collect_manual._col": "_col(headers: 'list[str]', *candidates: 'str', avoid: 'tuple[str, ...]' = ()) -> 'str | None'",
+    "seo_audit.rank_movement.collect_manual._num": "_num(v: 'str | None') -> 'float | None'",
+    "seo_audit.rank_movement.collect_manual._read_csv": "_read_csv(path: 'Path') -> 'list[dict[str, str]]'",
+    "seo_audit.semrush.client.SemrushAPIError": "SemrushAPIError(code: 'str', message: 'str')",
+    "seo_audit.semrush.client.SemrushClient": "SemrushClient(api_key: 'str | None' = None, *, cache_dir: 'Path | None' = None, database: 'str' = 'us', unit_budget: 'int | None' = None)",
+    "seo_audit.semrush.ingest_manual.ingest_semrush": "ingest_semrush(downloads: 'Path', *, domain: 'str', database: 'str' = 'us') -> 'dict'"
+  },
+  "seo_audit.dashboard.ahrefs": {
+    "collect_site_audit": "collect_site_audit(domain: 'str', *, client: 'str' = '', market: 'str' = '', audit_date: 'str' = '', csv_dir: 'str | Path | None' = None, api_key: 'str | None' = None, cache_dir: 'str | Path | None' = None, run_verify: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
+  },
+  "seo_audit.dashboard.config": {
+    "ninja_session_path": "ninja_session_path(override: 'str | os.PathLike[str] | None' = None) -> 'Path'",
+    "profiles_root": "profiles_root() -> 'Path'"
+  },
+  "seo_audit.dashboard.events": {
+    "ProgressEvent": "ProgressEvent(*, provider: seo_audit.dashboard.models.Provider, stage: str, completed: int | None = None, total: int | None = None, percent: float | None = None, level: Literal['info', 'warning', 'error'] = 'info', message: str = '', details: dict[str, typing.Any] = {}) -> None",
+    "emit_progress": "emit_progress(emit: 'OnEvent', *, provider: 'Provider', stage: 'str', completed: 'int | None' = None, total: 'int | None' = None, percent: 'float | None' = None, level: \"Literal['info', 'warning', 'error']\" = 'info', message: 'str' = '', details: 'dict[str, Any] | None' = None) -> 'None'",
+    "make_emitter": "make_emitter(on_event: 'OnEvent | None') -> 'OnEvent'"
+  },
+  "seo_audit.dashboard.gsc": {
+    "collect_gsc_aggregate": "collect_gsc_aggregate(client: 'ReportingNinjaClient', *, gsc_ref: 'dict[str, str]', current: 'DateRange', previous: 'DateRange', on_event: 'OnEvent | None' = None) -> 'DashboardResult'",
+    "collect_gsc_direct": "collect_gsc_direct(prop: 'str', *, current: 'DateRange', previous: 'DateRange', out_dir: 'Path', profile: 'str' = 'gsc', account: 'int | None' = None, virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
+  },
+  "seo_audit.dashboard.models": {
+    "DashboardMetricValue": "DashboardMetricValue(*, metric_key: str, period_role: seo_audit.dashboard.models.PeriodRole, period_start: datetime.date | None = None, period_end: datetime.date | None = None, value_numeric: decimal.Decimal | None = None, value_text: str | None = None, unit: seo_audit.dashboard.models.MetricUnit, is_derived: bool = False) -> None",
+    "DashboardResult": "DashboardResult(*, provider: seo_audit.dashboard.models.Provider, quality: seo_audit.dashboard.models.Quality, observed_at: datetime.datetime, data_through: datetime.date | None = None, current: seo_audit.dashboard.models.DateRange | None = None, previous: seo_audit.dashboard.models.DateRange | None = None, values: list[seo_audit.dashboard.models.DashboardMetricValue] = [], warnings: list[str] = [], error_code: str | None = None, provenance: dict[str, typing.Any] = {}, artifacts: list[seo_audit.dashboard.models.RawArtifactRef] = [], units_spent: int | None = None, units_estimated: int | None = None) -> None",
+    "DateRange": "DateRange(*, start: datetime.date, end: datetime.date) -> None",
+    "MetricUnit": "MetricUnit(*values)",
+    "PeriodRole": "PeriodRole(*values)",
+    "Provider": "Provider(*values)",
+    "Quality": "Quality(*values)",
+    "RawArtifactRef": "RawArtifactRef(*, kind: str, path: str, sha256: str, mime: str | None = None, size_bytes: int | None = None) -> None",
+    "SourceMode": "SourceMode(*values)"
+  },
+  "seo_audit.dashboard.reporting_ninja": {
+    "collect_ga4": "collect_ga4(client: 'ReportingNinjaClient', *, ga4_ref: 'dict[str, str]', current: 'DateRange', previous: 'DateRange', on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
+  },
+  "seo_audit.dashboard.semrush": {
+    "collect_semrush_api": "collect_semrush_api(domain: 'str', *, database: 'str' = 'us', api_key: 'str | None' = None, cache_dir: 'str | Path | None' = None, unit_budget: 'int | None' = None, on_event: 'OnEvent | None' = None) -> 'DashboardResult'",
+    "collect_semrush_browser": "collect_semrush_browser(domain: 'str', *, artifacts_dir: 'str | Path', client: 'str' = '', database: 'str' = 'us', profile: 'str' = 'semrush', reports: 'tuple[str, ...]' = ('organic-positions', 'backlinks', 'refdomains'), virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
+  }
+}

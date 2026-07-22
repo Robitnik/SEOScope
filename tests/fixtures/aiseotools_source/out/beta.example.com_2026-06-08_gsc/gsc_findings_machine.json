@@ -1,0 +1,11 @@
+{
+  "property_url": "https://beta.example.com/",
+  "totals": {
+    "has_date_dimension": true,
+    "date_range_start": "2026-06-01",
+    "date_range_end": "2026-06-07",
+    "total_clicks": 512,
+    "total_impressions": 18430,
+    "avg_position": 14.6
+  }
+}

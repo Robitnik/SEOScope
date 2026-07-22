@@ -1,0 +1,16 @@
+{
+  "domain": "acme.example.com",
+  "project_id": 100001,
+  "audit_date": "2026-06-01",
+  "crawl_date": "2026-06-01T04:15:00Z",
+  "health_score": 87,
+  "totals": {
+    "urls_crawled": 1240,
+    "errors": 18,
+    "warnings": 342
+  },
+  "verify_summary": {
+    "total": 1240,
+    "verified": 1198
+  }
+}

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-type-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t yovth-clients-report:ci .
+
+      # Everything below runs inside the built image — no host Python.
+      - name: Lint (ruff)
+        run: docker run --rm yovth-clients-report:ci poetry run ruff check .
+
+      - name: Type-check (mypy)
+        run: docker run --rm yovth-clients-report:ci poetry run mypy app
+
+      # Unit tests own each module (task-01…12); they must stay fast and
+      # dependency-free, so they run first and fail the job on their own.
+      - name: Unit tests
+        run: docker run --rm yovth-clients-report:ci poetry run pytest tests/unit -q
+
+      # Cross-module gates (task-13): real FastAPI + worker + temporary
+      # SQLite. `--live` is never passed, so metered provider tests stay
+      # skipped by construction (tests/conftest.py), not by convention.
+      - name: Integration tests
+        run: docker run --rm yovth-clients-report:ci poetry run pytest tests/integration -q
+
+      # AISeoTools signature snapshot. Self-skips when the sibling checkout
+      # is absent (it is, on CI) — kept in the pipeline so the step exists
+      # the moment the image starts pinning AISeoTools by commit/tag.
+      - name: AISeoTools contract snapshot
+        run: docker run --rm yovth-clients-report:ci poetry run pytest tests/contract -q
+
+      # Belt-and-suspenders: a `live`-marked test that actually *ran* would
+      # spend API units and break real browser sessions. Selecting the marker
+      # explicitly must still yield skips only — never a pass.
+      - name: Metered tests stay skipped without --live
+        run: |
+          docker run --rm yovth-clients-report:ci \
+            poetry run pytest -q -m live 2>&1 | tee /tmp/live.txt
+          grep -q "skipped" /tmp/live.txt
+          ! grep -qE "[0-9]+ (passed|failed|error)" /tmp/live.txt

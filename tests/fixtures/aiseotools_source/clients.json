@@ -1,0 +1,25 @@
+{
+  "ACME-DENTAL": {
+    "gsc": {
+      "connection_key": "seo@example.com",
+      "account_id": "sc-domain:acme.example.com"
+    },
+    "ga4": {
+      "connection_key": "seo@example.com",
+      "account_id": "properties/000000001"
+    },
+    "ninja_report_name": "ACME Dental — Monthly"
+  },
+  "BETA-CLINIC": {
+    "gsc": {
+      "connection_key": "seo@example.com",
+      "account_id": "https://beta.example.com/"
+    }
+  },
+  "NO-DOMAIN-CLIENT": {
+    "ga4": {
+      "connection_key": "seo@example.com",
+      "account_id": "properties/000000002"
+    }
+  }
+}

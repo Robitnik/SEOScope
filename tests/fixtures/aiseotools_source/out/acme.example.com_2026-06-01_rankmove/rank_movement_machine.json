@@ -1,0 +1,11 @@
+{
+  "domain": "acme.example.com",
+  "date_now": "2026-06-01",
+  "date_compared": "2026-03-01",
+  "winners": [
+    {"keyword": "example service near me", "position_now": 4, "position_before": 11}
+  ],
+  "losers": [
+    {"keyword": "example clinic reviews", "position_now": 19, "position_before": 8}
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "domain": "acme.example.com",
+  "database": "us",
+  "date": "2026-06-01",
+  "overview": {
+    "authority_score": null,
+    "organic_traffic": 4120,
+    "organic_keywords": 1877
+  },
+  "backlinks_overview": {
+    "ascore": 41,
+    "domains_num": 268
+  },
+  "warnings": [
+    "sr_overview.csv export was not available; overview values come from the UI table"
+  ]
+}
