@@ -65,11 +65,19 @@ def _aggregate_result(
     values = [
         _value("clicks", DashPeriodRole.current, 100, DASH_CURRENT),
         _value("impressions", DashPeriodRole.current, 1000, DASH_CURRENT),
+        _value(
+            "avg_position", DashPeriodRole.current, "4.5", DASH_CURRENT,
+            unit=DashUnit.position,
+        ),
     ]
     if both_periods:
         values += [
             _value("clicks", DashPeriodRole.previous, 90, DASH_PREVIOUS),
             _value("impressions", DashPeriodRole.previous, 900, DASH_PREVIOUS),
+            _value(
+                "avg_position", DashPeriodRole.previous, "5.0", DASH_PREVIOUS,
+                unit=DashUnit.position,
+            ),
         ]
     return DashResult(
         provider=DashProvider.gsc, quality=quality, observed_at=datetime.now(UTC),
@@ -146,9 +154,9 @@ def test_preflight_with_api_key_is_ok(monkeypatch):
     assert result.ok is True
 
 
-# ── collect: happy path, both sources ───────────────────────────────────────
-def test_collect_maps_both_sources_to_canonical_keys(monkeypatch):
-    _patch_sources(monkeypatch, direct=_direct_result())
+# ── collect: Reporting Ninja happy path ─────────────────────────────────────
+def test_collect_maps_api_metrics_to_canonical_keys(monkeypatch):
+    _patch_sources(monkeypatch)
     adapter = adapter_module.GscAdapter()
 
     result = adapter.collect(_context(), lambda e: None, _NoCancel())
@@ -162,7 +170,7 @@ def test_collect_maps_both_sources_to_canonical_keys(monkeypatch):
 
 
 def test_collect_never_emits_gsc_ctr(monkeypatch):
-    _patch_sources(monkeypatch, direct=_direct_result())
+    _patch_sources(monkeypatch)
     adapter = adapter_module.GscAdapter()
 
     result = adapter.collect(_context(), lambda e: None, _NoCancel())
@@ -170,8 +178,8 @@ def test_collect_never_emits_gsc_ctr(monkeypatch):
     assert "gsc_ctr" not in {m.metric_key for m in result.metrics}
 
 
-# ── collect: no property configured ─────────────────────────────────────────
-def test_collect_without_property_leaves_avg_position_unavailable(monkeypatch):
+# ── collect: API mode does not need the legacy browser property ─────────────
+def test_collect_without_property_keeps_api_position_available(monkeypatch):
     _patch_sources(monkeypatch)  # no direct patch — must not even be called
     adapter = adapter_module.GscAdapter()
     context = _context(
@@ -181,12 +189,11 @@ def test_collect_without_property_leaves_avg_position_unavailable(monkeypatch):
     result = adapter.collect(context, lambda e: None, _NoCancel())
 
     by_key = {(m.metric_key, m.period_role): m for m in result.metrics}
-    assert by_key[("gsc_avg_position", PeriodRole.current)].value_numeric is None
-    assert by_key[("gsc_avg_position", PeriodRole.current)].quality == Quality.unavailable
+    assert by_key[("gsc_avg_position", PeriodRole.current)].value_numeric == Decimal("4.5")
+    assert by_key[("gsc_avg_position", PeriodRole.current)].quality == Quality.complete
     assert by_key[("gsc_clicks", PeriodRole.current)].quality == Quality.complete
-    # aggregate complete + avg_position unavailable -> overall partial, never silently complete
-    assert result.quality == Quality.partial
-    assert any("property" in w for w in result.warnings)
+    assert result.quality == Quality.complete
+    assert result.warnings == []
 
 
 # ── collect: independent source failure ─────────────────────────────────────
@@ -200,7 +207,9 @@ def test_collect_direct_failure_does_not_take_down_aggregate(monkeypatch):
     _patch_sources(monkeypatch, direct=failed_direct)
     adapter = adapter_module.GscAdapter()
 
-    result = adapter.collect(_context(), lambda e: None, _NoCancel())
+    result = adapter.collect(
+        _context(source_mode=SourceMode.browser), lambda e: None, _NoCancel()
+    )
 
     by_key = {(m.metric_key, m.period_role): m for m in result.metrics}
     assert by_key[("gsc_clicks", PeriodRole.current)].quality == Quality.complete
@@ -219,7 +228,9 @@ def test_collect_aggregate_failure_does_not_take_down_direct(monkeypatch):
     )
     adapter = adapter_module.GscAdapter()
 
-    result = adapter.collect(_context(), lambda e: None, _NoCancel())
+    result = adapter.collect(
+        _context(source_mode=SourceMode.browser), lambda e: None, _NoCancel()
+    )
 
     by_key = {(m.metric_key, m.period_role): m for m in result.metrics}
     assert by_key[("gsc_clicks", PeriodRole.current)].quality == Quality.unavailable
@@ -236,7 +247,9 @@ def test_collect_data_through_is_the_earlier_of_the_two_sources(monkeypatch):
     )
     adapter = adapter_module.GscAdapter()
 
-    result = adapter.collect(_context(), lambda e: None, _NoCancel())
+    result = adapter.collect(
+        _context(source_mode=SourceMode.browser), lambda e: None, _NoCancel()
+    )
 
     assert result.data_through == date(2026, 6, 26)
 
@@ -256,6 +269,60 @@ def test_collect_unexpected_exception_never_raises(monkeypatch):
     assert result.quality == Quality.unavailable
     assert result.error_code == "adapter_error"
     assert result.metrics == []
+
+
+def test_collect_datasets_fetches_real_daily_gsc_rows(monkeypatch):
+    from seo_audit.clientreport import api_client, gsc_fetcher
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def query_all(self, *args, **kwargs):
+            start = args[4]
+            return {
+                "rows": [
+                    {
+                        "date": start,
+                        "clicks": 12,
+                        "impressions": 120,
+                        "ctr": 10,
+                        "avgposition": 4.5,
+                    },
+                    {
+                        "date": str(date.fromisoformat(start).replace(day=2)),
+                        "clicks": 15,
+                        "impressions": 150,
+                        "ctr": 10,
+                        "avgposition": 4.0,
+                    },
+                ],
+                "truncated": False,
+            }
+
+    monkeypatch.setattr(api_client, "ReportingNinjaClient", FakeClient)
+    monkeypatch.setattr(
+        gsc_fetcher,
+        "discover_gsc_fields",
+        lambda client: {
+            "clicks": "clicks",
+            "impressions": "impressions",
+            "ctr": "ctr",
+            "avg_position": "avgposition",
+        },
+    )
+
+    result = adapter_module.GscAdapter().collect_datasets(_context(), lambda event: None)
+
+    assert result.quality == Quality.complete
+    assert len(result.rows) == 4
+    assert result.rows[0].dataset_key == "gsc_daily"
+    assert result.rows[0].dimension_value == "2026-06-01"
+    assert result.rows[0].metrics["clicks"] == Decimal(12)
+    assert result.rows[2].period_role == PeriodRole.previous
 
 
 # ── event bridging ───────────────────────────────────────────────────────────

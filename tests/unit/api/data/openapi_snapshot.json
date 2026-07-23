@@ -79,6 +79,226 @@
         "title": "AISeoToolsImportResponse",
         "type": "object"
       },
+      "AhrefsAffectedUrlDTO": {
+        "properties": {
+          "details": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Details",
+            "type": "object"
+          },
+          "issue_name": {
+            "title": "Issue Name",
+            "type": "string"
+          },
+          "issue_slug": {
+            "title": "Issue Slug",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "issue_slug",
+          "issue_name",
+          "severity"
+        ],
+        "title": "AhrefsAffectedUrlDTO",
+        "type": "object"
+      },
+      "AhrefsAffectedUrlsDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "issue_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Slug"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AhrefsAffectedUrlDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total_rows_available": {
+            "default": 0,
+            "title": "Total Rows Available",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_id",
+          "limit",
+          "offset",
+          "generated_at"
+        ],
+        "title": "AhrefsAffectedUrlsDTO",
+        "type": "object"
+      },
+      "AhrefsIssueDTO": {
+        "properties": {
+          "affected_urls": {
+            "default": 0,
+            "title": "Affected Urls",
+            "type": "integer"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "exported_rows": {
+            "default": 0,
+            "title": "Exported Rows",
+            "type": "integer"
+          },
+          "how_to_fix": {
+            "default": "",
+            "title": "How To Fix",
+            "type": "string"
+          },
+          "issue_id": {
+            "default": "",
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "severity",
+          "priority"
+        ],
+        "title": "AhrefsIssueDTO",
+        "type": "object"
+      },
+      "AhrefsSiteAuditDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "data_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Through"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "issues": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AhrefsIssueDTO"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "severity_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Severity Counts",
+            "type": "object"
+          },
+          "total_affected_rows": {
+            "default": 0,
+            "title": "Total Affected Rows",
+            "type": "integer"
+          },
+          "total_issue_types": {
+            "default": 0,
+            "title": "Total Issue Types",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_id",
+          "generated_at"
+        ],
+        "title": "AhrefsSiteAuditDTO",
+        "type": "object"
+      },
       "AlertEntryDTO": {
         "description": "One flagged page/query. `clicks_previous`/`delta_pct` are `None` for\na `new` entry (no previous-period row exists) \u2014 never a fabricated `0`\nor `inf` (PLAN \u00a712).",
         "properties": {
@@ -218,6 +438,145 @@
           "generated_at"
         ],
         "title": "AlertsResponseDTO",
+        "type": "object"
+      },
+      "AnalyticsDatasetResponseDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "dataset_key": {
+            "title": "Dataset Key",
+            "type": "string"
+          },
+          "dimension_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension Key"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_role": {
+            "$ref": "#/components/schemas/PeriodRole"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsDatasetRowDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total_rows_available": {
+            "default": 0,
+            "title": "Total Rows Available",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_id",
+          "provider",
+          "dataset_key",
+          "period_role",
+          "limit",
+          "offset",
+          "generated_at"
+        ],
+        "title": "AnalyticsDatasetResponseDTO",
+        "type": "object"
+      },
+      "AnalyticsDatasetRowDTO": {
+        "properties": {
+          "dimension_value": {
+            "title": "Dimension Value",
+            "type": "string"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/Quality"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          }
+        },
+        "required": [
+          "dimension_value",
+          "metrics",
+          "quality"
+        ],
+        "title": "AnalyticsDatasetRowDTO",
         "type": "object"
       },
       "BatchProgressDTO": {
@@ -1189,6 +1548,30 @@
             ],
             "title": "Current Stage"
           },
+          "custom_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom End"
+          },
+          "custom_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Start"
+          },
           "error_code": {
             "anyOf": [
               {
@@ -1720,6 +2103,15 @@
         "title": "PeriodKind",
         "type": "string"
       },
+      "PeriodRole": {
+        "enum": [
+          "current",
+          "previous",
+          "snapshot"
+        ],
+        "title": "PeriodRole",
+        "type": "string"
+      },
       "PreflightResult": {
         "additionalProperties": false,
         "description": "Result of `preflight()`: can this cell even attempt a collection?",
@@ -1777,7 +2169,8 @@
           "ahrefs",
           "semrush",
           "gsc",
-          "reporting_ninja"
+          "reporting_ninja",
+          "tech_audit"
         ],
         "title": "Provider",
         "type": "string"
@@ -1812,8 +2205,12 @@
         "type": "object"
       },
       "ProviderSessionDTO": {
-        "description": "`GET /providers/{provider}/session` response \u2014 a live liveness probe,\nnot derived from stored cell history like `ProviderStatusCellDTO`. Used\nby the standalone client-card \u00abLog in\u00bb action, which runs outside any\njob/SSE context.",
+        "description": "`GET /providers/{provider}/session` response \u2014 a live liveness probe,\nnot derived from stored cell history like `ProviderStatusCellDTO`. Used\nby the standalone client-card \u00abLog in\u00bb action, which runs outside any\njob/SSE context, and by the sync modal's pre-start browser check.",
         "properties": {
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
           "state": {
             "enum": [
               "alive",
@@ -1825,7 +2222,8 @@
           }
         },
         "required": [
-          "state"
+          "state",
+          "running"
         ],
         "title": "ProviderSessionDTO",
         "type": "object"
@@ -2141,6 +2539,30 @@
             "$ref": "#/components/schemas/ComparisonMode",
             "default": "closed"
           },
+          "custom_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom End"
+          },
+          "custom_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Start"
+          },
           "idempotency_key": {
             "anyOf": [
               {
@@ -2190,6 +2612,429 @@
           "period_kind"
         ],
         "title": "SyncJobRequest",
+        "type": "object"
+      },
+      "TechAuditCategoryDTO": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "finding_count": {
+            "default": 0,
+            "title": "Finding Count",
+            "type": "integer"
+          },
+          "how_to_fix": {
+            "default": "",
+            "title": "How To Fix",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "priority": {
+            "default": "Low",
+            "title": "Priority",
+            "type": "string"
+          },
+          "recheck": {
+            "$ref": "#/components/schemas/TechAuditRecheckSummaryDTO",
+            "default": {
+              "fixed": 0,
+              "skipped": 0,
+              "still_present": 0,
+              "unreachable": 0
+            }
+          },
+          "recheckable": {
+            "default": true,
+            "title": "Recheckable",
+            "type": "boolean"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "url_count": {
+            "default": 0,
+            "title": "Url Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "name",
+          "severity"
+        ],
+        "title": "TechAuditCategoryDTO",
+        "type": "object"
+      },
+      "TechAuditFindingDTO": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "category_name": {
+            "default": "",
+            "title": "Category Name",
+            "type": "string"
+          },
+          "current_value": {
+            "default": "",
+            "title": "Current Value",
+            "type": "string"
+          },
+          "evidence": {
+            "default": "",
+            "title": "Evidence",
+            "type": "string"
+          },
+          "final_url": {
+            "default": "",
+            "title": "Final Url",
+            "type": "string"
+          },
+          "how_to_fix": {
+            "default": "",
+            "title": "How To Fix",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "live_status": {
+            "default": "",
+            "title": "Live Status",
+            "type": "string"
+          },
+          "measured": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Measured",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recheck_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recheck At"
+          },
+          "recheck_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recheck Status"
+          },
+          "recheckable": {
+            "default": true,
+            "title": "Recheckable",
+            "type": "boolean"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "slug",
+          "name",
+          "severity",
+          "url"
+        ],
+        "title": "TechAuditFindingDTO",
+        "type": "object"
+      },
+      "TechAuditFindingRef": {
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "url"
+        ],
+        "title": "TechAuditFindingRef",
+        "type": "object"
+      },
+      "TechAuditFindingsDTO": {
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TechAuditFindingDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_id",
+          "limit",
+          "offset",
+          "generated_at"
+        ],
+        "title": "TechAuditFindingsDTO",
+        "type": "object"
+      },
+      "TechAuditRecheckRequest": {
+        "properties": {
+          "findings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TechAuditFindingRef"
+            },
+            "title": "Findings",
+            "type": "array"
+          }
+        },
+        "title": "TechAuditRecheckRequest",
+        "type": "object"
+      },
+      "TechAuditRecheckSummaryDTO": {
+        "description": "How the findings of one category stand after their last re-verification.",
+        "properties": {
+          "fixed": {
+            "default": 0,
+            "title": "Fixed",
+            "type": "integer"
+          },
+          "skipped": {
+            "default": 0,
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "still_present": {
+            "default": 0,
+            "title": "Still Present",
+            "type": "integer"
+          },
+          "unreachable": {
+            "default": 0,
+            "title": "Unreachable",
+            "type": "integer"
+          }
+        },
+        "title": "TechAuditRecheckSummaryDTO",
+        "type": "object"
+      },
+      "TechAuditRunAcceptedDTO": {
+        "properties": {
+          "events_url": {
+            "title": "Events Url",
+            "type": "string"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status_url",
+          "events_url"
+        ],
+        "title": "TechAuditRunAcceptedDTO",
+        "type": "object"
+      },
+      "TechAuditSummaryDTO": {
+        "properties": {
+          "audit_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Date"
+          },
+          "categories": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TechAuditCategoryDTO"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "cms": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cms"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "has_run": {
+            "default": false,
+            "title": "Has Run",
+            "type": "boolean"
+          },
+          "health_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Score"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "pages_crawled": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages Crawled"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "totals": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Totals",
+            "type": "object"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id",
+          "generated_at"
+        ],
+        "title": "TechAuditSummaryDTO",
         "type": "object"
       },
       "ValidationError": {
@@ -2630,6 +3475,363 @@
         ]
       }
     },
+    "/api/v1/clients/{client_id}/analytics/ahrefs/affected-urls": {
+      "get": {
+        "description": "Affected page rows, including every column present in Ahrefs' ZIP.",
+        "operationId": "get_ahrefs_affected_urls_api_v1_clients__client_id__analytics_ahrefs_affected_urls_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issue_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Issue Slug"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AhrefsAffectedUrlsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ahrefs Affected Urls",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/analytics/ahrefs/site-audit": {
+      "get": {
+        "description": "Latest complete live Ahrefs issue catalog for the client.",
+        "operationId": "get_ahrefs_site_audit_api_v1_clients__client_id__analytics_ahrefs_site_audit_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "Error",
+                    "Warning",
+                    "Notice"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AhrefsSiteAuditDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ahrefs Site Audit",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/analytics/gsc/daily": {
+      "get": {
+        "description": "Exact-period daily GSC clicks/impressions collected for the trend chart.",
+        "operationId": "get_gsc_daily_dataset_api_v1_clients__client_id__analytics_gsc_daily_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PeriodKind",
+              "default": "week"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "default": "current",
+              "enum": [
+                "current",
+                "previous"
+              ],
+              "title": "Role",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "anchor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Anchor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "comparison_mode",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ComparisonMode",
+              "default": "closed"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsDatasetResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Gsc Daily Dataset",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
     "/api/v1/clients/{client_id}/analytics/pages": {
       "get": {
         "operationId": "get_page_analytics_api_v1_clients__client_id__analytics_pages_get",
@@ -2950,6 +4152,199 @@
         ]
       }
     },
+    "/api/v1/clients/{client_id}/analytics/reporting-ninja/{dataset_key}": {
+      "get": {
+        "operationId": "get_reporting_ninja_dataset_api_v1_clients__client_id__analytics_reporting_ninja__dataset_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dataset_key",
+            "required": true,
+            "schema": {
+              "title": "Dataset Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PeriodKind",
+              "default": "week"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "default": "current",
+              "enum": [
+                "current",
+                "previous"
+              ],
+              "title": "Role",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "anchor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Anchor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "comparison_mode",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ComparisonMode",
+              "default": "closed"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "custom_end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Custom End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "default": "sessions",
+              "title": "Sort By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsDatasetResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Reporting Ninja Dataset",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
     "/api/v1/clients/{client_id}/integrations/{provider}": {
       "put": {
         "operationId": "upsert_integration_api_v1_clients__client_id__integrations__provider__put",
@@ -3251,6 +4646,354 @@
         "summary": "Get Client Metrics History",
         "tags": [
           "dashboard"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/tech-audit/export.xlsx": {
+      "get": {
+        "description": "The company multi-sheet report \u2014 measured columns only, no agent copy.",
+        "operationId": "export_tech_audit_xlsx_api_v1_clients__client_id__tech_audit_export_xlsx_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Export Tech Audit Xlsx",
+        "tags": [
+          "tech-audit"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/tech-audit/findings": {
+      "get": {
+        "description": "Per-URL findings of the newest crawl, with their latest recheck verdict.",
+        "operationId": "get_tech_audit_findings_api_v1_clients__client_id__tech_audit_findings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechAuditFindingsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tech Audit Findings",
+        "tags": [
+          "tech-audit"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/tech-audit/findings/recheck": {
+      "post": {
+        "description": "Re-verify specific findings against the live site, reusing the stored crawl.",
+        "operationId": "recheck_tech_audit_findings_api_v1_clients__client_id__tech_audit_findings_recheck_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TechAuditRecheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechAuditRunAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recheck Tech Audit Findings",
+        "tags": [
+          "tech-audit"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/tech-audit/latest": {
+      "get": {
+        "description": "Categories + rollup of the newest technical audit crawl for this client.",
+        "operationId": "get_tech_audit_latest_api_v1_clients__client_id__tech_audit_latest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechAuditSummaryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tech Audit Latest",
+        "tags": [
+          "tech-audit"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/tech-audit/runs": {
+      "post": {
+        "description": "Queue a full re-crawl of this client's site (worker picks it up).",
+        "operationId": "start_tech_audit_api_v1_clients__client_id__tech_audit_runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechAuditRunAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Tech Audit",
+        "tags": [
+          "tech-audit"
         ]
       }
     },

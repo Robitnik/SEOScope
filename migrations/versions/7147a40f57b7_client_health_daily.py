@@ -10,14 +10,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # Custom column types (GUID/UTCDateTime/DecimalString) render with a fully
 # qualified name below; alembic's autogenerate import-detection doesn't
 # always pick up this module, so it's imported unconditionally.
 import app.db.base
-
 
 # revision identifiers, used by Alembic.
 revision: str = "7147a40f57b7"

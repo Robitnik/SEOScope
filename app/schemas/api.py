@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.adapter import DateRange
 from app.schemas.enums import (
@@ -25,6 +25,7 @@ from app.schemas.enums import (
     JobStatus,
     MetricUnit,
     PeriodKind,
+    PeriodRole,
     Provider,
     Quality,
     SourceMode,
@@ -254,9 +255,22 @@ class SyncJobRequest(BaseModel):
     period_kind: PeriodKind
     comparison_mode: ComparisonMode = ComparisonMode.closed
     anchor: date | None = None
+    custom_start: date | None = None
+    custom_end: date | None = None
     mode: Literal["collect_missing", "force_refresh"] = "collect_missing"
     source_mode: SourceMode = SourceMode.auto
     idempotency_key: str | None = None
+
+    @model_validator(mode="after")
+    def validate_custom_range(self) -> Self:
+        if self.period_kind == PeriodKind.custom:
+            if self.custom_start is None or self.custom_end is None:
+                raise ValueError("custom period requires custom_start and custom_end")
+            if self.custom_end < self.custom_start:
+                raise ValueError("custom_end must not precede custom_start")
+        elif self.custom_start is not None or self.custom_end is not None:
+            raise ValueError("custom_start/custom_end are only valid for a custom period")
+        return self
 
 
 class SyncJobAcceptedDTO(BaseModel):
@@ -315,6 +329,8 @@ class JobDTO(BaseModel):
     period_kind: PeriodKind
     comparison_mode: ComparisonMode
     anchor_date: date
+    custom_start: date | None = None
+    custom_end: date | None = None
     requested_providers: list[Provider]
     status: JobStatus
     progress_percent: float | None = None
@@ -378,9 +394,15 @@ class ProviderSessionDTO(BaseModel):
     """`GET /providers/{provider}/session` response — a live liveness probe,
     not derived from stored cell history like `ProviderStatusCellDTO`. Used
     by the standalone client-card «Log in» action, which runs outside any
-    job/SSE context."""
+    job/SSE context, and by the sync modal's pre-start browser check."""
 
     state: SessionLivenessState
+    # `state="expired"` collapses two different truths (browser_session.py's
+    # `check_session`): a warm Chrome that's up but logged out, vs. no warm
+    # Chrome reachable at all. The pre-start check needs to tell those apart —
+    # only the second one needs `seo-audit browser-up`, not a login click —
+    # so this rides along additively rather than overloading `state` further.
+    running: bool
 
 
 # --- Client metrics history ------------------------------------------------
@@ -413,6 +435,71 @@ class ClientMetricsHistoryDTO(BaseModel):
     client_id: str
     period_kind: PeriodKind
     series: list[MetricHistorySeriesDTO]
+    generated_at: datetime
+
+
+class AnalyticsDatasetRowDTO(BaseModel):
+    dimension_value: str
+    metrics: dict[str, Decimal | None]
+    quality: Quality
+    rank: int | None = None
+
+
+class AnalyticsDatasetResponseDTO(BaseModel):
+    client_id: str
+    provider: Provider
+    dataset_key: str
+    dimension_key: str | None = None
+    period_role: PeriodRole
+    period_start: date | None = None
+    period_end: date | None = None
+    rows: list[AnalyticsDatasetRowDTO] = []
+    total_rows_available: int = 0
+    truncated: bool = False
+    limit: int
+    offset: int
+    generated_at: datetime
+
+
+class AhrefsIssueDTO(BaseModel):
+    slug: str
+    issue_id: str = ""
+    name: str
+    severity: str
+    priority: str
+    description: str = ""
+    how_to_fix: str = ""
+    affected_urls: int = 0
+    exported_rows: int = 0
+
+
+class AhrefsSiteAuditDTO(BaseModel):
+    client_id: str
+    observed_at: datetime | None = None
+    data_through: date | None = None
+    project_id: str | None = None
+    issues: list[AhrefsIssueDTO] = []
+    total_issue_types: int = 0
+    total_affected_rows: int = 0
+    severity_counts: dict[str, int] = {}
+    generated_at: datetime
+
+
+class AhrefsAffectedUrlDTO(BaseModel):
+    url: str
+    issue_slug: str
+    issue_name: str
+    severity: str
+    details: dict[str, Any] = {}
+
+
+class AhrefsAffectedUrlsDTO(BaseModel):
+    client_id: str
+    issue_slug: str | None = None
+    rows: list[AhrefsAffectedUrlDTO] = []
+    total_rows_available: int = 0
+    limit: int
+    offset: int
     generated_at: datetime
 
 
@@ -528,3 +615,92 @@ class AlertsResponseDTO(BaseModel):
     new: list[AlertEntryDTO] = []
     skipped_reason: str | None = None
     generated_at: datetime
+
+
+# --- Technical SEO Audit (task-25) -----------------------------------------
+#
+# Machine-only: every field below is measured by the crawl/detectors. There is
+# no agent-authored copy anywhere in this payload — a finding states the problem
+# and the deterministic fix, never a generated rewrite.
+
+
+class TechAuditRecheckSummaryDTO(BaseModel):
+    """How the findings of one category stand after their last re-verification."""
+
+    fixed: int = 0
+    still_present: int = 0
+    unreachable: int = 0
+    skipped: int = 0
+
+
+class TechAuditCategoryDTO(BaseModel):
+    category: str  # stable family key, e.g. "http_errors"
+    name: str  # human label, e.g. "HTTP errors (4XX/5XX)"
+    severity: str  # Error | Warning | Notice (worst in the category)
+    priority: str = "Low"
+    url_count: int = 0
+    finding_count: int = 0
+    description: str = ""
+    how_to_fix: str = ""
+    recheckable: bool = True
+    recheck: TechAuditRecheckSummaryDTO = TechAuditRecheckSummaryDTO()
+
+
+class TechAuditSummaryDTO(BaseModel):
+    client_id: str
+    has_run: bool = False
+    run_id: str | None = None  # provider_snapshots.id of the crawl
+    observed_at: datetime | None = None
+    audit_date: str | None = None
+    health_score: int | None = None
+    cms: str | None = None
+    pages_crawled: int | None = None
+    quality: str | None = None
+    totals: dict[str, Any] = {}
+    warnings: list[str] = []
+    categories: list[TechAuditCategoryDTO] = []
+    generated_at: datetime
+
+
+class TechAuditFindingDTO(BaseModel):
+    id: str  # stable "<slug>\x1f<url>" key, also used to request a recheck
+    category: str
+    category_name: str = ""
+    slug: str
+    name: str
+    severity: str
+    url: str
+    current_value: str = ""
+    evidence: str = ""  # measured proof, e.g. which pages share this title
+    measured: dict[str, Any] = {}
+    how_to_fix: str = ""
+    final_url: str = ""
+    live_status: str = ""
+    recheck_status: str | None = None  # fixed|still_present|unreachable|skipped
+    recheck_at: datetime | None = None
+    recheckable: bool = True
+
+
+class TechAuditFindingsDTO(BaseModel):
+    client_id: str
+    category: str | None = None
+    rows: list[TechAuditFindingDTO] = []
+    total: int = 0
+    limit: int
+    offset: int
+    generated_at: datetime
+
+
+class TechAuditFindingRef(BaseModel):
+    slug: str
+    url: str
+
+
+class TechAuditRecheckRequest(BaseModel):
+    findings: list[TechAuditFindingRef] = []
+
+
+class TechAuditRunAcceptedDTO(BaseModel):
+    job_id: str
+    status_url: str
+    events_url: str

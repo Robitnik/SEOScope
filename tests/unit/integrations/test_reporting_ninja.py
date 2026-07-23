@@ -196,6 +196,145 @@ def test_collect_unexpected_exception_never_raises(monkeypatch):
     assert result.metrics == []
 
 
+def test_collect_datasets_fetches_daily_and_breakdowns(monkeypatch):
+    from seo_audit.clientreport import api_client
+
+    class FakeClient:
+        calls = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def list_fields(self, integration_id):
+            assert integration_id == "ga4"
+            fields = {
+                definition["dimension"]
+                for definition in adapter_module._GA4_DATASETS.values()
+            }
+            fields.update(
+                field
+                for definition in adapter_module._GA4_DATASETS.values()
+                for field in definition["metrics"].values()
+            )
+            return [{"field_id": field} for field in fields]
+
+        def query_all(
+            self, integration_id, connection_key, account_id, fields, start, end, **kwargs
+        ):
+            self.calls.append((fields, start, end))
+            dimension = fields[0]
+            dimension_value = "20260615" if dimension == "date" else f"value-{dimension}"
+            return {
+                "rows": [
+                    {
+                        dimension: dimension_value,
+                        **{field: "10.5" for field in fields[1:]},
+                    }
+                ],
+                "truncated": False,
+            }
+
+    monkeypatch.setattr(api_client, "ReportingNinjaClient", FakeClient)
+
+    result = adapter_module.ReportingNinjaAdapter().collect_datasets(
+        _context(), lambda event: None
+    )
+
+    assert result.quality == Quality.complete
+    assert len(result.rows) == len(adapter_module._GA4_DATASETS) * 2
+    daily = next(row for row in result.rows if row.dataset_key == "ga4_daily")
+    assert daily.dimension_value == "2026-06-15"
+    assert daily.metrics["users"] == Decimal("10.5")
+    assert len(FakeClient.calls) == 12
+
+
+def test_collect_datasets_aggregates_business_profile_locations(monkeypatch):
+    from seo_audit.clientreport import api_client
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def list_fields(self, integration_id):
+            fields = {
+                definition["dimension"]
+                for definition in adapter_module._GA4_DATASETS.values()
+            }
+            fields.update(
+                field
+                for definition in adapter_module._GA4_DATASETS.values()
+                for field in definition["metrics"].values()
+            )
+            return [{"field_id": field} for field in fields]
+
+        def query_all(
+            self, integration_id, connection_key, account_id, fields, start, end, **kwargs
+        ):
+            if integration_id == "ga4":
+                return {
+                    "rows": [
+                        {
+                            fields[0]: "20260615" if fields[0] == "date" else "GA4 value",
+                            **{field: "10" for field in fields[1:]},
+                        }
+                    ]
+                }
+            if kwargs["data_view"] == "performance":
+                return {
+                    "rows": [
+                        {
+                            "day": "2026-06-15",
+                            **{
+                                field: "2"
+                                for field in adapter_module._GBP_PERFORMANCE_METRICS.values()
+                            },
+                        }
+                    ]
+                }
+            return {
+                "rows": [{"search_terms": "sapphire nyc", "search_impressions": "9"}]
+            }
+
+        def query_page(self, *args, **kwargs):
+            return {
+                "rows": [{"reviews_lifetime": "100", "average_rating_lifetime": "4.7"}]
+            }
+
+    monkeypatch.setattr(api_client, "ReportingNinjaClient", FakeClient)
+    context = _context(
+        integration_config={
+            "connection_key": "seo@example.com",
+            "account_id": "properties/1",
+            "gbp_locations": [
+                {
+                    "connection_key": "seo@example.com",
+                    "account_id": "accounts/1/locations/1",
+                    "name": "Sapphire Times Square",
+                }
+            ],
+        }
+    )
+
+    result = adapter_module.ReportingNinjaAdapter().collect_datasets(
+        context, lambda event: None
+    )
+
+    assert result.quality == Quality.complete
+    location = next(row for row in result.rows if row.dataset_key == "gbp_locations")
+    term = next(row for row in result.rows if row.dataset_key == "gbp_search_terms")
+    review = next(row for row in result.rows if row.dataset_key == "gbp_reviews")
+    assert location.dimension_value == "Sapphire Times Square"
+    assert location.metrics["interactions"] == Decimal(2)
+    assert term.metrics["impressions"] == Decimal(9)
+    assert review.metrics["average_rating"] == Decimal("4.7")
+
+
 # ── event bridging ───────────────────────────────────────────────────────────
 def test_bridge_emit_translates_dashboard_event_to_app_event():
     events = []

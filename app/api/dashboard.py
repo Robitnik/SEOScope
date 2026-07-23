@@ -47,7 +47,15 @@ from app.schemas.api import (
     MetricHistorySeriesDTO,
     ProviderSummaryDTO,
 )
-from app.schemas.enums import CellStatus, ComparisonMode, PeriodKind, PeriodRole, Provider, Quality
+from app.schemas.enums import (
+    METRIC_PROVIDERS,
+    CellStatus,
+    ComparisonMode,
+    PeriodKind,
+    PeriodRole,
+    Provider,
+    Quality,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 
@@ -57,6 +65,60 @@ router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 # in that client's timezone (`MetricCardValue.current_range`), which is what
 # actually governs the numbers shown, not this header value.
 _HEADER_REFERENCE_TZ = "America/New_York"
+
+
+def _range_matches_period(row: MetricValue, period: PeriodKind) -> bool:
+    if row.period_start is None or row.period_end is None:
+        return False
+    start, end = row.period_start, row.period_end
+    if period == PeriodKind.week:
+        return end - start == timedelta(days=6)
+    if period == PeriodKind.month:
+        return start.day == 1 and end + timedelta(days=1) == date(
+            end.year + (1 if end.month == 12 else 0),
+            1 if end.month == 12 else end.month + 1,
+            1,
+        )
+    if period == PeriodKind.quarter:
+        expected_start_month = ((end.month - 1) // 3) * 3 + 1
+        return (
+            start.day == 1
+            and start.month == expected_start_month
+            and start.year == end.year
+            and end + timedelta(days=1)
+            == date(
+                end.year + (1 if end.month == 12 else 0),
+                1 if end.month == 12 else end.month + 1,
+                1,
+            )
+        )
+    if period == PeriodKind.year:
+        return start == date(start.year, 1, 1) and end == date(start.year, 12, 31)
+    return False
+
+
+def _history_for_period(
+    rows: list[MetricValue], *, period: PeriodKind, comparison_kind: str, limit: int
+) -> list[MetricValue]:
+    """Filter period cadence and collapse repeated syncs of the same range."""
+    filtered = (
+        [row for row in rows if row.period_start is None and row.period_end is None]
+        if comparison_kind == "snapshot"
+        else [row for row in rows if _range_matches_period(row, period)]
+    )
+    latest_by_period: dict[tuple[date | None, date | None] | date, MetricValue] = {}
+    for row in sorted(filtered, key=lambda item: item.created_at, reverse=True):
+        key: tuple[date | None, date | None] | date
+        if comparison_kind == "snapshot":
+            key = row.created_at.date()
+        else:
+            key = (row.period_start, row.period_end)
+        latest_by_period.setdefault(key, row)
+    selected = list(latest_by_period.values())[:limit]
+    return sorted(
+        selected,
+        key=lambda row: (row.period_end or row.created_at.date(), row.created_at),
+    )
 
 
 def _auth_state_from_cell(
@@ -344,7 +406,7 @@ def backfill_health_history(session: Session, *, days: int, now: datetime) -> in
                     now=as_of,
                     as_of=as_of,
                 )
-                for provider in Provider
+                for provider in METRIC_PROVIDERS
             ]
             health = compute_health(summaries, CATALOG)
             if health.value is None:
@@ -423,7 +485,9 @@ async def get_dashboard(
 ) -> DashboardResponse:
     now = datetime.now(UTC)
     anchor_dt = _anchor_datetime(anchor)
-    providers_wanted: Sequence[Provider] = [provider] if provider is not None else tuple(Provider)
+    providers_wanted: Sequence[Provider] = (
+        [provider] if provider is not None else METRIC_PROVIDERS
+    )
 
     def _run(s: Session) -> list[ClientCardDTO]:
         clients = ClientRepository(s).list_active()
@@ -482,8 +546,11 @@ async def get_client_metrics_history(
         metrics_repo = MetricRepository(s)
         series: list[MetricHistorySeriesDTO] = []
         for spec in CATALOG.values():
-            rows: list[MetricValue] = sorted(
-                metrics_repo.history(client_id, spec.key, n=history), key=lambda r: r.created_at
+            rows = _history_for_period(
+                metrics_repo.history(client_id, spec.key, n=min(history * 20, 2080)),
+                period=period,
+                comparison_kind=spec.comparison_kind,
+                limit=history,
             )
             series.append(
                 MetricHistorySeriesDTO(

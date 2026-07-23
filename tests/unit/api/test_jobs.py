@@ -37,6 +37,33 @@ def test_create_single_client_job_returns_job_id(client, db):
     assert body["events_url"].endswith("/events")
 
 
+def test_create_custom_period_job_persists_exact_range(client, db):
+    client_id = _seed_client(db)
+    payload = _base_request([client_id], [Provider.gsc.value])
+    payload.update(
+        period_kind="custom",
+        custom_start="2025-01-01",
+        custom_end="2025-12-31",
+    )
+
+    created = client.post("/api/v1/sync-jobs", json=payload)
+
+    assert created.status_code == 202
+    job = JobRepository(db).get(created.json()["job_id"])
+    assert job.custom_start.isoformat() == "2025-01-01"
+    assert job.custom_end.isoformat() == "2025-12-31"
+
+
+def test_create_custom_period_job_requires_both_dates(client, db):
+    client_id = _seed_client(db)
+    payload = _base_request([client_id], [Provider.gsc.value])
+    payload.update(period_kind="custom", custom_start="2025-01-01")
+
+    response = client.post("/api/v1/sync-jobs", json=payload)
+
+    assert response.status_code == 422
+
+
 def test_create_batch_job_returns_batch_id(client, db):
     a = _seed_client(db, slug="acme")
     b = _seed_client(db, slug="beta")

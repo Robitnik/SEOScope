@@ -1,5 +1,5 @@
-import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js";
-import { buildClientHash } from "./router.js";
+import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260723-audit1";
+import { buildClientHash } from "./router.js?v=20260723-audit1";
 
 function providerIcon(provider) {
   const meta = PROVIDERS[provider];
@@ -225,7 +225,9 @@ function sparklinePoints(values, width, height, pad) {
 
 export function renderClientCard(client, dashboard) {
   const state = STATE_META[client.overall_status] || STATE_META.attention;
-  const ordered = [...(client.providers || [])].sort((a, b) => PROVIDER_ORDER.indexOf(a.provider) - PROVIDER_ORDER.indexOf(b.provider));
+  const ordered = [...(client.providers || [])]
+    .filter((summary) => PROVIDER_ORDER.includes(summary.provider))
+    .sort((a, b) => PROVIDER_ORDER.indexOf(a.provider) - PROVIDER_ORDER.indexOf(b.provider));
   const withMetrics = ordered.filter((summary) => Array.isArray(summary.metrics) && summary.metrics.length > 0);
   const withoutMetrics = ordered.filter((summary) => !Array.isArray(summary.metrics) || summary.metrics.length === 0);
   const logo = client.logo_path
@@ -237,15 +239,24 @@ export function renderClientCard(client, dashboard) {
   // скрінрідера й прибрані з tab-порядку (AGENTS.md §15: без дублів у
   // послідовності фокуса). Домен лишається зовнішнім посиланням на сайт.
   const pageHref = buildClientHash(client.client_id);
+  // «Копіювати» — справжня кнопка (на відміну від декоративних лого/іконки
+  // «відкрити», які лише дублюють посилання): вона доступна з клавіатури,
+  // має aria-label і живе поруч із назвою та URL. Копіює повний site URL;
+  // клік обробляє dashboard.js і на мить міняє іконку на «галочку».
+  const siteUrl = `https://${client.domain}`;
   return `
     <article class="client-card ${stateClass(client.overall_status)}" data-client-id="${client.client_id}">
       <header class="client-card__header">
         <a class="client-logo-link" href="${pageHref}" tabindex="-1" aria-hidden="true">${logo}</a>
         <div class="client-title">
-          <h2><a class="client-open-name" href="${pageHref}">${escapeHtml(client.name)}</a></h2>
+          <h2>
+            <a class="client-open-name" href="${pageHref}">${escapeHtml(client.name)}</a>
+            <button class="client-copy client-copy--name" type="button" data-action="copy" data-copy="${escapeHtml(client.name)}" aria-label="${escapeHtml(`Copy client name ${client.name}`)}" title="Copy client name">${icon("copy", "icon icon--tiny")}</button>
+          </h2>
           <p class="client-domain">
-            <a href="https://${encodeURI(client.domain)}" target="_blank" rel="noreferrer">${escapeHtml(client.domain)}</a>
+            <a href="${escapeHtml(encodeURI(siteUrl))}" target="_blank" rel="noreferrer">${escapeHtml(client.domain)}</a>
             <a class="client-open" href="${pageHref}" tabindex="-1" aria-hidden="true" title="${escapeHtml(`Open ${client.name} page`)}">${icon("external-link", "icon icon--tiny")}</a>
+            <button class="client-copy" type="button" data-action="copy" data-copy="${escapeHtml(siteUrl)}" aria-label="${escapeHtml(`Copy website URL for ${client.name}`)}" title="Copy website URL">${icon("copy", "icon icon--tiny")}</button>
           </p>
         </div>
         ${healthGauge(client.health)}

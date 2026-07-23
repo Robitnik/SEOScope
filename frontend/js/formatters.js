@@ -9,9 +9,17 @@ export const PROVIDERS = {
   semrush: { label: "Semrush", short: "SE", icon: "/assets/providers/semrush.svg" },
   gsc: { label: "Search Console", short: "GSC", icon: "/assets/providers/gsc.svg" },
   reporting_ninja: { label: "Reporting Ninja / GA4", short: "RN", icon: "/assets/providers/reporting-ninja.svg" },
+  // Not a metric provider (task-25): it carries findings, not KPIs. Present only
+  // so job-progress UI can label its cell; excluded from PROVIDER_ORDER below.
+  tech_audit: { label: "Technical audit", short: "TA", icon: null },
 };
 
-export const PROVIDER_ORDER = Object.keys(PROVIDERS);
+// Semrush is limited by source (paid plan required for full data) — hidden from the
+// card block until that's resolved. Keep the entry in PROVIDERS so it's a one-line revert.
+// `tech_audit` is excluded for a different reason: it has no KPIs to put on a card.
+export const PROVIDER_ORDER = Object.keys(PROVIDERS).filter(
+  (key) => key !== "semrush" && key !== "tech_audit",
+);
 
 export const STATE_META = {
   ok: { label: "Healthy", icon: "circle-check", tone: "var(--success)" },
@@ -60,6 +68,13 @@ export const STAGE_LABELS = {
   authenticate: "Authenticating",
   fetch_current: "Fetching current period",
   fetch_previous: "Fetching previous period",
+  fetch_current_gbp: "Fetching Business Profile current period",
+  fetch_previous_gbp: "Fetching Business Profile previous period",
+  fetch_gbp_reviews: "Fetching Business Profile reviews",
+  fetch_current_daily: "Fetching current GSC daily trend",
+  fetch_previous_daily: "Fetching previous GSC daily trend",
+  export_issues: "Ahrefs is preparing the full issue export",
+  parse_issues: "Parsing Ahrefs issues and affected URLs",
   normalize: "Normalizing",
   validate: "Validating data",
   persist: "Saving to database",

@@ -44,10 +44,23 @@ def test_login_happy_path_returns_session_id_state_and_timeout(client, monkeypat
 
 def test_session_endpoint_reflects_check_session(client, monkeypatch):
     monkeypatch.setattr(providers_module, "check_session", lambda _p: SessionState.alive)
+    monkeypatch.setattr(providers_module, "chrome_running", lambda _p: True)
 
     response = client.get("/api/v1/providers/ahrefs/session")
     assert response.status_code == 200
-    assert response.json() == {"state": "alive"}
+    assert response.json() == {"state": "alive", "running": True}
+
+
+def test_session_endpoint_reports_chrome_not_running(client, monkeypatch):
+    """The pre-start browser check (sync modal) needs to tell "no warm Chrome
+    at all" apart from "Chrome up but logged out" — both collapse to
+    `state="expired"`, so `running` is what actually carries that distinction."""
+    monkeypatch.setattr(providers_module, "check_session", lambda _p: SessionState.expired)
+    monkeypatch.setattr(providers_module, "chrome_running", lambda _p: False)
+
+    response = client.get("/api/v1/providers/semrush/session")
+    assert response.status_code == 200
+    assert response.json() == {"state": "expired", "running": False}
 
 
 def test_session_endpoint_rejects_provider_with_no_browser_session(client):

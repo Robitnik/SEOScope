@@ -28,3 +28,9 @@ artifacts/
 .idea/
 .vscode/
 .DS_Store
+
+# Generated knowledge graph (large, rebuildable — mirrors AISeoTools)
+graphify-out/
+
+# Local Claude Code tooling/config — never tracked in this repo
+.claude/

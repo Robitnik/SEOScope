@@ -42,6 +42,40 @@ def test_sync_job_request_accepts_explicit_lists():
     assert request.providers == [Provider.ahrefs, Provider.semrush]
 
 
+def test_sync_job_request_accepts_custom_range():
+    request = SyncJobRequest(
+        client_ids=["client-1"],
+        providers=[Provider.gsc],
+        period_kind=PeriodKind.custom,
+        custom_start=date(2025, 1, 1),
+        custom_end=date(2025, 12, 31),
+    )
+
+    assert request.custom_start == date(2025, 1, 1)
+    assert request.custom_end == date(2025, 12, 31)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"period_kind": PeriodKind.custom},
+        {
+            "period_kind": PeriodKind.custom,
+            "custom_start": date(2025, 2, 1),
+            "custom_end": date(2025, 1, 1),
+        },
+        {
+            "period_kind": PeriodKind.week,
+            "custom_start": date(2025, 1, 1),
+            "custom_end": date(2025, 1, 7),
+        },
+    ],
+)
+def test_sync_job_request_rejects_invalid_custom_range(payload):
+    with pytest.raises(ValidationError):
+        SyncJobRequest(client_ids=["client-1"], providers=[Provider.gsc], **payload)
+
+
 def test_sync_job_request_rejects_unknown_fields():
     with pytest.raises(ValidationError):
         SyncJobRequest(

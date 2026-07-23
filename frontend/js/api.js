@@ -58,7 +58,7 @@ function sortFixtureClients(clients, sort) {
   return sorted;
 }
 
-export async function getDashboard({ period, query, status, provider, sort = "quality" }) {
+export async function getDashboard({ period, query, status, provider, sort = "quality", anchor }) {
   if (FIXTURE_MODE) {
     if (FIXTURE_MODE === "error") { await wait(500); throw new Error("Fixture connection error"); }
     if (FIXTURE_MODE === "loading") await wait(2400);
@@ -76,6 +76,7 @@ export async function getDashboard({ period, query, status, provider, sort = "qu
   if (query) params.set("q", query);
   if (status) params.set("status", status);
   if (provider) params.set("provider", provider);
+  if (anchor) params.set("anchor", anchor);
   return request(`/dashboard?${params}`, {}, "dashboard");
 }
 
@@ -147,21 +148,148 @@ export async function getClientAlerts(clientId, { dimension = "page", period, an
   return request(`/clients/${clientId}/alerts?${params}`, {}, `alerts-${dimension}`);
 }
 
-// Clicks/impressions dynamics for the client-page chart. Reuses the existing
-// `/clients/{id}/metrics` history endpoint (task-06), which is only ever
-// collected on the week/month cadence — quarter/year/custom intentionally
-// return `null` here rather than mislabel that same weekly history as an
-// aggregate it isn't (PLAN §12honest-empty over fabricated aggregation;
-// see task-18 Completion report follow-ups).
-export async function getClientAnalyticsChart(clientId, period) {
-  if (period !== "week" && period !== "month") return null;
+function isoDay(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function aggregateGscDaily(payload, period) {
+  const rows = payload?.rows || [];
+  if (!rows.length) return [];
+  const rangeStart = new Date(`${payload.period_start}T12:00:00Z`);
+  const rangeEnd = new Date(`${payload.period_end}T12:00:00Z`);
+  const rangeDays = Math.round((rangeEnd - rangeStart) / 86400000) + 1;
+  const granularity = period === "year" || (period === "custom" && rangeDays > 180)
+    ? "month"
+    : period === "quarter" || (period === "custom" && rangeDays > 45)
+      ? "week"
+      : "day";
+  const buckets = new Map();
+  for (const row of rows) {
+    const day = new Date(`${row.dimension_value}T12:00:00Z`);
+    let key = row.dimension_value;
+    let start = row.dimension_value;
+    let end = row.dimension_value;
+    if (granularity === "month") {
+      key = row.dimension_value.slice(0, 7);
+      const year = day.getUTCFullYear();
+      const month = day.getUTCMonth();
+      start = isoDay(new Date(Date.UTC(year, month, 1, 12)));
+      end = isoDay(new Date(Date.UTC(year, month + 1, 0, 12)));
+      if (start < payload.period_start) start = payload.period_start;
+      if (end > payload.period_end) end = payload.period_end;
+    } else if (granularity === "week") {
+      const index = Math.floor((day - rangeStart) / 86400000 / 7);
+      key = `week-${index}`;
+      const bucketStart = new Date(rangeStart.getTime() + index * 7 * 86400000);
+      const bucketEnd = new Date(Math.min(rangeEnd.getTime(), bucketStart.getTime() + 6 * 86400000));
+      start = isoDay(bucketStart);
+      end = isoDay(bucketEnd);
+    }
+    if (!buckets.has(key)) buckets.set(key, { period_start: start, period_end: end, clicks: 0, impressions: 0, clicksSeen: false, impressionsSeen: false });
+    const bucket = buckets.get(key);
+    for (const metric of ["clicks", "impressions"]) {
+      const value = row.metrics?.[metric];
+      if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
+        bucket[metric] += Number(value);
+        bucket[`${metric}Seen`] = true;
+      }
+    }
+  }
+  const points = [...buckets.values()];
+  return ["clicks", "impressions"].map((metric) => ({
+    metric_key: `gsc_${metric}`,
+    points: points.map((bucket) => ({
+      period_start: bucket.period_start,
+      period_end: bucket.period_end,
+      value_numeric: bucket[`${metric}Seen`] ? bucket[metric] : null,
+      quality: "complete",
+    })),
+  }));
+}
+
+// Real date-dimension rows, not one aggregate snapshot per selected range.
+export async function getClientAnalyticsChart(clientId, period, {
+  anchor, customStart, customEnd,
+} = {}) {
   if (FIXTURE_MODE) {
     if (FIXTURE_MODE === "error") { await wait(400); throw new Error("Fixture connection error"); }
     const bundle = await loadAnalyticsBundle();
     return bundle.history || null;
   }
-  const payload = await getClientHistory(clientId, period);
-  return (payload.series || []).filter((item) => item.metric_key === "gsc_clicks" || item.metric_key === "gsc_impressions");
+  const params = new URLSearchParams({ period, role: "current", limit: "500", offset: "0" });
+  if (anchor) params.set("anchor", anchor);
+  if (customStart) params.set("custom_start", customStart);
+  if (customEnd) params.set("custom_end", customEnd);
+  const payload = await request(
+    `/clients/${clientId}/analytics/gsc/daily?${params}`,
+    {},
+    `gsc-daily-${period}`,
+  );
+  return aggregateGscDaily(payload, period);
+}
+
+export async function getReportingNinjaDataset(clientId, datasetKey, {
+  period = "week", role = "current", anchor, customStart, customEnd,
+  sortBy = "sessions", query, limit = 500, offset = 0,
+} = {}) {
+  if (FIXTURE_MODE) {
+    return {
+      client_id: clientId, provider: "reporting_ninja", dataset_key: datasetKey,
+      dimension_key: null, period_role: role, period_start: null, period_end: null,
+      rows: [], total_rows_available: 0, truncated: false, limit, offset,
+    };
+  }
+  const params = new URLSearchParams({
+    period, role, sort_by: sortBy, limit: String(limit), offset: String(offset),
+  });
+  if (anchor) params.set("anchor", anchor);
+  if (customStart) params.set("custom_start", customStart);
+  if (customEnd) params.set("custom_end", customEnd);
+  if (query) params.set("q", query);
+  return request(
+    `/clients/${clientId}/analytics/reporting-ninja/${datasetKey}?${params}`,
+    {},
+    `reporting-ninja-${datasetKey}-${role}`,
+  );
+}
+
+export async function getAhrefsSiteAudit(clientId) {
+  if (FIXTURE_MODE) {
+    const empty = FIXTURE_MODE === "empty-analytics";
+    return {
+      client_id: clientId, observed_at: null, data_through: null, project_id: null,
+      issues: empty ? [] : [{
+        slug: "404_page", issue_id: "", name: "404 page", severity: "Error",
+        priority: "High", description: "Page returns a 404 response.",
+        how_to_fix: "Restore the page or redirect it to the best live equivalent.",
+        affected_urls: 1, exported_rows: 1,
+      }],
+      total_issue_types: empty ? 0 : 1, total_affected_rows: empty ? 0 : 1,
+      severity_counts: { Error: empty ? 0 : 1, Warning: 0, Notice: 0 },
+    };
+  }
+  return request(`/clients/${clientId}/analytics/ahrefs/site-audit`, {}, "ahrefs-site-audit");
+}
+
+export async function getAhrefsAffectedUrls(clientId, {
+  issueSlug, query, limit = 100, offset = 0,
+} = {}) {
+  if (FIXTURE_MODE) {
+    const rows = FIXTURE_MODE === "empty-analytics" ? [] : [{
+      url: "https://example.com/missing", issue_slug: issueSlug || "404_page",
+      issue_name: "404 page", severity: "Error",
+      details: { URL: "https://example.com/missing", "HTTP status code": "404" },
+    }];
+    return { client_id: clientId, issue_slug: issueSlug, rows, total_rows_available: rows.length, limit, offset };
+  }
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (issueSlug) params.set("issue_slug", issueSlug);
+  if (query) params.set("q", query);
+  return request(
+    `/clients/${clientId}/analytics/ahrefs/affected-urls?${params}`,
+    {},
+    "ahrefs-affected-urls",
+  );
 }
 
 function readMockJobs() {
@@ -306,9 +434,16 @@ export async function startProviderLogin(provider) {
 export async function getProviderSession(provider) {
   if (FIXTURE_MODE) {
     await wait(150);
+    // Lets `?fixture=...&demo=no-chrome` preview the pre-start browser check
+    // (sync-modal's `checkBrowserAvailability`, keyed off `running`) the same
+    // way it already previews the mid-job "no warm Chrome" login failure below.
+    if (new URLSearchParams(location.search).get("demo") === "no-chrome") return { state: "expired", running: false };
+    if (provider !== AUTH_DEMO_PROVIDER) return { state: "alive", running: true };
     const loggedInAt = readMockLogins()[provider];
     const alive = loggedInAt && Date.now() - loggedInAt > AUTH_LOGIN_GRACE_MS;
-    return { state: alive ? "alive" : "expired" };
+    // Chrome is up the whole time in this demo — only the login inside it is
+    // stale — so `running` stays true even while `state` is "expired".
+    return { state: alive ? "alive" : "expired", running: true };
   }
   return request(`/providers/${provider}/session`, {}, `session-${provider}`);
 }
@@ -336,6 +471,65 @@ export async function retrySyncJob(id) {
 export function updateIntegration(clientId, provider, payload) {
   if (FIXTURE_MODE) return wait(450).then(() => ({ client_id: clientId, provider, enabled: true, config: payload }));
   return request(`/clients/${clientId}/integrations/${provider}`, { method: "PUT", body: JSON.stringify({ enabled: true, source_mode: "auto", integration_config: payload }) });
+}
+
+// --- Technical SEO Audit (machine-only findings) ---------------------------
+
+export async function getTechAuditLatest(clientId) {
+  if (FIXTURE_MODE) {
+    if (FIXTURE_MODE === "error") { await wait(300); throw new Error("Fixture connection error"); }
+    await wait(180);
+    // `audit-empty` (not `empty`) so the "no audit run yet" state can be shown
+    // on a client that otherwise has data — `empty` blanks the whole dashboard.
+    return fixture(FIXTURE_MODE === "audit-empty" ? "tech-audit-empty" : "tech-audit-latest");
+  }
+  return request(`/clients/${clientId}/tech-audit/latest`, {}, "tech-audit-latest");
+}
+
+export async function getTechAuditFindings(clientId, { category, q, limit = 25, offset = 0 } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(180);
+    const bundle = await fixture("tech-audit-findings");
+    let rows = bundle.rows || [];
+    if (category) rows = rows.filter((row) => row.category === category);
+    if (q) {
+      const needle = q.trim().toLocaleLowerCase("en-US");
+      rows = rows.filter((row) => `${row.url} ${row.name}`.toLocaleLowerCase("en-US").includes(needle));
+    }
+    return { ...bundle, category: category || null, total: rows.length, limit, offset, rows: rows.slice(offset, offset + limit) };
+  }
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (category) params.set("category", category);
+  if (q) params.set("q", q);
+  return request(`/clients/${clientId}/tech-audit/findings?${params}`, {}, "tech-audit-findings");
+}
+
+export async function startTechAudit(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(300);
+    const id = `fixture-audit-${Date.now()}`;
+    return { job_id: id, status_url: `/api/v1/sync-jobs/${id}`, events_url: `/api/v1/sync-jobs/${id}/events` };
+  }
+  return request(`/clients/${clientId}/tech-audit/runs`, { method: "POST", body: "{}" });
+}
+
+export async function recheckTechAuditFindings(clientId, findings) {
+  if (FIXTURE_MODE) {
+    await wait(300);
+    const id = `fixture-recheck-${Date.now()}`;
+    return { job_id: id, status_url: `/api/v1/sync-jobs/${id}`, events_url: `/api/v1/sync-jobs/${id}/events` };
+  }
+  return request(
+    `/clients/${clientId}/tech-audit/findings/recheck`,
+    { method: "POST", body: JSON.stringify({ findings }) },
+    "tech-audit-recheck",
+  );
+}
+
+// A binary download: deliberately NOT routed through `request()`, which sets
+// `Accept: application/json` and parses the body. The UI links straight to it.
+export function techAuditExportUrl(clientId) {
+  return `${API_ROOT}/clients/${clientId}/tech-audit/export.xlsx`;
 }
 
 export function isFixtureMode() { return Boolean(FIXTURE_MODE); }

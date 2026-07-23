@@ -1,11 +1,11 @@
-import { getDashboard, updateIntegration } from "./api.js";
-import { clientGroup, filterByClientGroup } from "./client-groups.js";
-import { renderClientCard, renderSkeletons } from "./client-card.js";
-import { createDetailDrawer } from "./detail-drawer.js";
-import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js";
-import { triggerLogin, watchProviderSession } from "./session-status.js";
-import { getState, setState } from "./store.js";
-import { createSyncModal } from "./sync-modal.js";
+import { getDashboard, updateIntegration } from "./api.js?v=20260723-audit1";
+import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260723-audit1";
+import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260723-audit1";
+import { createDetailDrawer } from "./detail-drawer.js?v=20260723-audit1";
+import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260723-audit1";
+import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260723-audit1";
+import { getState, setState } from "./store.js?v=20260723-audit1";
+import { createSyncModal } from "./sync-modal.js?v=20260723-audit1";
 
 const grid = document.querySelector("#client-grid");
 const dashboardState = document.querySelector("#dashboard-state");
@@ -131,11 +131,38 @@ function toast(message) {
   setTimeout(() => element.remove(), 4200);
 }
 
+// Copies the button's `data-copy` text and confirms without stealing focus:
+// the icon flips to a check for a moment and a toast names what was copied.
+// `writeText` needs a secure context (https/localhost); if it's unavailable
+// or rejected, say so rather than pretending it worked.
+async function copyToClipboard(button) {
+  const value = button.dataset.copy;
+  if (button.dataset.copyState === "done") return;
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    toast("Could not copy — clipboard is unavailable in this browser.");
+    return;
+  }
+  const original = button.innerHTML;
+  button.dataset.copyState = "done";
+  button.innerHTML = icon("copy-check", "icon icon--tiny");
+  toast(`Copied ${value}`);
+  setTimeout(() => {
+    button.innerHTML = original;
+    delete button.dataset.copyState;
+  }, 1400);
+}
+
 grid.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
   if (button.dataset.action === "login") {
     if (button.getAttribute("aria-disabled") !== "true") handleProviderLogin(button.dataset.provider, button);
+    return;
+  }
+  if (button.dataset.action === "copy") {
+    copyToClipboard(button);
     return;
   }
   const card = button.closest("[data-client-id]");

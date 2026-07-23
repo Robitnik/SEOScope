@@ -39,6 +39,23 @@ def test_create_run_decomposes_into_cells(session):
     assert ahrefs_cell.status == CellStatus.running
 
 
+def test_create_run_persists_custom_range(session):
+    client = _make_client(session)
+
+    job = JobRepository(session).create_run(
+        client_ids=[client.id],
+        providers=[Provider.gsc],
+        period_kind=PeriodKind.custom,
+        comparison_mode=ComparisonMode.closed,
+        anchor_date=date(2026, 1, 1),
+        custom_start=date(2025, 3, 1),
+        custom_end=date(2025, 3, 31),
+    )[0]
+
+    assert job.custom_start == date(2025, 3, 1)
+    assert job.custom_end == date(2025, 3, 31)
+
+
 def test_claim_next_cell_is_atomic_across_two_callers(session, engine):
     from sqlalchemy.orm import sessionmaker
 

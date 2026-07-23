@@ -185,6 +185,61 @@ def test_client_metrics_history_endpoint(client, db):
     assert series["points"][0]["value_numeric"] == "100"
 
 
+def test_client_metrics_history_filters_cadence_and_deduplicates_ranges(client, db):
+    client_id = _seed_client_with_gsc_snapshot(db)
+    job = JobRepository(db).create_run(
+        client_ids=[client_id],
+        providers=[Provider.gsc],
+        period_kind=PeriodKind.month,
+        comparison_mode=ComparisonMode.closed,
+        anchor_date=date(2026, 2, 2),
+    )[0]
+    for observed_at, start, end, value in (
+        (datetime(2026, 1, 13, tzinfo=UTC), date(2026, 1, 5), date(2026, 1, 11), 110),
+        (datetime(2026, 2, 2, tzinfo=UTC), date(2026, 1, 1), date(2026, 1, 31), 500),
+    ):
+        snapshot = SnapshotRepository(db).create_immutable(
+            job_id=job.id,
+            client_id=client_id,
+            provider=Provider.gsc,
+            source_mode=SourceMode.api,
+            observed_at=observed_at,
+            quality=Quality.complete,
+            data_through=end,
+        )
+        MetricRepository(db).bulk_insert(
+            snapshot_id=snapshot.id,
+            client_id=client_id,
+            provider=Provider.gsc,
+            values=[
+                MetricValueResult(
+                    metric_key="gsc_clicks",
+                    period_role=PeriodRole.current,
+                    period_start=start,
+                    period_end=end,
+                    value_numeric=Decimal(value),
+                    unit="count",
+                    quality=Quality.complete,
+                )
+            ],
+        )
+    db.commit()
+
+    weekly = client.get(
+        f"/api/v1/clients/{client_id}/metrics", params={"period": "week", "history": 5}
+    ).json()
+    monthly = client.get(
+        f"/api/v1/clients/{client_id}/metrics", params={"period": "month", "history": 5}
+    ).json()
+    weekly_clicks = next(s for s in weekly["series"] if s["metric_key"] == "gsc_clicks")
+    monthly_clicks = next(s for s in monthly["series"] if s["metric_key"] == "gsc_clicks")
+
+    assert len(weekly_clicks["points"]) == 1
+    assert weekly_clicks["points"][0]["value_numeric"] == "110"
+    assert len(monthly_clicks["points"]) == 1
+    assert monthly_clicks["points"][0]["value_numeric"] == "500"
+
+
 def test_client_metrics_history_missing_client_is_404(client):
     response = client.get("/api/v1/clients/does-not-exist/metrics")
     assert response.status_code == 404

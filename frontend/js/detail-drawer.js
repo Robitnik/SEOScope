@@ -1,5 +1,5 @@
-import { getClientHistory } from "./api.js";
-import { PROVIDERS, formatRange, formatValue, metricLabel } from "./formatters.js";
+import { getClientHistory } from "./api.js?v=20260723-audit1";
+import { PROVIDERS, formatRange, formatValue, metricLabel } from "./formatters.js?v=20260723-audit1";
 
 export function createDetailDrawer({ onError }) {
   const dialog = document.querySelector("#detail-dialog");

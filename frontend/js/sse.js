@@ -1,5 +1,5 @@
-import { getSyncJob, isFixtureMode } from "./api.js";
-import { isTerminal } from "./formatters.js";
+import { getSyncJob, isFixtureMode } from "./api.js?v=20260723-audit1";
+import { isTerminal } from "./formatters.js?v=20260723-audit1";
 
 export function watchJob({ id, eventsUrl, lastEventId = "", onProgress, onConnection, onTerminal, onError }) {
   let stopped = false;
@@ -17,7 +17,13 @@ export function watchJob({ id, eventsUrl, lastEventId = "", onProgress, onConnec
         onTerminal(job);
       }
     } catch (error) {
-      if (!stopped) onError(error);
+      if (stopped) return;
+      // Rapid SSE events fire overlapping `getSyncJob(id)` polls; `request()` aborts the previous
+      // in-flight one (shared `job-<id>` key), so the superseded poll rejects with an AbortError.
+      // That is expected supersession — the newer poll delivers the state — not a real failure, so
+      // it must NOT surface as a "Progress temporarily unavailable" toast (that spammed the UI).
+      if (error?.name === "AbortError" || /\baborted\b/i.test(error?.message || "")) return;
+      onError(error);
     }
   }
 

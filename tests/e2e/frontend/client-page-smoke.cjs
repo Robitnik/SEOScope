@@ -44,19 +44,20 @@ async function main() {
   assert.match(page.url(), /tab=query/, "active tab persists in the URL");
   await page.locator("#cp-search").fill("gutter");
   await page.waitForTimeout(400);
-  assert.equal(await page.locator(".analytics-table tbody tr").count(), 1, "search filters rows client-side");
+  assert.equal(await page.locator("#cp-tabpanel .analytics-table tbody tr").count(), 1, "search filters rows client-side");
   assert.match(page.url(), /q=gutter/, "search text persists in the URL");
 
   // Alerts block: absolute impact, exact dates, both periods always shown.
   assert.match(await page.locator(".alerts-section__dates").innerText(), /\d{4}/, "alerts show exact calendar dates for both periods");
   assert.equal(await page.locator(".alert-group", { hasText: "Declining" }).locator(".alert-row").count() > 0, true, "declining group lists entries");
 
-  // Extended periods: quarter selection is honest about missing aggregation
-  // rather than fabricating a coverage percentage.
+  // Extended periods use exact live ranges. Stored exact-period history can
+  // render a chart while an empty range starts an on-demand collection.
   await page.locator('[data-period-kind="quarter"]').click();
   await page.waitForTimeout(400);
-  assert.equal(await page.locator("#cp-coverage-note").isVisible(), true, "coverage note explains extended-period aggregation is not connected yet");
-  assert.equal((await page.locator(".chart-section .state-panel").count()) > 0, true, "chart honestly reports unavailability instead of mislabeling weekly history as a quarter");
+  assert.equal(await page.locator("#cp-coverage-note").isVisible(), true, "coverage note explains exact live collection for extended periods");
+  assert.match(await page.locator("#cp-coverage-note").innerText(), /exact live periods/i, "extended-period note describes the live behavior");
+  assert.equal(await page.locator("#cp-canvas").count(), 1, "stored exact-quarter history renders in the chart");
 
   // Custom range + reload survives (AGENTS.md §12: URL state over reload/back/forward/share).
   await page.locator('[data-period-kind="custom"]').click();
@@ -79,11 +80,15 @@ async function main() {
   await page.screenshot({ path: path.join(screenshots, "client-page-390.png"), fullPage: true });
   await page.setViewportSize({ width: 1440, height: 1000 });
 
-  // Insufficient-data state (task-16/17's live collection is not wired to
-  // jobs yet, so this is today's honest real-API answer for any client).
+  // Empty data automatically starts the scoped live job, streams progress,
+  // then refreshes the page while preserving the honest empty result if the
+  // fixture collector has no rows to return.
   await page.goto(`${baseUrl}/?fixture=empty-analytics#/client/client-cleveland`, { waitUntil: "networkidle" });
   await page.getByText("No data collected for this period yet.").waitFor();
   await page.getByText("Not enough data for alerts.").waitFor();
+  await page.locator("#cp-live-status").waitFor({ state: "visible" });
+  await page.getByText("Live data updated", { exact: true }).waitFor({ timeout: 10000 });
+  assert.equal(await page.locator("#cp-live-refresh").isEnabled(), true, "manual live refresh is restored after the automatic job completes");
 
   // GSC not connected at all vs GSC needs reauth are distinct, explained states.
   await page.goto(`${baseUrl}/?fixture=normal#/client/client-nyc-hearing`, { waitUntil: "networkidle" });

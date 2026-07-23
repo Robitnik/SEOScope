@@ -83,6 +83,9 @@ def make_cell(session_scope):
         integration_enabled: bool = True,
         mode: str = "collect_missing",
         slug: str = "acme",
+        period_kind: PeriodKind = PeriodKind.week,
+        custom_start: date | None = None,
+        custom_end: date | None = None,
     ) -> tuple[str, str, str]:
         from app.db.models import Client, ClientIntegration
 
@@ -107,9 +110,11 @@ def make_cell(session_scope):
             jobs = JobRepository(session).create_run(
                 client_ids=[client.id],
                 providers=[provider],
-                period_kind=PeriodKind.week,
+                period_kind=period_kind,
                 comparison_mode=ComparisonMode.closed,
                 anchor_date=date(2026, 1, 1),
+                custom_start=custom_start,
+                custom_end=custom_end,
                 mode=mode,
             )
             job = jobs[0]

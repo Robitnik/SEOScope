@@ -55,7 +55,8 @@
       "ahrefs",
       "gsc",
       "reporting_ninja",
-      "semrush"
+      "semrush",
+      "tech_audit"
     ],
     "Quality": [
       "complete",
@@ -230,7 +231,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -317,7 +319,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -801,7 +804,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -1260,7 +1264,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -1298,6 +1303,17 @@
           "additionalProperties": true,
           "default": {},
           "title": "Integration Config",
+          "type": "object"
+        },
+        "job_mode": {
+          "default": "",
+          "title": "Job Mode",
+          "type": "string"
+        },
+        "job_params": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Job Params",
           "type": "object"
         },
         "period_kind": {
@@ -1452,7 +1468,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -2165,7 +2182,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -2365,7 +2383,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -2760,7 +2779,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -2831,6 +2851,32 @@
           ],
           "default": null,
           "title": "Current Stage"
+        },
+        "custom_end": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Custom End"
+        },
+        "custom_start": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Custom Start"
         },
         "error_code": {
           "anyOf": [
@@ -3241,7 +3287,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -3357,7 +3404,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -3485,7 +3533,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -3551,7 +3600,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -3639,7 +3689,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -4004,7 +4055,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -4141,7 +4193,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -4334,7 +4387,8 @@
             "ahrefs",
             "semrush",
             "gsc",
-            "reporting_ninja"
+            "reporting_ninja",
+            "tech_audit"
           ],
           "title": "Provider",
           "type": "string"
@@ -4384,6 +4438,32 @@
         "comparison_mode": {
           "$ref": "#/$defs/ComparisonMode",
           "default": "closed"
+        },
+        "custom_end": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Custom End"
+        },
+        "custom_start": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Custom Start"
         },
         "idempotency_key": {
           "anyOf": [

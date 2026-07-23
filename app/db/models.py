@@ -102,11 +102,17 @@ class SyncJob(Base):
     period_kind: Mapped[PeriodKind] = mapped_column(_str_enum(PeriodKind))
     comparison_mode: Mapped[ComparisonMode] = mapped_column(_str_enum(ComparisonMode))
     anchor_date: Mapped[date] = mapped_column(Date)
+    custom_start: Mapped[date | None] = mapped_column(Date, default=None)
+    custom_end: Mapped[date | None] = mapped_column(Date, default=None)
     requested_providers_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     # "collect_missing" | "force_refresh" (PLAN §9.2, SyncJobRequest.mode) — read
     # by the job engine (task-05) when deciding whether a cell with a fresh
     # snapshot can be skipped instead of re-collected.
     mode: Mapped[str] = mapped_column(String(32), default="collect_missing")
+    # Optional, non-secret job parameters for run kinds that need them beyond the
+    # period fields (task-25 tech_audit recheck: the source run dir + the exact
+    # (slug, url) findings to re-verify). NULL for ordinary metric-provider syncs.
+    params_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     status: Mapped[JobStatus] = mapped_column(
         _str_enum(JobStatus), default=JobStatus.queued, index=True
     )
@@ -373,6 +379,49 @@ class GscDimensionMetric(Base):
 
 
 DIMENSION_OTHER_VALUE = "інше"
+
+
+class AnalyticsDatasetRow(Base):
+    """A normalized row from a provider analytical dataset.
+
+    Metric names and payloads differ between GA4, GBP and Ahrefs datasets, so
+    provider fields are JSON while the shared query axes stay typed/indexed.
+    """
+
+    __tablename__ = "analytics_dataset_rows"
+    __table_args__ = (
+        UniqueConstraint(
+            "snapshot_id",
+            "dataset_key",
+            "dimension_value",
+            name="uq_analytics_dataset_snapshot_value",
+        ),
+        Index(
+            "ix_analytics_dataset_client_key_period",
+            "client_id",
+            "dataset_key",
+            "period_start",
+            "period_end",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("provider_snapshots.id", ondelete="CASCADE"), index=True
+    )
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[Provider] = mapped_column(_str_enum(Provider), index=True)
+    dataset_key: Mapped[str] = mapped_column(String(80))
+    dimension_key: Mapped[str] = mapped_column(String(80))
+    dimension_value: Mapped[str] = mapped_column(String(2048))
+    period_start: Mapped[date] = mapped_column(Date)
+    period_end: Mapped[date] = mapped_column(Date)
+    metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    quality: Mapped[Quality] = mapped_column(_str_enum(Quality))
+    rank: Mapped[int | None] = mapped_column(Integer, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
 class ClientHealthDaily(Base):

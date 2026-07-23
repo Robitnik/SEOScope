@@ -1,0 +1,15 @@
+{
+  "client_id": "fixture-client",
+  "has_run": false,
+  "run_id": null,
+  "observed_at": null,
+  "audit_date": null,
+  "health_score": null,
+  "cms": null,
+  "pages_crawled": null,
+  "quality": null,
+  "totals": {},
+  "warnings": [],
+  "categories": [],
+  "generated_at": "2026-07-23T09:20:00+00:00"
+}

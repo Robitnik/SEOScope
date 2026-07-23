@@ -5,6 +5,7 @@ and aggregates their status back into a job/batch-level `JobStatus` (PLAN §9.1/
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -50,9 +51,12 @@ class JobRepository:
         period_kind: PeriodKind,
         comparison_mode: ComparisonMode,
         anchor_date: date,
+        custom_start: date | None = None,
+        custom_end: date | None = None,
         mode: str = "collect_missing",
         idempotency_key: str | None = None,
         batch_id: str | None = None,
+        params: dict[str, Any] | None = None,
     ) -> list[SyncJob]:
         """Create one `SyncJob` per client plus a `queued` cell per provider.
 
@@ -80,8 +84,11 @@ class JobRepository:
                 period_kind=period_kind,
                 comparison_mode=comparison_mode,
                 anchor_date=anchor_date,
+                custom_start=custom_start,
+                custom_end=custom_end,
                 requested_providers_json=[p.value for p in providers],
                 mode=mode,
+                params_json=params,
                 idempotency_key=job_idempotency_key,
             )
             self._session.add(job)

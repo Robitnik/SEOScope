@@ -1,9 +1,12 @@
-import { getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart } from "./api.js";
-import { replaceClientHash } from "./router.js";
-import { escapeHtml, formatTimestamp, icon, initials, STATE_META, stateClass } from "./formatters.js";
-import { createAnalyticsTab } from "./analytics-tabs.js";
-import { renderAlertsBlock } from "./alerts-block.js";
-import { renderChart, destroyChart } from "./charts.js";
+import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, isFixtureMode } from "./api.js?v=20260723-audit1";
+import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260723-audit1";
+import { buildAhrefsHash, replaceClientHash } from "./router.js?v=20260723-audit1";
+import { escapeHtml, formatTimestamp, icon, initials, isTerminal, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260723-audit1";
+import { createAnalyticsTab } from "./analytics-tabs.js?v=20260723-audit1";
+import { renderAlertsBlock } from "./alerts-block.js?v=20260723-audit1";
+import { renderChart, destroyChart } from "./charts.js?v=20260723-audit1";
+import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260723-audit1";
+import { watchJob } from "./sse.js?v=20260723-audit1";
 
 const PERIODS = [
   { key: "week", label: "Week" },
@@ -67,6 +70,18 @@ const root = document.querySelector("#client-page-root");
 let requestToken = 0;
 let current = null;
 let analyticsTab = null;
+let stopLiveWatching = null;
+let liveCollection = null;
+const autoLiveAttempts = new Set();
+// Technical SEO audit (task-25). Independent of the selected period: an audit
+// is a point-in-time crawl, so it loads once per client, not per period change.
+let auditSummary = null;
+let auditFindings = null;
+let auditBusy = false;
+let stopAuditWatching = null;
+const pendingRecheck = new Set();
+const AUDIT_PAGE_SIZE = 25;
+const GA4_DATASETS = ["ga4_channels", "ga4_landing_pages", "ga4_events", "ga4_devices", "ga4_countries"];
 
 function paramsFromQuery(query) {
   const period = ["week", "month", "quarter", "year", "custom"].includes(query.get("period")) ? query.get("period") : "week";
@@ -79,6 +94,11 @@ function paramsFromQuery(query) {
     sortBy: ["clicks", "impressions", "ctr", "position"].includes(query.get("sort")) ? query.get("sort") : "clicks",
     search: query.get("q") || "",
     page: Math.max(1, Number(query.get("page")) || 1),
+    ga4Dataset: GA4_DATASETS.includes(query.get("ga4")) ? query.get("ga4") : "ga4_channels",
+    ga4Search: query.get("ga4q") || "",
+    auditCategory: query.get("cat") || "",
+    auditSearch: query.get("fq") || "",
+    auditOffset: Math.max(0, Number(query.get("foff")) || 0),
   };
 }
 
@@ -92,11 +112,26 @@ function persist() {
     sort: current.sortBy === "clicks" ? "" : current.sortBy,
     q: current.search,
     page: current.page > 1 ? current.page : "",
+    ga4: current.ga4Dataset === "ga4_channels" ? "" : current.ga4Dataset,
+    ga4q: current.ga4Search,
+    cat: current.auditCategory,
+    fq: current.auditSearch,
+    foff: current.auditOffset > 0 ? current.auditOffset : "",
   });
 }
 
 export async function initClientPage(clientId, query) {
+  stopLiveWatching?.();
+  stopLiveWatching = null;
+  stopAuditWatching?.();
+  stopAuditWatching = null;
+  liveCollection = null;
+  auditSummary = null;
+  auditFindings = null;
+  auditBusy = false;
+  pendingRecheck.clear();
   destroyChart();
+  destroyReportingNinjaChart();
   current = { clientId, ...paramsFromQuery(query) };
   root.innerHTML = shell();
   analyticsTab = createAnalyticsTab({
@@ -129,11 +164,26 @@ function shell() {
         <button type="button" class="button button--quiet" id="cp-custom-apply">Apply</button>
       </div>
       <p class="period-panel__dates" id="cp-period-dates" aria-live="polite">Loading period dates…</p>
+      <div class="period-panel__live">
+        <button type="button" class="button button--quiet" id="cp-live-refresh">${icon("refresh")}Refresh live data</button>
+        <div class="live-collection" id="cp-live-status" aria-live="polite" hidden></div>
+      </div>
       <p class="period-panel__note" id="cp-coverage-note" hidden></p>
     </section>
     <div id="cp-gate" class="state-panel" hidden></div>
     <div id="cp-content">
+      <section class="ahrefs-section" id="cp-ahrefs" aria-label="Ahrefs live Site Audit" aria-live="polite">
+        <div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>
+      </section>
+      <section class="audit-section" id="cp-audit" aria-label="Technical SEO audit" aria-live="polite">
+        <div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>
+      </section>
+      <section class="rn-section" id="cp-reporting-ninja" aria-label="Reporting Ninja and GA4 analytics" aria-live="polite">
+        <div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>
+      </section>
+      <div id="cp-gsc-content">
       <section class="analytics-tabs" aria-label="Page and query analytics">
+        <div class="section-heading"><div><p class="eyebrow">Reporting Ninja · Search Console</p><h2>Organic search detail</h2></div></div>
         <div class="tablist" role="tablist" aria-label="Data breakdown">
           <button type="button" role="tab" id="cp-tab-page" aria-controls="cp-tabpanel" aria-selected="${String(current.tab === "page")}">${icon("file-text")}Pages</button>
           <button type="button" role="tab" id="cp-tab-query" aria-controls="cp-tabpanel" aria-selected="${String(current.tab === "query")}">${icon("search")}Queries</button>
@@ -142,6 +192,7 @@ function shell() {
       </section>
       <section class="alerts-section" id="cp-alerts" aria-label="Alerts: drops and growth" aria-live="polite"></section>
       <section class="chart-section" id="cp-chart" aria-label="Clicks and impressions trend"></section>
+      </div>
     </div>`;
 }
 
@@ -153,6 +204,8 @@ function bindShell() {
     if (kind === current.period) return;
     current.period = kind;
     current.anchor = "";
+    current.periodCurrentStart = "";
+    current.periodCurrentEnd = "";
     current.page = 1;
     document.querySelectorAll("[data-period-kind]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
     document.querySelector("#cp-custom-range").hidden = kind !== "custom";
@@ -168,10 +221,13 @@ function bindShell() {
     }
     current.customStart = start;
     current.customEnd = end;
+    current.periodCurrentStart = "";
+    current.periodCurrentEnd = "";
     current.page = 1;
     persist();
     loadPeriodData();
   });
+  document.querySelector("#cp-live-refresh").addEventListener("click", () => startLiveCollection());
   document.querySelector("#cp-tab-page").addEventListener("click", () => switchTab("page"));
   document.querySelector("#cp-tab-query").addEventListener("click", () => switchTab("query"));
   document.querySelector(".tablist").addEventListener("keydown", (event) => {
@@ -193,7 +249,7 @@ function switchTab(tab) {
   loadPeriodData();
 }
 
-async function loadClient() {
+async function loadClient({ allowAutoLive = true } = {}) {
   try {
     const dashboard = await getDashboard({ period: "week" });
     const client = (dashboard.clients || []).find((item) => item.client_id === current.clientId);
@@ -203,14 +259,22 @@ async function loadClient() {
     }
     renderHeader(client);
     const gsc = (client.providers || []).find((item) => item.provider === "gsc");
+    const ahrefs = (client.providers || []).find((item) => item.provider === "ahrefs");
+    const reportingNinja = (client.providers || []).find((item) => item.provider === "reporting_ninja");
+    current.gscConfigured = Boolean(gsc && gsc.state !== "not_configured");
+    current.ahrefsConfigured = Boolean(ahrefs && ahrefs.state !== "not_configured");
+    current.ahrefsSummary = ahrefs || null;
+    renderAhrefsSummaryCard();
+    // Period-independent: kicked off here, never re-run by a period change.
+    loadTechAudit();
+    current.reportingNinjaConfigured = Boolean(reportingNinja && reportingNinja.state !== "not_configured");
+    current.reportingNinjaSummary = reportingNinja || null;
     if (!gsc || gsc.state === "not_configured") {
       renderGate("not_configured");
-      return;
-    }
-    if (gsc.state === "auth_required") {
+    } else if (gsc.state === "auth_required") {
       renderGate("auth_required");
     }
-    await loadPeriodData();
+    await loadPeriodData({ allowAutoLive });
   } catch (error) {
     document.querySelector("#cp-header").innerHTML = `<p class="state-panel state-failed">${icon("wifi-off")}<span><strong>Failed to load client.</strong><br>${escapeHtml(error.message)}</span></p>`;
   }
@@ -232,8 +296,8 @@ function renderGate(kind) {
   gate.hidden = false;
   if (kind === "not_configured") {
     gate.className = "state-panel state-not_configured";
-    gate.innerHTML = `${icon("plug-off")}<p><strong>Google Search Console is not connected.</strong><br>Page, query analytics and alerts are only available for clients with GSC connected. Add the integration on the main dashboard.</p><a class="button button--primary" href="/">Go to dashboard</a>`;
-    document.querySelector("#cp-content").hidden = true;
+    gate.innerHTML = `${icon("plug-off")}<p><strong>Google Search Console is not connected.</strong><br>The GA4 section remains available; search pages, queries and alerts require GSC.</p><a class="button button--quiet" href="/">Manage integrations</a>`;
+    document.querySelector("#cp-gsc-content").hidden = true;
   } else if (kind === "auth_required") {
     gate.className = "state-panel state-auth_required";
     gate.innerHTML = `${icon("key")}<p><strong>GSC re-authorization required.</strong><br>Data below may be stale or missing until authorization is refreshed on the main dashboard.</p><a class="button button--quiet" href="/">Go to dashboard</a>`;
@@ -270,14 +334,174 @@ function coverageNote() {
   const note = document.querySelector("#cp-coverage-note");
   if (current.period === "week" || current.period === "month") { note.hidden = true; return; }
   note.hidden = false;
-  note.innerHTML = `${icon("info-circle")} Extended aggregation for quarter/year/custom is not yet implemented: only days that exactly match a stored period are shown. No match means the section will be empty, not a fabricated total.`;
+  note.innerHTML = `${icon("info-circle")} Quarter, year and custom ranges are collected as exact live periods. Opening an empty range starts collection automatically.`;
 }
 
-async function loadPeriodData() {
+function livePeriodKey() {
+  return [
+    current.clientId,
+    current.period,
+    current.periodCurrentStart || current.customStart,
+    current.periodCurrentEnd || current.customEnd,
+  ].join("|");
+}
+
+function datasetHasRows(dataset) {
+  return Boolean(dataset?.rows?.length);
+}
+
+function reportingNinjaHasRows(data) {
+  return datasetHasRows(data?.daily)
+    || datasetHasRows(data?.currentDataset)
+    || datasetHasRows(data?.gbp?.daily)
+    || datasetHasRows(data?.gbp?.locations)
+    || datasetHasRows(data?.gbp?.reviews);
+}
+
+function configuredLiveProviders() {
+  return [
+    current.ahrefsConfigured && "ahrefs",
+    current.gscConfigured && "gsc",
+    current.reportingNinjaConfigured && "reporting_ninja",
+  ].filter(Boolean);
+}
+
+function setLiveButtonBusy(busy) {
+  const button = document.querySelector("#cp-live-refresh");
+  if (!button) return;
+  button.disabled = busy;
+  // `.icon--spin` is the class that animates (app.css) — without it the spinner
+  // rendered frozen here too.
+  button.innerHTML = busy
+    ? `${icon("loader-2", "icon icon--spin")}Collecting live data…`
+    : `${icon("refresh")}Refresh live data`;
+}
+
+function renderLiveStatus(job, { phase = "running", message = "" } = {}) {
+  const container = document.querySelector("#cp-live-status");
+  if (!container) return;
+  container.hidden = false;
+  const progress = percent(job?.progress_percent);
+  const cells = job?.cells || [];
+  const activeCell = cells.find((cell) => !["succeeded", "partial", "failed", "failed_interrupted", "not_configured", "cancelled", "skipped"].includes(cell.status));
+  const stage = STAGE_LABELS[activeCell?.current_stage || job?.current_stage] || "Waiting for the collector";
+  const failed = phase === "failed" || job?.status === "failed" || job?.status === "partial";
+  const complete = phase === "complete";
+  const title = complete
+    ? "Live data updated"
+    : failed
+      ? "Live collection finished with issues"
+      : phase === "starting" ? "Starting live collection" : `Fetching live data · ${progress}%`;
+  const detail = message || (complete
+    ? "The latest values have been saved and the page is being refreshed."
+    : failed
+      ? "Available results were saved. Use Refresh live data to retry failed services."
+      : stage);
+  const providers = cells.length
+    ? cells.map((cell) => `${PROVIDERS[cell.provider]?.label || cell.provider}: ${STATE_META[cell.status]?.label || STAGE_LABELS[cell.current_stage] || cell.status}`).join(" · ")
+    : (liveCollection?.providers || []).map((provider) => PROVIDERS[provider]?.label || provider).join(" · ");
+  container.className = `live-collection ${failed ? "live-collection--failed" : complete ? "live-collection--complete" : "live-collection--running"}`;
+  container.innerHTML = `
+    <div class="live-collection__copy">
+      ${icon(complete ? "circle-check" : failed ? "alert-triangle" : "cloud-download")}
+      <p><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(detail)}</span>${providers ? `<small>${escapeHtml(providers)}</small>` : ""}</p>
+    </div>
+    ${complete || failed ? "" : `<progress max="100" value="${progress}" aria-label="Live collection progress: ${progress}%"></progress>`}`;
+}
+
+async function startLiveCollection({ providers = null, automatic = false } = {}) {
+  if (liveCollection?.active) return;
+  const selectedProviders = providers || configuredLiveProviders();
+  if (!selectedProviders.length) {
+    renderLiveStatus({ status: "failed", progress_percent: 0 }, { phase: "failed", message: "Connect Ahrefs, Search Console or Reporting Ninja before starting live collection." });
+    return;
+  }
+  if (current.period === "custom" && (!current.customStart || !current.customEnd || current.customStart > current.customEnd)) {
+    renderLiveStatus({ status: "failed", progress_percent: 0 }, { phase: "failed", message: "Enter a valid custom date range first." });
+    return;
+  }
+
+  const key = livePeriodKey();
+  liveCollection = { active: true, key, providers: selectedProviders };
+  setLiveButtonBusy(true);
+  renderLiveStatus({ status: "queued", progress_percent: 0, cells: [] }, { phase: "starting" });
+  try {
+    const accepted = await createSyncJob({
+      client_ids: [current.clientId],
+      providers: selectedProviders,
+      period_kind: current.period,
+      comparison_mode: "closed",
+      anchor: current.anchor || undefined,
+      custom_start: current.period === "custom" ? current.customStart : undefined,
+      custom_end: current.period === "custom" ? current.customEnd : undefined,
+      mode: "force_refresh",
+      source_mode: "auto",
+      idempotency_key: automatic
+        ? `client-page-auto:${key}:${[...selectedProviders].sort().join(",")}`
+        : (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`),
+    }, {
+      period_kind: current.period,
+      clients: [{
+        client_id: current.clientId,
+        providers: selectedProviders.map((provider) => ({ provider, state: "complete" })),
+      }],
+    });
+    const id = accepted.batch_id || accepted.job_id;
+    stopLiveWatching?.();
+    stopLiveWatching = watchJob({
+      id,
+      eventsUrl: accepted.events_url,
+      onProgress(job) { renderLiveStatus(job); },
+      onConnection(state) {
+        if (state === "offline" && liveCollection?.active) {
+          renderLiveStatus({ status: "running", progress_percent: 0, cells: [] }, { message: "Live connection interrupted; the server collection continues and will reconnect automatically." });
+        }
+      },
+      async onTerminal(job) {
+        const completedKey = liveCollection?.key;
+        liveCollection = { ...(liveCollection || {}), active: false };
+        stopLiveWatching = null;
+        setLiveButtonBusy(false);
+        const hasFailure = ["failed", "partial", "cancelled"].includes(job.status)
+          || (job.cells || []).some((cell) => ["failed", "failed_interrupted", "not_configured", "cancelled"].includes(cell.status));
+        renderLiveStatus(job, { phase: hasFailure ? "failed" : "complete" });
+        if (job.status !== "cancelled") {
+          await loadClient({ allowAutoLive: completedKey !== livePeriodKey() });
+        }
+      },
+      onError(error) {
+        renderLiveStatus({ status: "running", progress_percent: 0, cells: [] }, { message: `Progress temporarily unavailable: ${error.message}` });
+      },
+    });
+  } catch (error) {
+    liveCollection = { ...(liveCollection || {}), active: false };
+    setLiveButtonBusy(false);
+    renderLiveStatus({ status: "failed", progress_percent: 0, cells: [] }, { phase: "failed", message: `Could not start live collection: ${error.message}` });
+  }
+}
+
+function chartHasTrend(chart) {
+  return Boolean(chart?.some((series) => (series.points || []).filter((point) => point.value_numeric !== null).length >= 2));
+}
+
+async function maybeStartLiveCollection(rowsCurrent, ga4, chart) {
+  const key = livePeriodKey();
+  if (autoLiveAttempts.has(key) || liveCollection?.active) return;
+  const missing = [];
+  if (current.ahrefsConfigured && ["unavailable", "auth_required"].includes(current.ahrefsSummary?.state)) missing.push("ahrefs");
+  if (current.gscConfigured && (!rowsCurrent?.rows?.length || !chartHasTrend(chart))) missing.push("gsc");
+  if (current.reportingNinjaConfigured && !ga4?.error && !reportingNinjaHasRows(ga4)) missing.push("reporting_ninja");
+  if (!missing.length) return;
+  autoLiveAttempts.add(key);
+  await startLiveCollection({ providers: missing, automatic: true });
+}
+
+async function loadPeriodData({ allowAutoLive = true } = {}) {
   const token = ++requestToken;
   coverageNote();
   document.querySelector("#cp-tabpanel").setAttribute("aria-busy", "true");
   document.querySelector("#cp-alerts").innerHTML = `<div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>`;
+  document.querySelector("#cp-reporting-ninja").innerHTML = `<div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>`;
   try {
     const alerts = await getClientAlerts(current.clientId, {
       dimension: current.tab,
@@ -290,8 +514,11 @@ async function loadPeriodData() {
     document.querySelector("#cp-period-dates").innerHTML =
       `<span><strong>Current:</strong> ${formatUaRange(alerts.period_current_start, alerts.period_current_end)}</span>` +
       `<span><strong>Previous:</strong> ${formatUaRange(alerts.period_previous_start, alerts.period_previous_end)}</span>`;
+    current.periodCurrentStart = alerts.period_current_start;
+    current.periodCurrentEnd = alerts.period_current_end;
 
-    const [rowsCurrent, rowsPrevious, chart] = await Promise.all([
+    const ga4Promise = loadReportingNinjaPeriodData().catch((error) => ({ error }));
+    const [rowsCurrent, rowsPrevious, chart, ga4] = await Promise.all([
       getClientAnalytics(current.clientId, {
         dimension: current.tab, variant: "current", period: current.period,
         anchor: current.anchor || undefined,
@@ -304,7 +531,12 @@ async function loadPeriodData() {
         customStart: alerts.period_previous_start, customEnd: alerts.period_previous_end,
         sortBy: "clicks", limit: 500, offset: 0,
       }),
-      getClientAnalyticsChart(current.clientId, current.period),
+      getClientAnalyticsChart(current.clientId, current.period, {
+        anchor: current.anchor || undefined,
+        customStart: current.period === "custom" ? current.customStart : undefined,
+        customEnd: current.period === "custom" ? current.customEnd : undefined,
+      }),
+      ga4Promise,
     ]);
     if (token !== requestToken) return;
 
@@ -312,6 +544,12 @@ async function loadPeriodData() {
     analyticsTab.render();
     renderAlertsBlock(document.querySelector("#cp-alerts"), alerts);
     renderChart(document.querySelector("#cp-chart"), chart, current.period);
+    if (ga4?.error) {
+      renderReportingNinjaError(document.querySelector("#cp-reporting-ninja"), ga4.error.message);
+    } else {
+      renderGa4Data(ga4);
+    }
+    if (allowAutoLive) await maybeStartLiveCollection(rowsCurrent, ga4, chart);
   } catch (error) {
     if (error.name === "AbortError" || token !== requestToken) return;
     document.querySelector("#cp-tabpanel").innerHTML = `<div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Failed to load data.</strong><br>${escapeHtml(error.message)}</p></div>`;
@@ -319,4 +557,228 @@ async function loadPeriodData() {
   } finally {
     document.querySelector("#cp-tabpanel").setAttribute("aria-busy", "false");
   }
+}
+
+function ahrefsMetric(summary, key) {
+  return (summary?.metrics || []).find((item) => item.metric_key === key)?.current_value ?? null;
+}
+
+function renderAhrefsSummaryCard() {
+  const container = document.querySelector("#cp-ahrefs");
+  const link = `<a class="button button--quiet" href="${buildAhrefsHash(current.clientId)}">${icon("arrow-right")}Open Site Audit</a>`;
+  if (!current.ahrefsConfigured) {
+    container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Ahrefs · Live Site Audit</p><h2>Technical health and crawl issues</h2></div></div><div class="state-panel state-not_configured">${icon("plug-off")}<p><strong>Ahrefs is not connected.</strong><br>Connect Ahrefs to see Site Audit health.</p><a class="button button--quiet" href="/">Manage integrations</a></div>`;
+    return;
+  }
+  const summary = current.ahrefsSummary;
+  const status = summary?.state || "unavailable";
+  const cards = [
+    ["Health score", ahrefsMetric(summary, "ahrefs_health_score"), "%"],
+    ["Errors", ahrefsMetric(summary, "ahrefs_errors"), ""],
+    ["Warnings", ahrefsMetric(summary, "ahrefs_warnings"), ""],
+  ];
+  container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Ahrefs · Live Site Audit</p><h2>Technical health and crawl issues</h2><p class="ahrefs-collected">Last collection: ${formatTimestamp(summary?.last_success_at, "not collected yet")}</p></div><span class="status-label status-${escapeHtml(status)}">${escapeHtml(status)}</span></div>
+    <div class="ahrefs-kpis">${cards.map(([label, value, suffix]) => `<article class="ahrefs-kpi"><span>${label}</span><strong>${formatUaNumber(value)}${value === null || value === undefined ? "" : suffix}</strong></article>`).join("")}</div>
+    <div class="ahrefs-summary-actions">${link}</div>`;
+}
+
+// --- Technical SEO audit (task-25) ----------------------------------------
+
+function renderAudit() {
+  const container = document.querySelector("#cp-audit");
+  if (!container) return;
+  renderAuditPanel(container, {
+    summary: auditSummary,
+    findings: auditFindings,
+    state: current,
+    exportUrl: techAuditExportUrl(current.clientId),
+    busy: auditBusy,
+    pendingRecheck,
+    onRunAudit: () => startAuditRun(),
+    onSelectCategory(category) {
+      const next = current.auditCategory === category ? "" : category;
+      current.auditCategory = next;
+      current.auditSearch = "";
+      current.auditOffset = 0;
+      auditFindings = null;
+      persist();
+      renderAudit();
+      if (next) loadAuditFindings();
+    },
+    onSearch(value) {
+      current.auditSearch = value;
+      current.auditOffset = 0;
+      persist();
+      loadAuditFindings();
+    },
+    onPage(offset) {
+      current.auditOffset = offset;
+      persist();
+      loadAuditFindings();
+    },
+    onRecheck: (id) => recheckFinding(id),
+  });
+}
+
+async function loadTechAudit() {
+  try {
+    auditSummary = await getTechAuditLatest(current.clientId);
+    renderAudit();
+    if (current.auditCategory) await loadAuditFindings();
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    renderAuditError(document.querySelector("#cp-audit"), error.message);
+  }
+}
+
+async function loadAuditFindings() {
+  if (!current.auditCategory) return;
+  try {
+    auditFindings = await getTechAuditFindings(current.clientId, {
+      category: current.auditCategory,
+      q: current.auditSearch || undefined,
+      limit: AUDIT_PAGE_SIZE,
+      offset: current.auditOffset,
+    });
+    renderAudit();
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    renderAuditError(document.querySelector("#cp-audit"), error.message);
+  }
+}
+
+async function startAuditRun() {
+  if (auditBusy) return;
+  auditBusy = true;
+  renderAudit();
+  renderLiveStatus({ status: "queued", progress_percent: 0, cells: [] }, {
+    phase: "starting",
+    message: "Crawling the site and running the deterministic detectors.",
+  });
+  try {
+    const accepted = await startTechAudit(current.clientId);
+    if (isFixtureMode()) {
+      auditBusy = false;
+      renderLiveStatus({ status: "succeeded", progress_percent: 100, cells: [] }, { phase: "complete" });
+      await loadTechAudit();
+      return;
+    }
+    stopAuditWatching?.();
+    stopAuditWatching = watchJob({
+      id: accepted.job_id,
+      eventsUrl: accepted.events_url,
+      onProgress(job) { renderLiveStatus(job); },
+      onConnection(state) {
+        if (state === "offline" && auditBusy) {
+          renderLiveStatus({ status: "running", progress_percent: 0, cells: [] }, {
+            message: "Live connection interrupted; the crawl continues on the server.",
+          });
+        }
+      },
+      async onTerminal(job) {
+        auditBusy = false;
+        stopAuditWatching = null;
+        const failed = ["failed", "cancelled"].includes(job.status);
+        renderLiveStatus(job, { phase: failed ? "failed" : "complete" });
+        auditFindings = null;
+        await loadTechAudit();
+      },
+      onError(error) {
+        renderLiveStatus({ status: "running", progress_percent: 0, cells: [] }, {
+          message: `Progress temporarily unavailable: ${error.message}`,
+        });
+      },
+    });
+  } catch (error) {
+    auditBusy = false;
+    renderAudit();
+    renderLiveStatus({ status: "failed", progress_percent: 0, cells: [] }, {
+      phase: "failed",
+      message: `Could not start the audit: ${error.message}`,
+    });
+  }
+}
+
+async function recheckFinding(id) {
+  if (pendingRecheck.has(id)) return;
+  const row = (auditFindings?.rows || []).find((item) => item.id === id);
+  if (!row) return;
+  pendingRecheck.add(id);
+  renderAudit();
+  const release = () => { pendingRecheck.delete(id); renderAudit(); };
+  try {
+    const accepted = await recheckTechAuditFindings(current.clientId, [
+      { slug: row.slug, url: row.url },
+    ]);
+    if (isFixtureMode()) { release(); return; }
+    watchJob({
+      id: accepted.job_id,
+      eventsUrl: accepted.events_url,
+      onProgress() {},
+      async onTerminal() {
+        pendingRecheck.delete(id);
+        await loadAuditFindings();
+        try { auditSummary = await getTechAuditLatest(current.clientId); } catch { /* keep the old summary */ }
+        renderAudit();
+      },
+      onError() { release(); },
+    });
+  } catch (error) {
+    release();
+    renderLiveStatus({ status: "failed", progress_percent: 0, cells: [] }, {
+      phase: "failed",
+      message: error.code === "needs_full_rerun"
+        ? "This finding is site-graph scoped — run a full audit to re-verify it."
+        : `Could not start the re-check: ${error.message}`,
+    });
+  }
+}
+
+async function loadReportingNinjaPeriodData() {
+  if (!current.reportingNinjaConfigured) {
+    return { summary: current.reportingNinjaSummary, daily: null, currentDataset: null, previousDataset: null };
+  }
+  const common = {
+    period: current.period,
+    anchor: current.anchor || undefined,
+    customStart: current.period === "custom" ? current.customStart : undefined,
+    customEnd: current.period === "custom" ? current.customEnd : undefined,
+    limit: 500,
+  };
+  const definitionSort = current.ga4Dataset === "ga4_events" ? "events" : "sessions";
+  const dashboardPromise = current.period === "week" || current.period === "month"
+    ? getDashboard({ period: current.period, anchor: current.anchor || undefined })
+    : Promise.resolve(null);
+  const [dashboard, daily, currentDataset, previousDataset, gbpDaily, gbpLocations, gbpSearchTerms, gbpReviews] = await Promise.all([
+    dashboardPromise,
+    getReportingNinjaDataset(current.clientId, "ga4_daily", { ...common, role: "current", sortBy: "date", limit: 500 }),
+    getReportingNinjaDataset(current.clientId, current.ga4Dataset, { ...common, role: "current", sortBy: definitionSort }),
+    getReportingNinjaDataset(current.clientId, current.ga4Dataset, { ...common, role: "previous", sortBy: definitionSort }),
+    getReportingNinjaDataset(current.clientId, "gbp_daily", { ...common, role: "current", sortBy: "date" }),
+    getReportingNinjaDataset(current.clientId, "gbp_locations", { ...common, role: "current", sortBy: "interactions" }),
+    getReportingNinjaDataset(current.clientId, "gbp_search_terms", { ...common, role: "current", sortBy: "impressions" }),
+    getReportingNinjaDataset(current.clientId, "gbp_reviews", { ...common, role: "current", sortBy: "reviews" }),
+  ]);
+  const card = dashboard?.clients?.find((item) => item.client_id === current.clientId);
+  const summary = card?.providers?.find((item) => item.provider === "reporting_ninja") || current.reportingNinjaSummary;
+  return {
+    summary, daily, currentDataset, previousDataset,
+    gbp: { daily: gbpDaily, locations: gbpLocations, searchTerms: gbpSearchTerms, reviews: gbpReviews },
+  };
+}
+
+function renderGa4Data(data) {
+  renderReportingNinjaPanel(document.querySelector("#cp-reporting-ninja"), {
+    ...data,
+    state: current,
+    onChange(patch, options = { reload: true }) {
+      Object.assign(current, patch);
+      persist();
+      if (options.reload === false) {
+        renderGa4Data(data);
+      } else {
+        loadPeriodData();
+      }
+    },
+  });
 }

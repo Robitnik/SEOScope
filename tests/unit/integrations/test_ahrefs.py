@@ -122,14 +122,16 @@ def test_preflight_pdf_source_mode_unsupported(monkeypatch):
     assert result.reason_code == "not_configured"
 
 
-def test_preflight_browser_without_csv_dir_is_not_configured(monkeypatch):
+def test_preflight_browser_without_csv_dir_is_ok_live_scrape(monkeypatch):
+    # Ahrefs now has a LIVE browser Site Audit scraper (no API units, no manual CSV) — so
+    # source_mode=browser is configured on its own, without any csv_dir.
     monkeypatch.delenv(adapter_module.AHREFS_API_KEY_ENV, raising=False)
     adapter = adapter_module.AhrefsAdapter()
 
     result = adapter.preflight(_context(source_mode=SourceMode.browser))
 
-    assert result.ok is False
-    assert result.reason_code == "not_configured"
+    assert result.ok is True
+    assert result.units_estimated == 0
 
 
 def test_preflight_browser_with_existing_csv_dir_is_ok(tmp_path, monkeypatch):
@@ -227,19 +229,21 @@ def test_collect_stale_crawl_marks_metrics_stale_and_warns(monkeypatch):
 
 # ── collect: fallback / units exhausted ─────────────────────────────────────
 
-def test_collect_auto_falls_back_to_csv_when_api_finds_nothing(tmp_path, monkeypatch):
-    monkeypatch.setenv(adapter_module.AHREFS_API_KEY_ENV, "secret-key")
+def test_collect_auto_falls_back_to_csv_when_browser_finds_nothing(tmp_path, monkeypatch):
+    # auto now scrapes the BROWSER first; only if that yields nothing usable does it read csv_dir.
+    monkeypatch.setattr(
+        adapter_module, "collect_site_audit_browser",
+        lambda *a, **k: _dash_result(quality=DashQuality.unavailable, health=None, errors=None,
+                                      warnings_count=None, urls_crawled=None, data_through=None),
+    )
 
-    calls = []
+    csv_calls = []
 
-    def _fake(domain, *, csv_dir=None, **kwargs):
-        calls.append(csv_dir)
-        if csv_dir is None:
-            return _dash_result(quality=DashQuality.unavailable, health=None, errors=None,
-                                 warnings_count=None, urls_crawled=None, data_through=None)
+    def _fake_csv(domain, *, csv_dir=None, **kwargs):
+        csv_calls.append(csv_dir)
         return _dash_result(quality=DashQuality.partial, health=None)
 
-    monkeypatch.setattr(adapter_module, "collect_site_audit", _fake)
+    monkeypatch.setattr(adapter_module, "collect_site_audit", _fake_csv)
     adapter = adapter_module.AhrefsAdapter()
     context = _context(
         source_mode=SourceMode.auto,
@@ -248,13 +252,36 @@ def test_collect_auto_falls_back_to_csv_when_api_finds_nothing(tmp_path, monkeyp
 
     result = adapter.collect(context, lambda e: None, _NoCancel())
 
-    assert calls == [None, str(tmp_path)]
+    assert csv_calls == [str(tmp_path)]
     assert result.provenance["fallback_used"] is True
     by_key = {m.metric_key: m for m in result.metrics}
     # The CSV fallback's issue-type counts made it through even though its
     # health score (never available off a CSV export) is still `unavailable`.
     assert by_key["ahrefs_errors"].quality == Quality.complete
     assert by_key["ahrefs_health_score"].quality == Quality.unavailable
+
+
+def test_collect_auto_uses_browser_scrape_by_default(monkeypatch):
+    # The core new behaviour: auto mode collects via the browser, never touching the metered API.
+    called = {"browser": 0, "api": 0}
+
+    def _browser(*a, **k):
+        called["browser"] += 1
+        return _dash_result(data_through=None)
+
+    def _api(*a, **k):
+        called["api"] += 1
+        raise AssertionError("api path must not run in auto mode")
+
+    monkeypatch.setattr(adapter_module, "collect_site_audit_browser", _browser)
+    monkeypatch.setattr(adapter_module, "collect_site_audit", _api)
+    adapter = adapter_module.AhrefsAdapter()
+
+    result = adapter.collect(_context(source_mode=SourceMode.auto), lambda e: None, _NoCancel())
+
+    assert called == {"browser": 1, "api": 0}
+    assert result.quality == Quality.complete
+    assert len(result.metrics) == 4
 
 
 def test_collect_units_exhausted_without_csv_is_unavailable_no_units(monkeypatch):
@@ -273,15 +300,17 @@ def test_collect_units_exhausted_without_csv_is_unavailable_no_units(monkeypatch
     assert result.metrics == []
 
 
-def test_collect_units_exhausted_falls_back_to_csv(tmp_path, monkeypatch):
-    monkeypatch.setenv(adapter_module.AHREFS_API_KEY_ENV, "secret-key")
-
-    def _fake(domain, *, csv_dir=None, **kwargs):
-        if csv_dir is None:
-            raise UnitsExhausted("ahrefs", "units left: 0")
-        return _dash_result(quality=DashQuality.complete)
-
-    monkeypatch.setattr(adapter_module, "collect_site_audit", _fake)
+def test_collect_auto_browser_unavailable_falls_back_to_complete_csv(tmp_path, monkeypatch):
+    # auto: browser scrape came back empty (e.g. warm session down) → csv_dir fallback fills in.
+    monkeypatch.setattr(
+        adapter_module, "collect_site_audit_browser",
+        lambda *a, **k: _dash_result(quality=DashQuality.unavailable, health=None, errors=None,
+                                      warnings_count=None, urls_crawled=None, data_through=None),
+    )
+    monkeypatch.setattr(
+        adapter_module, "collect_site_audit",
+        lambda *a, **k: _dash_result(quality=DashQuality.complete),
+    )
     adapter = adapter_module.AhrefsAdapter()
     context = _context(
         source_mode=SourceMode.auto,
@@ -310,3 +339,53 @@ def test_collect_no_source_available_is_unavailable(monkeypatch):
 
     assert result.quality == Quality.unavailable
     assert result.error_code == "collection_unavailable"
+
+
+def test_collect_datasets_keeps_issues_affected_urls_and_raw_export_fields(monkeypatch):
+    monkeypatch.setattr(
+        adapter_module,
+        "collect_site_audit_detail_browser",
+        lambda *args, **kwargs: {
+            "project_id": "123",
+            "warnings": [],
+            "issues": [
+                {
+                    "slug": "404_page",
+                    "issue_id": "issue-1",
+                    "name": "404 page",
+                    "severity": "Error",
+                    "priority": "high",
+                    "description": "Broken page",
+                    "how_to_fix": "Restore or redirect it",
+                    "url_count": 2,
+                    "affected": [
+                        {
+                            "url": "https://acme.com/missing",
+                            "details": {
+                                "URL": "https://acme.com/missing",
+                                "HTTP code": "404",
+                            },
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    result = adapter_module.AhrefsAdapter().collect_datasets(
+        _context(source_mode=SourceMode.auto), lambda event: None
+    )
+
+    assert result.quality == Quality.complete
+    assert [row.dataset_key for row in result.rows] == [
+        "ahrefs_issues",
+        "ahrefs_affected_urls",
+    ]
+    issue, affected = result.rows
+    assert issue.metrics["affected_urls"] == 2
+    assert issue.metrics["how_to_fix"] == "Restore or redirect it"
+    assert affected.metrics["url"] == "https://acme.com/missing"
+    assert affected.metrics["details"] == {
+        "URL": "https://acme.com/missing",
+        "HTTP code": "404",
+    }

@@ -35,6 +35,10 @@ class _FakeProfile:
         self.busy_lock_calls += 1
         yield
 
+    @contextmanager
+    def window_lock(self):
+        yield
+
 
 def _patch_profile(monkeypatch, profile: _FakeProfile) -> None:
     monkeypatch.setattr(
@@ -58,8 +62,12 @@ class TestAllowlist:
         with pytest.raises(ValueError, match="no browser session"):
             bs.start_login(Provider.reporting_ninja)
 
-    def test_browser_providers_are_exactly_ahrefs_semrush_gsc(self):
-        assert bs.BROWSER_PROVIDERS == {Provider.ahrefs, Provider.semrush, Provider.gsc}
+    def test_browser_providers_are_exactly_ahrefs_semrush(self):
+        assert bs.BROWSER_PROVIDERS == {Provider.ahrefs, Provider.semrush}
+
+    def test_gsc_uses_reporting_ninja_not_a_browser_session(self):
+        with pytest.raises(ValueError, match="no browser session"):
+            bs.check_session(Provider.gsc)
 
 
 class TestCheckSession:
@@ -113,20 +121,20 @@ class TestCheckSession:
         assert bs.check_session(Provider.semrush) is bs.SessionState.alive
 
     def test_alive_when_authenticated(self, monkeypatch):
-        _patch_profile(monkeypatch, _FakeProfile("gsc"))
+        _patch_profile(monkeypatch, _FakeProfile("ahrefs"))
         monkeypatch.setattr(
             "seo_audit.browser.warm.status",
             lambda provider: _FakeWarmStatus(running=True, authenticated=True),
         )
-        assert bs.check_session(Provider.gsc) is bs.SessionState.alive
+        assert bs.check_session(Provider.ahrefs) is bs.SessionState.alive
 
     def test_expired_when_running_but_not_authenticated(self, monkeypatch):
-        _patch_profile(monkeypatch, _FakeProfile("gsc"))
+        _patch_profile(monkeypatch, _FakeProfile("ahrefs"))
         monkeypatch.setattr(
             "seo_audit.browser.warm.status",
             lambda provider: _FakeWarmStatus(running=True, authenticated=False),
         )
-        assert bs.check_session(Provider.gsc) is bs.SessionState.expired
+        assert bs.check_session(Provider.ahrefs) is bs.SessionState.expired
 
 
 class TestStartLogin:
@@ -150,17 +158,48 @@ class TestStartLogin:
         goto_calls: list[tuple[str, int]] = []
 
         class _FakePage:
+            def __init__(self):
+                self.url = ""  # a fresh warm Chrome's single blank tab
+
             def goto(self, url, wait_until=None, timeout=None):
                 goto_calls.append((url, timeout))
+                self.url = url
+
+        class _FakeBrowserCdp:
+            """`find_or_open_window`'s authoritative source — this fake single-page context has
+            nothing else to report, so the one page is always resolved as the blank tab to claim."""
+
+            def __init__(self, pages):
+                self._pages = pages
+
+            def send(self, method, params=None):
+                if method == "Target.getTargets":
+                    return {"targetInfos": [
+                        {"type": "page", "targetId": str(i), "url": p.url}
+                        for i, p in enumerate(self._pages)
+                    ]}
+                return {}
+
+            def detach(self):
+                pass
 
         class _FakeContext:
-            pages = []
+            def __init__(self):
+                self.pages = [_FakePage()]
+                self.browser = None  # set by _FakeBrowser once it exists
 
             def new_page(self):
-                return _FakePage()
+                page = _FakePage()
+                self.pages.append(page)
+                return page
 
         class _FakeBrowser:
-            contexts = [_FakeContext()]
+            def __init__(self):
+                self.contexts = [_FakeContext()]
+                self.contexts[0].browser = self
+
+            def new_browser_cdp_session(self):
+                return _FakeBrowserCdp(self.contexts[0].pages)
 
         class _FakeChromium:
             def connect_over_cdp(self, url, timeout=None):
@@ -185,7 +224,13 @@ class TestStartLogin:
         login_session_id = bs.start_login(Provider.semrush)
 
         assert profile.busy_lock_calls == 1
-        assert goto_calls == [("https://example.test/semrush/login", 120_000)]
+        # The first `goto` is `find_or_open_window` claiming the blank tab as semrush's OWN window
+        # (navigating it before releasing `window_lock` — otherwise the next provider could still
+        # see it as blank); the second is `start_login`'s own navigation to the login page.
+        assert goto_calls == [
+            ("https://semrush.com/", 60_000),
+            ("https://example.test/semrush/login", 120_000),
+        ]
         assert login_session_id in bs._active_logins
         assert bs._active_logins[login_session_id].provider is Provider.semrush
 

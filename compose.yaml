@@ -31,6 +31,13 @@ services:
       # project's usual local port instead of defaulting to uvicorn's bare 8000; a clash with
       # another host listener on this port is the operator's to resolve, not compose's.
       API_PORT: ${API_PORT:-6524}
+      # Shared DOWNLOAD directory (2026-07-23). The warm Chrome runs on the HOST, this worker in a
+      # container: `page.expect_download()`/`save_as()` cannot cross that filesystem boundary and
+      # silently yields 0-byte files (the real bytes land in the host's own download dir). AISeoTools
+      # instead points the remote Chrome's downloads at THIS dir via CDP `Browser.setDownloadBehavior`
+      # and reads the finished file back off the shared mount below. Same absolute path on both sides
+      # (host substitution of ${HOME}) so the one string is valid for Chrome AND the reader.
+      SEO_BROWSER_DOWNLOAD_DIR: ${HOME}/.local/share/seo-audit/downloads
     # Host networking (Linux-only; this project targets Linux dev/deploy) is the price of the CDP
     # bridge above: api and worker now also share the host's other listening ports.
     network_mode: host
@@ -67,6 +74,11 @@ services:
       # once, clicking in each other's tabs. Nothing but locks lives here; the profile, the
       # activity counters and every artifact stay out of this container's reach.
       - ${HOME}/.local/share/seo-audit/state/locks:/seo/runtime/state/locks
+      # Shared download drop (see SEO_BROWSER_DOWNLOAD_DIR above): the host Chrome WRITES exports
+      # here, this container READS them back. Mounted at the SAME absolute path both sides so one
+      # string works for Chrome and the reader. Disposable scratch — never the profile, so root
+      # touching it cannot corrupt a login (unlike the 2026-07-22 profile-mount incident).
+      - ${HOME}/.local/share/seo-audit/downloads:${HOME}/.local/share/seo-audit/downloads
       - app_data:/app/app_data
       - artifacts:/app/app_data/artifacts
       - browser_profiles:/app/app_data/browser_profiles
@@ -95,6 +107,9 @@ services:
       SEOTOOLS_ROOT: /seo/runtime
       CHROME_CDP_HOST: ${CHROME_CDP_HOST:-127.0.0.1}
       SEOTOOLS_REMOTE_CDP_HOST: ${CHROME_CDP_HOST:-127.0.0.1}
+      # Shared DOWNLOAD directory — see the api service for the full rationale. The worker is the
+      # service that actually runs collections, so this is the one that needs it most.
+      SEO_BROWSER_DOWNLOAD_DIR: ${HOME}/.local/share/seo-audit/downloads
     network_mode: host
     volumes:
       - .:/app
@@ -107,6 +122,8 @@ services:
       # once, clicking in each other's tabs. Nothing but locks lives here; the profile, the
       # activity counters and every artifact stay out of this container's reach.
       - ${HOME}/.local/share/seo-audit/state/locks:/seo/runtime/state/locks
+      # Shared download drop — see the api service above.
+      - ${HOME}/.local/share/seo-audit/downloads:${HOME}/.local/share/seo-audit/downloads
       - app_data:/app/app_data
       - artifacts:/app/app_data/artifacts
       - browser_profiles:/app/app_data/browser_profiles

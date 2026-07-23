@@ -43,7 +43,7 @@ from app.schemas.api import (
     SyncJobAcceptedDTO,
     SyncJobRequest,
 )
-from app.schemas.enums import JobStatus, Provider
+from app.schemas.enums import METRIC_PROVIDERS, JobStatus, Provider
 
 router = APIRouter(prefix="/api/v1", tags=["jobs"])
 
@@ -104,6 +104,8 @@ def _to_job_dto(session: Session, job: SyncJob) -> JobDTO:
         period_kind=job.period_kind,
         comparison_mode=job.comparison_mode,
         anchor_date=job.anchor_date,
+        custom_start=job.custom_start,
+        custom_end=job.custom_end,
         requested_providers=[Provider(p) for p in job.requested_providers_json],
         status=job.status,
         progress_percent=job.progress_percent,
@@ -177,7 +179,11 @@ def _create_jobs(body: SyncJobRequest) -> list[SyncJob]:
             if missing:
                 raise ClientsNotFoundError(missing)
 
-        providers = list(Provider) if body.providers == "all" else list(body.providers)
+        # `"all"` means the metric providers a routine sync collects — NOT every
+        # `Provider` member. `tech_audit` (task-25) is an on-demand site crawl
+        # with its own endpoint; expanding `tuple(Provider)` here would silently
+        # start a full crawl for every client on every "sync all".
+        providers = list(METRIC_PROVIDERS) if body.providers == "all" else list(body.providers)
         anchor_date = body.anchor or datetime.now(UTC).date()
 
         return JobRepository(session).create_run(
@@ -186,6 +192,8 @@ def _create_jobs(body: SyncJobRequest) -> list[SyncJob]:
             period_kind=body.period_kind,
             comparison_mode=body.comparison_mode,
             anchor_date=anchor_date,
+            custom_start=body.custom_start,
+            custom_end=body.custom_end,
             mode=body.mode,
             idempotency_key=body.idempotency_key,
         )

@@ -67,9 +67,13 @@ def test_sync_configures_provider_references_from_aiseotools(
         )
         semrush = clients.get_integration(client_id, Provider.semrush).config_json
         assert semrush["profile"] == "semrush"
-        assert semrush["profile_store"] == "semrush"
+        # No `profile_store` pin: with one shared Chrome profile for every provider, pinning gsc's
+        # DB-level lock key to semrush's made `claim_next_cell`'s `acquire_profile_lock` treat any
+        # running semrush cell as blocking every gsc cell too (found live 2026-07-23 — gsc cells
+        # sat `queued` for the whole run while semrush kept working through its own clients).
+        assert "profile_store" not in semrush
         gsc = clients.get_integration(client_id, Provider.gsc)
         assert gsc.config_json["property"] == "sc-domain:nychearing.com"
-        assert gsc.config_json["profile_store"] == "semrush"
+        assert "profile_store" not in gsc.config_json
         ga4 = clients.get_integration(client_id, Provider.reporting_ninja)
         assert ga4.config_json["account_id"] == "properties/123"

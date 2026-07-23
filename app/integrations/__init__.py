@@ -14,4 +14,5 @@ from app.integrations import (  # noqa: F401
     gsc,
     reporting_ninja,
     semrush,
+    tech_audit,
 )

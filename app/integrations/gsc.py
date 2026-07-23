@@ -3,9 +3,9 @@
 Combines TWO independent AISeoTools sources into one `CollectionResult`:
 
 - `seo_audit.dashboard.gsc.collect_gsc_aggregate` (Reporting Ninja API, the PLAN §8.3
-  default source) for `gsc_clicks`/`gsc_impressions`.
-- `seo_audit.dashboard.gsc.collect_gsc_direct` (browser Performance export) for
-  `gsc_avg_position` — no API path exists for this metric (PLAN §8.3).
+  default source) for `gsc_clicks`/`gsc_impressions`/`gsc_avg_position`.
+- `seo_audit.dashboard.gsc.collect_gsc_direct` remains an explicit
+  `source_mode=browser` fallback for legacy/manual runs.
 
 `gsc_ctr` is deliberately never emitted here: `app.metrics.normalize.normalize_result`
 (task-04) derives it downstream from `gsc_clicks`/`gsc_impressions`, only when both are
@@ -59,26 +59,25 @@ from app.schemas.adapter import (
     PreflightResult,
     ProgressEvent,
 )
-from app.schemas.enums import MetricUnit, PeriodRole, Provider, Quality
+from app.schemas.analytics_datasets import (
+    AnalyticsDatasetCollectionResult,
+    AnalyticsDatasetValueResult,
+)
+from app.schemas.enums import MetricUnit, PeriodRole, Provider, Quality, SourceMode
 
 _AGGREGATE_METRIC_KEY_MAP: dict[str, str] = {
     "clicks": "gsc_clicks",
     "impressions": "gsc_impressions",
+    "avg_position": "gsc_avg_position",
 }
 _DIRECT_METRIC_KEY = "gsc_avg_position"
 
 
 # --- Added by task-16 (GSC dimensional data, PLAN §21.4) --------------------
 #
-# `collect_dimensions` is deliberately NOT part of `ProviderAdapter` (PLAN §7):
-# it returns per-page/per-query rows, a different shape than `CollectionResult
-# .metrics: list[MetricValueResult]`, and nothing in the live job pipeline
-# (`app.jobs.runner`, task-05's owned file) calls it yet — wiring a trigger
-# for it into that pipeline is out of this task's scope (its "Implementation
-# steps" list has no dispatcher step; see this task's Completion report
-# follow-ups). It is a plain extra method callers can already use directly —
-# e.g. `app/api/analytics.py`'s tests exercise it without any worker
-# involved — ready for task-05 (or a later task) to schedule it.
+# `collect_dimensions` stays an optional extension to `ProviderAdapter` (PLAN §7)
+# because it returns a row-shaped contract rather than flat metrics.  The worker
+# feature-detects and persists it for GSC cells; other adapters remain unchanged.
 
 
 class DimensionValueResult(BaseModel):
@@ -194,7 +193,7 @@ class GscAdapter:
         provenance: dict[str, Any] = {"aggregate": dict(aggregate.provenance)}
 
         prop = cfg.get("property")
-        if prop:
+        if context.source_mode == SourceMode.browser and prop:
             with tempfile.TemporaryDirectory(prefix="gsc-direct-") as tmp:
                 direct = collect_gsc_direct(
                     prop,
@@ -206,6 +205,9 @@ class GscAdapter:
                     # No launch flags — attach-only consumer; see compose.yaml's volume comment.
                     on_event=on_event,
                 )
+            # Explicit browser mode replaces the API's average-position values,
+            # while clicks/impressions remain the stable Reporting Ninja totals.
+            metrics = [m for m in metrics if m.metric_key != _DIRECT_METRIC_KEY]
             metrics.extend(_map_direct(direct, context.current, context.previous))
             warnings.extend(direct.warnings)
             provenance["direct"] = dict(direct.provenance)
@@ -215,18 +217,6 @@ class GscAdapter:
                     if data_through is None
                     else min(data_through, direct.data_through)
                 )
-        else:
-            warnings.append(
-                "GSC: no `property` configured for this client — avg position unavailable "
-                "(Ninja-only aggregate)."
-            )
-            metrics.append(
-                _unavailable_metric(_DIRECT_METRIC_KEY, PeriodRole.current, context.current)
-            )
-            metrics.append(
-                _unavailable_metric(_DIRECT_METRIC_KEY, PeriodRole.previous, context.previous)
-            )
-
         return CollectionResult(
             provider=self.provider,
             quality=_overall_quality(m.quality for m in metrics),
@@ -244,10 +234,11 @@ class GscAdapter:
         *,
         top_n: int = 1000,
     ) -> DimensionCollectionResult:
-        """Per-page/per-query clicks/impressions/CTR/position for two periods
-        (PLAN §21.4). Browser-only — there is no Reporting-Ninja API path for
-        page/query breakdowns, so this requires `property` in
-        `integration_config`, unlike `collect()`'s Ninja-first aggregate.
+        """Per-page/per-query clicks/impressions/CTR/position for two periods.
+
+        Auto/API mode uses Reporting Ninja's cursor-paginated Search Console
+        endpoint. Explicit browser mode keeps the original Performance-export
+        fallback for diagnostics and regression compatibility.
 
         Never raises, same invariant as `collect()`: any failure becomes
         `quality=unavailable` plus a stable `error_code`.
@@ -263,22 +254,145 @@ class GscAdapter:
                 error_code="adapter_error",
             )
 
+    def collect_datasets(
+        self,
+        context: CollectionContext,
+        emit: Callable[[ProgressEvent], None],
+    ) -> AnalyticsDatasetCollectionResult:
+        """Collect the real daily GSC series used by the client-page chart."""
+        try:
+            return self._collect_datasets(context, emit)
+        except BaseException as exc:  # noqa: BLE001 - optional chart data never loses KPIs
+            return AnalyticsDatasetCollectionResult(
+                provider=self.provider,
+                quality=Quality.unavailable,
+                observed_at=datetime.now(UTC),
+                warnings=[f"unexpected GSC daily-series error: {type(exc).__name__}"],
+                error_code="dataset_adapter_error",
+            )
+
+    def _collect_datasets(
+        self,
+        context: CollectionContext,
+        emit: Callable[[ProgressEvent], None],
+    ) -> AnalyticsDatasetCollectionResult:
+        from seo_audit.clientreport.api_client import APIError, RateLimitError, ReportingNinjaClient
+        from seo_audit.clientreport.gsc_fetcher import discover_gsc_fields
+
+        cfg = context.integration_config
+        observed_at = datetime.now(UTC)
+        warnings: list[str] = []
+        values: list[AnalyticsDatasetValueResult] = []
+        completed = 0
+        truncated_any = False
+
+        with ReportingNinjaClient() as client:
+            fields = discover_gsc_fields(client)
+            query_fields = ["date", fields["clicks"], fields["impressions"]]
+            for optional in ("ctr", "avg_position"):
+                if fields.get(optional):
+                    query_fields.append(fields[optional])
+            for role, date_range in (
+                (PeriodRole.current, context.current),
+                (PeriodRole.previous, context.previous),
+            ):
+                emit(
+                    ProgressEvent(
+                        provider=self.provider,
+                        stage=f"fetch_{role.value}_daily",
+                        message=(
+                            f"GSC daily trend {role.value}: "
+                            f"{date_range.start} → {date_range.end}"
+                        ),
+                    )
+                )
+                try:
+                    result = client.query_all(
+                        "google_search_console",
+                        cfg["connection_key"],
+                        cfg["account_id"],
+                        query_fields,
+                        date_range.start.isoformat(),
+                        date_range.end.isoformat(),
+                        page_size=2000,
+                        max_rows=2000,
+                        settings={"search_type": "web"},
+                        bypass_cache=context.force_refresh,
+                    )
+                except (APIError, RateLimitError, ValueError, KeyError) as exc:
+                    warnings.append(f"GSC daily trend failed for {role.value}: {exc}")
+                    continue
+
+                rows = sorted(result.get("rows", []), key=lambda row: str(row.get("date") or ""))
+                truncated = bool(result.get("truncated"))
+                truncated_any = truncated_any or truncated
+                row_quality = Quality.truncated if truncated else Quality.complete
+                for rank, row in enumerate(rows, start=1):
+                    day = str(row.get("date") or "").strip()
+                    if not day:
+                        continue
+                    values.append(
+                        AnalyticsDatasetValueResult(
+                            dataset_key="gsc_daily",
+                            dimension_key="date",
+                            dimension_value=day,
+                            period_role=role,
+                            period_start=date_range.start,
+                            period_end=date_range.end,
+                            metrics={
+                                "clicks": _dataset_decimal(row.get(fields["clicks"])),
+                                "impressions": _dataset_decimal(
+                                    row.get(fields["impressions"])
+                                ),
+                                "ctr": _dataset_decimal(row.get(fields.get("ctr", ""))),
+                                "position": _dataset_decimal(
+                                    row.get(fields.get("avg_position", ""))
+                                ),
+                            },
+                            quality=row_quality,
+                            rank=rank,
+                        )
+                    )
+                completed += 1
+
+        if completed == 0:
+            quality = Quality.unavailable
+        elif completed < 2:
+            quality = Quality.partial
+        elif truncated_any:
+            quality = Quality.truncated
+        else:
+            quality = Quality.complete
+        return AnalyticsDatasetCollectionResult(
+            provider=self.provider,
+            quality=quality,
+            observed_at=observed_at,
+            rows=values,
+            warnings=warnings,
+            provenance={
+                "transport": "reporting_ninja",
+                "integration": "google_search_console",
+                "datasets": ["gsc_daily"],
+            },
+        )
+
     def _collect_dimensions(
         self, context: CollectionContext, emit: Callable[[ProgressEvent], None], *, top_n: int
     ) -> DimensionCollectionResult:
-        from seo_audit.dashboard.gsc import collect_gsc_dimensions
+        from seo_audit.clientreport.api_client import ReportingNinjaClient
+        from seo_audit.dashboard.gsc import collect_gsc_dimensions, collect_gsc_dimensions_api
         from seo_audit.dashboard.models import DateRange as SeoDateRange
 
         cfg = context.integration_config
-        prop = cfg.get("property")
-        if not prop:
+        if context.source_mode != SourceMode.browser and (
+            not cfg.get("connection_key") or not cfg.get("account_id")
+        ):
             return DimensionCollectionResult(
                 provider=self.provider,
                 quality=Quality.unavailable,
                 observed_at=datetime.now(UTC),
                 warnings=[
-                    "GSC: no `property` configured for this client — dimensional data "
-                    "requires the browser Performance export (no API path exists)."
+                    "GSC: connection_key/account_id not configured for dimensional data."
                 ],
                 error_code="not_configured",
             )
@@ -287,18 +401,40 @@ class GscAdapter:
         previous = SeoDateRange(start=context.previous.start, end=context.previous.end)
         on_event = _bridge_emit(emit)
 
-        with tempfile.TemporaryDirectory(prefix="gsc-dimensions-") as tmp:
-            result = collect_gsc_dimensions(
-                prop,
-                current=current,
-                previous=previous,
-                out_dir=Path(tmp),
-                top_n=top_n,
-                profile=cfg.get("profile", "gsc"),
-                account=cfg.get("account"),
-                # No launch flags — attach-only consumer; see compose.yaml's volume comment.
-                on_event=on_event,
-            )
+        if context.source_mode == SourceMode.browser:
+            prop = cfg.get("property")
+            if not prop:
+                return DimensionCollectionResult(
+                    provider=self.provider,
+                    quality=Quality.unavailable,
+                    observed_at=datetime.now(UTC),
+                    warnings=["GSC: property is required for explicit browser mode."],
+                    error_code="not_configured",
+                )
+            with tempfile.TemporaryDirectory(prefix="gsc-dimensions-") as tmp:
+                result = collect_gsc_dimensions(
+                    prop,
+                    current=current,
+                    previous=previous,
+                    out_dir=Path(tmp),
+                    top_n=top_n,
+                    profile=cfg.get("profile", "gsc"),
+                    account=cfg.get("account"),
+                    on_event=on_event,
+                )
+        else:
+            with ReportingNinjaClient() as client:
+                result = collect_gsc_dimensions_api(
+                    client,
+                    gsc_ref={
+                        "connection_key": cfg["connection_key"],
+                        "account_id": cfg["account_id"],
+                    },
+                    current=current,
+                    previous=previous,
+                    top_n=top_n,
+                    on_event=on_event,
+                )
 
         rows = [
             *_map_dimension_periods("page", result.pages),
@@ -340,6 +476,15 @@ def _map_dimension_periods(
                 )
             )
     return out
+
+
+def _dataset_decimal(value: Any) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value).replace(",", "").strip())
+    except (ValueError, ArithmeticError):
+        return None
 
 
 def _map_aggregate(

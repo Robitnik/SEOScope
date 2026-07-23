@@ -108,7 +108,6 @@ def sync_ai_seo_tools_integrations(
                     "domain": client.domain,
                     "database": market,
                     "profile": "semrush",
-                    "profile_store": "semrush",
                 },
             )
             report.configured += 1
@@ -123,7 +122,6 @@ def sync_ai_seo_tools_integrations(
                         "account_id": account_id,
                         "property": account_id,
                         "profile": "gsc",
-                        "profile_store": "semrush",
                     },
                 )
                 report.configured += 1

@@ -1,8 +1,14 @@
-import { cancelSyncJob, createSyncJob, importAISeoToolsHistory, retrySyncJob } from "./api.js";
-import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, icon, isTerminal, percent, stateClass } from "./formatters.js";
-import { triggerLogin } from "./session-status.js";
-import { loadActiveJob, saveActiveJob } from "./store.js";
-import { watchJob } from "./sse.js";
+import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob } from "./api.js?v=20260723-audit1";
+import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260723-audit1";
+import { triggerLogin } from "./session-status.js?v=20260723-audit1";
+import { loadActiveJob, saveActiveJob } from "./store.js?v=20260723-audit1";
+import { watchJob } from "./sse.js?v=20260723-audit1";
+
+// task-22 follow-up: providers backed by a warm-Chrome browser session (mirrors
+// `BROWSER_PROVIDERS` in `app/integrations/browser_session.py`). `reporting_ninja`
+// authenticates via API key and has no browser session to check.
+const BROWSER_SESSION_PROVIDERS = ["ahrefs", "semrush"];
+const BROWSER_UP_COMMAND = "seo-audit browser-up";
 
 // task-22: session-stage panel above the progress matrix. State is derived
 // straight from `job.cells` (already streamed over the existing SSE — no new
@@ -193,6 +199,9 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
         <fieldset class="selection-group"><legend>Sources</legend><div class="check-list">
           ${PROVIDER_ORDER.map((key) => `<label class="check-row"><input type="checkbox" name="sync-provider" value="${key}" ${selectedProviders.includes(key) ? "checked" : ""}><span>${PROVIDERS[key].label}</span></label>`).join("")}
         </div></fieldset>
+        <fieldset class="selection-group selection-options"><legend>Options</legend>
+          <label class="check-row"><input type="checkbox" name="sync-force"><span>Re-collect data<small>By default a cell whose data is still fresh is skipped. Tick this to run every selected cell again — slower, and it spends provider units.</small></span></label>
+        </fieldset>
       </div>`;
     footer.innerHTML = `<button class="button button--quiet" type="button" data-close>Cancel</button><button class="button button--primary" type="button" data-start>${icon("player-play")}Start collection</button>`;
     footer.querySelector("[data-close]").addEventListener("click", () => dialog.close());
@@ -200,15 +209,88 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     if (!dialog.open) dialog.showModal();
   }
 
+  async function checkBrowserAvailability(providers) {
+    const toCheck = BROWSER_SESSION_PROVIDERS.filter((provider) => providers.includes(provider));
+    const results = await Promise.all(
+      toCheck.map(async (provider) => {
+        try {
+          const { running } = await getProviderSession(provider);
+          return { provider, running };
+        } catch {
+          // Couldn't reach the session probe itself (e.g. API offline) — not what this
+          // check is for, and `createSyncJob` right after surfaces a clearer error for
+          // that case. Fail open rather than showing a misleading "no browser" screen.
+          return { provider, running: true };
+        }
+      }),
+    );
+    // Only "Chrome process isn't up at all" blocks the start — a Chrome that's up but
+    // logged out is `running: true` and is handled by the existing per-cell "Log in" flow
+    // once the job is running (other clients/providers keep collecting meanwhile).
+    return results.filter((result) => !result.running);
+  }
+
+  function renderBrowserRequired(offline, selection) {
+    title.textContent = "Update metrics";
+    subtitle.textContent = "Collection has not started yet.";
+    body.innerHTML = `
+      <div class="state-panel state-error">
+        ${icon("alert-circle")}
+        <p><strong>No warm browser session found.</strong><br>${offline
+          .map((entry) => escapeHtml((PROVIDERS[entry.provider] || { label: entry.provider }).label))
+          .join(", ")} need${offline.length === 1 ? "s" : ""} a warm Chrome running on the host before collection can start.</p>
+        <p>Run this on the machine with the warm Chrome, then retry:</p>
+        <p><code>${escapeHtml(BROWSER_UP_COMMAND)}</code></p>
+      </div>`;
+    footer.innerHTML = `<button class="button button--quiet" type="button" data-close>Cancel</button><button class="button button--primary" type="button" data-retry-browser>${icon("refresh")}Retry</button>`;
+    footer.querySelector("[data-close]").addEventListener("click", () => dialog.close());
+    footer.querySelector("[data-retry-browser]").addEventListener("click", (event) => retryBrowserCheck(event, selection));
+  }
+
+  async function retryBrowserCheck(event, selection) {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const offline = await checkBrowserAvailability(selection.providers);
+      if (offline.length) {
+        renderBrowserRequired(offline, selection);
+        return;
+      }
+      await beginCollection(selection);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   async function startSelected(event) {
     const clientIds = [...body.querySelectorAll('input[name="sync-client"]:checked')].map((input) => input.value);
     const providers = [...body.querySelectorAll('input[name="sync-provider"]:checked')].map((input) => input.value);
+    // Read before the body is replaced by the import panel below — by the time the request is
+    // built the checkbox no longer exists in the DOM.
+    const forceRefresh = body.querySelector('input[name="sync-force"]')?.checked === true;
     if (!clientIds.length || !providers.length) {
       onToast("Select at least one client and one source.");
       return;
     }
+    const selection = { clientIds, providers, forceRefresh };
+    // `event.currentTarget` is only valid for the synchronous dispatch — the browser resets it to
+    // null once this handler yields at the first `await`, so it must be captured up front.
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const offline = await checkBrowserAvailability(providers);
+      if (offline.length) {
+        renderBrowserRequired(offline, selection);
+        return;
+      }
+      await beginCollection(selection);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function beginCollection({ clientIds, providers, forceRefresh }) {
     sessionOverlays.clear();
-    event.currentTarget.disabled = true;
     try {
       const dashboard = getDashboard();
       title.textContent = "History import";
@@ -224,7 +306,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
         providers,
         period_kind: dashboard.period_kind,
         comparison_mode: "closed",
-        mode: "collect_missing",
+        mode: forceRefresh ? "force_refresh" : "collect_missing",
         source_mode: "auto",
         idempotency_key: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
       }, dashboard);

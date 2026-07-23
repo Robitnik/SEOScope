@@ -13,6 +13,7 @@
     "seo_audit.browser.errors.ProfileLocked": "ProfileLocked(<опис недоступний>)",
     "seo_audit.browser.errors.SelectorDrift": "SelectorDrift(what: 'str', selector: 'str', url: 'str' = '')",
     "seo_audit.browser.errors.SessionExpired": "SessionExpired(provider: 'str', detail: 'str' = '')",
+    "seo_audit.browser.providers.ahrefs.AhrefsSiteAudit": "AhrefsSiteAudit(session)",
     "seo_audit.browser.providers.gsc.GSCConsole": "GSCConsole(session, *, authuser: 'int | None' = None)",
     "seo_audit.browser.providers.gsc.resolve_authuser": "resolve_authuser(session, profile: 'str', prop: 'str', *, override: 'int | None' = None, max_accounts: 'int' = 6, forget: 'bool' = False, cache_path: 'Path | None' = None) -> 'tuple[int | None, list[str], bool]'",
     "seo_audit.browser.providers.semrush.SemrushSiteExplorer": "SemrushSiteExplorer(session: 'Any')",
@@ -24,6 +25,7 @@
     "seo_audit.clientreport.ga4_fetcher.fetch_ga4_period": "fetch_ga4_period(client: 'ReportingNinjaClient', connection_key: 'str', account_id: 'str', date_from: 'date', date_to: 'date', field_ids: 'dict[str, str]') -> 'dict[str, int | None]'",
     "seo_audit.clientreport.gsc_fetcher.discover_gsc_fields": "discover_gsc_fields(client: 'ReportingNinjaClient') -> 'dict[str, str]'",
     "seo_audit.clientreport.gsc_fetcher.fetch_gsc_period": "fetch_gsc_period(client: 'ReportingNinjaClient', connection_key: 'str', account_id: 'str', date_from: 'date', date_to: 'date', field_ids: 'dict[str, str]') -> 'dict[str, int | None]'",
+    "seo_audit.gsc.collect.parse_performance": "parse_performance(path: 'Path', forced_type: 'str' = '') -> 'list[GSCQueryRow]'",
     "seo_audit.rank_movement.collect_manual.ManualIngestError": "ManualIngestError(<опис недоступний>)",
     "seo_audit.rank_movement.collect_manual._col": "_col(headers: 'list[str]', *candidates: 'str', avoid: 'tuple[str, ...]' = ()) -> 'str | None'",
     "seo_audit.rank_movement.collect_manual._num": "_num(v: 'str | None') -> 'float | None'",
@@ -33,7 +35,8 @@
     "seo_audit.semrush.ingest_manual.ingest_semrush": "ingest_semrush(downloads: 'Path', *, domain: 'str', database: 'str' = 'us') -> 'dict'"
   },
   "seo_audit.dashboard.ahrefs": {
-    "collect_site_audit": "collect_site_audit(domain: 'str', *, client: 'str' = '', market: 'str' = '', audit_date: 'str' = '', csv_dir: 'str | Path | None' = None, api_key: 'str | None' = None, cache_dir: 'str | Path | None' = None, run_verify: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
+    "collect_site_audit": "collect_site_audit(domain: 'str', *, client: 'str' = '', market: 'str' = '', audit_date: 'str' = '', csv_dir: 'str | Path | None' = None, api_key: 'str | None' = None, cache_dir: 'str | Path | None' = None, run_verify: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'",
+    "collect_site_audit_browser": "collect_site_audit_browser(domain: 'str', *, client: 'str' = '', market: 'str' = '', profile: 'str' = 'ahrefs', virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
   },
   "seo_audit.dashboard.config": {
     "ninja_session_path": "ninja_session_path(override: 'str | os.PathLike[str] | None' = None) -> 'Path'",
@@ -45,7 +48,11 @@
     "make_emitter": "make_emitter(on_event: 'OnEvent | None') -> 'OnEvent'"
   },
   "seo_audit.dashboard.gsc": {
+    "DashboardDimensionResult": "DashboardDimensionResult(*, provider: seo_audit.dashboard.models.Provider, quality: seo_audit.dashboard.models.Quality, observed_at: datetime.datetime, data_through: datetime.date | None = None, pages: list[seo_audit.dashboard.gsc.DimensionPeriodResult] = [], queries: list[seo_audit.dashboard.gsc.DimensionPeriodResult] = [], warnings: list[str] = [], error_code: str | None = None, provenance: dict[str, typing.Any] = {}) -> None",
+    "DimensionPeriodResult": "DimensionPeriodResult(*, period_role: seo_audit.dashboard.models.PeriodRole, period_start: datetime.date, period_end: datetime.date, rows: list[seo_audit.dashboard.gsc.DimensionValue], truncated: bool, total_rows_available: int) -> None",
+    "DimensionValue": "DimensionValue(*, dimension_value: str, clicks: int | None = None, impressions: int | None = None, ctr: decimal.Decimal | None = None, position: decimal.Decimal | None = None) -> None",
     "collect_gsc_aggregate": "collect_gsc_aggregate(client: 'ReportingNinjaClient', *, gsc_ref: 'dict[str, str]', current: 'DateRange', previous: 'DateRange', on_event: 'OnEvent | None' = None) -> 'DashboardResult'",
+    "collect_gsc_dimensions": "collect_gsc_dimensions(prop: 'str', *, current: 'DateRange', previous: 'DateRange', out_dir: 'Path', top_n: 'int' = 1000, profile: 'str' = 'gsc', account: 'int | None' = None, virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardDimensionResult'",
     "collect_gsc_direct": "collect_gsc_direct(prop: 'str', *, current: 'DateRange', previous: 'DateRange', out_dir: 'Path', profile: 'str' = 'gsc', account: 'int | None' = None, virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
   },
   "seo_audit.dashboard.models": {

@@ -1,0 +1,97 @@
+{
+  "client_id": "fixture-client",
+  "has_run": true,
+  "run_id": "fixture-run-1",
+  "observed_at": "2026-07-23T09:14:00+00:00",
+  "audit_date": "2026-07-23",
+  "health_score": 78,
+  "cms": "WordPress",
+  "pages_crawled": 412,
+  "quality": "complete",
+  "totals": {
+    "urls_crawled": 412,
+    "urls_with_errors": 23,
+    "urls_with_warnings": 61,
+    "errors": 3,
+    "warnings": 5,
+    "notices": 4
+  },
+  "warnings": [
+    "sitemap points at another host (staging.example.com) — sitemap URLs were ignored and the crawl relied on link discovery"
+  ],
+  "categories": [
+    {
+      "category": "http_errors",
+      "name": "HTTP errors (4XX/5XX)",
+      "severity": "Error",
+      "priority": "High",
+      "url_count": 7,
+      "finding_count": 7,
+      "description": "",
+      "how_to_fix": "Fix or 301 the URL; remove/replace internal links pointing to it.",
+      "recheckable": true,
+      "recheck": { "fixed": 2, "still_present": 1, "unreachable": 0, "skipped": 0 }
+    },
+    {
+      "category": "links_to_fix",
+      "name": "Internal links to fix",
+      "severity": "Error",
+      "priority": "High",
+      "url_count": 18,
+      "finding_count": 18,
+      "description": "",
+      "how_to_fix": "Repoint the link's href to the final 200 URL (find-and-replace in the CMS).",
+      "recheckable": true,
+      "recheck": { "fixed": 0, "still_present": 0, "unreachable": 0, "skipped": 0 }
+    },
+    {
+      "category": "titles",
+      "name": "Title tags",
+      "severity": "Warning",
+      "priority": "Medium",
+      "url_count": 12,
+      "finding_count": 12,
+      "description": "",
+      "how_to_fix": "Replace the title tag with the shortened version (≤60 chars).",
+      "recheckable": true,
+      "recheck": { "fixed": 0, "still_present": 0, "unreachable": 0, "skipped": 0 }
+    },
+    {
+      "category": "indexability",
+      "name": "Indexability",
+      "severity": "Warning",
+      "priority": "Medium",
+      "url_count": 5,
+      "finding_count": 5,
+      "description": "",
+      "how_to_fix": "Correct the indexability directive per the problem.",
+      "recheckable": true,
+      "recheck": { "fixed": 0, "still_present": 0, "unreachable": 1, "skipped": 0 }
+    },
+    {
+      "category": "large_images",
+      "name": "Large images",
+      "severity": "Notice",
+      "priority": "Low",
+      "url_count": 31,
+      "finding_count": 31,
+      "description": "",
+      "how_to_fix": "Re-save as WebP/AVIF at display size; target < 100 KB (hero < 250 KB).",
+      "recheckable": true,
+      "recheck": { "fixed": 0, "still_present": 0, "unreachable": 0, "skipped": 0 }
+    },
+    {
+      "category": "orphan",
+      "name": "Orphan pages",
+      "severity": "Notice",
+      "priority": "Low",
+      "url_count": 4,
+      "finding_count": 4,
+      "description": "",
+      "how_to_fix": "Add contextual internal links from relevant hub pages, or 301 if retired.",
+      "recheckable": false,
+      "recheck": { "fixed": 0, "still_present": 0, "unreachable": 0, "skipped": 4 }
+    }
+  ],
+  "generated_at": "2026-07-23T09:20:00+00:00"
+}

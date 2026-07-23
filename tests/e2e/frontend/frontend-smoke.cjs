@@ -49,6 +49,17 @@ async function main() {
   }
   assert.match(await firstCard.locator(".client-domain > a").first().getAttribute("href"), /^https:\/\//, "the domain itself still links to the client's site");
 
+  // Copy-URL button: a real, keyboard-reachable control (not the decorative
+  // tabindex=-1 link icons) that copies the site URL and confirms.
+  // `.client-copy` now matches TWO controls (copy client NAME and copy website URL). This block
+  // asserts the URL one (see the aria-label/data-copy assertions below), so exclude the name
+  // variant rather than tripping Playwright strict mode.
+  const copyButton = firstCard.locator(".client-copy:not(.client-copy--name)");
+  assert.equal(await copyButton.evaluate((el) => el.tagName), "BUTTON", "copy affordance is a real button");
+  assert.match(await copyButton.getAttribute("aria-label"), /^Copy website URL/, "copy button has an accessible label");
+  assert.match(await copyButton.getAttribute("data-copy"), /^https:\/\//, "copy button carries the site URL to copy");
+  assert.equal(await copyButton.evaluate((el) => { el.focus(); return document.activeElement === el; }), true, "copy button is keyboard-focusable");
+
   for (const [width, height] of [[390, 844], [768, 900], [1024, 900], [1440, 1000], [1920, 1080]]) {
     await page.setViewportSize({ width, height });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `no page overflow at ${width}px`);

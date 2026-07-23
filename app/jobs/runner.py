@@ -15,12 +15,17 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.db.repositories.analytics_datasets import (
+    AnalyticsDatasetRepository,
+    AnalyticsDatasetRowInput,
+)
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.clients import ClientRepository
+from app.db.repositories.dimensions import DimensionRepository, DimensionRowInput
 from app.db.repositories.jobs import JobRepository
 from app.db.repositories.metrics import MetricRepository
 from app.db.repositories.snapshots import SnapshotRepository
@@ -29,7 +34,7 @@ from app.integrations.registry import get_adapter
 from app.jobs.events import append_cell_status_event, make_emitter
 from app.metrics import CATALOG, normalize_result, resolve_periods
 from app.schemas.adapter import CollectionContext, CollectionResult
-from app.schemas.enums import CellStatus, PeriodRole, Provider, Quality
+from app.schemas.enums import CellStatus, PeriodRole, Provider, Quality, SourceMode
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +117,53 @@ def _is_fresh_enough(snapshot: Any, current_end: date) -> bool:
     return reference >= current_end
 
 
+def _includes_gsc_dimensions(snapshot: Any) -> bool:
+    """Whether a GSC snapshot came from the dimension-aware worker path.
+
+    Older snapshots only contain aggregate metrics.  Treating one of those as
+    fully fresh would keep page/query tables empty forever in ``collect_missing``
+    mode, even though Reporting Ninja can now provide those rows.
+    """
+    dimensions = (snapshot.provenance_json or {}).get("dimensions", {})
+    return bool(dimensions.get("attempted"))
+
+
+def _includes_analytics_datasets(snapshot: Any) -> bool:
+    datasets = (snapshot.provenance_json or {}).get("analytics_datasets", {})
+    return bool(datasets.get("attempted") and datasets.get("row_count", 0))
+
+
+def _combine_quality(primary: Quality, secondary: Quality) -> Quality:
+    if primary == secondary:
+        return primary
+    if primary == Quality.unavailable and secondary == Quality.unavailable:
+        return Quality.unavailable
+    return Quality.partial
+
+
+def _dimension_input(row: Any) -> DimensionRowInput:
+    return DimensionRowInput(
+        dimension_value=row.dimension_value,
+        clicks=row.clicks,
+        impressions=row.impressions,
+        ctr=row.ctr,
+        position=row.position,
+        quality=row.quality,
+        rank=row.rank,
+    )
+
+
+def _analytics_dataset_input(row: Any) -> AnalyticsDatasetRowInput:
+    return AnalyticsDatasetRowInput(
+        dataset_key=row.dataset_key,
+        dimension_key=row.dimension_key,
+        dimension_value=row.dimension_value,
+        metrics=dict(row.metrics),
+        quality=row.quality,
+        rank=row.rank,
+    )
+
+
 def run_cell(
     handle: CellHandle,
     *,
@@ -183,16 +235,26 @@ def _run_cell_unguarded(
             raise LookupError(f"cell/client/job vanished mid-run: {handle.cell_id}")
         cell_repo_read = {
             "timezone": client.timezone,
+            "client_domain": client.domain,
             "period_kind": job.period_kind,
             "comparison_mode": job.comparison_mode,
             "anchor_date": job.anchor_date,
+            "custom_start": job.custom_start,
+            "custom_end": job.custom_end,
             "mode": job.mode,
+            "job_params": dict(job.params_json or {}),
             "integration_enabled": integration.enabled if integration else False,
             "integration_config": dict(integration.config_json or {}) if integration else {},
             "source_mode": integration.source_mode if integration else None,
         }
 
-    if integration is None or not cell_repo_read["integration_enabled"]:
+    # `tech_audit` (task-25) is self-configured: it audits the client's own site,
+    # so it has no `client_integrations` row to enable and nothing per-client to
+    # set up. Requiring one would make every client `not_configured` forever, and
+    # creating one would put a non-metric provider into the integration lists the
+    # dashboard/UI read. Every other provider keeps the original gate exactly.
+    is_tech_audit = handle.provider == Provider.tech_audit
+    if not is_tech_audit and (integration is None or not cell_repo_read["integration_enabled"]):
         return _terminate(
             session_scope, handle, CellStatus.not_configured, error_code="not_configured"
         )
@@ -224,19 +286,32 @@ def _run_cell_unguarded(
         anchor_dt,
         tz=cell_repo_read["timezone"],
         mode=cell_repo_read["comparison_mode"],
+        custom_start=cell_repo_read["custom_start"],
+        custom_end=cell_repo_read["custom_end"],
     )
+
+    job_mode = str(cell_repo_read["mode"])
+    integration_config = dict(cell_repo_read["integration_config"])
+    if is_tech_audit:
+        # The audit target is the client's own site; there is no integration row
+        # to carry it (see the gate above), so it comes straight off the client.
+        integration_config.setdefault("domain", cell_repo_read["client_domain"])
 
     context = CollectionContext(
         client_id=handle.client_id,
         provider=handle.provider,
-        source_mode=cell_repo_read["source_mode"],
+        source_mode=cell_repo_read["source_mode"] or SourceMode.auto,
         period_kind=cell_repo_read["period_kind"],
         comparison_mode=cell_repo_read["comparison_mode"],
         current=periods.current,
         previous=periods.previous,
         timezone=cell_repo_read["timezone"],
-        force_refresh=cell_repo_read["mode"] == "force_refresh",
-        integration_config=cell_repo_read["integration_config"],
+        # A tech audit is an explicit, on-demand action: "Run audit" must always
+        # re-crawl, never hit the freshness-skip that exists for routine syncs.
+        force_refresh=job_mode in ("force_refresh", "tech_audit", "tech_audit_recheck"),
+        job_mode=job_mode,
+        job_params=cell_repo_read["job_params"],
+        integration_config=integration_config,
     )
 
     try:
@@ -281,7 +356,23 @@ def _run_cell_unguarded(
     if not context.force_refresh:
         with session_scope() as session:
             latest = SnapshotRepository(session).latest_success(handle.client_id, handle.provider)
-        if latest is not None and _is_fresh_enough(latest, periods.current.end):
+        needs_dimension_backfill = (
+            handle.provider == Provider.gsc
+            and hasattr(adapter, "collect_dimensions")
+            and latest is not None
+            and not _includes_gsc_dimensions(latest)
+        )
+        needs_dataset_backfill = (
+            hasattr(adapter, "collect_datasets")
+            and latest is not None
+            and not _includes_analytics_datasets(latest)
+        )
+        if (
+            latest is not None
+            and _is_fresh_enough(latest, periods.current.end)
+            and not needs_dimension_backfill
+            and not needs_dataset_backfill
+        ):
             return _terminate(session_scope, handle, CellStatus.skipped, error_code=None)
 
     emit = make_emitter(
@@ -302,8 +393,58 @@ def _run_cell_unguarded(
         return _terminate(session_scope, handle, CellStatus.cancelled, error_code=None)
     assert isinstance(result, CollectionResult)
 
+    dimension_result = None
+    collect_dimensions = getattr(adapter, "collect_dimensions", None)
+    if handle.provider == Provider.gsc and callable(collect_dimensions):
+        dimension_result = _call_with_timeout(
+            lambda: collect_dimensions(context, emit), cell_timeout_seconds
+        )
+        if dimension_result is _TIMEOUT:
+            dimension_result = None
+            logger.warning("gsc_dimensions_timeout cell_id=%s", handle.cell_id)
+        elif dimension_result is _CANCELLED:
+            return _terminate(session_scope, handle, CellStatus.cancelled, error_code=None)
+
+    dataset_result = None
+    collect_datasets = getattr(adapter, "collect_datasets", None)
+    if callable(collect_datasets):
+        dataset_result = _call_with_timeout(
+            lambda: collect_datasets(context, emit), cell_timeout_seconds
+        )
+        if dataset_result is _TIMEOUT:
+            dataset_result = None
+            logger.warning("analytics_datasets_timeout cell_id=%s", handle.cell_id)
+
     metrics = normalize_result(result)
     validation_warnings = _validate_metrics(metrics)
+    snapshot_quality = result.quality
+    snapshot_warnings = [*result.warnings, *validation_warnings]
+    snapshot_provenance = dict(result.provenance)
+    snapshot_data_through = result.data_through
+    if dimension_result is not None:
+        snapshot_quality = _combine_quality(result.quality, dimension_result.quality)
+        snapshot_warnings.extend(dimension_result.warnings)
+        snapshot_provenance["dimensions"] = {
+            "attempted": True,
+            "quality": dimension_result.quality.value,
+            "row_count": len(dimension_result.rows),
+            **dict(dimension_result.provenance),
+        }
+        if dimension_result.data_through is not None:
+            snapshot_data_through = (
+                dimension_result.data_through
+                if snapshot_data_through is None
+                else min(snapshot_data_through, dimension_result.data_through)
+            )
+    if dataset_result is not None:
+        snapshot_quality = _combine_quality(snapshot_quality, dataset_result.quality)
+        snapshot_warnings.extend(dataset_result.warnings)
+        snapshot_provenance["analytics_datasets"] = {
+            "attempted": True,
+            "quality": dataset_result.quality.value,
+            "row_count": len(dataset_result.rows),
+            **dict(dataset_result.provenance),
+        }
     # A live `collect()` discovering a dead session mid-batch (e.g. Semrush's
     # `SessionExpired` -> `error_code="auth_required"`) parks the cell the
     # same way the cheap pre-check above does, instead of collapsing into
@@ -311,7 +452,7 @@ def _run_cell_unguarded(
     final_status = (
         CellStatus.awaiting_auth
         if result.error_code == "auth_required"
-        else _map_cell_status(result.quality)
+        else _map_cell_status(snapshot_quality)
     )
 
     with session_scope() as session:
@@ -321,10 +462,10 @@ def _run_cell_unguarded(
             provider=handle.provider,
             source_mode=context.source_mode,
             observed_at=result.observed_at,
-            quality=result.quality,
-            data_through=result.data_through,
-            warnings=[*result.warnings, *validation_warnings],
-            provenance=result.provenance,
+            quality=snapshot_quality,
+            data_through=snapshot_data_through,
+            warnings=snapshot_warnings,
+            provenance=snapshot_provenance,
         )
         MetricRepository(session).bulk_insert(
             snapshot_id=snapshot.id,
@@ -332,6 +473,97 @@ def _run_cell_unguarded(
             provider=handle.provider,
             values=metrics,
         )
+        if dimension_result is not None:
+            by_role: dict[PeriodRole, list[Any]] = {
+                PeriodRole.current: [],
+                PeriodRole.previous: [],
+            }
+            for row in dimension_result.rows:
+                by_role.setdefault(row.period_role, []).append(row)
+
+            role_snapshots = {PeriodRole.current: snapshot}
+            if by_role.get(PeriodRole.previous):
+                role_snapshots[PeriodRole.previous] = SnapshotRepository(
+                    session
+                ).create_immutable(
+                    job_id=handle.job_id,
+                    client_id=handle.client_id,
+                    provider=handle.provider,
+                    source_mode=context.source_mode,
+                    # Keep the aggregate/current snapshot unambiguously latest.
+                    observed_at=result.observed_at - timedelta(microseconds=1),
+                    quality=dimension_result.quality,
+                    data_through=dimension_result.data_through,
+                    warnings=dimension_result.warnings,
+                    provenance={
+                        "dataset": "gsc_dimensions",
+                        "period_role": PeriodRole.previous.value,
+                        **dict(dimension_result.provenance),
+                    },
+                )
+
+            dimension_repo = DimensionRepository(session)
+            for role, rows in by_role.items():
+                if not rows:
+                    continue
+                role_snapshot = role_snapshots[role]
+                for dimension in ("page", "query"):
+                    matching = [row for row in rows if row.dimension == dimension]
+                    if not matching:
+                        continue
+                    first = matching[0]
+                    dimension_repo.bulk_insert(
+                        snapshot_id=role_snapshot.id,
+                        client_id=handle.client_id,
+                        dimension=dimension,
+                        period_start=first.period_start,
+                        period_end=first.period_end,
+                        rows=[_dimension_input(row) for row in matching],
+                    )
+        if dataset_result is not None:
+            dataset_by_role: dict[PeriodRole, list[Any]] = {
+                PeriodRole.current: [],
+                PeriodRole.previous: [],
+            }
+            for row in dataset_result.rows:
+                dataset_by_role.setdefault(row.period_role, []).append(row)
+
+            dataset_snapshots = {PeriodRole.current: snapshot}
+            if dataset_by_role.get(PeriodRole.previous):
+                dataset_snapshots[PeriodRole.previous] = SnapshotRepository(
+                    session
+                ).create_immutable(
+                    job_id=handle.job_id,
+                    client_id=handle.client_id,
+                    provider=handle.provider,
+                    source_mode=context.source_mode,
+                    observed_at=result.observed_at - timedelta(microseconds=1),
+                    quality=dataset_result.quality,
+                    data_through=result.data_through,
+                    warnings=dataset_result.warnings,
+                    provenance={
+                        "dataset": "analytics_datasets",
+                        "period_role": PeriodRole.previous.value,
+                        **dict(dataset_result.provenance),
+                    },
+                )
+
+            dataset_repo = AnalyticsDatasetRepository(session)
+            for role, rows in dataset_by_role.items():
+                if not rows:
+                    continue
+                role_snapshot = dataset_snapshots[role]
+                for dataset_key in {row.dataset_key for row in rows}:
+                    matching = [row for row in rows if row.dataset_key == dataset_key]
+                    first = matching[0]
+                    dataset_repo.bulk_insert(
+                        snapshot_id=role_snapshot.id,
+                        client_id=handle.client_id,
+                        provider=handle.provider,
+                        period_start=first.period_start,
+                        period_end=first.period_end,
+                        rows=[_analytics_dataset_input(row) for row in matching],
+                    )
         CellRepository(session).set_status(
             handle.cell_id, final_status, error_code=result.error_code, error_message=None
         )
@@ -365,11 +597,24 @@ def _collect_with_timeout(
     # itself. A daemon thread can be abandoned outright: the interpreter
     # does not wait for it to exit, so a genuinely wedged adapter (real
     # browser/network hang) never blocks worker shutdown either.
+    return _call_with_timeout(
+        lambda: adapter.collect(context, emit, is_cancel_requested),
+        timeout_seconds,
+        cancelled_type=CancelledByAdapter,
+    )
+
+
+def _call_with_timeout(
+    call: Callable[[], Any],
+    timeout_seconds: int,
+    *,
+    cancelled_type: type[BaseException] | None = None,
+) -> Any:
     outcome: dict[str, Any] = {}
 
     def _run() -> None:
         try:
-            outcome["result"] = adapter.collect(context, emit, is_cancel_requested)
+            outcome["result"] = call()
         except BaseException as exc:  # noqa: BLE001 - relayed to the caller's thread below
             outcome["exc"] = exc
 
@@ -380,7 +625,7 @@ def _collect_with_timeout(
         return _TIMEOUT
     if "exc" in outcome:
         exc = outcome["exc"]
-        if isinstance(exc, CancelledByAdapter):
+        if cancelled_type is not None and isinstance(exc, cancelled_type):
             return _CANCELLED
         raise exc
     return outcome["result"]

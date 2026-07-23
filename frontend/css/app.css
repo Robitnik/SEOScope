@@ -160,14 +160,21 @@ input::placeholder { color: var(--ink-dim); }
 .client-logo { width: 48px; height: 48px; object-fit: contain; background: #fff; color: #111; display: grid; place-items: center; font-family: var(--font-display); font-size: 17px; border: 1px solid var(--line); }
 .client-title { min-width: 0; }
 .client-title h2 { font-size: 21px; overflow-wrap: anywhere; }
-.client-domain { margin: 5px 0 0; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.client-domain { margin: 5px 0 0; display: flex; align-items: center; gap: 4px; min-width: 0; }
 .client-title a { color: var(--ink-muted); display: inline-block; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.client-domain > a:first-child { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
 /* Лого + назва + «відкрити» ведуть на сторінку клієнта (#/client/<id>). */
 .client-logo-link { display: block; width: 48px; height: 48px; }
 .client-title h2 a { color: inherit; text-decoration: none; }
 .client-title h2 a:hover { text-decoration: underline; text-underline-offset: 4px; }
 .client-open { color: var(--ink-dim); text-decoration: none; display: inline-flex; flex: 0 0 auto; }
 .client-open:hover, .client-logo-link:hover + .client-title .client-open { color: var(--accent); }
+/* «Копіювати URL» — компактна кнопка-іконка поруч із URL; галочка на клік. */
+.client-copy { flex: 0 0 auto; display: inline-grid; place-items: center; width: 26px; height: 26px; margin-left: -2px; padding: 0; border: 0; background: transparent; color: var(--ink-dim); border-radius: 3px; cursor: pointer; }
+.client-copy:hover { color: var(--accent); background: var(--surface-strong); }
+.client-copy[data-copy-state="done"] { color: var(--success); }
+/* Копія назви пришпилена до першого рядка заголовка (назва може переноситись). */
+.client-copy--name { align-self: flex-start; margin-top: 1px; }
 .card-actions { grid-column: 1 / -1; gap: 8px; }
 .card-actions .button { flex: 1; }
 .client-card__meta { padding: 9px 16px; border-bottom: 1px solid var(--line-soft); display: grid; gap: 4px; color: var(--ink-muted); font-size: 11px; }
@@ -283,6 +290,12 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
 .check-row:hover { background: var(--surface-strong); }
 .check-row input { width: 18px; height: 18px; accent-color: var(--accent); }
 .check-row span { min-width: 0; overflow-wrap: anywhere; }
+/* Options is not a third list. It spans both columns so it cannot be read as one more client or
+   source to tick, and its row carries a wrapping explanation instead of a one-line label. */
+.selection-options { grid-column: 1 / -1; }
+.selection-options .check-row { align-items: flex-start; border-bottom: 0; }
+.selection-options .check-row input { margin-top: 3px; flex: 0 0 auto; }
+.selection-options .check-row small { display: block; margin-top: 3px; color: var(--ink-muted); }
 
 .progress-overview { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; margin-bottom: 20px; }
 .progress-number { font-family: var(--font-display); font-size: 44px; font-variant-numeric: tabular-nums; }
@@ -341,7 +354,8 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
 .history-toolbar { display: flex; gap: 10px; align-items: end; margin-bottom: 20px; flex-wrap: wrap; }
 .history-toolbar label { color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
 .history-toolbar select { display: block; min-height: 44px; min-width: 180px; margin-top: 5px; background: var(--canvas); color: var(--ink); border: 1px solid var(--line); padding: 8px 11px; }
-.chart-wrap { position: relative; height: 330px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 18px 0; }
+.chart-wrap { position: relative; width: 100%; max-width: 100%; min-width: 0; height: 330px; overflow: hidden; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 18px 0; }
+.chart-wrap canvas { display: block; max-width: 100%; }
 .history-note { color: var(--ink-muted); margin: 15px 0 0; }
 .drawer-kpis { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 3px solid var(--accent); margin-bottom: 24px; }
 .drawer-kpis div { padding: 13px; border-right: 1px solid var(--line); }

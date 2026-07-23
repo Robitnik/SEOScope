@@ -12,6 +12,7 @@ cross-period aggregate (out of this task's scope; see its Completion report).
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -19,17 +20,199 @@ from sqlalchemy.orm import Session
 
 from app.api import register_router
 from app.api.deps import PaginationDep, SessionDep
-from app.db.models import Client, DimensionKind, GscDimensionMetric
+from app.db.models import (
+    AnalyticsDatasetRow,
+    Client,
+    DimensionKind,
+    GscDimensionMetric,
+    ProviderSnapshot,
+)
+from app.db.repositories.analytics_datasets import AnalyticsDatasetRepository
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.dimensions import DimensionRepository
 from app.metrics import resolve_periods
-from app.schemas.api import DimensionAnalyticsResponseDTO, DimensionRowDTO, ErrorDTO
-from app.schemas.enums import ComparisonMode, PeriodKind, Quality
+from app.schemas.api import (
+    AhrefsAffectedUrlDTO,
+    AhrefsAffectedUrlsDTO,
+    AhrefsIssueDTO,
+    AhrefsSiteAuditDTO,
+    AnalyticsDatasetResponseDTO,
+    AnalyticsDatasetRowDTO,
+    DimensionAnalyticsResponseDTO,
+    DimensionRowDTO,
+    ErrorDTO,
+)
+from app.schemas.enums import ComparisonMode, PeriodKind, PeriodRole, Provider, Quality
 
 router = APIRouter(prefix="/api/v1", tags=["analytics"])
 
 _NOT_FOUND = ErrorDTO(error_code="client_not_found", message="Client not found").model_dump()
 SortKey = Literal["clicks", "impressions", "ctr", "position"]
+DatasetRole = Literal["current", "previous"]
+
+REPORTING_NINJA_DATASETS = frozenset(
+    {
+        "ga4_daily",
+        "ga4_channels",
+        "ga4_landing_pages",
+        "ga4_events",
+        "ga4_devices",
+        "ga4_countries",
+        "gbp_daily",
+        "gbp_locations",
+        "gbp_search_terms",
+        "gbp_reviews",
+    }
+)
+
+
+def _text_metric(row: AnalyticsDatasetRow, key: str) -> str:
+    return str(row.metrics_json.get(key) or "")
+
+
+def _int_metric(row: AnalyticsDatasetRow, key: str) -> int:
+    try:
+        return int(row.metrics_json.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _details_metric(row: AnalyticsDatasetRow) -> dict[str, object]:
+    details = row.metrics_json.get("details")
+    return dict(details) if isinstance(details, dict) else {}
+
+
+@router.get(
+    "/clients/{client_id}/analytics/ahrefs/site-audit",
+    response_model=AhrefsSiteAuditDTO,
+    responses={404: {"model": ErrorDTO}},
+)
+async def get_ahrefs_site_audit(
+    client_id: str,
+    session: SessionDep,
+    severity: Literal["Error", "Warning", "Notice"] | None = None,
+    q: str | None = None,
+) -> AhrefsSiteAuditDTO:
+    """Latest complete live Ahrefs issue catalog for the client."""
+
+    def _run(
+        s: Session,
+    ) -> tuple[list[AnalyticsDatasetRow], ProviderSnapshot | None] | None:
+        if ClientRepository(s).get(client_id) is None:
+            return None
+        rows = AnalyticsDatasetRepository(s).latest(
+            client_id, Provider.ahrefs, "ahrefs_issues"
+        )
+        snapshot = s.get(ProviderSnapshot, rows[0].snapshot_id) if rows else None
+        return rows, snapshot
+
+    result = await session.run_sync(_run)
+    if result is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    rows, snapshot = result
+    all_rows = rows
+    if severity:
+        rows = [row for row in rows if _text_metric(row, "severity") == severity]
+    if q:
+        needle = q.strip().casefold()
+        rows = [
+            row
+            for row in rows
+            if needle
+            in " ".join(
+                (
+                    row.dimension_value,
+                    _text_metric(row, "name"),
+                    _text_metric(row, "description"),
+                    _text_metric(row, "how_to_fix"),
+                )
+            ).casefold()
+        ]
+    counts = {
+        kind: sum(1 for row in all_rows if _text_metric(row, "severity") == kind)
+        for kind in ("Error", "Warning", "Notice")
+    }
+    return AhrefsSiteAuditDTO(
+        client_id=client_id,
+        observed_at=snapshot.observed_at if snapshot else None,
+        data_through=snapshot.data_through if snapshot else None,
+        project_id=(snapshot.provenance_json or {}).get("project_id") if snapshot else None,
+        issues=[
+            AhrefsIssueDTO(
+                slug=row.dimension_value,
+                issue_id=_text_metric(row, "issue_id"),
+                name=_text_metric(row, "name") or row.dimension_value,
+                severity=_text_metric(row, "severity") or "Notice",
+                priority=_text_metric(row, "priority") or "low",
+                description=_text_metric(row, "description"),
+                how_to_fix=_text_metric(row, "how_to_fix"),
+                affected_urls=_int_metric(row, "affected_urls"),
+                exported_rows=_int_metric(row, "exported_rows"),
+            )
+            for row in rows
+        ],
+        total_issue_types=len(all_rows),
+        total_affected_rows=sum(_int_metric(row, "exported_rows") for row in all_rows),
+        severity_counts=counts,
+        generated_at=datetime.now(UTC),
+    )
+
+
+@router.get(
+    "/clients/{client_id}/analytics/ahrefs/affected-urls",
+    response_model=AhrefsAffectedUrlsDTO,
+    responses={404: {"model": ErrorDTO}},
+)
+async def get_ahrefs_affected_urls(
+    client_id: str,
+    session: SessionDep,
+    page: PaginationDep,
+    issue_slug: str | None = None,
+    q: str | None = None,
+) -> AhrefsAffectedUrlsDTO:
+    """Affected page rows, including every column present in Ahrefs' ZIP."""
+
+    def _run(s: Session) -> tuple[list[AnalyticsDatasetRow], int] | None:
+        if ClientRepository(s).get(client_id) is None:
+            return None
+        rows = AnalyticsDatasetRepository(s).latest(
+            client_id, Provider.ahrefs, "ahrefs_affected_urls"
+        )
+        if issue_slug:
+            rows = [row for row in rows if _text_metric(row, "issue_slug") == issue_slug]
+        if q:
+            needle = q.strip().casefold()
+            rows = [
+                row
+                for row in rows
+                if needle in _text_metric(row, "url").casefold()
+                or needle in str(row.metrics_json.get("details") or {}).casefold()
+            ]
+        total = len(rows)
+        return rows[page.offset : page.offset + page.limit], total
+
+    result = await session.run_sync(_run)
+    if result is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    rows, total = result
+    return AhrefsAffectedUrlsDTO(
+        client_id=client_id,
+        issue_slug=issue_slug,
+        rows=[
+            AhrefsAffectedUrlDTO(
+                url=_text_metric(row, "url"),
+                issue_slug=_text_metric(row, "issue_slug"),
+                issue_name=_text_metric(row, "issue_name"),
+                severity=_text_metric(row, "severity") or "Notice",
+                details=_details_metric(row),
+            )
+            for row in rows
+        ],
+        total_rows_available=total,
+        limit=page.limit,
+        offset=page.offset,
+        generated_at=datetime.now(UTC),
+    )
 
 
 def _anchor_datetime(anchor: date | None) -> datetime:
@@ -171,6 +354,167 @@ async def get_query_analytics(
         custom_start=custom_start,
         custom_end=custom_end,
         sort_by=sort_by,
+    )
+
+
+@router.get(
+    "/clients/{client_id}/analytics/gsc/daily",
+    response_model=AnalyticsDatasetResponseDTO,
+    responses={404: {"model": ErrorDTO}},
+)
+async def get_gsc_daily_dataset(
+    client_id: str,
+    session: SessionDep,
+    page: PaginationDep,
+    period: PeriodKind = PeriodKind.week,
+    role: DatasetRole = "current",
+    anchor: date | None = None,
+    comparison_mode: ComparisonMode = ComparisonMode.closed,
+    custom_start: date | None = None,
+    custom_end: date | None = None,
+) -> AnalyticsDatasetResponseDTO:
+    """Exact-period daily GSC clicks/impressions collected for the trend chart."""
+    anchor_dt = _anchor_datetime(anchor)
+
+    def _run(
+        s: Session,
+    ) -> tuple[list[AnalyticsDatasetRow], int, date, date] | None:
+        client = ClientRepository(s).get(client_id)
+        if client is None:
+            return None
+        periods = resolve_periods(
+            period,
+            anchor_dt,
+            tz=client.timezone,
+            mode=comparison_mode,
+            custom_start=custom_start,
+            custom_end=custom_end,
+        )
+        date_range = periods.current if role == "current" else periods.previous
+        rows = AnalyticsDatasetRepository(s).for_period(
+            client_id, "gsc_daily", date_range.start, date_range.end
+        )
+        rows.sort(key=lambda row: row.dimension_value)
+        total = len(rows)
+        return rows[page.offset : page.offset + page.limit], total, date_range.start, date_range.end
+
+    result = await session.run_sync(_run)
+    if result is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    rows, total, period_start, period_end = result
+    return AnalyticsDatasetResponseDTO(
+        client_id=client_id,
+        provider=Provider.gsc,
+        dataset_key="gsc_daily",
+        dimension_key="date",
+        period_role=PeriodRole(role),
+        period_start=period_start if total else None,
+        period_end=period_end if total else None,
+        rows=[
+            AnalyticsDatasetRowDTO(
+                dimension_value=row.dimension_value,
+                metrics={
+                    key: Decimal(value) if value is not None else None
+                    for key, value in row.metrics_json.items()
+                },
+                quality=row.quality,
+                rank=row.rank,
+            )
+            for row in rows
+        ],
+        total_rows_available=total,
+        truncated=any(row.quality == Quality.truncated for row in rows),
+        limit=page.limit,
+        offset=page.offset,
+        generated_at=datetime.now(UTC),
+    )
+
+
+@router.get(
+    "/clients/{client_id}/analytics/reporting-ninja/{dataset_key}",
+    response_model=AnalyticsDatasetResponseDTO,
+    responses={404: {"model": ErrorDTO}},
+)
+async def get_reporting_ninja_dataset(
+    client_id: str,
+    dataset_key: str,
+    session: SessionDep,
+    page: PaginationDep,
+    period: PeriodKind = PeriodKind.week,
+    role: DatasetRole = "current",
+    anchor: date | None = None,
+    comparison_mode: ComparisonMode = ComparisonMode.closed,
+    custom_start: date | None = None,
+    custom_end: date | None = None,
+    sort_by: str = "sessions",
+    q: str | None = None,
+) -> AnalyticsDatasetResponseDTO:
+    if dataset_key not in REPORTING_NINJA_DATASETS:
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorDTO(
+                error_code="dataset_not_found", message="Unknown Reporting Ninja dataset"
+            ).model_dump(),
+        )
+    anchor_dt = _anchor_datetime(anchor)
+
+    def _run(
+        s: Session,
+    ) -> tuple[list[AnalyticsDatasetRow], int, date, date] | None:
+        client = ClientRepository(s).get(client_id)
+        if client is None:
+            return None
+        periods = resolve_periods(
+            period,
+            anchor_dt,
+            tz=client.timezone,
+            mode=comparison_mode,
+            custom_start=custom_start,
+            custom_end=custom_end,
+        )
+        date_range = periods.current if role == "current" else periods.previous
+        rows = AnalyticsDatasetRepository(s).for_period(
+            client_id, dataset_key, date_range.start, date_range.end
+        )
+        if q:
+            needle = q.strip().casefold()
+            rows = [row for row in rows if needle in row.dimension_value.casefold()]
+        rows.sort(
+            key=lambda row: Decimal(row.metrics_json.get(sort_by) or 0),
+            reverse=sort_by != "date",
+        )
+        total = len(rows)
+        return rows[page.offset : page.offset + page.limit], total, date_range.start, date_range.end
+
+    result = await session.run_sync(_run)
+    if result is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    rows, total, period_start, period_end = result
+    return AnalyticsDatasetResponseDTO(
+        client_id=client_id,
+        provider=Provider.reporting_ninja,
+        dataset_key=dataset_key,
+        dimension_key=rows[0].dimension_key if rows else None,
+        period_role=PeriodRole(role),
+        period_start=period_start if total else None,
+        period_end=period_end if total else None,
+        rows=[
+            AnalyticsDatasetRowDTO(
+                dimension_value=row.dimension_value,
+                metrics={
+                    key: Decimal(value) if value is not None else None
+                    for key, value in row.metrics_json.items()
+                },
+                quality=row.quality,
+                rank=row.rank,
+            )
+            for row in rows
+        ],
+        total_rows_available=total,
+        truncated=any(row.quality == Quality.truncated for row in rows),
+        limit=page.limit,
+        offset=page.offset,
+        generated_at=datetime.now(UTC),
     )
 
 

@@ -1,7 +1,8 @@
-import { escapeHtml } from "./formatters.js";
-import { formatUaNumber, formatUaRange } from "./client-page.js";
+import { escapeHtml } from "./formatters.js?v=20260723-audit1";
+import { formatUaNumber, formatUaRange } from "./client-page.js?v=20260723-audit1";
 
 const uaShortDay = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short" });
+const uaShortMonth = new Intl.DateTimeFormat("en-US", { month: "short" });
 
 // Compact tick label ("8–14 Jun") — the full "8 Jun – 14 Jun 2026"
 // from `formatUaRange` overlaps at narrow widths with `maxRotation: 0`
@@ -10,6 +11,10 @@ function shortChartLabel(start, end) {
   if (!start || !end) return "";
   const startDate = new Date(`${start}T12:00:00`);
   const endDate = new Date(`${end}T12:00:00`);
+  if (start === end) return uaShortDay.format(startDate);
+  if (startDate.getMonth() === endDate.getMonth() && startDate.getDate() === 1) {
+    return uaShortMonth.format(startDate);
+  }
   return `${startDate.getDate()}–${uaShortDay.format(endDate)}`;
 }
 
@@ -44,16 +49,12 @@ function summarize(series) {
 export function renderChart(container, series, period) {
   destroyChart();
 
-  if (period !== "week" && period !== "month") {
-    container.innerHTML = `<h2>Clicks and impressions trend</h2><div class="state-panel"><p><strong>Chart unavailable for this period.</strong><br>Trend aggregation for quarter/year/custom is not yet implemented — see exact figures in the tables above.</p></div>`;
-    return;
-  }
   const clicksSeries = series?.find((item) => item.metric_key === "gsc_clicks");
   const impressionsSeries = series?.find((item) => item.metric_key === "gsc_impressions");
   const anySeries = clicksSeries || impressionsSeries;
   const hasPoints = anySeries?.points?.some((point) => point.value_numeric !== null);
   if (!hasPoints) {
-    container.innerHTML = `<h2>Clicks and impressions trend</h2><div class="state-panel"><p><strong>No history yet.</strong><br>The chart will appear after a few GSC data collections.</p></div>`;
+    container.innerHTML = `<h2>Clicks and impressions trend</h2><div class="state-panel"><p><strong>No daily GSC series for this range yet.</strong><br>Refresh live data to collect the chart.</p></div>`;
     return;
   }
 

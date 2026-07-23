@@ -33,7 +33,7 @@ from app.schemas.enums import Provider
 # key (seo_audit.clientreport.api_client.ReportingNinjaClient) and has no browser session at all —
 # never a valid target here, not even to report `no_profile`.
 BROWSER_PROVIDERS: frozenset[Provider] = frozenset(
-    {Provider.ahrefs, Provider.semrush, Provider.gsc}
+    {Provider.ahrefs, Provider.semrush}
 )
 
 
@@ -117,6 +117,23 @@ def check_session(provider: Provider) -> SessionState:
     return SessionState.alive if status.authenticated else SessionState.expired
 
 
+def chrome_running(provider: Provider) -> bool:
+    """Is the warm Chrome process itself up for `provider`, regardless of whether the session
+    inside it is authenticated? `check_session` already collapses "process down" and "process up
+    but logged out" into the same `expired` — callers that need to tell those two apart (the sync
+    modal's pre-start check: only the first one needs `seo-audit browser-up`, the second needs a
+    login click, which is a separate, already-built flow) use this instead.
+    """
+    _require_browser_provider(provider)
+    from seo_audit.browser import warm as seo_warm
+
+    try:
+        status = seo_warm.status(provider.value)
+    except Exception:
+        return False
+    return bool(status.running)
+
+
 def start_login(provider: Provider) -> str:
     """Open `provider`'s login page in the warm Chrome's own window — visible to whoever is at the
     host screen — and return a `login_session_id` to poll via `login_status`/`check_session`.
@@ -130,6 +147,7 @@ def start_login(provider: Provider) -> str:
     _require_browser_provider(provider)
     from seo_audit.browser import warm as seo_warm
     from seo_audit.browser.profile import BrowserProfile
+    from seo_audit.browser.session import find_or_open_window
     from seo_audit.browser.stealth import playwright_api
 
     profile = BrowserProfile(provider.value)
@@ -144,7 +162,11 @@ def start_login(provider: Provider) -> str:
         try:
             browser = pw.chromium.connect_over_cdp(cdp_url, timeout=10_000)
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            # THIS provider's own window, not `pages[0]` — with one shared Chrome profile driving
+            # ahrefs/semrush/gsc in their own windows concurrently, `pages[0]` could belong to a
+            # DIFFERENT provider's in-flight collection; navigating it to this login page would
+            # yank that other lane's page out from under it mid-run.
+            page = find_or_open_window(ctx, provider.value, profile=profile)
             page.goto(
                 profile.login_url,
                 wait_until="domcontentloaded",

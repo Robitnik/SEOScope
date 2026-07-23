@@ -14,6 +14,24 @@ class Provider(StrEnum):
     semrush = "semrush"
     gsc = "gsc"
     reporting_ninja = "reporting_ninja"
+    # Machine-only Technical SEO Audit collector (task-25). NOT a metric
+    # provider: it produces categories + per-URL findings (AnalyticsDatasetRow),
+    # never MetricValues, has no catalog entry / health weight, and is never
+    # part of the routine multi-provider sync — it runs only on an explicit
+    # per-client "Run audit" request. See METRIC_PROVIDERS below.
+    tech_audit = "tech_audit"
+
+
+# The four metric-bearing providers — everything the dashboard KPIs, health %,
+# metric catalog and the routine "sync all" expansion iterate over. `tech_audit`
+# is deliberately excluded (it carries no metrics); callers that mean "the
+# providers a routine sync collects" MUST use this, not `tuple(Provider)`.
+METRIC_PROVIDERS: tuple[Provider, ...] = (
+    Provider.ahrefs,
+    Provider.semrush,
+    Provider.gsc,
+    Provider.reporting_ninja,
+)
 
 
 class PeriodKind(StrEnum):

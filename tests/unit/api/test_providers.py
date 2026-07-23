@@ -6,7 +6,15 @@ from app.db.repositories.cells import CellRepository
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.jobs import JobRepository
 from app.db.repositories.snapshots import SnapshotRepository
-from app.schemas.enums import CellStatus, ComparisonMode, PeriodKind, Provider, Quality, SourceMode
+from app.schemas.enums import (
+    METRIC_PROVIDERS,
+    CellStatus,
+    ComparisonMode,
+    PeriodKind,
+    Provider,
+    Quality,
+    SourceMode,
+)
 
 
 def test_providers_status_not_configured_for_new_client(client, db):
@@ -18,7 +26,10 @@ def test_providers_status_not_configured_for_new_client(client, db):
     response = client.get("/api/v1/providers/status")
     assert response.status_code == 200
     body = response.json()
-    assert len(body["cells"]) == len(Provider)
+    # The ops status grid covers the metric providers only — `tech_audit`
+    # (task-25) has no per-client integration to configure or authenticate.
+    assert len(body["cells"]) == len(METRIC_PROVIDERS)
+    assert all(c["provider"] != "tech_audit" for c in body["cells"])
     assert all(c["configured"] is False for c in body["cells"])
     assert all(c["state"] == "not_configured" for c in body["cells"])
     # Never a secret in an ops-facing status response.

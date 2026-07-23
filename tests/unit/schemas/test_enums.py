@@ -1,4 +1,5 @@
 from app.schemas.enums import (
+    METRIC_PROVIDERS,
     STAGE_ORDER,
     BetterDirection,
     CellStatus,
@@ -15,7 +16,31 @@ from app.schemas.enums import (
 
 
 def test_provider_values_are_stable():
-    assert {p.value for p in Provider} == {"ahrefs", "semrush", "gsc", "reporting_ninja"}
+    # Extended additively by task-25: `tech_audit` is the machine-only Technical
+    # SEO Audit collector. It is a Provider (so it reuses the job/cell/SSE
+    # engine) but NOT a metric provider — see the next test.
+    assert {p.value for p in Provider} == {
+        "ahrefs",
+        "semrush",
+        "gsc",
+        "reporting_ninja",
+        "tech_audit",
+    }
+
+
+def test_metric_providers_exclude_tech_audit():
+    """The routine-sync / dashboard / health surface stays the four metric providers.
+
+    `tech_audit` carries no metrics and must never be expanded into a routine
+    "sync all", a dashboard KPI column, or the health score.
+    """
+    assert {p.value for p in METRIC_PROVIDERS} == {
+        "ahrefs",
+        "semrush",
+        "gsc",
+        "reporting_ninja",
+    }
+    assert Provider.tech_audit not in METRIC_PROVIDERS
 
 
 def test_period_kind_values():

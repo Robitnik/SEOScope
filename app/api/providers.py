@@ -17,7 +17,12 @@ from app.db.models import SyncJobProvider
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.snapshots import SnapshotRepository
-from app.integrations.browser_session import NoWarmChrome, check_session, start_login
+from app.integrations.browser_session import (
+    NoWarmChrome,
+    check_session,
+    chrome_running,
+    start_login,
+)
 from app.jobs.lane import DEFAULT_AUTH_PAUSE_TIMEOUT_SECONDS
 from app.schemas.api import (
     ErrorDTO,
@@ -26,7 +31,7 @@ from app.schemas.api import (
     ProvidersStatusDTO,
     ProviderStatusCellDTO,
 )
-from app.schemas.enums import CellStatus, Provider
+from app.schemas.enums import METRIC_PROVIDERS, CellStatus, Provider
 
 router = APIRouter(prefix="/api/v1", tags=["providers"])
 
@@ -101,7 +106,7 @@ async def get_providers_status(session: SessionDep) -> ProvidersStatusDTO:
         return [
             _build_status_cell(s, client.id, provider)
             for client in clients
-            for provider in Provider
+            for provider in METRIC_PROVIDERS
         ]
 
     cells = await session.run_sync(_run)
@@ -160,7 +165,8 @@ async def get_provider_session(provider: Provider) -> ProviderSessionDTO:
             status_code=400,
             detail=ErrorDTO(error_code=_PROVIDER_HAS_NO_SESSION, message=str(exc)).model_dump(),
         ) from exc
-    return ProviderSessionDTO(state=state.value)
+    running = await run_in_threadpool(chrome_running, provider)
+    return ProviderSessionDTO(state=state.value, running=running)
 
 
 register_router(router)

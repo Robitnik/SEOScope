@@ -69,6 +69,11 @@ class CollectionContext(BaseModel):
     previous: DateRange
     timezone: str  # e.g. "America/New_York"
     force_refresh: bool = False
+    # Raw `SyncJob.mode` + `SyncJob.params_json` for adapters that branch on the
+    # kind of run (task-25's tech_audit: a full crawl vs a targeted recheck).
+    # Metric providers ignore both; defaults keep their behaviour unchanged.
+    job_mode: str = ""
+    job_params: dict[str, Any] = {}
     # Non-secret external identifiers only: property/account/project id,
     # database/country, report name. Never API keys, passwords, cookies.
     integration_config: dict[str, Any] = {}
