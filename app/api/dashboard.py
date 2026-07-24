@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.api import register_router
 from app.api.deps import SessionDep
 from app.db.models import Client, MetricValue, SyncJobProvider
+from app.db.repositories.analytics_datasets import AnalyticsDatasetRepository
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.health import HealthHistoryRepository
@@ -45,6 +46,7 @@ from app.schemas.api import (
     MetricCardValue,
     MetricHistoryPointDTO,
     MetricHistorySeriesDTO,
+    MetricTrendDTO,
     ProviderSummaryDTO,
 )
 from app.schemas.enums import (
@@ -311,6 +313,11 @@ def _build_provider_summary(
 HEALTH_HISTORY_DAYS = 30
 HEALTH_TREND_LOOKBACK_DAYS = 7
 
+# Same window, reused for the GBP website-clicks trend block that sits above
+# the Reporting Ninja section (mirrors the Ahrefs/health pairing above it).
+GBP_CLICKS_HISTORY_DAYS = 30
+GBP_CLICKS_TREND_LOOKBACK_DAYS = 7
+
 
 def _health_with_trend(
     session: Session,
@@ -369,6 +376,55 @@ def _health_with_trend(
         value_previous=previous_value,
         delta_pct=delta_pct,
         history=[HealthPointDTO(day=p.day, value=p.value) for p in points],
+    )
+
+
+def _gbp_clicks_trend(session: Session, *, client_id: str, today: date) -> MetricTrendDTO:
+    """Week-over-week arrow + daily sparkline for GBP website clicks.
+
+    Unlike the composite health score, this needs no dedicated history table:
+    the Reporting Ninja adapter already persists one `gbp_daily` dataset row
+    per day per client (client-wide total across locations, see
+    `reporting_ninja.py`'s `_GBP_PERFORMANCE_METRICS`), so
+    `latest_rows_by_dimension` — newest row per day across every collection —
+    is already the exact daily series this block needs, just as `for_period`
+    already serves the client page's own GBP chart.
+
+    A day never collected is simply absent from `history`, never a fabricated
+    `0` (PLAN §12, same rule `_health_with_trend` follows above).
+    """
+    rows = AnalyticsDatasetRepository(session).latest_rows_by_dimension(
+        client_id, Provider.reporting_ninja, "gbp_daily"
+    )
+    since = today - timedelta(days=GBP_CLICKS_HISTORY_DAYS)
+    points: list[HealthPointDTO] = []
+    for dimension_value, row in rows.items():
+        try:
+            day = date.fromisoformat(dimension_value)
+        except ValueError:
+            continue
+        if day < since or day > today:
+            continue
+        raw = row.metrics_json.get("website_clicks")
+        if raw is None:
+            continue
+        points.append(HealthPointDTO(day=day, value=Decimal(str(raw))))
+    points.sort(key=lambda point: point.day)
+
+    value = points[-1].value if points else None
+    previous_value: Decimal | None = None
+    if points:
+        lookback_day = points[-1].day - timedelta(days=GBP_CLICKS_TREND_LOOKBACK_DAYS)
+        candidates = [point.value for point in points if point.day <= lookback_day]
+        if candidates:
+            previous_value = candidates[-1]
+
+    delta_pct: Decimal | None = None
+    if value is not None and previous_value is not None and previous_value != 0:
+        delta_pct = ((value - previous_value) / previous_value * 100).quantize(Decimal("0.1"))
+
+    return MetricTrendDTO(
+        value=value, value_previous=previous_value, delta_pct=delta_pct, history=points
     )
 
 
@@ -457,6 +513,7 @@ def _build_client_card(
     successes = [s.last_success_at for s in summaries if s.last_success_at is not None]
     health = compute_health(summaries, CATALOG)
     health_dto = _health_with_trend(session, client_id=client.id, health=health, today=now.date())
+    gbp_clicks_trend = _gbp_clicks_trend(session, client_id=client.id, today=now.date())
 
     return ClientCardDTO(
         client_id=client.id,
@@ -470,6 +527,7 @@ def _build_client_card(
         providers=summaries,
         last_synced_at=max(successes) if successes else None,
         health=health_dto,
+        gbp_clicks_trend=gbp_clicks_trend,
     )
 
 

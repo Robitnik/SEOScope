@@ -148,23 +148,40 @@ function healthGauge(health) {
 // score the corner gauge shows — the same number, so the dial, the arrow and
 // the line always tell one story:
 //
-//   1. `healthDeltaBlock` — which way this client moved over the past week.
-//   2. `healthSparkline`  — the daily shape of that move.
+//   1. `trendDeltaBlock` — which way this client moved over the past week.
+//   2. `trendSparkline`  — the daily shape of that move.
 //
 // Both read `client.health` straight from the dashboard payload (the backend
 // records a point per client per day and returns `delta_pct` + `history`), so
 // they render synchronously with the card. That replaces the previous slot,
 // which fetched a *per-card* history request after paint and charted Ahrefs'
 // own Health Score — a different series from the gauge it sat under.
+//
+// The same pair also drives the GBP website-clicks block above Reporting
+// Ninja (`gbpClicksTrendBlocks` below): both series share the same shape
+// (`value`/`value_previous`/`delta_pct`/`history` — see `MetricTrendDTO`) and
+// both are "higher is better", so one generic delta+sparkline renderer covers
+// both instead of two near-identical copies.
 function healthTrendBlocks(health) {
-  return `<div class="health-trend">${healthDeltaBlock(health)}${healthSparkline(health)}</div>`;
+  return `<div class="health-trend">${trendDeltaBlock(health)}${trendSparkline(health, {
+    emptyText: "Daily trend appears once there are two days of history",
+    a11yLabel: (points, first, last) => `Composite health over ${points.length} days, ${points[0].day} to ${points.at(-1).day}: from ${first}% to ${last}%.`,
+  })}</div>`;
 }
 
-// Direction is not read off the sign alone (AGENTS.md §5): health is an
-// explicitly "higher is better" score, which is what makes up == good here.
-// A missing delta renders as "—", never as 0% (PLAN §12, None != 0).
-function healthDeltaBlock(health) {
-  const raw = health?.delta_pct;
+function gbpClicksTrendBlocks(trend) {
+  return `<div class="health-trend">${trendDeltaBlock(trend)}${trendSparkline(trend, {
+    emptyText: "Daily clicks trend appears once there are two days of history",
+    a11yLabel: (points, first, last) => `Website clicks over ${points.length} days, ${points[0].day} to ${points.at(-1).day}: from ${first} to ${last}.`,
+  })}</div>`;
+}
+
+// Direction is not read off the sign alone (AGENTS.md §5): both the health
+// score and click counts are explicitly "higher is better", which is what
+// makes up == good here. A missing delta renders as "—", never as 0% (PLAN
+// §12, None != 0).
+function trendDeltaBlock(trend) {
+  const raw = trend?.delta_pct;
   if (raw === null || raw === undefined) {
     return `
       <div class="health-delta" data-tone="flat">
@@ -189,25 +206,25 @@ function healthDeltaBlock(health) {
 // Daily line. Days with no contributing service are absent from `history`
 // rather than zero, so the line is drawn over the points that exist and the
 // a11y summary states the real span instead of implying an unbroken series.
-function healthSparkline(health) {
+function trendSparkline(trend, { emptyText, a11yLabel }) {
   const width = 120;
   const height = 28;
   const pad = 3;
-  const points = (health?.history || []).filter((p) => p.value !== null && p.value !== undefined);
+  const points = (trend?.history || []).filter((p) => p.value !== null && p.value !== undefined);
   if (points.length < 2) {
-    return `<span class="health-trend__empty">Daily trend appears once there are two days of history</span>`;
+    return `<span class="health-trend__empty">${escapeHtml(emptyText)}</span>`;
   }
   const values = points.map((p) => Number(p.value));
   const first = values[0];
   const last = values.at(-1);
   const tone = last > first ? "good" : last < first ? "bad" : "flat";
-  const a11yLabel = `Composite health over ${points.length} days, ${points[0].day} to ${points.at(-1).day}: from ${first}% to ${last}%.`;
+  const label = a11yLabel(points, first, last);
   return `
     <div class="health-trend__body" data-tone="${tone}">
       <svg class="health-trend__svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
         <polyline class="health-trend__line" points="${sparklinePoints(values, width, height, pad)}"></polyline>
       </svg>
-      <span class="visually-hidden">${escapeHtml(a11yLabel)}</span>
+      <span class="visually-hidden">${escapeHtml(label)}</span>
     </div>`;
 }
 
@@ -270,7 +287,7 @@ export function renderClientCard(client, dashboard) {
         <span>Last collection: ${formatTimestamp(client.last_synced_at)}</span>
       </div>
       <div class="client-card__providers">
-        ${withMetrics.map((summary) => `${summary.provider === "ahrefs" ? healthTrendBlocks(client.health) : ""}${providerBlock(summary, { current: dashboard.current_range, previous: dashboard.previous_range })}`).join("")}
+        ${withMetrics.map((summary) => `${summary.provider === "ahrefs" ? healthTrendBlocks(client.health) : ""}${summary.provider === "reporting_ninja" ? gbpClicksTrendBlocks(client.gbp_clicks_trend) : ""}${providerBlock(summary, { current: dashboard.current_range, previous: dashboard.previous_range })}`).join("")}
         ${setupPanel(withoutMetrics)}
       </div>
     </article>`;

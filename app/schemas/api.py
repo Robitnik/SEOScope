@@ -137,6 +137,21 @@ class ClientHealthDTO(BaseModel):
     history: list[HealthPointDTO] = Field(default_factory=list)
 
 
+class MetricTrendDTO(BaseModel):
+    """Week-over-week trend + daily sparkline for a single derived metric.
+
+    Mirrors `ClientHealthDTO`'s trend fields (same "no basis yet is `None`,
+    never a fabricated 0%" rule) without the composite-specific coverage
+    bookkeeping, so other card widgets — e.g. GBP website clicks — can reuse
+    the same delta-arrow/sparkline UI the health block already draws.
+    """
+
+    value: Decimal | None = None
+    value_previous: Decimal | None = None
+    delta_pct: Decimal | None = None
+    history: list[HealthPointDTO] = Field(default_factory=list)
+
+
 class ClientCardDTO(BaseModel):
     client_id: str
     name: str
@@ -149,6 +164,7 @@ class ClientCardDTO(BaseModel):
     providers: list[ProviderSummaryDTO]
     last_synced_at: datetime | None = None
     health: ClientHealthDTO
+    gbp_clicks_trend: MetricTrendDTO = Field(default_factory=MetricTrendDTO)
 
 
 # Dashboard sort modes (PLAN §21.3). `quality` is the default: clients

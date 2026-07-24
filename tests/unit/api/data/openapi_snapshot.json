@@ -776,6 +776,9 @@
             "title": "Domain",
             "type": "string"
           },
+          "gbp_clicks_trend": {
+            "$ref": "#/components/schemas/MetricTrendDTO"
+          },
           "health": {
             "$ref": "#/components/schemas/ClientHealthDTO"
           },
@@ -2077,6 +2080,56 @@
           "comparison_kind"
         ],
         "title": "MetricHistorySeriesDTO",
+        "type": "object"
+      },
+      "MetricTrendDTO": {
+        "description": "Week-over-week trend + daily sparkline for a single derived metric.\n\nMirrors `ClientHealthDTO`'s trend fields (same \"no basis yet is `None`,\nnever a fabricated 0%\" rule) without the composite-specific coverage\nbookkeeping, so other card widgets \u2014 e.g. GBP website clicks \u2014 can reuse\nthe same delta-arrow/sparkline UI the health block already draws.",
+        "properties": {
+          "delta_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Pct"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/HealthPointDTO"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "value_previous": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Previous"
+          }
+        },
+        "title": "MetricTrendDTO",
         "type": "object"
       },
       "MetricUnit": {

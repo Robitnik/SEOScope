@@ -316,6 +316,20 @@
       "overall_status": "stale",
       "last_synced_at": "2026-07-14T17:10:00Z",
       "health": { "value": "54.1", "coverage_contributing": 1, "coverage_configured": 4 },
+      "gbp_clicks_trend": {
+        "value": "142",
+        "value_previous": "134",
+        "delta_pct": "6.1",
+        "history": [
+          { "day": "2026-07-13", "value": "18" },
+          { "day": "2026-07-14", "value": "16" },
+          { "day": "2026-07-15", "value": "19" },
+          { "day": "2026-07-16", "value": "21" },
+          { "day": "2026-07-17", "value": "20" },
+          { "day": "2026-07-18", "value": "23" },
+          { "day": "2026-07-19", "value": "25" }
+        ]
+      },
       "providers": [
         {
           "provider": "ahrefs",
