@@ -1,5 +1,5 @@
 import { getClientHistory } from "./api.js?v=20260723-audit1";
-import { PROVIDERS, formatRange, formatValue, metricLabel } from "./formatters.js?v=20260723-audit1";
+import { PROVIDERS, formatDate, formatRange, formatValue, metricLabel } from "./formatters.js?v=20260723-audit1";
 
 export function createDetailDrawer({ onError }) {
   const dialog = document.querySelector("#detail-dialog");
@@ -37,13 +37,11 @@ export function createDetailDrawer({ onError }) {
       body.innerHTML = `<div class="state-panel"><p><strong>No history yet.</strong><br>Metric trends will appear after a few collections.</p></div>`;
       return;
     }
-    const first = series[0];
-    const firstPoint = first.points?.at(-1);
     body.innerHTML = `
       <div class="drawer-kpis">
         <div><span>Period</span><strong>${payload.period_kind === "month" ? "Month" : "Week"}</strong></div>
         <div><span>Series</span><strong>${series.length}</strong></div>
-        <div><span>Latest value</span><strong>${firstPoint ? formatValue({ ...first, current_value: firstPoint.value_numeric }, "current") : "No data"}</strong></div>
+        <div><span>Latest value</span><strong id="history-latest">No data</strong></div>
       </div>
       <div class="history-toolbar">
         <label>Service<select id="history-provider">${[...new Set(series.map((item) => item.provider))].map((provider) => `<option value="${provider}">${PROVIDERS[provider]?.label || provider}</option>`).join("")}</select></label>
@@ -64,22 +62,59 @@ export function createDetailDrawer({ onError }) {
     select.innerHTML = matching.map((item) => `<option value="${item.metric_key}">${metricLabel(item)}</option>`).join("");
   }
 
+  // "Latest value" must track the metric actually on screen — it used to be
+  // frozen to series[0] (Ahrefs health), so viewing CTR showed "100" next to a
+  // 0.7 line. Uses the last NON-NULL point: a not-yet-collected latest period
+  // is a gap in the chart, not a reason to report "No data" when there is a
+  // real recent value.
+  function updateLatestValue(series) {
+    const el = body.querySelector("#history-latest");
+    if (!el) return;
+    const point = [...series.points].reverse().find((p) => p.value_numeric !== null && p.value_numeric !== undefined);
+    el.textContent = point ? formatValue({ ...series, current_value: point.value_numeric }, "current") : "No data";
+  }
+
   function draw(metricKey) {
     chart?.destroy();
     const provider = body.querySelector("#history-provider").value;
     const series = payload.series.find((item) => item.provider === provider && item.metric_key === metricKey);
     if (!series || !window.Chart) return;
+    updateLatestValue(series);
+
+    const values = series.points.map((point) => point.value_numeric === null ? null : Number(point.value_numeric));
+    // A line needs at least two readings. With one — the common case until a
+    // client has been collected across several periods — Chart.js draws a lone
+    // dot that reads as "no chart at all". Fall back to a single bar: it is
+    // unambiguously a chart, shows the value against the axis, and the note
+    // says plainly why there is only one. (Re-collecting the same week does not
+    // add points — the series is one reading per period, deduped.)
+    const sparse = values.filter((v) => v !== null).length < 2;
+    const note = body.querySelector(".history-note");
+    if (note) {
+      note.textContent = sparse
+        ? "Only one period collected so far — the trend line appears once there are at least two."
+        : "The chart shows raw API values without forecasts or automated conclusions.";
+    }
+
     chart = new window.Chart(body.querySelector("#history-chart"), {
-      type: "line",
+      type: sparse ? "bar" : "line",
       data: {
-        labels: series.points.map((point) => formatRange({ start: point.period_start, end: point.period_end })),
-        datasets: [{ label: metricLabel(series), data: series.points.map((point) => point.value_numeric === null ? null : Number(point.value_numeric)), borderColor: "#ff4a17", backgroundColor: "#ff4a17", pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, spanGaps: false }],
+        // Range metrics carry a period; snapshot metrics (e.g. Ahrefs Site
+        // Audit) carry only `observed_at`. Labelling both with `formatRange`
+        // printed "Period unavailable" for every snapshot point — fall back to
+        // the observed date so the x-axis reads honestly either way.
+        labels: series.points.map((point) => point.period_start && point.period_end
+          ? formatRange({ start: point.period_start, end: point.period_end })
+          : (formatDate(point.observed_at) || "Period unavailable")),
+        datasets: [{ label: metricLabel(series), data: values, borderColor: "#ff4a17", backgroundColor: "#ff4a17", pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, spanGaps: false, maxBarThickness: 72 }],
       },
       options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { intersect: false, mode: "index" },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context) => context.raw === null ? "No data" : `${metricLabel(series)}: ${context.formattedValue}` } } },
-        scales: { x: { grid: { color: "#2a2a2a" }, ticks: { color: "#aaa6a0", maxRotation: 0, autoSkip: true, maxTicksLimit: 5 } }, y: { grid: { color: "#2a2a2a" }, ticks: { color: "#aaa6a0" } } },
+        // A single bar reads clearly only from a zero baseline; a multi-point
+        // line keeps its tight auto-scale so real variation stays visible.
+        scales: { x: { grid: { color: "#2a2a2a" }, ticks: { color: "#aaa6a0", maxRotation: 0, autoSkip: true, maxTicksLimit: 5 } }, y: { beginAtZero: sparse, grid: { color: "#2a2a2a" }, ticks: { color: "#aaa6a0" } } },
       },
     });
   }
