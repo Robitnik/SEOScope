@@ -150,6 +150,10 @@ class SyncJobProvider(Base):
     status: Mapped[CellStatus] = mapped_column(_str_enum(CellStatus), default=CellStatus.queued)
     progress_percent: Mapped[float | None] = mapped_column(Float, default=0.0)
     current_stage: Mapped[str | None] = mapped_column(String(64), default=None)
+    # Free-form, human-readable live-progress text (e.g. "found 148 posts so
+    # far") — `current_stage` alone is a static per-stage label, not enough to
+    # show a running count. NULL for any adapter that never sets it.
+    progress_message: Mapped[str | None] = mapped_column(String(200), default=None)
     attempt: Mapped[int] = mapped_column(Integer, default=1)
     lease_owner: Mapped[str | None] = mapped_column(String(200), default=None)
     lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
@@ -457,6 +461,101 @@ class ClientHealthDaily(Base):
     coverage_contributing: Mapped[int] = mapped_column(Integer, default=0)
     coverage_configured: Mapped[int] = mapped_column(Integer, default=0)
     computed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+# Той самий cap, що й на клітинку джерела (`app.tools.alt_text.tables`), але
+# оголошений тут окремо: `app/db` не має залежати від інструментів.
+MAX_ALT_TEXT_LENGTH = 8_192
+
+
+class AltTextReport(Base):
+    """Один завантажений аудит картинок для інструмента Image Alt Text (task-27).
+
+    Чому окремі таблиці, а не наявний `AnalyticsDatasetRow` (як зробили
+    task-25/26): той рядок привʼязаний до `ProviderSnapshot`, провайдера й
+    періоду — і **immutable**. Тут нема ні провайдера, ні періоду, а рядки
+    мутабельні *за задумом*: статус прогресу й результат перевірки
+    змінюються щоразу, коли оператор копіює alt або перевіряє сторінку.
+    Втискування цього у snapshot-модель або ламало б інваріант
+    незмінності, або вимагало append-only-хаків на кожен клік.
+
+    `client_id` опційний: аудит роблять і для проспекта, якого ще немає в
+    списку клієнтів. Домен клієнта (коли він є) використовується лише для
+    класифікації «свій/чужий хост» у деривації.
+    """
+
+    __tablename__ = "alt_text_reports"
+    __table_args__ = (
+        Index("ix_alt_text_reports_source_sha256", "source_sha256"),
+        Index("ix_alt_text_reports_created_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="SET NULL"), default=None
+    )
+    title: Mapped[str] = mapped_column(String(200))
+    source_filename: Mapped[str] = mapped_column(String(255))
+    # `String`, не `sa.Enum`: це формат завантаженого файлу для показу, а не
+    # спільний контракт провайдерів; валідація живе у Pydantic-DTO.
+    source_kind: Mapped[str] = mapped_column(String(16))
+    source_sheet: Mapped[str | None] = mapped_column(String(255), default=None)
+    # Ідемпотентність: повторне завантаження того самого файлу+вкладки віддає
+    # 409 з наявним звітом замість тихого дубліката.
+    source_sha256: Mapped[str] = mapped_column(String(64))
+    column_map_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Рядки джерела без URL картинки: показуємо число, а не ховаємо втрату.
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0)
+    warnings_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class AltTextItem(Base):
+    """Одна картинка звіту: дериваційний результат + прогрес + перевірка.
+
+    Мутабельний рядок (див. `AltTextReport`). `status` веде прогрес оператора,
+    `verify_*` — окремий факт про сторінку. Вони НЕ одне й те саме: «alt
+    скопійовано» ≠ «alt стоїть на сторінці», тому статус ніколи не виводиться
+    з вердикту, окрім явного `match`.
+    """
+
+    __tablename__ = "alt_text_items"
+    __table_args__ = (
+        UniqueConstraint("report_id", "row_index", name="uq_alt_text_items_report_id_row_index"),
+        Index("ix_alt_text_items_report_status", "report_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    report_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("alt_text_reports.id", ondelete="CASCADE"), index=True
+    )
+    # Номер рядка в джерелі (1-based, як його бачить оператор у таблиці).
+    row_index: Mapped[int] = mapped_column(Integer)
+    image_url: Mapped[str] = mapped_column(String(2048))
+    search_key: Mapped[str] = mapped_column(String(512))
+    search_key_fallback: Mapped[str | None] = mapped_column(String(512), default=None)
+    url_kind: Mapped[str] = mapped_column(String(24), default="unknown")
+    # Що саме відрізали від назви файлу + попередження деривації: оператор
+    # мусить бачити логіку, а не «магічний» рядок.
+    derivation_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    new_alt: Mapped[str] = mapped_column(String(MAX_ALT_TEXT_LENGTH), default="")
+    old_alt: Mapped[str | None] = mapped_column(String(MAX_ALT_TEXT_LENGTH), default=None)
+    # Первинна сторінка (перша зі списку) — лишається для простих читань.
+    page_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+    # Одна картинка може стояти на кількох сторінках, і аудити пакують їх усі
+    # в одну клітинку. Тримаємо повний список, бо перевірка alt має право
+    # обійти кілька сторінок, а оператор — відкрити будь-яку.
+    page_urls_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    extra_json: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    status_changed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    verify_status: Mapped[str | None] = mapped_column(String(24), default=None)
+    verify_alt: Mapped[str | None] = mapped_column(String(MAX_ALT_TEXT_LENGTH), default=None)
+    verify_http_status: Mapped[int | None] = mapped_column(Integer, default=None)
+    verify_detail: Mapped[str | None] = mapped_column(String(500), default=None)
+    verify_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
 
 def _reject_update(mapper: Any, connection: Any, target: Base) -> None:

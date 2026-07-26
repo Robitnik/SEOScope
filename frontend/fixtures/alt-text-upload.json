@@ -1,0 +1,48 @@
+{
+  "upload_id": "fixture-upload-1",
+  "source_filename": "cleveland-image-audit.xlsx",
+  "source_kind": "xlsx",
+  "default_sheet": "Images",
+  "delimiter": null,
+  "encoding": null,
+  "sheets": [
+    {
+      "name": "Summary",
+      "headers": ["Image audit", "March 2026"],
+      "sample_rows": [["Pages crawled", "184"], ["Images without alt", "62"]],
+      "header_row_index": 0,
+      "suggested_column_map": {},
+      "warnings": ["header_row_not_detected"]
+    },
+    {
+      "name": "Images",
+      "headers": ["Image URL", "New alt text", "Page URL", "Current alt", "Notes"],
+      "sample_rows": [
+        [
+          "https://19cleveland.example.com/wp-content/uploads/2024/03/rooftop-terrace-sunset-1024x683.jpg",
+          "Rooftop terrace at 19 Cleveland at sunset",
+          "https://19cleveland.example.com/rooftop-terrace",
+          "",
+          "hero image, priority"
+        ],
+        [
+          "https://19cleveland.example.com/wp-content/uploads/2024/03/private-dining-room-scaled.jpg",
+          "Private dining room set for twelve guests",
+          "https://19cleveland.example.com/private-dining",
+          "",
+          ""
+        ],
+        [
+          "https://19cleveland.example.com/wp-content/uploads/2024/02/bar-counter-2-768x512.jpg.webp",
+          "Marble bar counter with brass stools",
+          "https://19cleveland.example.com/bar",
+          "",
+          ""
+        ]
+      ],
+      "header_row_index": 0,
+      "suggested_column_map": { "image_url": 0, "new_alt": 1, "page_url": 2, "old_alt": 3 },
+      "warnings": []
+    }
+  ]
+}

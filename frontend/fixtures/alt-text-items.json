@@ -1,0 +1,180 @@
+{
+  "report_id": "fixture-report-march",
+  "total": 6,
+  "limit": 50,
+  "offset": 0,
+  "rows": [
+    {
+      "id": "fixture-item-1",
+      "row_index": 2,
+      "image_url": "https://19cleveland.example.com/wp-content/uploads/2024/03/rooftop-terrace-sunset-1024x683.jpg",
+      "search_key": "rooftop-terrace-sunset",
+      "search_key_fallback": null,
+      "url_kind": "uploads",
+      "stripped": [
+        "-1024x683"
+      ],
+      "derivation_warnings": [],
+      "searchable": true,
+      "new_alt": "Rooftop terrace at 19 Cleveland at sunset",
+      "old_alt": null,
+      "page_url": "https://19cleveland.example.com/rooftop-terrace",
+      "extra": {
+        "Notes": "hero image, priority"
+      },
+      "status": "applied",
+      "status_changed_at": "2026-07-26T11:40:00Z",
+      "verify_status": "match",
+      "verify_alt": "Rooftop terrace at 19 Cleveland at sunset",
+      "verify_http_status": 200,
+      "verify_detail": null,
+      "verify_checked_at": "2026-07-26T11:40:00Z",
+      "page_urls": [
+        "https://19cleveland.example.com/rooftop-terrace",
+        "https://19cleveland.example.com/events/summer-series",
+        "https://19cleveland.example.com/gallery",
+        "https://19cleveland.example.com/press"
+      ]
+    },
+    {
+      "id": "fixture-item-2",
+      "row_index": 3,
+      "image_url": "https://19cleveland.example.com/wp-content/uploads/2024/03/private-dining-room-scaled.jpg",
+      "search_key": "private-dining-room",
+      "search_key_fallback": null,
+      "url_kind": "uploads",
+      "stripped": [
+        "-scaled"
+      ],
+      "derivation_warnings": [],
+      "searchable": true,
+      "new_alt": "Private dining room set for twelve guests",
+      "old_alt": "Private dining room set for twelve guests",
+      "page_url": "https://19cleveland.example.com/private-dining",
+      "extra": {},
+      "status": "copied",
+      "status_changed_at": "2026-07-26T11:20:00Z",
+      "verify_status": "mismatch",
+      "verify_alt": "IMG_0042",
+      "verify_http_status": 200,
+      "verify_detail": null,
+      "verify_checked_at": "2026-07-26T11:21:00Z",
+      "page_urls": [
+        "https://19cleveland.example.com/private-dining"
+      ]
+    },
+    {
+      "id": "fixture-item-3",
+      "row_index": 4,
+      "image_url": "https://19cleveland.example.com/wp-content/uploads/2024/02/bar-counter-2-768x512.jpg.webp",
+      "search_key": "bar-counter-2",
+      "search_key_fallback": "bar-counter",
+      "url_kind": "uploads",
+      "stripped": [
+        ".webp",
+        "-768x512"
+      ],
+      "derivation_warnings": [
+        "possible_duplicate_counter"
+      ],
+      "searchable": true,
+      "new_alt": "Marble bar counter with brass stools",
+      "old_alt": null,
+      "page_url": "https://19cleveland.example.com/bar",
+      "extra": {},
+      "status": "pending",
+      "status_changed_at": null,
+      "verify_status": null,
+      "verify_alt": null,
+      "verify_http_status": null,
+      "verify_detail": null,
+      "verify_checked_at": null,
+      "page_urls": [
+        "https://19cleveland.example.com/bar"
+      ]
+    },
+    {
+      "id": "fixture-item-4",
+      "row_index": 5,
+      "image_url": "/assets/brand/logo.svg",
+      "search_key": "logo",
+      "search_key_fallback": null,
+      "url_kind": "theme_asset",
+      "stripped": [],
+      "derivation_warnings": [
+        "not_a_media_library_path"
+      ],
+      "searchable": false,
+      "new_alt": "19 Cleveland wordmark",
+      "old_alt": "",
+      "page_url": "https://19cleveland.example.com/",
+      "extra": {
+        "Notes": "hard-coded in header.php"
+      },
+      "status": "pending",
+      "status_changed_at": null,
+      "verify_status": "image_not_found_on_page",
+      "verify_alt": null,
+      "verify_http_status": 200,
+      "verify_detail": "The image is not in the page HTML — it may be rendered by JavaScript.",
+      "verify_checked_at": "2026-07-26T11:25:00Z",
+      "page_urls": [
+        "https://19cleveland.example.com/"
+      ]
+    },
+    {
+      "id": "fixture-item-5",
+      "row_index": 6,
+      "image_url": "https://i0.wp.com/cdn.other-agency.example/wp-content/uploads/2023/11/press-award-300x200.jpg?resize=300,200",
+      "search_key": "press-award",
+      "search_key_fallback": null,
+      "url_kind": "uploads",
+      "stripped": [
+        "-300x200"
+      ],
+      "derivation_warnings": [
+        "external_host",
+        "photon_proxy_unwrapped",
+        "resize_query_dropped"
+      ],
+      "searchable": true,
+      "new_alt": "19 Cleveland receiving the 2023 hospitality award",
+      "old_alt": null,
+      "page_url": null,
+      "extra": {},
+      "status": "pending",
+      "status_changed_at": null,
+      "verify_status": null,
+      "verify_alt": null,
+      "verify_http_status": null,
+      "verify_detail": null,
+      "verify_checked_at": null,
+      "page_urls": []
+    },
+    {
+      "id": "fixture-item-6",
+      "row_index": 7,
+      "image_url": "https://19cleveland.example.com/wp-content/uploads/2024/03/kitchen-team.jpg",
+      "search_key": "kitchen-team",
+      "search_key_fallback": null,
+      "url_kind": "uploads",
+      "stripped": [],
+      "derivation_warnings": [],
+      "searchable": true,
+      "new_alt": "",
+      "old_alt": "DSC_9912",
+      "page_url": "https://19cleveland.example.com/team",
+      "extra": {},
+      "status": "pending",
+      "status_changed_at": null,
+      "verify_status": null,
+      "verify_alt": null,
+      "verify_http_status": null,
+      "verify_detail": null,
+      "verify_checked_at": null,
+      "page_urls": [
+        "https://19cleveland.example.com/team"
+      ]
+    }
+  ]
+}

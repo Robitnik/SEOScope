@@ -17,7 +17,14 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
-    "Content-Security-Policy": "default-src 'self'",
+    # `img-src` розширено під task-27: інструмент Image Alt Text показує
+    # прев'ю картинок ПРЯМО з сайту клієнта (інакше оператор не бачить, що
+    # саме він підписує), а `default-src 'self'` блокував їх повністю.
+    # Розширено рівно для картинок: скрипти, стилі, fetch/XHR і фрейми
+    # лишаються під `'self'`, тож поверхня для виконання чужого коду не
+    # змінилась. Альтернатива — проксі-ендпоінт, який тягне чужі URL нашим
+    # сервером, — дала б SSRF-поверхню там, де її зараз немає.
+    "Content-Security-Policy": "default-src 'self'; img-src 'self' data: https: http:",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
 }
 

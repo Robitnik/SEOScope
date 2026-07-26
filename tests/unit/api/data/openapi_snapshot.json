@@ -440,6 +440,607 @@
         "title": "AlertsResponseDTO",
         "type": "object"
       },
+      "AltTextItemDTO": {
+        "properties": {
+          "derivation_warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Derivation Warnings",
+            "type": "array"
+          },
+          "extra": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Extra",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image_url": {
+            "title": "Image Url",
+            "type": "string"
+          },
+          "new_alt": {
+            "title": "New Alt",
+            "type": "string"
+          },
+          "old_alt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Alt"
+          },
+          "page_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Url"
+          },
+          "page_urls": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Page Urls",
+            "type": "array"
+          },
+          "row_index": {
+            "title": "Row Index",
+            "type": "integer"
+          },
+          "search_key": {
+            "title": "Search Key",
+            "type": "string"
+          },
+          "search_key_fallback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Key Fallback"
+          },
+          "searchable": {
+            "title": "Searchable",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "copied",
+              "applied",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Changed At"
+          },
+          "stripped": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Stripped",
+            "type": "array"
+          },
+          "url_kind": {
+            "enum": [
+              "uploads",
+              "theme_asset",
+              "plugin_asset",
+              "external",
+              "unknown"
+            ],
+            "title": "Url Kind",
+            "type": "string"
+          },
+          "verify_alt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verify Alt"
+          },
+          "verify_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verify Checked At"
+          },
+          "verify_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verify Detail"
+          },
+          "verify_http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verify Http Status"
+          },
+          "verify_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "match",
+                  "mismatch",
+                  "empty_alt",
+                  "image_not_found_on_page",
+                  "fetch_failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verify Status"
+          }
+        },
+        "required": [
+          "id",
+          "row_index",
+          "image_url",
+          "search_key",
+          "url_kind",
+          "searchable",
+          "new_alt",
+          "status"
+        ],
+        "title": "AltTextItemDTO",
+        "type": "object"
+      },
+      "AltTextItemStatusRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "pending",
+              "copied",
+              "applied",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "AltTextItemStatusRequest",
+        "type": "object"
+      },
+      "AltTextItemsPageDTO": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "report_id": {
+            "title": "Report Id",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AltTextItemDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "report_id",
+          "total",
+          "limit",
+          "offset",
+          "rows"
+        ],
+        "title": "AltTextItemsPageDTO",
+        "type": "object"
+      },
+      "AltTextReportCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "column_map": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "enum": [
+                "image_url",
+                "new_alt",
+                "page_url",
+                "old_alt"
+              ]
+            },
+            "title": "Column Map",
+            "type": "object"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheet"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "title",
+          "column_map"
+        ],
+        "title": "AltTextReportCreateRequest",
+        "type": "object"
+      },
+      "AltTextReportDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "column_map": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Column Map",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "skipped_count": {
+            "title": "Skipped Count",
+            "type": "integer"
+          },
+          "source_filename": {
+            "title": "Source Filename",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "xlsx",
+              "csv",
+              "tsv"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sheet"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Status Counts",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verifiable_count": {
+            "default": 0,
+            "title": "Verifiable Count",
+            "type": "integer"
+          },
+          "verify_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Verify Counts",
+            "type": "object"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source_filename",
+          "source_kind",
+          "row_count",
+          "skipped_count",
+          "status_counts",
+          "created_at",
+          "updated_at",
+          "column_map"
+        ],
+        "title": "AltTextReportDTO",
+        "type": "object"
+      },
+      "AltTextReportSummaryDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "skipped_count": {
+            "title": "Skipped Count",
+            "type": "integer"
+          },
+          "source_filename": {
+            "title": "Source Filename",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "xlsx",
+              "csv",
+              "tsv"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sheet"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Status Counts",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source_filename",
+          "source_kind",
+          "row_count",
+          "skipped_count",
+          "status_counts",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AltTextReportSummaryDTO",
+        "type": "object"
+      },
+      "AltTextUploadDTO": {
+        "description": "\u0429\u043e \u043c\u0438 \u043f\u043e\u0431\u0430\u0447\u0438\u043b\u0438 \u0443 \u0444\u0430\u0439\u043b\u0456 \u2014 \u0434\u043e \u0441\u0442\u0432\u043e\u0440\u0435\u043d\u043d\u044f \u0437\u0432\u0456\u0442\u0443.",
+        "properties": {
+          "default_sheet": {
+            "title": "Default Sheet",
+            "type": "string"
+          },
+          "delimiter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delimiter"
+          },
+          "encoding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encoding"
+          },
+          "sheets": {
+            "items": {
+              "$ref": "#/components/schemas/SheetPreviewDTO"
+            },
+            "title": "Sheets",
+            "type": "array"
+          },
+          "source_filename": {
+            "title": "Source Filename",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "xlsx",
+              "csv",
+              "tsv"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "source_filename",
+          "source_kind",
+          "sheets",
+          "default_sheet"
+        ],
+        "title": "AltTextUploadDTO",
+        "type": "object"
+      },
       "AnalyticsDatasetResponseDTO": {
         "properties": {
           "client_id": {
@@ -642,6 +1243,231 @@
         "title": "BetterDirection",
         "type": "string"
       },
+      "BlogPostDTO": {
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "modified_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified Date"
+          },
+          "published_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Date"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "word_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word Count"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "BlogPostDTO",
+        "type": "object"
+      },
+      "BlogPostsPageDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "q": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Q"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BlogPostDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "sort": {
+            "default": "date_desc",
+            "title": "Sort",
+            "type": "string"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_id",
+          "limit",
+          "offset",
+          "generated_at"
+        ],
+        "title": "BlogPostsPageDTO",
+        "type": "object"
+      },
+      "BlogsRunAcceptedDTO": {
+        "properties": {
+          "events_url": {
+            "title": "Events Url",
+            "type": "string"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status_url",
+          "events_url"
+        ],
+        "title": "BlogsRunAcceptedDTO",
+        "type": "object"
+      },
+      "BlogsSummaryDTO": {
+        "properties": {
+          "blog_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blog Url"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "has_run": {
+            "default": false,
+            "title": "Has Run",
+            "type": "boolean"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "post_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Count"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id",
+          "generated_at"
+        ],
+        "title": "BlogsSummaryDTO",
+        "type": "object"
+      },
       "CellProgressDTO": {
         "description": "Progress of one `(client, provider)` cell \u2014 PLAN \u00a79.1.",
         "properties": {
@@ -688,6 +1514,17 @@
             ],
             "title": "Finished At"
           },
+          "progress_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Message"
+          },
           "progress_percent": {
             "anyOf": [
               {
@@ -701,6 +1538,16 @@
           },
           "provider": {
             "$ref": "#/components/schemas/Provider"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quality"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "started_at": {
             "anyOf": [
@@ -779,6 +1626,9 @@
           "gbp_clicks_trend": {
             "$ref": "#/components/schemas/MetricTrendDTO"
           },
+          "gsc_clicks_trend": {
+            "$ref": "#/components/schemas/MetricTrendDTO"
+          },
           "health": {
             "$ref": "#/components/schemas/ClientHealthDTO"
           },
@@ -840,6 +1690,9 @@
           "slug": {
             "title": "Slug",
             "type": "string"
+          },
+          "tech_audit": {
+            "$ref": "#/components/schemas/TechAuditCardDTO"
           },
           "timezone": {
             "title": "Timezone",
@@ -2223,7 +3076,8 @@
           "semrush",
           "gsc",
           "reporting_ninja",
-          "tech_audit"
+          "tech_audit",
+          "blogs"
         ],
         "title": "Provider",
         "type": "string"
@@ -2495,6 +3349,59 @@
         "title": "Quality",
         "type": "string"
       },
+      "SheetPreviewDTO": {
+        "properties": {
+          "header_row_index": {
+            "title": "Header Row Index",
+            "type": "integer"
+          },
+          "headers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sample_rows": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Sample Rows",
+            "type": "array"
+          },
+          "suggested_column_map": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Suggested Column Map",
+            "type": "object"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "headers",
+          "sample_rows",
+          "header_row_index",
+          "suggested_column_map"
+        ],
+        "title": "SheetPreviewDTO",
+        "type": "object"
+      },
       "SourceMode": {
         "enum": [
           "auto",
@@ -2665,6 +3572,272 @@
           "period_kind"
         ],
         "title": "SyncJobRequest",
+        "type": "object"
+      },
+      "TechAuditBatchAcceptedDTO": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "events_url": {
+            "title": "Events Url",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "queued_count": {
+            "title": "Queued Count",
+            "type": "integer"
+          },
+          "skipped_active_client_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped Active Client Ids",
+            "type": "array"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status_url",
+          "events_url",
+          "queued_count"
+        ],
+        "title": "TechAuditBatchAcceptedDTO",
+        "type": "object"
+      },
+      "TechAuditBatchRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "const": "all",
+                "type": "string"
+              }
+            ],
+            "title": "Client Ids"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "max_pages": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Pages"
+          }
+        },
+        "required": [
+          "client_ids"
+        ],
+        "title": "TechAuditBatchRunRequest",
+        "type": "object"
+      },
+      "TechAuditCardDTO": {
+        "description": "Latest measured crawl state shown independently from metric health.\n\nCounts are finding rows from one crawl snapshot, after applying only the\nrechecks that belong to that same snapshot.  A failed/running newer attempt\nmay therefore keep the last valid counts visible instead of fabricating 0.",
+        "properties": {
+          "active_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Job Id"
+          },
+          "error_urls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Urls"
+          },
+          "fixed_findings": {
+            "default": 0,
+            "title": "Fixed Findings",
+            "type": "integer"
+          },
+          "max_pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Pages"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "open_errors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Errors"
+          },
+          "open_notices": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Notices"
+          },
+          "open_warnings": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Warnings"
+          },
+          "pages_crawled": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages Crawled"
+          },
+          "pages_discovered": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages Discovered"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quality"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "state": {
+            "default": "no_run",
+            "enum": [
+              "no_run",
+              "queued",
+              "running",
+              "complete",
+              "partial",
+              "truncated",
+              "failed",
+              "stale"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "total_findings": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Findings"
+          },
+          "unreachable_findings": {
+            "default": 0,
+            "title": "Unreachable Findings",
+            "type": "integer"
+          }
+        },
+        "title": "TechAuditCardDTO",
         "type": "object"
       },
       "TechAuditCategoryDTO": {
@@ -3002,6 +4175,22 @@
             ],
             "title": "Cms"
           },
+          "error_urls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Urls"
+          },
+          "fixed_findings": {
+            "default": 0,
+            "title": "Fixed Findings",
+            "type": "integer"
+          },
           "generated_at": {
             "format": "date-time",
             "title": "Generated At",
@@ -3034,6 +4223,39 @@
               }
             ],
             "title": "Observed At"
+          },
+          "open_errors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Errors"
+          },
+          "open_notices": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Notices"
+          },
+          "open_warnings": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Warnings"
           },
           "pages_crawled": {
             "anyOf": [
@@ -3068,11 +4290,27 @@
             ],
             "title": "Run Id"
           },
+          "total_findings": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Findings"
+          },
           "totals": {
             "additionalProperties": true,
             "default": {},
             "title": "Totals",
             "type": "object"
+          },
+          "unreachable_findings": {
+            "default": 0,
+            "title": "Unreachable Findings",
+            "type": "integer"
           },
           "warnings": {
             "default": [],
@@ -3088,6 +4326,95 @@
           "generated_at"
         ],
         "title": "TechAuditSummaryDTO",
+        "type": "object"
+      },
+      "ToolCardDTO": {
+        "description": "\u041e\u0434\u0438\u043d \u0431\u043b\u043e\u043a \u043d\u0430 \u0441\u0442\u043e\u0440\u0456\u043d\u0446\u0456 Tools.",
+        "properties": {
+          "icon": {
+            "title": "Icon",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          },
+          "stat_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stat Label"
+          },
+          "stat_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stat Value"
+          },
+          "status": {
+            "default": "available",
+            "enum": [
+              "available",
+              "coming_soon"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "summary",
+          "route",
+          "icon"
+        ],
+        "title": "ToolCardDTO",
+        "type": "object"
+      },
+      "ToolsCatalogDTO": {
+        "properties": {
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCardDTO"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tools"
+        ],
+        "title": "ToolsCatalogDTO",
         "type": "object"
       },
       "ValidationError": {
@@ -4395,6 +5722,314 @@
         "summary": "Get Reporting Ninja Dataset",
         "tags": [
           "analytics"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/blogs/export.csv": {
+      "get": {
+        "operationId": "export_blogs_csv_api_v1_clients__client_id__blogs_export_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Blogs Csv",
+        "tags": [
+          "blogs"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/blogs/export.xlsx": {
+      "get": {
+        "operationId": "export_blogs_xlsx_api_v1_clients__client_id__blogs_export_xlsx_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Blogs Xlsx",
+        "tags": [
+          "blogs"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/blogs/latest": {
+      "get": {
+        "description": "Post count + blog URL of the newest blog crawl for this client.",
+        "operationId": "get_blogs_latest_api_v1_clients__client_id__blogs_latest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlogsSummaryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Blogs Latest",
+        "tags": [
+          "blogs"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/blogs/posts": {
+      "get": {
+        "description": "Posts of the newest crawl, searchable and sortable.",
+        "operationId": "get_blogs_posts_api_v1_clients__client_id__blogs_posts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "date_desc",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlogPostsPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Blogs Posts",
+        "tags": [
+          "blogs"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/blogs/runs": {
+      "post": {
+        "description": "Queue a full re-crawl of this client's blog (worker picks it up).",
+        "operationId": "start_blogs_run_api_v1_clients__client_id__blogs_runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlogsRunAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Blogs Run",
+        "tags": [
+          "blogs"
         ]
       }
     },
@@ -5725,6 +7360,764 @@
         "summary": "Retry Sync Job",
         "tags": [
           "jobs"
+        ]
+      }
+    },
+    "/api/v1/tech-audit/runs": {
+      "post": {
+        "description": "Queue one crawl per selected active client in a shared batch.",
+        "operationId": "start_tech_audit_batch_api_v1_tech_audit_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TechAuditBatchRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TechAuditBatchAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Tech Audit Batch",
+        "tags": [
+          "tech-audit"
+        ]
+      }
+    },
+    "/api/v1/tools": {
+      "get": {
+        "operationId": "list_tools_api_v1_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolsCatalogDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tools",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/alt-text/reports": {
+      "get": {
+        "operationId": "list_reports_api_v1_tools_alt_text_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AltTextReportSummaryDTO"
+                  },
+                  "title": "Response List Reports Api V1 Tools Alt Text Reports Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Reports",
+        "tags": [
+          "tools"
+        ]
+      },
+      "post": {
+        "operationId": "create_report_api_v1_tools_alt_text_reports_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AltTextReportCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AltTextReportDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Create Report",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/alt-text/reports/{report_id}": {
+      "delete": {
+        "operationId": "delete_report_api_v1_tools_alt_text_reports__report_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Report",
+        "tags": [
+          "tools"
+        ]
+      },
+      "get": {
+        "operationId": "get_report_api_v1_tools_alt_text_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AltTextReportDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Report",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/alt-text/reports/{report_id}/export.csv": {
+      "get": {
+        "operationId": "export_csv_api_v1_tools_alt_text_reports__report_id__export_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Csv",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/alt-text/reports/{report_id}/export.xlsx": {
+      "get": {
+        "operationId": "export_xlsx_api_v1_tools_alt_text_reports__report_id__export_xlsx_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Xlsx",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/alt-text/reports/{report_id}/items": {
+      "get": {
+        "operationId": "list_items_api_v1_tools_alt_text_reports__report_id__items_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "url_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Url Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "verify",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Verify"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_page",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Page"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AltTextItemsPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Items",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/alt-text/reports/{report_id}/items/{item_id}": {
+      "patch": {
+        "description": "\u041f\u043e\u0437\u043d\u0430\u0447\u0438\u0442\u0438 \u043f\u0440\u043e\u0433\u0440\u0435\u0441 \u0440\u044f\u0434\u043a\u0430. \u0406\u0434\u0435\u043c\u043f\u043e\u0442\u0435\u043d\u0442\u043d\u043e: \u0442\u043e\u0439 \u0441\u0430\u043c\u0438\u0439 \u0441\u0442\u0430\u0442\u0443\u0441 \u2014 \u0442\u043e\u0439 \u0441\u0430\u043c\u0438\u0439 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442.",
+        "operationId": "set_item_status_api_v1_tools_alt_text_reports__report_id__items__item_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AltTextItemStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AltTextItemDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Item Status",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/alt-text/reports/{report_id}/items/{item_id}/verify": {
+      "post": {
+        "description": "\u041f\u0435\u0440\u0435\u0432\u0456\u0440\u0438\u0442\u0438 \u0441\u0442\u043e\u0440\u0456\u043d\u043a\u0443 **\u0431\u0435\u0437 \u043a\u0435\u0448\u0443** \u0439 \u0437\u0431\u0435\u0440\u0435\u0433\u0442\u0438 \u0432\u0435\u0440\u0434\u0438\u043a\u0442.\n\n\u0417\u0430\u043f\u0438\u0442 \u0456\u0434\u0435 \u0437 \u0440\u0430\u043d\u0434\u043e\u043c\u043d\u0438\u043c cache-buster-\u043e\u043c \u0456 `no-cache`-\u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0430\u043c\u0438, \u0431\u043e \u0432\n\u043a\u043b\u0456\u0454\u043d\u0442\u0456\u0432 \u043a\u0456\u043b\u044c\u043a\u0430 \u0448\u0430\u0440\u0456\u0432 \u043a\u0435\u0448\u0443. \u0426\u0435 \u0437\u043c\u0435\u043d\u0448\u0443\u0454, \u0430\u043b\u0435 \u043d\u0435 \u043f\u0440\u0438\u0431\u0438\u0440\u0430\u0454 \u0440\u0438\u0437\u0438\u043a edge-\u043a\u0435\u0448\u0443 \u2014\n\u0442\u043e\u043c\u0443 UI \u043f\u043e\u043a\u0430\u0437\u0443\u0454 \u0447\u0430\u0441 \u043f\u0435\u0440\u0435\u0432\u0456\u0440\u043a\u0438 \u0439 \u043f\u0440\u044f\u043c\u043e \u043f\u0440\u043e \u0446\u0435 \u043f\u043e\u043f\u0435\u0440\u0435\u0434\u0436\u0430\u0454.",
+        "operationId": "verify_item_api_v1_tools_alt_text_reports__report_id__items__item_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AltTextItemDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Item",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/alt-text/uploads": {
+      "post": {
+        "description": "\u041f\u0440\u0438\u0439\u043d\u044f\u0442\u0438 \u0442\u0430\u0431\u043b\u0438\u0446\u044e \u0430\u0443\u0434\u0438\u0442\u0443 \u044f\u043a \u0441\u0438\u0440\u0456 \u0431\u0430\u0439\u0442\u0438 \u0442\u0456\u043b\u0430 \u0437\u0430\u043f\u0438\u0442\u0443.\n\n\u0411\u0435\u0437 `multipart/form-data`: \u0444\u0430\u0439\u043b \u043e\u0434\u0438\u043d, \u0456\u043d\u0448\u0438\u0445 \u043f\u043e\u043b\u0456\u0432 \u0443 \u0444\u043e\u0440\u043c\u0456 \u043d\u0435\u043c\u0430\u0454, \u0442\u043e\u0436\nmultipart \u043d\u0456\u0447\u043e\u0433\u043e \u043d\u0435 \u0434\u0430\u0454, \u0437\u0430\u0442\u0435 \u0432\u0438\u043c\u0430\u0433\u0430\u0432 \u0431\u0438 \u0437\u0430\u043b\u0435\u0436\u043d\u043e\u0441\u0442\u0456 `python-multipart`\n(\u0442\u043e\u0439 \u0441\u0430\u043c\u0438\u0439 \u0432\u0438\u0431\u0456\u0440, \u0449\u043e \u0439 `upload_logo` \u0432 `api/clients.py`). \u0406\u043c\u02bc\u044f \u0444\u0430\u0439\u043b\u0443 \u2014\n\u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u043e\u043c `X-Filename`, \u0432\u043e\u043d\u043e \u043f\u043e\u0442\u0440\u0456\u0431\u043d\u0435 \u043b\u0438\u0448\u0435 \u0434\u043b\u044f \u043f\u043e\u043a\u0430\u0437\u0443 \u0439 \u043f\u0456\u0434\u043a\u0430\u0437\u043a\u0438 \u0444\u043e\u0440\u043c\u0430\u0442\u0443.",
+        "operationId": "upload_source_api_v1_tools_alt_text_uploads_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "x_filename",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AltTextUploadDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Source",
+        "tags": [
+          "tools"
         ]
       }
     },

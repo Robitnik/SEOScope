@@ -9,12 +9,13 @@
     <link rel="icon" href="/assets/brand/logo.svg" type="image/svg+xml">
     <link rel="preload" href="/assets/fonts/league-spartan-black.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/assets/brand/ribbon.webp" as="image" type="image/webp">
-    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260723-audit1">
-    <link rel="stylesheet" href="/css/tokens.css?v=20260723-audit1">
-    <link rel="stylesheet" href="/css/app.css?v=20260723-audit1">
-    <link rel="stylesheet" href="/css/client-page.css?v=20260723-audit1">
+    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260724-blogs1">
+    <link rel="stylesheet" href="/css/tokens.css?v=20260724-blogs1">
+    <link rel="stylesheet" href="/css/app.css?v=20260724-bulkaudit2">
+    <link rel="stylesheet" href="/css/client-page.css?v=20260724-bulkaudit2">
+    <link rel="stylesheet" href="/css/tools.css?v=20260726-tools1">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260723-audit1"></script>
+    <script type="module" src="/js/router.js?v=20260726-tools1"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -27,11 +28,25 @@
           <img src="/assets/brand/logo.svg" width="205" height="42" alt="The Yovth">
           <span class="product-name">Client Pulse</span>
         </div>
+        <nav class="app-nav" aria-label="Sections">
+          <a href="/" data-nav="dashboard">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-layout-grid"></use></svg>
+            <span>Clients</span>
+          </a>
+          <a href="#/tools" data-nav="tools">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-tool"></use></svg>
+            <span>Tools</span>
+          </a>
+        </nav>
         <div class="header-actions" id="dashboard-header-actions" hidden>
           <div class="connection-status" id="connection-status" role="status">
             <span class="status-signal" aria-hidden="true"></span>
             <span>API online</span>
           </div>
+          <button class="button button--audit" id="audit-all-button" type="button">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-bug"></use></svg>
+            Run audits
+          </button>
           <button class="button button--primary" id="sync-all-button" type="button">
             <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-refresh"></use></svg>
             Refresh data
@@ -112,6 +127,10 @@
     <main class="app-main" id="client-page-root" hidden></main>
 
     <main class="app-main" id="ahrefs-page-root" hidden></main>
+
+    <main class="app-main" id="blogs-page-root" hidden></main>
+
+    <main class="app-main" id="tools-page-root" hidden></main>
     </div>
 
     <div class="job-dock" id="job-dock" hidden>

@@ -319,6 +319,17 @@ function writeMockLogins(logins) { localStorage.setItem(MOCK_LOGINS_KEY, JSON.st
 
 function mockCellStatus(cell, elapsed) {
   if (cell.status === "not_configured" || cell.status === "cancelled") return cell;
+  if (cell.provider === "tech_audit") {
+    // Technical audits share one crawler lane: the next site starts only after
+    // the previous site reaches a terminal state.
+    const offset = cell.client_index * 1800;
+    const progress = Math.max(0, Math.min(100, Math.floor((elapsed - offset) / 16)));
+    if (progress <= 0) return { ...cell, status: "queued", progress_percent: 0, current_stage: "queued" };
+    const stages = ["preflight", "crawl", "detect", "persist"];
+    const stage = stages[Math.min(stages.length - 1, Math.floor(progress / 25))];
+    if (progress >= 100) return { ...cell, status: "succeeded", quality: "complete", progress_percent: 100, current_stage: "complete" };
+    return { ...cell, status: "running", progress_percent: progress, current_stage: stage };
+  }
   const offset = cell.provider_index * 300 + cell.client_index * 1350;
   if (cell.provider === AUTH_DEMO_PROVIDER && cell.client_index === AUTH_DEMO_CLIENT_INDEX) {
     return mockAuthDemoCellStatus(cell, elapsed, offset);
@@ -513,6 +524,40 @@ export async function startTechAudit(clientId) {
   return request(`/clients/${clientId}/tech-audit/runs`, { method: "POST", body: "{}" });
 }
 
+export async function startTechAuditBatch(payload, dashboard) {
+  if (!FIXTURE_MODE) {
+    return request("/tech-audit/runs", { method: "POST", body: JSON.stringify(payload) });
+  }
+  await wait(260);
+  const id = `fixture-audit-batch-${Date.now()}`;
+  const clientIds = payload.client_ids === "all"
+    ? dashboard.clients.map((client) => client.client_id)
+    : payload.client_ids;
+  const cells = clientIds.map((clientId, clientIndex) => ({
+    client_id: clientId,
+    provider: "tech_audit",
+    provider_index: 0,
+    client_index: clientIndex,
+    status: "queued",
+    progress_percent: 0,
+    current_stage: "queued",
+  }));
+  const jobs = readMockJobs();
+  jobs[id] = {
+    id, batch_id: id, job_id: id, status: "queued", started_at: Date.now(),
+    cells, client_ids: clientIds, providers: ["tech_audit"],
+  };
+  writeMockJobs(jobs);
+  return {
+    batch_id: id,
+    job_id: null,
+    status_url: `/api/v1/sync-jobs/${id}`,
+    events_url: `/api/v1/sync-jobs/${id}/events`,
+    queued_count: cells.length,
+    skipped_active_client_ids: [],
+  };
+}
+
 export async function recheckTechAuditFindings(clientId, findings) {
   if (FIXTURE_MODE) {
     await wait(300);
@@ -532,4 +577,243 @@ export function techAuditExportUrl(clientId) {
   return `${API_ROOT}/clients/${clientId}/tech-audit/export.xlsx`;
 }
 
+// --- Client Blogs (machine-only inventory) ----------------------------------
+
+export async function getBlogsLatest(clientId) {
+  if (FIXTURE_MODE) {
+    if (FIXTURE_MODE === "error") { await wait(300); throw new Error("Fixture connection error"); }
+    await wait(180);
+    // `blogs-empty` (not `empty`) so the "no crawl yet" state can be shown on a
+    // client that otherwise has data — `empty` blanks the whole dashboard.
+    return fixture(FIXTURE_MODE === "blogs-empty" ? "blogs-empty" : "blogs-latest");
+  }
+  return request(`/clients/${clientId}/blogs/latest`, {}, "blogs-latest");
+}
+
+export async function getBlogsPosts(clientId, { q, sort = "date_desc", limit = 25, offset = 0 } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(180);
+    const bundle = await fixture("blogs-posts");
+    let rows = bundle.rows || [];
+    if (q) {
+      const needle = q.trim().toLocaleLowerCase("en-US");
+      rows = rows.filter((row) => `${row.url} ${row.title}`.toLocaleLowerCase("en-US").includes(needle));
+    }
+    const sorted = [...rows];
+    if (sort === "date_asc") sorted.sort((a, b) => (a.published_date || "").localeCompare(b.published_date || ""));
+    else if (sort === "words_desc") sorted.sort((a, b) => (b.word_count ?? 0) - (a.word_count ?? 0));
+    else if (sort === "words_asc") sorted.sort((a, b) => (a.word_count ?? 0) - (b.word_count ?? 0));
+    else if (sort === "title") sorted.sort((a, b) => a.title.localeCompare(b.title, "en-US"));
+    else sorted.sort((a, b) => (b.published_date || "").localeCompare(a.published_date || ""));
+    return { ...bundle, q: q || null, sort, total: sorted.length, limit, offset, rows: sorted.slice(offset, offset + limit) };
+  }
+  const params = new URLSearchParams({ sort, limit: String(limit), offset: String(offset) });
+  if (q) params.set("q", q);
+  return request(`/clients/${clientId}/blogs/posts?${params}`, {}, "blogs-posts");
+}
+
+export async function startBlogsRun(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(300);
+    const id = `fixture-blogs-${Date.now()}`;
+    return { job_id: id, status_url: `/api/v1/sync-jobs/${id}`, events_url: `/api/v1/sync-jobs/${id}/events` };
+  }
+  return request(`/clients/${clientId}/blogs/runs`, { method: "POST", body: "{}" });
+}
+
+// Binary downloads: deliberately NOT routed through `request()`, which sets
+// `Accept: application/json` and parses the body. The UI links straight to them.
+export function blogsExportCsvUrl(clientId) {
+  return `${API_ROOT}/clients/${clientId}/blogs/export.csv`;
+}
+
+export function blogsExportXlsxUrl(clientId) {
+  return `${API_ROOT}/clients/${clientId}/blogs/export.xlsx`;
+}
+
 export function isFixtureMode() { return Boolean(FIXTURE_MODE); }
+
+// --- Tools (task-27) --------------------------------------------------------
+
+// Fixture mode keeps a mutable in-memory copy of the tool's rows so the whole
+// operator loop (copy → status, verify → verdict) is exercisable without a
+// backend — that is what the e2e run drives.
+let toolsFixture = null;
+const TOOLS_FIXTURE_KEY = "yovth:alt-text-fixture";
+
+async function altTextFixture() {
+  if (toolsFixture === null) {
+    // Прогрес у демо-режимі переживає перезавантаження, як і в реальному
+    // режимі (де він у БД) — інакше фікстура показувала б поведінку, якої в
+    // продукті немає. `sessionStorage`, а не `localStorage`: демо-стан не
+    // має жити довше за вкладку.
+    const stored = sessionStorage.getItem(TOOLS_FIXTURE_KEY);
+    if (stored) {
+      toolsFixture = JSON.parse(stored);
+    } else {
+      const [report, items] = await Promise.all([fixture("alt-text-report"), fixture("alt-text-items")]);
+      toolsFixture = { report: structuredClone(report), rows: structuredClone(items.rows) };
+    }
+  }
+  return toolsFixture;
+}
+
+function saveAltTextFixture() {
+  sessionStorage.setItem(TOOLS_FIXTURE_KEY, JSON.stringify(toolsFixture));
+}
+
+function altTextFixtureCounts(rows) {
+  const counts = { pending: 0, copied: 0, applied: 0, skipped: 0 };
+  rows.forEach((row) => { counts[row.status] = (counts[row.status] || 0) + 1; });
+  return counts;
+}
+
+export async function getToolsCatalog() {
+  if (FIXTURE_MODE) {
+    if (FIXTURE_MODE === "error") { await wait(300); throw new Error("Fixture connection error"); }
+    await wait(120);
+    return fixture(FIXTURE_MODE === "tools-empty" ? "tools-catalog-empty" : "tools-catalog");
+  }
+  return request("/tools", {}, "tools-catalog");
+}
+
+export async function getAltTextReports() {
+  if (FIXTURE_MODE) {
+    await wait(140);
+    if (FIXTURE_MODE === "tools-empty") return [];
+    const state = await altTextFixture();
+    return [{ ...state.report, status_counts: altTextFixtureCounts(state.rows) }];
+  }
+  return request("/tools/alt-text/reports", {}, "alt-text-reports");
+}
+
+export async function getAltTextReport(reportId) {
+  if (FIXTURE_MODE) {
+    await wait(140);
+    const state = await altTextFixture();
+    return { ...state.report, status_counts: altTextFixtureCounts(state.rows) };
+  }
+  return request(`/tools/alt-text/reports/${reportId}`, {}, "alt-text-report");
+}
+
+export async function getAltTextItems(reportId, { q, status, urlKind, verify, limit = 50, offset = 0 } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(140);
+    const state = await altTextFixture();
+    const needle = (q || "").trim().toLocaleLowerCase("en-US");
+    const rows = state.rows.filter((row) => {
+      const matchesQuery = !needle
+        || `${row.image_url} ${row.new_alt} ${row.search_key}`.toLocaleLowerCase("en-US").includes(needle);
+      return matchesQuery
+        && (!status || row.status === status)
+        && (!urlKind || row.url_kind === urlKind)
+        && (!verify || row.verify_status === verify);
+    });
+    return { report_id: reportId, total: rows.length, limit, offset, rows: rows.slice(offset, offset + limit) };
+  }
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+  if (urlKind) params.set("url_kind", urlKind);
+  if (verify) params.set("verify", verify);
+  return request(`/tools/alt-text/reports/${reportId}/items?${params}`, {}, "alt-text-items");
+}
+
+export async function uploadAltTextSource(file) {
+  if (FIXTURE_MODE) {
+    await wait(400);
+    return fixture("alt-text-upload");
+  }
+  // Raw bytes, not multipart: one file, no other form fields — the same choice
+  // the logo upload made server-side (`app/api/clients.py`).
+  const response = await fetch(`${API_ROOT}/tools/alt-text/uploads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream", "X-Filename": file.name, Accept: "application/json" },
+    body: file,
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const error = new Error(payload.detail?.message || `HTTP ${response.status}`);
+    error.status = response.status;
+    error.code = payload.detail?.error_code;
+    throw error;
+  }
+  return response.json();
+}
+
+export async function createAltTextReport(payload, { force = false } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(400);
+    const state = await altTextFixture();
+    return { ...state.report, title: payload.title, status_counts: altTextFixtureCounts(state.rows) };
+  }
+  const query = force ? "?force=true" : "";
+  const response = await fetch(`${API_ROOT}/tools/alt-text/reports${query}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const detail = (await response.json().catch(() => ({}))).detail || {};
+    const error = new Error(detail.message || `HTTP ${response.status}`);
+    error.status = response.status;
+    error.code = detail.error_code;
+    // `report_exists` carries the id of the report already holding this file —
+    // the UI offers "Open existing" instead of a dead end.
+    error.details = detail.details || {};
+    throw error;
+  }
+  return response.json();
+}
+
+export async function setAltTextItemStatus(reportId, itemId, status) {
+  if (FIXTURE_MODE) {
+    await wait(120);
+    const state = await altTextFixture();
+    const row = state.rows.find((item) => item.id === itemId);
+    row.status = status;
+    row.status_changed_at = status === "pending" ? null : new Date().toISOString();
+    saveAltTextFixture();
+    return { ...row };
+  }
+  return request(`/tools/alt-text/reports/${reportId}/items/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  }, `alt-text-status-${itemId}`);
+}
+
+export async function verifyAltTextItem(reportId, itemId) {
+  if (FIXTURE_MODE) {
+    await wait(500);
+    const state = await altTextFixture();
+    const row = state.rows.find((item) => item.id === itemId);
+    // Deterministic demo verdict so the e2e run can assert on it.
+    const verdict = row.new_alt === row.old_alt ? "mismatch" : "match";
+    row.verify_status = verdict;
+    row.verify_alt = verdict === "match" ? row.new_alt : "IMG_0042";
+    row.verify_http_status = 200;
+    row.verify_checked_at = new Date().toISOString();
+    if (verdict === "match") { row.status = "applied"; row.status_changed_at = row.verify_checked_at; }
+    saveAltTextFixture();
+    return { ...row };
+  }
+  return request(`/tools/alt-text/reports/${reportId}/items/${itemId}/verify`, {
+    method: "POST",
+    body: "{}",
+  }, `alt-text-verify-${itemId}`);
+}
+
+export async function deleteAltTextReport(reportId) {
+  if (FIXTURE_MODE) { await wait(200); return null; }
+  return request(`/tools/alt-text/reports/${reportId}`, { method: "DELETE" });
+}
+
+// Binary downloads: deliberately NOT routed through `request()`, which sets
+// `Accept: application/json` and parses the body. The UI links straight to them.
+export function altTextExportCsvUrl(reportId) {
+  return `${API_ROOT}/tools/alt-text/reports/${reportId}/export.csv`;
+}
+
+export function altTextExportXlsxUrl(reportId) {
+  return `${API_ROOT}/tools/alt-text/reports/${reportId}/export.xlsx`;
+}

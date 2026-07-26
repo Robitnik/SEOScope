@@ -1,0 +1,381 @@
+/* Tools hub + Image Alt Text tool (task-27).
+ *
+ * Тільки наявні токени з tokens.css — жодних нових кольорів/радіусів. Мова
+ * форми та ж, що на сторінці клієнта: пряма сітка, лінії-розділювачі, один
+ * оранжевий акцент на видимій межі панелі, tabular-nums на числах.
+ */
+
+/* Глобальна навігація в masthead. З'явилася разом із другою верхньорівневою
+ * сторінкою; на десктопі й мобілці лишається видимою (без hamburger). */
+/* Сегментований контрол, а не рядок посилань: та сама форма, що в
+ * `.period-panel__kinds` / `.tablist` — 1px-сітка на лінії, активний сегмент
+ * інверсний. Іконка + текст (ніколи іконка сама, AGENTS.md §7). */
+.app-nav {
+  display: flex; gap: 1px; margin-left: 24px; padding: 1px;
+  background: var(--line); border: 1px solid var(--line); width: fit-content;
+}
+.app-nav a {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 15px;
+  background: var(--canvas-raised); color: var(--ink-muted); text-decoration: none;
+  font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  transition: color .14s ease, background-color .14s ease;
+}
+.app-nav a .icon { width: 16px; height: 16px; }
+.app-nav a:hover { background: var(--surface-strong); color: var(--ink); }
+.app-nav a[aria-current="page"] { background: var(--ink); color: var(--canvas); }
+.app-nav a[aria-current="page"] .icon { color: var(--accent); }
+.app-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Той самий урок, що в task-26: сторінка-flex-column інакше дає горизонтальний
+ * page-scroll на 390px попри коректно клипований `.table-scroll`. */
+#tools-page-root { overflow-x: hidden; display: grid; gap: 22px; min-width: 0; }
+#tools-page-root > * { min-width: 0; }
+
+/* --- хаб ------------------------------------------------------------------- */
+
+.tools-intro { display: grid; gap: 10px; }
+.tools-intro h1 { font-size: clamp(30px, 5vw, 52px); }
+.tools-lead { margin: 0; max-width: 68ch; color: var(--ink-muted); }
+.tools-search { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 6px; }
+.tools-search .search-field { position: relative; min-width: 280px; flex: 0 1 380px; }
+/* Лічильник результатів тримаємо ПОРУЧ із полем пошуку: `.result-count` в
+ * app.css має `margin-left: auto` під фільтр-бар дашборду. */
+.tools-search .result-count { margin: 0; }
+.tools-search .search-field .icon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  width: 17px; height: 17px; color: var(--ink-dim);
+}
+.tools-search .search-field input {
+  width: 100%; min-height: 44px; padding: 9px 12px 9px 36px; font-size: 16px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+}
+
+.tools-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+
+.tool-card {
+  position: relative; display: grid; gap: 16px; grid-template-rows: auto 1fr auto; min-width: 0;
+  padding: 22px; background: var(--surface); border: 1px solid var(--line);
+  border-top: 3px solid var(--accent); color: var(--ink); text-decoration: none;
+  transition: border-color .16s ease, transform .16s ease, background-color .16s ease;
+}
+.tool-card:hover { border-color: var(--line-accent); background: var(--surface-strong); transform: translateY(-2px); }
+.tool-card:hover .tool-card__open { color: var(--ink); }
+.tool-card:hover .tool-card__open .icon { transform: translateX(3px); }
+.tool-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Квадрат-знак замість голої іконки: єдина «жирна» деталь блока (AGENTS.md §2
+ * — сміливість витрачаємо один раз на вигляд). */
+.tool-card__mark {
+  display: grid; place-items: center; width: 46px; height: 46px;
+  border: 1px solid var(--line-accent); background: var(--canvas); color: var(--accent);
+}
+.tool-card__mark .icon { width: 24px; height: 24px; }
+.tool-card__body { display: grid; gap: 8px; min-width: 0; }
+.tool-card__summary { color: var(--ink-muted); font-size: 13px; }
+.tool-card__tags { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 0; padding: 0; }
+.tool-card__tags li {
+  padding: 2px 7px; border: 1px solid var(--line); color: var(--ink-dim);
+  font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+}
+.tool-card__foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-top: 12px; border-top: 1px solid var(--line-soft);
+}
+.tool-card__stat { color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tool-card__stat--none { color: var(--ink-dim); }
+.tool-card__open {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--accent);
+  font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+}
+.tool-card__open .icon { transition: transform .16s ease; }
+.tool-card__name { font-family: var(--font-display); font-size: 25px; line-height: 1.05; text-transform: uppercase; }
+
+/* --- список звітів -------------------------------------------------------- */
+
+.tool-table tbody tr:hover { background: var(--canvas-raised); }
+.report-row__source { display: block; margin-top: 3px; color: var(--ink-dim); font-size: 11px; overflow-wrap: anywhere; }
+.report-row__client { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-muted); }
+.report-row__client .icon { color: var(--ink-dim); }
+.report-row__date { color: var(--ink-muted); white-space: nowrap; }
+.report-row__progress { min-width: 170px; }
+.report-row__counts { display: block; margin-top: 5px; color: var(--ink-muted); font-size: 11px; }
+.report-row__counts strong { color: var(--ink); }
+/* Дві реальні частки в одній смузі: скопійовано (світле) і підтверджено на
+ * сторінці (акцент). Жодних анімованих відсотків — тільки completed/total. */
+.meter {
+  position: relative; display: block; width: 100%; max-width: 160px; height: 6px;
+  background: var(--line-soft); overflow: hidden;
+}
+.meter__done, .meter__applied { position: absolute; inset: 0 auto 0 0; }
+.meter__done { background: var(--info); opacity: .7; }
+.meter__applied { background: var(--accent); }
+
+.tools-empty, .tool-empty {
+  display: flex; align-items: center; gap: 14px; margin: 0; padding: 26px;
+  border: 1px solid var(--line); border-left: 3px solid var(--ink-dim);
+  background: var(--surface); color: var(--ink-muted);
+}
+.tools-empty .icon, .tool-empty .icon { width: 24px; height: 24px; color: var(--ink-dim); flex: 0 0 auto; }
+.link-button {
+  border: 0; padding: 0; background: none; color: var(--accent); font: inherit;
+  text-decoration: underline; cursor: pointer;
+}
+
+/* --- спільне для інструмента ---------------------------------------------- */
+
+.tool-header { display: grid; gap: 10px; }
+.tool-header h1 { font-size: clamp(26px, 4vw, 44px); }
+.tool-lead { margin: 0; max-width: 78ch; color: var(--ink-muted); font-size: 13px; }
+.tool-lead code { color: var(--ink); font-size: 12px; }
+.tool-meta { display: flex; flex-wrap: wrap; gap: 16px; margin: 0; color: var(--ink-muted); font-size: 12px; }
+.tool-meta span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.tool-meta .icon { color: var(--ink-dim); }
+.icon--tiny { width: 14px; height: 14px; }
+
+.tool-panel { border: 1px solid var(--line); border-top: 3px solid var(--accent); background: var(--surface); }
+.tool-panel__body { padding: 18px 20px 20px; }
+.tool-panel__hint { margin: 4px 0 0; color: var(--ink-muted); font-size: 11px; }
+
+.tool-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.tool-table th {
+  padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--ink-dim);
+  font-size: 10px; letter-spacing: .06em; text-transform: uppercase; text-align: left;
+  background: var(--surface); position: sticky; top: 0; z-index: 1;
+}
+.tool-table td { padding: 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.tool-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tool-table td.num small { display: block; color: var(--ink-dim); font-size: 10px; }
+.tool-table td.muted, .tool-table .muted { color: var(--ink-dim); }
+.tool-table__main a { color: var(--ink); font-weight: 700; }
+.tool-table__main a:hover { color: var(--accent); }
+.tool-table__source { color: var(--ink-muted); overflow-wrap: anywhere; }
+/* `text-align` + inline-flex діти, а НЕ `display:flex` на `<td>` — інакше
+ * клітинка перестає бути table-cell і колонки злипаються. */
+.tool-table__actions { white-space: nowrap; text-align: right; }
+.tool-table__actions > * { display: inline-flex; vertical-align: middle; width: auto; }
+.tool-table__actions > * + * { margin-left: 8px; }
+.tool-table__actions .button { gap: 6px; text-decoration: none; }
+.tool-table--preview td { color: var(--ink-muted); max-width: 260px; overflow-wrap: anywhere; }
+
+/* --- крок 1/2: завантаження і мапінг -------------------------------------- */
+
+.at-upload { display: grid; gap: 8px; max-width: 620px; }
+.at-file { display: grid; gap: 8px; cursor: pointer; }
+.at-file__label { color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+/* Не `display:none` і не `visibility:hidden`: інпут мусить лишитися в
+ * tab-порядку, інакше клавіатурою файл не вибрати. */
+.at-file__input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.at-file__control { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.at-file__control .button { pointer-events: none; }
+.at-file__control .icon { width: 16px; height: 16px; }
+.at-file__name { color: var(--ink-muted); font-size: 12px; overflow-wrap: anywhere; }
+.at-file:hover .button { background: var(--accent-hover); }
+.at-file:focus-within .button { outline: 2px solid var(--ink); outline-offset: 2px; }
+.form-error:empty { display: none; }
+.form-error { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; color: var(--danger); font-size: 12px; }
+
+.at-map { display: grid; gap: 18px; }
+.at-map__file {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0; padding: 12px 14px;
+  border: 1px solid var(--line); background: var(--canvas-raised); color: var(--ink);
+}
+.at-map__file .icon { width: 20px; height: 20px; color: var(--accent); }
+.at-map__file small { display: block; color: var(--ink-dim); font-size: 11px; }
+.at-map__file .button { margin-left: auto; }
+.at-map__grid, .at-map__columns {
+  display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.at-map__columns { border: 1px solid var(--line); padding: 16px; }
+.at-map__columns legend { padding: 0 8px; color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+.at-map .form-field { display: block; color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+.at-map .form-field small { text-transform: none; letter-spacing: 0; color: var(--ink-dim); }
+.at-map .form-field input, .at-map .form-field select {
+  display: block; width: 100%; margin-top: 5px; min-height: 44px; padding: 8px 10px; font-size: 16px;
+  background: var(--canvas); color: var(--ink); border: 1px solid var(--line);
+  text-transform: none; letter-spacing: 0;
+}
+.at-required { color: var(--accent); font-size: 10px; }
+.at-client-hint { display: block; margin-top: 5px; color: var(--info); font-size: 11px; text-transform: none; letter-spacing: 0; }
+.at-client-hint:empty { display: none; }
+.form-field--autofilled select { border-color: var(--info); }
+.at-map__preview h3 { margin: 0 0 8px; font-size: 16px; }
+.at-map__actions { display: flex; justify-content: end; }
+.at-note { display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 12px; font-size: 12px; }
+.at-note .icon { width: 16px; height: 16px; flex: 0 0 auto; }
+.at-note--warn { border-left: 3px solid var(--warning); background: rgb(255 196 94 / 8%); color: var(--ink-muted); }
+.at-note--warn .icon { color: var(--warning); }
+
+/* --- прогрес звіту -------------------------------------------------------- */
+
+.at-progress { display: grid; gap: 8px; max-width: 620px; }
+.at-progress__counts { margin: 0; color: var(--ink-muted); font-size: 13px; }
+.at-progress__counts strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.at-progress progress { width: 100%; height: 8px; }
+.at-progress__note { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--ink-dim); font-size: 11px; }
+.at-export { display: flex; flex-wrap: wrap; gap: 10px; }
+.at-export .button { text-decoration: none; }
+.at-export .icon { width: 16px; height: 16px; }
+
+/* --- таблиця рядків ------------------------------------------------------- */
+
+.at-toolbar { padding: 0 0 14px; }
+.at-table { min-width: 1180px; }
+.at-table td { font-size: 12px; }
+.at-row-index { color: var(--ink-dim); }
+.at-cache-note {
+  display: flex; align-items: center; gap: 8px; margin: 12px 0 0; padding: 9px 11px;
+  border-left: 3px solid var(--info); background: rgb(123 199 255 / 7%);
+  color: var(--ink-muted); font-size: 11px;
+}
+.at-cache-note .icon { color: var(--info); flex: 0 0 auto; }
+
+/* Прев'ю — справжня `<button>`: збільшення відкривається і клавіатурою теж
+ * (AGENTS.md §7 — ніяких клікабельних `div`). */
+.at-preview__box {
+  position: relative; display: grid; place-items: center; width: 52px; height: 52px;
+  padding: 0; border: 1px solid var(--line); background: var(--canvas); cursor: zoom-in;
+}
+.at-preview__box img { width: 52px; height: 52px; object-fit: cover; }
+.at-preview__fallback { display: none; color: var(--ink-dim); font-size: 9px; text-align: center; padding: 2px; }
+.at-preview__box.is-broken img { display: none; }
+.at-preview__box.is-broken .at-preview__fallback { display: block; }
+.at-preview__box.is-broken { cursor: default; }
+.at-preview__zoom {
+  position: absolute; right: 0; bottom: 0; display: grid; place-items: center;
+  width: 18px; height: 18px; background: var(--canvas); color: var(--ink-muted);
+  border-top: 1px solid var(--line); border-left: 1px solid var(--line);
+  opacity: 0; transition: opacity .14s ease;
+}
+.at-preview__box:hover .at-preview__zoom, .at-preview__box:focus-visible .at-preview__zoom { opacity: 1; }
+.at-preview__box:hover { border-color: var(--line-accent); }
+.at-preview__box.is-broken .at-preview__zoom { display: none; }
+
+.at-preview-dialog { max-width: min(920px, 92vw); border: 0; padding: 0; background: transparent; }
+.at-preview-dialog::backdrop { background: rgb(0 0 0 / 72%); }
+.at-preview-dialog .dialog-shell {
+  display: grid; background: var(--surface); border: 1px solid var(--line);
+  border-top: 3px solid var(--accent); box-shadow: var(--shadow-dialog);
+}
+/* Ім'я файлу показуємо ЯК Є: `h2` у проєкті — display-шрифт у верхньому
+ * регістрі, а регістр у назві файлу значущий для пошуку в медіатеці. */
+.at-preview-dialog h2 {
+  font-family: var(--font-body); font-size: 15px; text-transform: none;
+  letter-spacing: 0; overflow-wrap: anywhere;
+}
+.at-preview-dialog__alt { margin: 6px 0 0; color: var(--ink-muted); font-size: 12px; overflow-wrap: anywhere; }
+.at-preview-dialog__stage {
+  display: grid; place-items: center; padding: 20px; background: var(--canvas);
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  /* Клітчастий фон, щоб було видно межі прозорих PNG/SVG. */
+  background-image: linear-gradient(45deg, var(--canvas-raised) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--canvas-raised) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--canvas-raised) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--canvas-raised) 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+}
+.at-preview-dialog__stage img { max-width: 100%; max-height: min(62vh, 620px); object-fit: contain; }
+.at-preview-dialog__fallback { display: none; margin: 0; padding: 40px 0; color: var(--ink-muted); }
+.at-preview-dialog__stage.is-broken img { display: none; }
+.at-preview-dialog__stage.is-broken .at-preview-dialog__fallback { display: block; }
+.at-preview-dialog__actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: end; padding: 14px 16px; }
+.at-preview-dialog__actions .button { text-decoration: none; }
+.at-preview-dialog__actions .icon { width: 16px; height: 16px; }
+
+.at-url { max-width: 260px; }
+.at-url__text {
+  display: block; color: var(--ink-muted); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.at-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.at-actions .button { text-decoration: none; white-space: nowrap; }
+.at-actions .icon-button { min-width: 28px; min-height: 28px; }
+
+/* НЕ `display: grid/flex` на самому `<td>`: це виводить клітинку з табличного
+ * алгоритму (вона перестає бути table-cell), і колонки праворуч злипаються в
+ * одну. Тому вертикальний стек збираємо блоковими дітьми + margin. */
+.at-key > *, .at-alt > *, .at-page > * { margin-top: 6px; }
+.at-key > :first-child, .at-alt > :first-child, .at-page > :first-child { margin-top: 0; }
+
+.at-key { max-width: 300px; }
+.at-copy {
+  display: flex; width: fit-content; align-items: center; gap: 7px; min-height: 32px; max-width: 100%;
+  padding: 5px 9px; border: 1px solid var(--line-accent); background: var(--surface-strong);
+  color: var(--ink); cursor: pointer; font: inherit;
+}
+.at-copy:hover { border-color: var(--accent); }
+.at-copy code { font-size: 12px; overflow-wrap: anywhere; }
+.at-copy--ghost { border-color: var(--line); background: var(--canvas); }
+.at-copy--ghost code { color: var(--ink-muted); }
+.at-kind { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.at-kind--good { color: var(--success); }
+.at-kind--warn { color: var(--warning); }
+.at-kind--bad { color: var(--danger); }
+.at-stripped { display: flex; flex-wrap: wrap; gap: 5px; }
+.at-stripped code {
+  padding: 1px 5px; border: 1px dashed var(--line); color: var(--ink-dim);
+  font-size: 10px; text-decoration: line-through;
+}
+.at-warn { display: flex; align-items: start; gap: 6px; color: var(--warning); font-size: 11px; }
+.at-warn .icon { flex: 0 0 auto; margin-top: 1px; }
+
+.at-alt { max-width: 300px; }
+.at-alt__text {
+  display: -webkit-box; color: var(--ink); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.at-alt__copy { display: flex; width: fit-content; white-space: nowrap; }
+.at-alt__old { color: var(--ink-dim); font-size: 11px; overflow-wrap: anywhere; }
+
+.at-page { max-width: 230px; }
+.at-page__links { display: grid; gap: 3px; }
+.at-page__link {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+  color: var(--ink-muted); font-size: 11px; text-decoration: none;
+}
+.at-page__link:hover { color: var(--accent); }
+.at-page__link .icon { flex: 0 0 auto; color: var(--ink-dim); }
+.at-page__link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.at-page__rest { color: var(--ink-dim); font-size: 10px; }
+.at-verdict { display: flex; width: fit-content; align-items: center; gap: 6px; font-size: 11px; }
+.at-verdict small { color: var(--ink-dim); }
+.at-verdict--good { color: var(--success); }
+.at-verdict--bad { color: var(--danger); }
+.at-verdict--warn { color: var(--warning); }
+.at-verdict--none { color: var(--ink-dim); }
+.at-verdict__found { display: block; color: var(--ink-muted); font-size: 11px; overflow-wrap: anywhere; }
+
+.at-status { white-space: nowrap; }
+.at-status__select {
+  min-height: 38px; padding: 6px 8px; background: var(--canvas); color: var(--ink);
+  border: 1px solid var(--line); font: inherit; font-size: 12px;
+}
+.at-status__select[data-status="copied"] { border-color: var(--info); color: var(--info); }
+.at-status__select[data-status="applied"] { border-color: var(--success); color: var(--success); }
+.at-status__select[data-status="skipped"] { color: var(--ink-dim); }
+.at-status small { display: block; margin-top: 4px; color: var(--ink-dim); font-size: 10px; }
+
+@media (max-width: 860px) {
+  /* `.app-header` (app.css) — flex без wrap: без цього нав'ю немає куди
+   * переїхати, і на 390px воно наїжджало на логотип. Перевизначаємо тут, у
+   * файлі таски, що навігацію принесла, замість правки чужого app.css. */
+  .app-header { flex-wrap: wrap; }
+  .app-nav { order: 3; width: 100%; margin-left: 0; }
+  .app-nav a { flex: 1; justify-content: center; }
+}
+
+@media (max-width: 720px) {
+  /* Прев'ю — допоміжна декоративна колонка (`alt=""`, та сама картинка
+   * відкривається кнопкою «Open»). На вузькому екрані вона з'їдала 80px і
+   * відсовувала головну дію («Copy alt») ще далі за горизонтальний скрол,
+   * тож ховаємо саме її. Жодних даних при цьому не втрачається. */
+  .at-table th:nth-child(2), .at-table td:nth-child(2) { display: none; }
+  .at-table { min-width: 980px; }
+  .tools-grid { grid-template-columns: 1fr; }
+  .at-map__file .button { margin-left: 0; }
+  .at-file__control { gap: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-card { transition: none; }
+  .tool-card:hover { transform: none; }
+}

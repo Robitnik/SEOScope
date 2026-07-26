@@ -42,4 +42,9 @@ def test_security_headers_present_on_response():
 
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
-    assert response.headers["content-security-policy"] == "default-src 'self'"
+    # Скрипти/стилі/fetch лишаються під `'self'`; лише `img-src` розширений
+    # (task-27: прев'ю картинок клієнта в інструменті Image Alt Text).
+    policy = response.headers["content-security-policy"]
+    assert policy.startswith("default-src 'self'")
+    assert "img-src 'self' data: https: http:" in policy
+    assert "script-src" not in policy

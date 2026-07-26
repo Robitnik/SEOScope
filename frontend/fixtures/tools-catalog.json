@@ -1,0 +1,15 @@
+{
+  "tools": [
+    {
+      "key": "alt-text",
+      "name": "Image Alt Text",
+      "summary": "Turn an image audit sheet into copy-ready WordPress media searches, then track which images already got their new alt.",
+      "tags": ["wordpress", "images", "accessibility", "audit", "csv", "xlsx"],
+      "route": "#/tools/alt-text",
+      "status": "available",
+      "icon": "photo",
+      "stat_label": "reports",
+      "stat_value": "3"
+    }
+  ]
+}

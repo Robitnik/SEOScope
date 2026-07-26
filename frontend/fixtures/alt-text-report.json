@@ -1,0 +1,18 @@
+{
+  "id": "fixture-report-march",
+  "title": "19 Cleveland — March image audit",
+  "client_id": "client-cleveland",
+  "client_name": "19 Cleveland",
+  "source_filename": "cleveland-image-audit.xlsx",
+  "source_kind": "xlsx",
+  "source_sheet": "Images",
+  "row_count": 6,
+  "skipped_count": 2,
+  "status_counts": { "pending": 4, "copied": 1, "applied": 1, "skipped": 0 },
+  "created_at": "2026-07-24T09:12:00Z",
+  "updated_at": "2026-07-26T11:40:00Z",
+  "column_map": { "image_url": 0, "new_alt": 1, "page_url": 2, "old_alt": 3 },
+  "warnings": ["rows_without_new_alt"],
+  "verify_counts": { "match": 1, "mismatch": 1 },
+  "verifiable_count": 4
+}
