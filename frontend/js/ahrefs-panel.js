@@ -1,5 +1,6 @@
-import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260723-audit1";
-import { formatUaNumber } from "./client-page.js?v=20260723-audit1";
+import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260724-blogs1";
+import { panelSkeleton } from "./skeleton.js?v=20260726-loading1";
+import { formatUaNumber } from "./client-page.js?v=20260724-blogs1";
 
 function metricValue(summary, key) {
   const metric = (summary?.metrics || []).find((item) => item.metric_key === key);
@@ -40,11 +41,14 @@ function issueTable(audit, state) {
   if (!rows.length) return `${toolbar}<div class="state-panel"><p><strong>No matching issues.</strong></p></div>`;
   return `${toolbar}<div class="table-scroll"><table class="analytics-table ahrefs-issues-table">
     <thead><tr><th>Issue</th><th>Severity</th><th>Affected URLs</th><th>Exported rows</th></tr></thead>
-    <tbody>${rows.map((issue) => `<tr class="${state.ahrefsSelectedIssue === issue.slug ? "is-selected" : ""}">
-      <td class="analytics-row__value"><button type="button" class="ahrefs-issue-link" data-ahrefs-issue="${escapeHtml(issue.slug)}"><strong>${escapeHtml(issue.name)}</strong>${issue.description ? `<span>${escapeHtml(issue.description)}</span>` : ""}${issue.how_to_fix ? `<small><b>Fix:</b> ${escapeHtml(issue.how_to_fix)}</small>` : ""}</button></td>
+    <tbody>${rows.map((issue) => {
+      const selected = state.ahrefsSelectedIssue === issue.slug;
+      return `<tr class="${selected ? "is-selected" : ""}">
+      <td class="analytics-row__value"><button type="button" class="ahrefs-issue-link" data-ahrefs-issue="${escapeHtml(issue.slug)}" aria-expanded="${String(selected)}" aria-controls="ahrefs-affected-pages"><strong>${escapeHtml(issue.name)}${icon(selected ? "chevron-down" : "chevron-right")}</strong>${issue.description ? `<span>${escapeHtml(issue.description)}</span>` : ""}${issue.how_to_fix ? `<small><b>Fix:</b> ${escapeHtml(issue.how_to_fix)}</small>` : ""}</button></td>
       <td><span class="ahrefs-severity ${severityClass(issue.severity)}">${escapeHtml(issue.severity)}</span></td>
       <td class="num">${formatUaNumber(issue.affected_urls)}</td><td class="num">${formatUaNumber(issue.exported_rows)}</td>
-    </tr>`).join("")}</tbody></table></div>`;
+    </tr>`;
+    }).join("")}</tbody></table></div>`;
 }
 
 function detailsMarkup(details) {
@@ -53,13 +57,15 @@ function detailsMarkup(details) {
   return `<details class="ahrefs-row-details"><summary>${entries.length} exported fields</summary><dl>${entries.map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl></details>`;
 }
 
-function affectedTable(affected, state) {
-  if (!state.ahrefsSelectedIssue) return `<div class="ahrefs-affected state-panel"><p><strong>Select an issue to inspect every affected page.</strong></p></div>`;
-  if (!affected) return `<div class="ahrefs-affected"><div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div></div>`;
+function affectedTable(affected, affectedError, state) {
+  const targetAttrs = `id="ahrefs-affected-pages" tabindex="-1" aria-live="polite"`;
+  if (!state.ahrefsSelectedIssue) return `<section class="ahrefs-affected state-panel" ${targetAttrs}><p><strong>Select an issue to inspect every affected page.</strong></p></section>`;
+  if (affectedError) return `<section class="ahrefs-affected state-panel state-failed" ${targetAttrs}>${icon("wifi-off")}<p><strong>Failed to load affected pages.</strong><br>${escapeHtml(affectedError)}</p></section>`;
+  if (!affected) return `<section class="ahrefs-affected" ${targetAttrs} aria-busy="true">${panelSkeleton({ label: "affected pages", rows: 6, columns: 2 })}</section>`;
   const rows = affected.rows || [];
   const start = affected.total_rows_available ? affected.offset + 1 : 0;
   const end = Math.min(affected.offset + affected.limit, affected.total_rows_available);
-  return `<section class="ahrefs-affected">
+  return `<section class="ahrefs-affected" ${targetAttrs}>
     <div class="section-heading"><div><p class="eyebrow">Affected pages</p><h3>${escapeHtml(rows[0]?.issue_name || state.ahrefsSelectedIssue)}</h3></div><span class="status-label status-complete">${formatUaNumber(affected.total_rows_available)} rows</span></div>
     <div class="analytics-toolbar"><label class="search-field"><span class="visually-hidden">Search affected URLs</span>${icon("search")}<input id="ahrefs-url-search" type="search" placeholder="Search URL or exported fields" value="${escapeHtml(state.ahrefsUrlSearch)}"></label></div>
     ${rows.length ? `<div class="table-scroll"><table class="analytics-table ahrefs-urls-table"><thead><tr><th>URL</th><th>Ahrefs export data</th></tr></thead><tbody>${rows.map((row) => `<tr><td class="analytics-row__value">${row.url ? `<a href="${escapeHtml(row.url)}" target="_blank" rel="noreferrer">${escapeHtml(row.url)}</a>` : "—"}</td><td>${detailsMarkup(row.details)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="state-panel"><p><strong>No affected rows match this search.</strong></p></div>`}
@@ -67,13 +73,13 @@ function affectedTable(affected, state) {
   </section>`;
 }
 
-export function renderAhrefsPanel(container, { summary, audit, affected, state, onChange, onSelectIssue, onAffectedPage }) {
+export function renderAhrefsPanel(container, { summary, audit, affected, affectedError, state, onChange, onSelectIssue, onAffectedPage }) {
   const status = summary?.state || (audit?.total_issue_types ? "complete" : "unavailable");
   const collectedSummary = audit?.total_issue_types
     ? `${formatUaNumber(audit.total_issue_types)} issue types · ${formatUaNumber(audit.total_affected_rows)} affected rows`
     : "No detailed export saved";
   container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Ahrefs · Live Site Audit</p><h2>Technical health and crawl issues</h2><p class="ahrefs-collected">Latest live collection: ${formatTimestamp(audit?.observed_at, "not collected yet")} · ${collectedSummary}</p></div><span class="status-label status-${escapeHtml(status)}">${escapeHtml(status)}</span></div>
-    ${kpis(summary, audit)}${issueTable(audit, state)}${affectedTable(affected, state)}`;
+    ${kpis(summary, audit)}${issueTable(audit, state)}${affectedTable(affected, affectedError, state)}`;
   container.querySelector("#ahrefs-severity")?.addEventListener("change", (event) => onChange({ ahrefsSeverity: event.target.value }));
   let issueTimer = null;
   container.querySelector("#ahrefs-search")?.addEventListener("input", (event) => {

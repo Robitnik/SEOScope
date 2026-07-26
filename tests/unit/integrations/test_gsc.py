@@ -1,9 +1,8 @@
 """Tests for the GSC `ProviderAdapter` (task-09).
 
-`seo_audit.dashboard.gsc.collect_gsc_aggregate`/`collect_gsc_direct` are monkeypatched
-throughout — these tests cover only this module's own mapping/combination logic (per-source
-quality tracking, canonical key mapping, `gsc_ctr` never emitted here), not the AISeoTools
-wrappers themselves (covered by AISeoTools' own `tests/dashboard/test_gsc.py`).
+`seo_audit.dashboard.gsc.collect_gsc_aggregate` is monkeypatched throughout.
+These tests cover the Reporting Ninja-only mapping contract and canonical keys;
+the AISeoTools wrapper itself has its own tests.
 """
 
 from __future__ import annotations
@@ -87,38 +86,17 @@ def _aggregate_result(
     )
 
 
-def _direct_result(*, quality=DashQuality.complete, data_through=None) -> DashResult:
-    return DashResult(
-        provider=DashProvider.gsc, quality=quality, observed_at=datetime.now(UTC),
-        data_through=data_through or date(2026, 6, 28),
-        current=DASH_CURRENT, previous=DASH_PREVIOUS,
-        values=[
-            _value(
-                "avg_position", DashPeriodRole.current, "4.5", DASH_CURRENT,
-                unit=DashUnit.position,
-            ),
-            _value(
-                "avg_position", DashPeriodRole.previous, "5.0", DASH_PREVIOUS,
-                unit=DashUnit.position,
-            ),
-        ],
-        provenance={"source_mode": "browser", "transport": "gsc_direct", "profile": "gsc"},
-    )
-
-
 class _NoCancel:
     def __call__(self) -> bool:
         return False
 
 
-def _patch_sources(monkeypatch, *, aggregate=None, direct=None):
+def _patch_sources(monkeypatch, *, aggregate=None):
     from seo_audit.dashboard import gsc as real_wrapper
 
     monkeypatch.setattr(
         real_wrapper, "collect_gsc_aggregate", lambda *a, **k: aggregate or _aggregate_result()
     )
-    if direct is not None:
-        monkeypatch.setattr(real_wrapper, "collect_gsc_direct", lambda *a, **k: direct)
 
 
 # ── preflight ────────────────────────────────────────────────────────────────
@@ -169,6 +147,44 @@ def test_collect_maps_api_metrics_to_canonical_keys(monkeypatch):
     assert len(result.metrics) == 6  # 3 metrics x 2 periods
 
 
+def test_collect_reuses_discovered_fields_across_clients(monkeypatch):
+    from seo_audit.clientreport import api_client
+    from seo_audit.dashboard import gsc as real_wrapper
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    seen_field_ids = []
+    seen_bypass_cache = []
+
+    def fake_aggregate(*args, field_ids=None, **kwargs):
+        seen_field_ids.append(field_ids)
+        seen_bypass_cache.append(kwargs.get("bypass_cache"))
+        return _aggregate_result().model_copy(
+            update={"provenance": {"gsc_fields": dict(fields)}}
+        )
+
+    fields = {
+        "clicks": "clicks",
+        "impressions": "impressions",
+        "ctr": "ctr",
+        "avg_position": "avgposition",
+    }
+    monkeypatch.setattr(api_client, "ReportingNinjaClient", FakeClient)
+    monkeypatch.setattr(real_wrapper, "collect_gsc_aggregate", fake_aggregate)
+    adapter = adapter_module.GscAdapter()
+
+    adapter.collect(_context(force_refresh=True), lambda event: None, _NoCancel())
+    adapter.collect(_context(force_refresh=True), lambda event: None, _NoCancel())
+
+    assert seen_field_ids == [None, fields]
+    assert seen_bypass_cache == [True, True]
+
+
 def test_collect_never_emits_gsc_ctr(monkeypatch):
     _patch_sources(monkeypatch)
     adapter = adapter_module.GscAdapter()
@@ -196,62 +212,25 @@ def test_collect_without_property_keeps_api_position_available(monkeypatch):
     assert result.warnings == []
 
 
-# ── collect: independent source failure ─────────────────────────────────────
-def test_collect_direct_failure_does_not_take_down_aggregate(monkeypatch):
-    failed_direct = DashResult(
-        provider=DashProvider.gsc, quality=DashQuality.unavailable, observed_at=datetime.now(UTC),
-        current=DASH_CURRENT, previous=DASH_PREVIOUS, values=[],
-        warnings=["gsc session expired"], error_code="auth_required",
-        provenance={"source_mode": "browser", "transport": "gsc_direct"},
-    )
-    _patch_sources(monkeypatch, direct=failed_direct)
+def test_legacy_browser_mode_still_uses_reporting_ninja_only(monkeypatch):
+    from seo_audit.dashboard import gsc as real_wrapper
+
+    _patch_sources(monkeypatch, aggregate=_aggregate_result(data_through=date(2026, 6, 28)))
+
+    def browser_must_not_run(*args, **kwargs):
+        raise AssertionError("browser GSC must not run from the dashboard adapter")
+
+    monkeypatch.setattr(real_wrapper, "collect_gsc_direct", browser_must_not_run)
     adapter = adapter_module.GscAdapter()
 
     result = adapter.collect(
         _context(source_mode=SourceMode.browser), lambda e: None, _NoCancel()
     )
 
-    by_key = {(m.metric_key, m.period_role): m for m in result.metrics}
-    assert by_key[("gsc_clicks", PeriodRole.current)].quality == Quality.complete
-    assert by_key[("gsc_avg_position", PeriodRole.current)].quality == Quality.unavailable
-    assert result.quality == Quality.partial
-    assert "gsc session expired" in result.warnings
-
-
-def test_collect_aggregate_failure_does_not_take_down_direct(monkeypatch):
-    _patch_sources(
-        monkeypatch,
-        aggregate=_aggregate_result(quality=DashQuality.unavailable, both_periods=False).model_copy(
-            update={"values": []}
-        ),
-        direct=_direct_result(),
-    )
-    adapter = adapter_module.GscAdapter()
-
-    result = adapter.collect(
-        _context(source_mode=SourceMode.browser), lambda e: None, _NoCancel()
-    )
-
-    by_key = {(m.metric_key, m.period_role): m for m in result.metrics}
-    assert by_key[("gsc_clicks", PeriodRole.current)].quality == Quality.unavailable
-    assert by_key[("gsc_avg_position", PeriodRole.current)].quality == Quality.complete
-    assert result.quality == Quality.partial
-
-
-# ── collect: data_through combination ───────────────────────────────────────
-def test_collect_data_through_is_the_earlier_of_the_two_sources(monkeypatch):
-    _patch_sources(
-        monkeypatch,
-        aggregate=_aggregate_result(data_through=date(2026, 6, 28)),
-        direct=_direct_result(data_through=date(2026, 6, 26)),
-    )
-    adapter = adapter_module.GscAdapter()
-
-    result = adapter.collect(
-        _context(source_mode=SourceMode.browser), lambda e: None, _NoCancel()
-    )
-
-    assert result.data_through == date(2026, 6, 26)
+    assert result.quality == Quality.complete
+    assert result.data_through == date(2026, 6, 28)
+    assert result.provenance["aggregate"]["transport"] == "reporting_ninja"
+    assert "direct" not in result.provenance
 
 
 # ── collect: adapter-level guard ────────────────────────────────────────────
@@ -275,6 +254,8 @@ def test_collect_datasets_fetches_real_daily_gsc_rows(monkeypatch):
     from seo_audit.clientreport import api_client, gsc_fetcher
 
     class FakeClient:
+        bypass_cache_values = []
+
         def __enter__(self):
             return self
 
@@ -282,6 +263,7 @@ def test_collect_datasets_fetches_real_daily_gsc_rows(monkeypatch):
             return None
 
         def query_all(self, *args, **kwargs):
+            self.bypass_cache_values.append(kwargs.get("bypass_cache"))
             start = args[4]
             return {
                 "rows": [
@@ -315,14 +297,21 @@ def test_collect_datasets_fetches_real_daily_gsc_rows(monkeypatch):
         },
     )
 
-    result = adapter_module.GscAdapter().collect_datasets(_context(), lambda event: None)
+    events = []
+    result = adapter_module.GscAdapter().collect_datasets(
+        _context(force_refresh=True), events.append
+    )
 
     assert result.quality == Quality.complete
     assert len(result.rows) == 4
     assert result.rows[0].dataset_key == "gsc_daily"
     assert result.rows[0].dimension_value == "2026-06-01"
     assert result.rows[0].metrics["clicks"] == Decimal(12)
+    assert result.rows[0].metrics["ctr"] == Decimal("0.1")
     assert result.rows[2].period_role == PeriodRole.previous
+    assert FakeClient.bypass_cache_values == [True, True]
+    assert [event.completed for event in events] == [7, 8]
+    assert [event.percent for event in events] == [77.78, 88.89]
 
 
 # ── event bridging ───────────────────────────────────────────────────────────

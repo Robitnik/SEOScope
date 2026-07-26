@@ -13,9 +13,9 @@ from datetime import date
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from app.db.models import MetricValue
+from app.db.models import MetricValue, ProviderSnapshot
 from app.schemas.adapter import MetricValueResult
-from app.schemas.enums import PeriodRole, Provider
+from app.schemas.enums import PeriodRole, Provider, SourceMode
 
 
 class MetricRepository:
@@ -69,7 +69,14 @@ class MetricRepository:
         )
         return list(self._session.scalars(stmt))
 
-    def history(self, client_id: str, metric_key: str, n: int = 12) -> list[MetricValue]:
+    def history(
+        self,
+        client_id: str,
+        metric_key: str,
+        n: int = 12,
+        *,
+        source_mode: SourceMode | None = None,
+    ) -> list[MetricValue]:
         stmt = (
             select(MetricValue)
             .where(
@@ -80,6 +87,10 @@ class MetricRepository:
             .order_by(MetricValue.created_at.desc())
             .limit(n)
         )
+        if source_mode is not None:
+            stmt = stmt.join(
+                ProviderSnapshot, ProviderSnapshot.id == MetricValue.snapshot_id
+            ).where(ProviderSnapshot.source_mode == source_mode)
         return list(self._session.scalars(stmt))
 
     # --- Added by task-06 (REST API): the dashboard needs every metric value

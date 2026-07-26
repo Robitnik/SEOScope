@@ -152,6 +152,43 @@ class MetricTrendDTO(BaseModel):
     history: list[HealthPointDTO] = Field(default_factory=list)
 
 
+TechAuditCardState = Literal[
+    "no_run",
+    "queued",
+    "running",
+    "complete",
+    "partial",
+    "truncated",
+    "failed",
+    "stale",
+]
+
+
+class TechAuditCardDTO(BaseModel):
+    """Latest measured crawl state shown independently from metric health.
+
+    Counts are finding rows from one crawl snapshot, after applying only the
+    rechecks that belong to that same snapshot.  A failed/running newer attempt
+    may therefore keep the last valid counts visible instead of fabricating 0.
+    """
+
+    state: TechAuditCardState = "no_run"
+    run_id: str | None = None
+    observed_at: datetime | None = None
+    pages_crawled: int | None = None
+    pages_discovered: int | None = None
+    max_pages: int | None = None
+    open_errors: int | None = None
+    error_urls: int | None = None
+    open_warnings: int | None = None
+    open_notices: int | None = None
+    fixed_findings: int = 0
+    unreachable_findings: int = 0
+    total_findings: int | None = None
+    quality: Quality | None = None
+    active_job_id: str | None = None
+
+
 class ClientCardDTO(BaseModel):
     client_id: str
     name: str
@@ -165,6 +202,8 @@ class ClientCardDTO(BaseModel):
     last_synced_at: datetime | None = None
     health: ClientHealthDTO
     gbp_clicks_trend: MetricTrendDTO = Field(default_factory=MetricTrendDTO)
+    gsc_clicks_trend: MetricTrendDTO = Field(default_factory=MetricTrendDTO)
+    tech_audit: TechAuditCardDTO = Field(default_factory=TechAuditCardDTO)
 
 
 # Dashboard sort modes (PLAN §21.3). `quality` is the default: clients
@@ -304,8 +343,12 @@ class CellProgressDTO(BaseModel):
     client_id: str
     provider: Provider
     status: CellStatus
+    quality: Quality | None = None
     progress_percent: float | None = None
     current_stage: str | None = None
+    # Free-form live-progress text (e.g. "found 148 posts so far"). Prefer this
+    # over `current_stage`'s static per-stage label when present.
+    progress_message: str | None = None
     attempt: int = 1
     error_code: str | None = None
     units_spent: int | None = None
@@ -675,6 +718,13 @@ class TechAuditSummaryDTO(BaseModel):
     totals: dict[str, Any] = {}
     warnings: list[str] = []
     categories: list[TechAuditCategoryDTO] = []
+    open_errors: int | None = None
+    error_urls: int | None = None
+    open_warnings: int | None = None
+    open_notices: int | None = None
+    fixed_findings: int = 0
+    unreachable_findings: int = 0
+    total_findings: int | None = None
     generated_at: datetime
 
 
@@ -717,6 +767,67 @@ class TechAuditRecheckRequest(BaseModel):
 
 
 class TechAuditRunAcceptedDTO(BaseModel):
+    job_id: str
+    status_url: str
+    events_url: str
+
+
+class TechAuditBatchRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_ids: list[str] | Literal["all"]
+    max_pages: int | None = Field(default=None, ge=1, le=10_000)
+    idempotency_key: str | None = Field(default=None, max_length=200)
+
+
+class TechAuditBatchAcceptedDTO(BaseModel):
+    job_id: str | None = None
+    batch_id: str | None = None
+    status_url: str
+    events_url: str
+    queued_count: int
+    skipped_active_client_ids: list[str] = Field(default_factory=list)
+
+
+# --- Client Blogs (task-26) --------------------------------------------------
+#
+# Machine-only: every field below is measured by the crawl. No agent-authored
+# copy — title/description are read from the page, never rewritten.
+
+
+class BlogsSummaryDTO(BaseModel):
+    client_id: str
+    has_run: bool = False
+    run_id: str | None = None  # provider_snapshots.id of the crawl
+    observed_at: datetime | None = None
+    blog_url: str | None = None
+    post_count: int | None = None  # None (not 0) when there is no run yet
+    quality: str | None = None
+    warnings: list[str] = []
+    generated_at: datetime
+
+
+class BlogPostDTO(BaseModel):
+    url: str
+    title: str = ""
+    description: str = ""
+    word_count: int | None = None
+    published_date: str | None = None
+    modified_date: str | None = None
+
+
+class BlogPostsPageDTO(BaseModel):
+    client_id: str
+    q: str | None = None
+    sort: str = "date_desc"
+    rows: list[BlogPostDTO] = []
+    total: int = 0
+    limit: int
+    offset: int
+    generated_at: datetime
+
+
+class BlogsRunAcceptedDTO(BaseModel):
     job_id: str
     status_url: str
     events_url: str

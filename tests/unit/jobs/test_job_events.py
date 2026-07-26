@@ -29,7 +29,23 @@ def test_emit_persists_event_and_updates_cell_progress(session_scope, make_cell)
         cell = CellRepository(session).get(cell_id)
         assert cell.progress_percent == 42.0
         assert cell.current_stage == "fetch_current"
+        assert cell.progress_message == "ok"
         assert cell.heartbeat_at is not None
+
+
+def test_emit_with_no_message_does_not_blank_the_last_live_progress_text(
+    session_scope, make_cell
+):
+    job_id, cell_id, _client_id = make_cell(Provider.blogs)
+    emit = make_emitter(session_scope, job_id=job_id, cell_id=cell_id, lease_owner="w1")
+
+    emit(ProgressEvent(provider=Provider.blogs, stage="crawl", message="found 148 posts so far"))
+    emit(ProgressEvent(provider=Provider.blogs, stage="persist"))  # no message this time
+
+    with session_scope() as session:
+        cell = CellRepository(session).get(cell_id)
+        assert cell.current_stage == "persist"
+        assert cell.progress_message == "found 148 posts so far"
 
 
 def test_emit_redacts_secrets_in_message_and_details(session_scope, make_cell):

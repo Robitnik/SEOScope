@@ -97,5 +97,34 @@ COPY docker ./docker
 
 RUN chmod +x docker/entrypoint.sh
 
+# Mount points for the three named volumes, pre-created 0777 so an ARBITRARY uid can write them.
+#
+# compose runs api/worker as the operator's own uid, never root (see `user:` there, and the
+# incidents it prevents). A named volume Docker has to create from scratch is seeded from the
+# image's content AT THAT PATH — including its mode — so if these directories do not exist here,
+# Docker makes them root:root 0755 and a non-root container cannot write its own database.
+# VERIFIED, not assumed: the seeding still happens (and the mode is preserved) even though
+# compose bind-mounts the repo over `/app` first.
+#
+# 0777 rather than a baked-in owner because the uid is not knowable at build time — it comes from
+# whoever runs compose. The directories only ever hold this container's own state (SQLite DB,
+# artifacts), never anything of the operator's, and they are inside a volume rather than on a
+# shared path, so the wide mode is not a boundary anyone relies on.
+RUN mkdir -p /app/app_data/artifacts /app/app_data/browser_profiles \
+ && chmod -R 0777 /app/app_data
+
+# `SEOTOOLS_ROOT` (compose: /seo/runtime) must exist HERE, writable, for the same reason —
+# but with a sharper failure mode. Docker creates the missing PARENT of a bind-mount path
+# (`/seo/runtime/state`) as root:root 0755 at container start, and AISeoTools' browser layer
+# does `LOG_DIR.mkdir()` at *module import* time. A non-root container therefore could not
+# import `seo_audit.browser.profile` at all — every provider integration dead, while the
+# healthcheck (which imports none of it) still reported healthy.
+#
+# Pre-creating the directory means Docker finds it already there and mounts `state` inside it
+# instead of inventing a root-owned parent. `logs/` is pre-created too so nothing has to mkdir
+# at runtime.
+RUN mkdir -p /seo/runtime/logs \
+ && chmod -R 0777 /seo/runtime
+
 ENTRYPOINT ["docker/entrypoint.sh"]
 CMD ["api"]

@@ -189,6 +189,11 @@ class TechAuditAdapter:
     ) -> CollectionResult:
         url = _audit_url(context)
         settings = get_settings()
+        requested_max_pages = int(
+            (context.job_params or {}).get("max_pages")
+            or context.integration_config.get("max_pages")
+            or 1000
+        )
         rel_run_dir = f"{_ARTIFACT_SUBDIR}/{context.client_id}/{new_uuid()}"
         abs_run_dir = Path(settings.artifacts_dir) / rel_run_dir
 
@@ -198,7 +203,7 @@ class TechAuditAdapter:
                 client=str(context.integration_config.get("client_label") or ""),
                 out_dir=abs_run_dir,
                 render=False,
-                max_pages=int(context.integration_config.get("max_pages") or 1000),
+                max_pages=requested_max_pages,
                 on_event=_bridge_emit(emit),
                 is_cancelled=is_cancel_requested,
             )
@@ -224,8 +229,11 @@ class TechAuditAdapter:
         pages = int(getattr(result, "pages_crawled", 0) or 0)
         findings = list(getattr(result, "findings", []) or [])
         warnings = [str(w) for w in (getattr(result, "warnings", []) or [])]
+        truncated = bool(getattr(result, "truncated", False))
         if pages == 0 and not findings:
             quality = Quality.unavailable
+        elif truncated:
+            quality = Quality.truncated
         elif warnings:
             quality = Quality.partial
         else:
@@ -242,6 +250,9 @@ class TechAuditAdapter:
                 "audit_url": url,
                 "run_dir": rel_run_dir,
                 "render": False,
+                "max_pages": requested_max_pages,
+                "pages_discovered": getattr(result, "pages_discovered", 0) or 0,
+                "truncated": truncated,
             },
         )
 
@@ -357,6 +368,16 @@ class TechAuditAdapter:
         category_names = {c.category: c.name for c in categories}
 
         rows: list[AnalyticsDatasetValueResult] = []
+        pages_crawled = int(getattr(result, "pages_crawled", 0) or 0)
+        if pages_crawled == 0 and not findings:
+            dataset_quality = Quality.unavailable
+        elif bool(getattr(result, "truncated", False)):
+            dataset_quality = Quality.truncated
+        else:
+            # A crawl that found zero issues is a successful, clean audit.  It
+            # must remain `complete` so the card can truthfully show zero
+            # instead of presenting an empty result as partial data.
+            dataset_quality = Quality.complete
         for rank, cat in enumerate(categories, start=1):
             rows.append(
                 AnalyticsDatasetValueResult(
@@ -376,7 +397,7 @@ class TechAuditAdapter:
                         "how_to_fix": cat.how_to_fix,
                         "recheckable": cat.category not in RECHECK_SKIP_CATEGORIES,
                     },
-                    quality=Quality.complete,
+                    quality=dataset_quality,
                     rank=rank,
                 )
             )
@@ -417,7 +438,7 @@ class TechAuditAdapter:
                         "live_status": f.live_status,
                         "recheckable": f.category not in RECHECK_SKIP_CATEGORIES,
                     },
-                    quality=Quality.complete,
+                    quality=dataset_quality,
                     rank=rank,
                 )
             )
@@ -436,7 +457,7 @@ class TechAuditAdapter:
         )
         return AnalyticsDatasetCollectionResult(
             provider=self.provider,
-            quality=Quality.complete if findings else Quality.partial,
+            quality=dataset_quality,
             observed_at=observed_at,
             rows=rows,
             # Crawl warnings are already reported by `collect()`; the runner
@@ -451,6 +472,9 @@ class TechAuditAdapter:
                 "health_score": getattr(result, "health_score", None),
                 "cms": getattr(result, "cms", "") or "",
                 "pages_crawled": getattr(result, "pages_crawled", 0) or 0,
+                "pages_discovered": getattr(result, "pages_discovered", 0) or 0,
+                "max_pages": getattr(result, "max_pages", 0) or 0,
+                "truncated": bool(getattr(result, "truncated", False)),
                 "totals": getattr(result, "totals", {}) or {},
                 "domain": getattr(result, "domain", "") or "",
                 "category_count": len(categories),
@@ -467,6 +491,7 @@ class TechAuditAdapter:
     ) -> AnalyticsDatasetCollectionResult:
         start, end = context.current.start, context.current.end
         checked_at = observed_at.isoformat()
+        audit_run_id = str((context.job_params or {}).get("audit_run_id") or "")
         rows = [
             AnalyticsDatasetValueResult(
                 dataset_key="tech_recheck",
@@ -482,6 +507,7 @@ class TechAuditAdapter:
                     "status": row.status,
                     "detail": row.detail,
                     "checked_at": checked_at,
+                    "audit_run_id": audit_run_id,
                 },
                 quality=Quality.complete,
                 rank=rank,
@@ -497,6 +523,7 @@ class TechAuditAdapter:
             provenance={
                 "datasets": ["tech_recheck"],
                 "run_dir": rel_run_dir,
+                "audit_run_id": audit_run_id,
                 "rechecked": len(rows),
             },
         )

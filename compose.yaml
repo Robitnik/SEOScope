@@ -11,12 +11,39 @@ services:
         aiseotools: ${AISEOTOOLS_PATH:-../../seo/AISeoTools}
     image: yovth-clients-report:latest
     command: ["api"]
+    # NEVER root. This is the last of the three "consumer wrote into the operator's world" bugs,
+    # and the only one the read-only mounts below could not close — because two directories MUST
+    # stay writable for the CDP bridge to work at all (`state/locks`, `downloads`).
+    #
+    # Every file a root container creates on those shared mounts is a landmine: root's default
+    # umask 022 turns AISeoTools' intended 0666 lock into `-rw-r--r-- root root`, and `flock`
+    # needs O_RDWR. The block is one-directional and permanent — root goes on opening the host's
+    # locks fine (root bypasses the mode check) while the host user is locked out of that lock
+    # forever. LIVE 2026-07-23: `main.download.lock` came back root-owned and every host-side
+    # export died on a bare PermissionError before the first click. Same shape as the root-owned
+    # `.mypy_cache`/`.pytest_cache`/`out/` this container left in its OWN repo.
+    #
+    # Running as the operator's uid makes the whole class structurally impossible instead of
+    # relying on every write path remembering to chmod. Nothing in this image needs root at
+    # runtime: dependencies install into system site-packages at BUILD time, uvicorn binds 6524
+    # (>1024), and there is no Chrome here to launch (that is the host's job, by design).
+    #
+    # Override for a host whose operator is not 1000:1000 — `DOCKER_UID`/`DOCKER_GID` in your
+    # shell or `.env`. They must match the owner of ~/.local/share/seo-audit, not of this repo.
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     env_file:
       # Provider secrets stay owned by AISeoTools and are injected only at
       # runtime. They are never copied into this repository or image.
       - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}/.env
     environment:
       SEOTOOLS_ROOT: /seo/runtime
+      # A uid with no /etc/passwd entry inherits the image's HOME=/root, which it cannot write.
+      # Anything reaching for `~` (poetry's cache on the documented `poetry run …` commands,
+      # fontconfig, XDG caches) then dies on a permission error that says nothing about the cause.
+      # /tmp is writable for any uid and holds nothing worth persisting.
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+      POETRY_CACHE_DIR: /tmp/.cache/pypoetry
       # Browser session bridge (task-20): AISeoTools' warm Chrome exposes CDP on the HOST's
       # 127.0.0.1 only (chrome.py — out of this task's owned paths, not changed) — no bridge or
       # bind-address widening can reach a loopback-only socket from a separate network namespace.
@@ -38,6 +65,10 @@ services:
       # and reads the finished file back off the shared mount below. Same absolute path on both sides
       # (host substitution of ${HOME}) so the one string is valid for Chrome AND the reader.
       SEO_BROWSER_DOWNLOAD_DIR: ${HOME}/.local/share/seo-audit/downloads
+      # AISeoTools' Reporting-Ninja session file defaults to its own repo root — which is the
+      # read-only mount above. Point it at this container's own writable volume so the `:ro` mount
+      # stays sufficient rather than merely aspirational.
+      SEOAUDIT_DASHBOARD_NINJA_SESSION_PATH: /app/app_data/.ninja_session.json
     # Host networking (Linux-only; this project targets Linux dev/deploy) is the price of the CDP
     # bridge above: api and worker now also share the host's other listening ports.
     network_mode: host
@@ -47,12 +78,23 @@ services:
       # POETRY_VIRTUALENVS_CREATE=false), never under /app, so this bind
       # mount can never shadow them.
       - .:/app
-      # Local AISeoTools checkout (task-08+ providers import `seo_audit`).
-      # Not baked into the image (would leak `.env`/browser-profile state
-      # into a distributable layer) — entrypoint.sh installs it from here
-      # at container start, iff this path exists. Absent on CI/deploy,
-      # where these providers are exercised only via live smoke (PLAN §15).
-      - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}:/seo/AISeoTools
+      # Local AISeoTools checkout (task-08+ providers import `seo_audit`), READ-ONLY.
+      #
+      # Not baked into the image (would leak `.env`/browser-profile state into a distributable
+      # layer). The image's build-time editable install already points its import finder at this
+      # path (Dockerfile), so nothing at runtime needs to WRITE here — and writing here is exactly
+      # what broke the operator twice:
+      #
+      #   * 2026-07-22 — a root `poetry`/`pip` run in this mount left `.venv` (root-owned,
+      #     `home = /usr/local/bin`) in their source tree. That venv cannot start on the host at
+      #     all, and the AISeoTools runbooks opened with `source .venv/bin/activate`.
+      #   * 2026-07-24 — an agent hit exactly that dead venv, concluded there was no Python on the
+      #     host, and moved its whole browser run into this container. Chrome runs on the HOST, so
+      #     every Ahrefs export came back 0 bytes; ~25 minutes and three failed exports.
+      #
+      # Same mistake as the 2026-07-22 profile mount below, one directory over. This container is
+      # a pure CONSUMER of AISeoTools; `:ro` is what makes that structural instead of a promise.
+      - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}:/seo/AISeoTools:ro
       # Warm-session DISCOVERY ONLY, read-only, and deliberately NOT the whole runtime dir.
       #
       # This used to be `${HOME}/.local/share/seo-audit:/seo/runtime` — the operator's entire
@@ -101,19 +143,30 @@ services:
   worker:
     image: yovth-clients-report:latest
     command: ["worker"]
+    # NEVER root — see the api service above for the full rationale. This is the service that
+    # matters most: it is the one that actually drives collections, so it is the one whose writes
+    # land in the operator's shared `state/locks` and `downloads`.
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     env_file:
       - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}/.env
     environment:
       SEOTOOLS_ROOT: /seo/runtime
+      # See the api service — a non-root uid has no writable HOME without these.
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+      POETRY_CACHE_DIR: /tmp/.cache/pypoetry
       CHROME_CDP_HOST: ${CHROME_CDP_HOST:-127.0.0.1}
       SEOTOOLS_REMOTE_CDP_HOST: ${CHROME_CDP_HOST:-127.0.0.1}
       # Shared DOWNLOAD directory — see the api service for the full rationale. The worker is the
       # service that actually runs collections, so this is the one that needs it most.
       SEO_BROWSER_DOWNLOAD_DIR: ${HOME}/.local/share/seo-audit/downloads
+      # See the api service — keeps the one AISeoTools write off the read-only mount.
+      SEOAUDIT_DASHBOARD_NINJA_SESSION_PATH: /app/app_data/.ninja_session.json
     network_mode: host
     volumes:
       - .:/app
-      - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}:/seo/AISeoTools
+      # READ-ONLY — see the api service above for the two incidents that rule required.
+      - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}:/seo/AISeoTools:ro
       # Read-only warm-session discovery, never the profiles — see the api service above.
       - ${HOME}/.local/share/seo-audit/state:/seo/runtime/state:ro
       # The ONE writable exception, nested inside the read-only mount above: zero-byte flock

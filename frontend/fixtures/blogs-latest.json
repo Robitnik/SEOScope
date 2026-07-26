@@ -1,0 +1,11 @@
+{
+  "client_id": "fixture-client",
+  "has_run": true,
+  "run_id": "fixture-blogs-run-1",
+  "observed_at": "2026-07-23T09:14:00+00:00",
+  "blog_url": "https://fixture-client.example.com/blog/",
+  "post_count": 6,
+  "quality": "complete",
+  "warnings": [],
+  "generated_at": "2026-07-23T09:20:00+00:00"
+}

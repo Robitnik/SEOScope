@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.events import EventRepository
 from app.db.repositories.jobs import JobRepository
-from app.schemas.enums import CellStatus, Provider, SourceMode
+from app.db.repositories.snapshots import SnapshotRepository
+from app.schemas.enums import CellStatus, Provider, Quality, SourceMode
 
 
 def _seed_client(db, *, slug: str = "acme") -> str:
@@ -94,6 +97,32 @@ def test_get_job_returns_per_cell_progress(client, db):
     assert len(body["cells"]) == 1
     assert body["cells"][0]["provider"] == Provider.gsc.value
     assert body["cells"][0]["status"] == "queued"
+    assert body["cells"][0]["quality"] is None
+
+
+def test_get_job_exposes_snapshot_quality_for_the_progress_cell(client, db):
+    client_id = _seed_client(db)
+    created = client.post(
+        "/api/v1/sync-jobs", json=_base_request([client_id], [Provider.gsc.value])
+    ).json()
+    job_id = created["job_id"]
+    cell = CellRepository(db).list_for_job(job_id)[0]
+    SnapshotRepository(db).create_immutable(
+        job_id=job_id,
+        client_id=client_id,
+        provider=Provider.gsc,
+        source_mode=SourceMode.api,
+        observed_at=datetime.now(UTC),
+        quality=Quality.truncated,
+    )
+    CellRepository(db).set_status(cell.id, CellStatus.succeeded)
+    db.commit()
+
+    body = client.get(f"/api/v1/sync-jobs/{job_id}").json()
+
+    assert body["cells"][0]["quality"] == "truncated"
+    assert body["cells"][0]["progress_percent"] == 100.0
+    assert body["cells"][0]["current_stage"] == "complete"
 
 
 def test_get_batch_returns_batch_progress(client, db):

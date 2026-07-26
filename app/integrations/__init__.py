@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from app.integrations import (  # noqa: F401
     ahrefs,  # noqa: F401
+    blogs,
     gsc,
     reporting_ninja,
     semrush,

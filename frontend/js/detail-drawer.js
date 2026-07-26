@@ -1,5 +1,6 @@
-import { getClientHistory } from "./api.js?v=20260723-audit1";
-import { PROVIDERS, formatDate, formatRange, formatValue, metricLabel } from "./formatters.js?v=20260723-audit1";
+import { getClientHistory } from "./api.js?v=20260724-blogs1";
+import { panelSkeleton } from "./skeleton.js?v=20260726-loading1";
+import { PROVIDERS, formatDate, formatRange, formatValue, metricLabel } from "./formatters.js?v=20260724-blogs1";
 
 export function createDetailDrawer({ onError }) {
   const dialog = document.querySelector("#detail-dialog");
@@ -20,7 +21,7 @@ export function createDetailDrawer({ onError }) {
     opener = trigger;
     title.textContent = client.name;
     subtitle.textContent = `${client.domain} · last 12 closed periods`;
-    body.innerHTML = `<div class="skeleton-line skeleton-line--title"></div><div class="skeleton-block"></div>`;
+    body.innerHTML = panelSkeleton({ label: "history", rows: 6, columns: 3 });
     dialog.showModal();
     try {
       payload = await getClientHistory(client.client_id, period);

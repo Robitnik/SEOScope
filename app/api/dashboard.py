@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -23,6 +23,11 @@ from app.db.repositories.clients import ClientRepository
 from app.db.repositories.health import HealthHistoryRepository
 from app.db.repositories.metrics import MetricRepository
 from app.db.repositories.snapshots import SnapshotRepository
+from app.db.repositories.tech_audits import (
+    TechAuditReadRepository,
+    audit_provenance,
+    count_findings,
+)
 from app.metrics import (
     CATALOG,
     HealthResult,
@@ -48,6 +53,8 @@ from app.schemas.api import (
     MetricHistorySeriesDTO,
     MetricTrendDTO,
     ProviderSummaryDTO,
+    TechAuditCardDTO,
+    TechAuditCardState,
 )
 from app.schemas.enums import (
     METRIC_PROVIDERS,
@@ -57,6 +64,7 @@ from app.schemas.enums import (
     PeriodRole,
     Provider,
     Quality,
+    SourceMode,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
@@ -67,6 +75,7 @@ router = APIRouter(prefix="/api/v1", tags=["dashboard"])
 # in that client's timezone (`MetricCardValue.current_range`), which is what
 # actually governs the numbers shown, not this header value.
 _HEADER_REFERENCE_TZ = "America/New_York"
+_TECH_AUDIT_STALE_AFTER = timedelta(days=30)
 
 
 def _range_matches_period(row: MetricValue, period: PeriodKind) -> bool:
@@ -156,6 +165,7 @@ def _build_provider_summary(
     client_id: str,
     provider: Provider,
     periods: Periods,
+    period_kind: PeriodKind,
     now: datetime,
     as_of: datetime | None = None,
 ) -> ProviderSummaryDTO:
@@ -172,7 +182,37 @@ def _build_provider_summary(
     snapshots = SnapshotRepository(session)
     metrics_repo = MetricRepository(session)
 
-    current_snapshot = snapshots.latest_success(client_id, provider, before=as_of)
+    specs = metrics_for(provider)
+    has_range_metrics = any(spec.comparison_kind == "range" for spec in specs)
+    required_source_mode = SourceMode.api if provider == Provider.gsc else None
+    current_snapshot = snapshots.latest_success(
+        client_id,
+        provider,
+        before=as_of or now,
+        period_start=periods.current.start if has_range_metrics else None,
+        period_end=periods.current.end if has_range_metrics else None,
+        source_mode=required_source_mode,
+    )
+    if current_snapshot is None:
+        # Keep the last collected range visible as stale when the requested
+        # period has not been collected yet, but never substitute a different
+        # cadence (the production defect was a monthly import labelled as a
+        # weekly result). Exact range above always wins when both exist.
+        fallback = snapshots.latest_success(
+            client_id,
+            provider,
+            before=as_of or now,
+            source_mode=required_source_mode,
+        )
+        if fallback is not None and (
+            not has_range_metrics
+            or any(
+                row.period_role == PeriodRole.current
+                and _range_matches_period(row, period_kind)
+                for row in metrics_repo.for_snapshot(fallback.id)
+            )
+        ):
+            current_snapshot = fallback
     latest_cell = cells.latest_for_client_provider(client_id, provider)
 
     last_attempt_at = None
@@ -222,7 +262,10 @@ def _build_provider_summary(
         (v.metric_key, v.period_role): v for v in metrics_repo.for_snapshot(current_snapshot.id)
     }
     previous_snapshot = snapshots.latest_success(
-        client_id, provider, before=current_snapshot.observed_at
+        client_id,
+        provider,
+        before=current_snapshot.observed_at,
+        source_mode=required_source_mode,
     )
     previous_values = (
         {(v.metric_key, v.period_role): v for v in metrics_repo.for_snapshot(previous_snapshot.id)}
@@ -230,7 +273,6 @@ def _build_provider_summary(
         else {}
     )
 
-    specs = metrics_for(provider)
     metrics: list[MetricCardValue] = []
     for spec in specs:
         current_range: DateRange | None = None
@@ -238,8 +280,12 @@ def _build_provider_summary(
         if spec.comparison_kind == "range":
             current_mv = current_values.get((spec.key, PeriodRole.current))
             previous_mv = current_values.get((spec.key, PeriodRole.previous))
-            current_range = periods.current
-            previous_range = periods.previous
+            if current_mv is not None and current_mv.period_start and current_mv.period_end:
+                current_range = DateRange(start=current_mv.period_start, end=current_mv.period_end)
+            if previous_mv is not None and previous_mv.period_start and previous_mv.period_end:
+                previous_range = DateRange(
+                    start=previous_mv.period_start, end=previous_mv.period_end
+                )
         else:
             current_mv = current_values.get((spec.key, PeriodRole.snapshot))
             previous_mv = previous_values.get((spec.key, PeriodRole.snapshot))
@@ -317,6 +363,12 @@ HEALTH_TREND_LOOKBACK_DAYS = 7
 # the Reporting Ninja section (mirrors the Ahrefs/health pairing above it).
 GBP_CLICKS_HISTORY_DAYS = 30
 GBP_CLICKS_TREND_LOOKBACK_DAYS = 7
+
+# Same window again, for the GSC clicks trend block above the Search Console
+# section — sourced from `gsc_daily`, the same per-day dataset the client-page
+# chart already reads (see `GscAdapter.collect_datasets`).
+GSC_CLICKS_HISTORY_DAYS = 30
+GSC_CLICKS_TREND_LOOKBACK_DAYS = 7
 
 
 def _health_with_trend(
@@ -428,6 +480,49 @@ def _gbp_clicks_trend(session: Session, *, client_id: str, today: date) -> Metri
     )
 
 
+def _gsc_clicks_trend(session: Session, *, client_id: str, today: date) -> MetricTrendDTO:
+    """Week-over-week arrow + daily sparkline for GSC clicks.
+
+    Mirrors `_gbp_clicks_trend` exactly, reading `gsc_daily` (one row per day
+    per client, `clicks` in `metrics_json`) instead of `gbp_daily` — the same
+    dataset `GscAdapter.collect_datasets` already persists for the
+    client-page chart, so this needs no new collection path.
+    """
+    rows = AnalyticsDatasetRepository(session).latest_rows_by_dimension(
+        client_id, Provider.gsc, "gsc_daily"
+    )
+    since = today - timedelta(days=GSC_CLICKS_HISTORY_DAYS)
+    points: list[HealthPointDTO] = []
+    for dimension_value, row in rows.items():
+        try:
+            day = date.fromisoformat(dimension_value)
+        except ValueError:
+            continue
+        if day < since or day > today:
+            continue
+        raw = row.metrics_json.get("clicks")
+        if raw is None:
+            continue
+        points.append(HealthPointDTO(day=day, value=Decimal(str(raw))))
+    points.sort(key=lambda point: point.day)
+
+    value = points[-1].value if points else None
+    previous_value: Decimal | None = None
+    if points:
+        lookback_day = points[-1].day - timedelta(days=GSC_CLICKS_TREND_LOOKBACK_DAYS)
+        candidates = [point.value for point in points if point.day <= lookback_day]
+        if candidates:
+            previous_value = candidates[-1]
+
+    delta_pct: Decimal | None = None
+    if value is not None and previous_value is not None and previous_value != 0:
+        delta_pct = ((value - previous_value) / previous_value * 100).quantize(Decimal("0.1"))
+
+    return MetricTrendDTO(
+        value=value, value_previous=previous_value, delta_pct=delta_pct, history=points
+    )
+
+
 def backfill_health_history(session: Session, *, days: int, now: datetime) -> int:
     """Reconstruct the daily composite-health series from snapshots already in
     the database, so the card's trend works on day one instead of only after a
@@ -459,6 +554,7 @@ def backfill_health_history(session: Session, *, days: int, now: datetime) -> in
                     client_id=client.id,
                     provider=provider,
                     periods=periods,
+                    period_kind=PeriodKind.week,
                     now=as_of,
                     as_of=as_of,
                 )
@@ -487,13 +583,19 @@ def _build_client_card(
     period_kind: PeriodKind,
     anchor_dt: datetime,
     now: datetime,
+    tech_audit: TechAuditCardDTO,
 ) -> ClientCardDTO:
     periods = resolve_periods(
         period_kind, anchor_dt, tz=client.timezone, mode=ComparisonMode.closed
     )
     summaries = [
         _build_provider_summary(
-            session, client_id=client.id, provider=provider, periods=periods, now=now
+            session,
+            client_id=client.id,
+            provider=provider,
+            periods=periods,
+            period_kind=period_kind,
+            now=now,
         )
         for provider in providers
     ]
@@ -514,6 +616,7 @@ def _build_client_card(
     health = compute_health(summaries, CATALOG)
     health_dto = _health_with_trend(session, client_id=client.id, health=health, today=now.date())
     gbp_clicks_trend = _gbp_clicks_trend(session, client_id=client.id, today=now.date())
+    gsc_clicks_trend = _gsc_clicks_trend(session, client_id=client.id, today=now.date())
 
     return ClientCardDTO(
         client_id=client.id,
@@ -528,7 +631,96 @@ def _build_client_card(
         last_synced_at=max(successes) if successes else None,
         health=health_dto,
         gbp_clicks_trend=gbp_clicks_trend,
+        gsc_clicks_trend=gsc_clicks_trend,
+        tech_audit=tech_audit,
     )
+
+
+def _tech_audit_cards(
+    session: Session, client_ids: Sequence[str], *, now: datetime
+) -> dict[str, TechAuditCardDTO]:
+    repo = TechAuditReadRepository(session)
+    crawls = repo.latest_crawls(client_ids)
+    findings = repo.findings_for_crawls(crawls)
+    rechecks = repo.rechecks_for_crawls(crawls)
+    attempts = repo.latest_crawl_attempts(client_ids)
+    out: dict[str, TechAuditCardDTO] = {}
+
+    for client_id in client_ids:
+        crawl = crawls.get(client_id)
+        attempt = attempts.get(client_id)
+        cell, job = attempt if attempt else (None, None)
+        active = cell is not None and cell.status in {
+            CellStatus.queued,
+            CellStatus.running,
+            CellStatus.awaiting_auth,
+            CellStatus.cancel_requested,
+        }
+        latest_failed = cell is not None and cell.status in {
+            CellStatus.failed,
+            CellStatus.failed_interrupted,
+        }
+
+        if crawl is None:
+            state: TechAuditCardState = (
+                "running"
+                if active and cell is not None and cell.status != CellStatus.queued
+                else "queued"
+                if active
+                else "failed"
+                if latest_failed
+                else "no_run"
+            )
+            out[client_id] = TechAuditCardDTO(
+                state=state,
+                active_job_id=(job.batch_id or job.id) if active and job else None,
+            )
+            continue
+
+        prov = audit_provenance(crawl)
+        counts = count_findings(findings.get(client_id, []), rechecks.get(client_id, {}))
+        quality = crawl.quality
+        if active and cell is not None:
+            state = "queued" if cell.status == CellStatus.queued else "running"
+        elif (
+            latest_failed
+            and cell is not None
+            and cell.finished_at
+            and cell.finished_at > crawl.observed_at
+        ):
+            state = "failed"
+        elif now - crawl.observed_at > _TECH_AUDIT_STALE_AFTER:
+            state = "stale"
+        elif quality in (Quality.partial, Quality.truncated):
+            state = "partial" if quality == Quality.partial else "truncated"
+        else:
+            state = "complete"
+
+        def _optional_int(key: str, values: dict[str, Any] = prov) -> int | None:
+            value = values.get(key)
+            try:
+                return int(value) if value is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        out[client_id] = TechAuditCardDTO(
+            state=state,
+            run_id=crawl.id,
+            observed_at=crawl.observed_at,
+            pages_crawled=_optional_int("pages_crawled"),
+            pages_discovered=_optional_int("pages_discovered"),
+            max_pages=_optional_int("max_pages"),
+            open_errors=counts.open_errors,
+            error_urls=counts.error_urls,
+            open_warnings=counts.open_warnings,
+            open_notices=counts.open_notices,
+            fixed_findings=counts.fixed_findings,
+            unreachable_findings=counts.unreachable_findings,
+            total_findings=counts.total_findings,
+            quality=quality,
+            active_job_id=(job.batch_id or job.id) if active and job else None,
+        )
+    return out
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
@@ -558,6 +750,7 @@ async def get_dashboard(
                 or needle in c.domain.lower()
                 or needle in c.slug.lower()
             ]
+        audit_cards = _tech_audit_cards(s, [str(client.id) for client in clients], now=now)
         cards = [
             _build_client_card(
                 s,
@@ -566,6 +759,7 @@ async def get_dashboard(
                 period_kind=period,
                 anchor_dt=anchor_dt,
                 now=now,
+                tech_audit=audit_cards.get(str(c.id), TechAuditCardDTO()),
             )
             for c in clients
         ]
@@ -605,7 +799,12 @@ async def get_client_metrics_history(
         series: list[MetricHistorySeriesDTO] = []
         for spec in CATALOG.values():
             rows = _history_for_period(
-                metrics_repo.history(client_id, spec.key, n=min(history * 20, 2080)),
+                metrics_repo.history(
+                    client_id,
+                    spec.key,
+                    n=min(history * 20, 2080),
+                    source_mode=SourceMode.api if spec.provider == Provider.gsc else None,
+                ),
                 period=period,
                 comparison_kind=spec.comparison_kind,
                 limit=history,

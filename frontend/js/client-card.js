@@ -1,5 +1,6 @@
-import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260723-audit1";
-import { buildClientHash } from "./router.js?v=20260723-audit1";
+import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260724-bulkaudit2";
+import { buildClientHash } from "./router.js?v=20260724-bulkaudit2";
+import { cardSkeletons } from "./skeleton.js?v=20260726-loading1";
 
 function providerIcon(provider) {
   const meta = PROVIDERS[provider];
@@ -65,7 +66,9 @@ function metricsTable(summary, ranges) {
 function providerBlock(summary, ranges) {
   const provider = summary.provider;
   const meta = PROVIDERS[provider] || { label: provider };
-  const source = SOURCE_LABELS[summary.source_mode];
+  const source = provider === "gsc" && summary.source_mode === "api"
+    ? "Reporting Ninja"
+    : SOURCE_LABELS[summary.source_mode];
   return `
     <section class="provider-block ${stateClass(summary.state)}" aria-label="${meta.label}">
       <div class="provider-heading">
@@ -157,11 +160,12 @@ function healthGauge(health) {
 // which fetched a *per-card* history request after paint and charted Ahrefs'
 // own Health Score — a different series from the gauge it sat under.
 //
-// The same pair also drives the GBP website-clicks block above Reporting
-// Ninja (`gbpClicksTrendBlocks` below): both series share the same shape
-// (`value`/`value_previous`/`delta_pct`/`history` — see `MetricTrendDTO`) and
-// both are "higher is better", so one generic delta+sparkline renderer covers
-// both instead of two near-identical copies.
+// The same pair also drives the GSC clicks block above Search Console
+// (`gscClicksTrendBlocks`) and the GBP website-clicks block above Reporting
+// Ninja (`gbpClicksTrendBlocks`, below): all three series share the same
+// shape (`value`/`value_previous`/`delta_pct`/`history` — see
+// `MetricTrendDTO`) and are all "higher is better", so one generic
+// delta+sparkline renderer covers all three instead of near-identical copies.
 function healthTrendBlocks(health) {
   return `<div class="health-trend">${trendDeltaBlock(health)}${trendSparkline(health, {
     emptyText: "Daily trend appears once there are two days of history",
@@ -173,6 +177,17 @@ function gbpClicksTrendBlocks(trend) {
   return `<div class="health-trend">${trendDeltaBlock(trend)}${trendSparkline(trend, {
     emptyText: "Daily clicks trend appears once there are two days of history",
     a11yLabel: (points, first, last) => `Website clicks over ${points.length} days, ${points[0].day} to ${points.at(-1).day}: from ${first} to ${last}.`,
+  })}</div>`;
+}
+
+// Same pairing again for GSC clicks (`client.gsc_clicks_trend`, sourced from
+// the `gsc_daily` dataset — see `_gsc_clicks_trend` in app/api/dashboard.py),
+// rendered above the Search Console section so it's not mistaken for the GBP
+// block above Reporting Ninja.
+function gscClicksTrendBlocks(trend) {
+  return `<div class="health-trend">${trendDeltaBlock(trend)}${trendSparkline(trend, {
+    emptyText: "Daily clicks trend appears once there are two days of history",
+    a11yLabel: (points, first, last) => `Search Console clicks over ${points.length} days, ${points[0].day} to ${points.at(-1).day}: from ${first} to ${last}.`,
   })}</div>`;
 }
 
@@ -240,6 +255,63 @@ function sparklinePoints(values, width, height, pad) {
   }).join(" ");
 }
 
+function techAuditStrip(client) {
+  const audit = client.tech_audit || { state: "no_run" };
+  const hasCount = audit.open_errors !== null && audit.open_errors !== undefined;
+  const incomplete = ["partial", "truncated"].includes(audit.state);
+  const active = ["queued", "running"].includes(audit.state);
+  const errorCount = hasCount ? Number(audit.open_errors) : null;
+  const countLabel = hasCount
+    ? errorCount === 0
+      ? incomplete ? "No errors found yet" : "No open errors"
+      : `${new Intl.NumberFormat("en-US").format(errorCount)}${incomplete ? "+ errors found" : ` open ${errorCount === 1 ? "error" : "errors"}`}`
+    : null;
+  let primary = countLabel || "Not audited";
+  let status = "Ready to crawl";
+  let statusIcon = "bug";
+  if (active) {
+    primary = countLabel || (audit.state === "queued" ? "Audit queued" : "Audit in progress");
+    status = audit.state === "queued" ? "Queued" : "Updating";
+    statusIcon = audit.state === "queued" ? "clock" : "loader-2";
+  } else if (audit.state === "failed") {
+    primary = countLabel || "Audit failed";
+    status = hasCount ? "Previous result" : "Run again";
+    statusIcon = "alert-circle";
+  } else if (audit.state === "stale") {
+    status = "Refresh due";
+    statusIcon = "clock-exclamation";
+  } else if (incomplete) {
+    status = audit.state === "truncated" ? "Page limit reached" : "Partial crawl";
+    statusIcon = "alert-triangle";
+  } else if (hasCount) {
+    status = "Latest crawl";
+    statusIcon = errorCount === 0 ? "circle-check" : "bug";
+  }
+  const detail = [];
+  if (audit.open_warnings !== null && audit.open_warnings !== undefined) {
+    detail.push(`${new Intl.NumberFormat("en-US").format(audit.open_warnings)} warnings`);
+  }
+  if (audit.pages_crawled !== null && audit.pages_crawled !== undefined) {
+    detail.push(`${new Intl.NumberFormat("en-US").format(audit.pages_crawled)} pages`);
+  }
+  const observed = formatDate(audit.observed_at);
+  if (observed) detail.push(observed);
+  if (!detail.length) detail.push(active ? "The latest valid result will stay visible" : "Run our crawler across this site");
+  const tone = !hasCount ? audit.state : active ? "running" : errorCount > 0 ? "errors" : "clear";
+  const href = buildClientHash(client.client_id, { focus: "audit" });
+  return `
+    <a class="tech-audit-strip ${stateClass(audit.state)}" data-tone="${escapeHtml(tone)}" href="${href}" aria-label="Technical audit for ${escapeHtml(client.name)}: ${escapeHtml(primary)}">
+      <span class="tech-audit-strip__mark">${icon("bug")}</span>
+      <span class="tech-audit-strip__body">
+        <span class="tech-audit-strip__label">Technical audit</span>
+        <strong>${escapeHtml(primary)}</strong>
+        <small>${escapeHtml(detail.join(" · "))}</small>
+      </span>
+      <span class="tech-audit-strip__state">${icon(statusIcon, `icon icon--tiny${audit.state === "running" ? " icon--spin" : ""}`)}${escapeHtml(status)}</span>
+      ${icon("chevron-right", "icon tech-audit-strip__arrow")}
+    </a>`;
+}
+
 export function renderClientCard(client, dashboard) {
   const state = STATE_META[client.overall_status] || STATE_META.attention;
   const ordered = [...(client.providers || [])]
@@ -286,13 +358,14 @@ export function renderClientCard(client, dashboard) {
         <span class="status-label ${stateClass(client.overall_status)}">${icon(state.icon)}${state.label}</span>
         <span>Last collection: ${formatTimestamp(client.last_synced_at)}</span>
       </div>
+      ${techAuditStrip(client)}
       <div class="client-card__providers">
-        ${withMetrics.map((summary) => `${summary.provider === "ahrefs" ? healthTrendBlocks(client.health) : ""}${summary.provider === "reporting_ninja" ? gbpClicksTrendBlocks(client.gbp_clicks_trend) : ""}${providerBlock(summary, { current: dashboard.current_range, previous: dashboard.previous_range })}`).join("")}
+        ${withMetrics.map((summary) => `${summary.provider === "ahrefs" ? healthTrendBlocks(client.health) : ""}${summary.provider === "gsc" ? gscClicksTrendBlocks(client.gsc_clicks_trend) : ""}${summary.provider === "reporting_ninja" ? gbpClicksTrendBlocks(client.gbp_clicks_trend) : ""}${providerBlock(summary, { current: dashboard.current_range, previous: dashboard.previous_range })}`).join("")}
         ${setupPanel(withoutMetrics)}
       </div>
     </article>`;
 }
 
 export function renderSkeletons(count = 4) {
-  return Array.from({ length: count }, () => `<article class="skeleton-card" aria-hidden="true"><div class="skeleton-line skeleton-line--title"></div><div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div><div class="skeleton-line"></div><div class="skeleton-line skeleton-line--short"></div></article>`).join("");
+  return cardSkeletons(count);
 }

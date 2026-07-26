@@ -53,6 +53,7 @@
     ],
     "Provider": [
       "ahrefs",
+      "blogs",
       "gsc",
       "reporting_ninja",
       "semrush",
@@ -131,6 +132,18 @@
               "default": null,
               "title": "Finished At"
             },
+            "progress_message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Progress Message"
+            },
             "progress_percent": {
               "anyOf": [
                 {
@@ -145,6 +158,17 @@
             },
             "provider": {
               "$ref": "#/$defs/Provider"
+            },
+            "quality": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quality"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             },
             "started_at": {
               "anyOf": [
@@ -232,9 +256,21 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
+          "type": "string"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
           "type": "string"
         }
       },
@@ -320,9 +356,21 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
+          "type": "string"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
           "type": "string"
         }
       },
@@ -374,6 +422,18 @@
           "default": null,
           "title": "Finished At"
         },
+        "progress_message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Progress Message"
+        },
         "progress_percent": {
           "anyOf": [
             {
@@ -388,6 +448,17 @@
         },
         "provider": {
           "$ref": "#/$defs/Provider"
+        },
+        "quality": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Quality"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "started_at": {
           "anyOf": [
@@ -867,7 +938,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -996,6 +1068,182 @@
           ],
           "title": "SourceMode",
           "type": "string"
+        },
+        "TechAuditCardDTO": {
+          "description": "Latest measured crawl state shown independently from metric health.\n\nCounts are finding rows from one crawl snapshot, after applying only the\nrechecks that belong to that same snapshot.  A failed/running newer attempt\nmay therefore keep the last valid counts visible instead of fabricating 0.",
+          "properties": {
+            "active_job_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Active Job Id"
+            },
+            "error_urls": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error Urls"
+            },
+            "fixed_findings": {
+              "default": 0,
+              "title": "Fixed Findings",
+              "type": "integer"
+            },
+            "max_pages": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Max Pages"
+            },
+            "observed_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Observed At"
+            },
+            "open_errors": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Open Errors"
+            },
+            "open_notices": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Open Notices"
+            },
+            "open_warnings": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Open Warnings"
+            },
+            "pages_crawled": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Pages Crawled"
+            },
+            "pages_discovered": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Pages Discovered"
+            },
+            "quality": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quality"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "run_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Run Id"
+            },
+            "state": {
+              "default": "no_run",
+              "enum": [
+                "no_run",
+                "queued",
+                "running",
+                "complete",
+                "partial",
+                "truncated",
+                "failed",
+                "stale"
+              ],
+              "title": "State",
+              "type": "string"
+            },
+            "total_findings": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Total Findings"
+            },
+            "unreachable_findings": {
+              "default": 0,
+              "title": "Unreachable Findings",
+              "type": "integer"
+            }
+          },
+          "title": "TechAuditCardDTO",
+          "type": "object"
         }
       },
       "properties": {
@@ -1008,6 +1256,9 @@
           "type": "string"
         },
         "gbp_clicks_trend": {
+          "$ref": "#/$defs/MetricTrendDTO"
+        },
+        "gsc_clicks_trend": {
           "$ref": "#/$defs/MetricTrendDTO"
         },
         "health": {
@@ -1074,6 +1325,9 @@
         "slug": {
           "title": "Slug",
           "type": "string"
+        },
+        "tech_audit": {
+          "$ref": "#/$defs/TechAuditCardDTO"
         },
         "timezone": {
           "title": "Timezone",
@@ -1330,7 +1584,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -1534,7 +1789,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -1792,6 +2048,9 @@
             "gbp_clicks_trend": {
               "$ref": "#/$defs/MetricTrendDTO"
             },
+            "gsc_clicks_trend": {
+              "$ref": "#/$defs/MetricTrendDTO"
+            },
             "health": {
               "$ref": "#/$defs/ClientHealthDTO"
             },
@@ -1856,6 +2115,9 @@
             "slug": {
               "title": "Slug",
               "type": "string"
+            },
+            "tech_audit": {
+              "$ref": "#/$defs/TechAuditCardDTO"
             },
             "timezone": {
               "title": "Timezone",
@@ -2313,7 +2575,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -2442,6 +2705,182 @@
           ],
           "title": "SourceMode",
           "type": "string"
+        },
+        "TechAuditCardDTO": {
+          "description": "Latest measured crawl state shown independently from metric health.\n\nCounts are finding rows from one crawl snapshot, after applying only the\nrechecks that belong to that same snapshot.  A failed/running newer attempt\nmay therefore keep the last valid counts visible instead of fabricating 0.",
+          "properties": {
+            "active_job_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Active Job Id"
+            },
+            "error_urls": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Error Urls"
+            },
+            "fixed_findings": {
+              "default": 0,
+              "title": "Fixed Findings",
+              "type": "integer"
+            },
+            "max_pages": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Max Pages"
+            },
+            "observed_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Observed At"
+            },
+            "open_errors": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Open Errors"
+            },
+            "open_notices": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Open Notices"
+            },
+            "open_warnings": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Open Warnings"
+            },
+            "pages_crawled": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Pages Crawled"
+            },
+            "pages_discovered": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Pages Discovered"
+            },
+            "quality": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quality"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "run_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Run Id"
+            },
+            "state": {
+              "default": "no_run",
+              "enum": [
+                "no_run",
+                "queued",
+                "running",
+                "complete",
+                "partial",
+                "truncated",
+                "failed",
+                "stale"
+              ],
+              "title": "State",
+              "type": "string"
+            },
+            "total_findings": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Total Findings"
+            },
+            "unreachable_findings": {
+              "default": 0,
+              "title": "Unreachable Findings",
+              "type": "integer"
+            }
+          },
+          "title": "TechAuditCardDTO",
+          "type": "object"
         }
       },
       "properties": {
@@ -2514,7 +2953,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -2677,6 +3117,18 @@
               "default": null,
               "title": "Finished At"
             },
+            "progress_message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Progress Message"
+            },
             "progress_percent": {
               "anyOf": [
                 {
@@ -2691,6 +3143,17 @@
             },
             "provider": {
               "$ref": "#/$defs/Provider"
+            },
+            "quality": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Quality"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             },
             "started_at": {
               "anyOf": [
@@ -2910,9 +3373,21 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
+          "type": "string"
+        },
+        "Quality": {
+          "enum": [
+            "complete",
+            "partial",
+            "truncated",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Quality",
           "type": "string"
         },
         "StageStatus": {
@@ -3418,7 +3893,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -3535,7 +4011,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -3664,7 +4141,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -3731,7 +4209,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -3820,7 +4299,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -4186,7 +4666,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -4324,7 +4805,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"
@@ -4518,7 +5000,8 @@
             "semrush",
             "gsc",
             "reporting_ninja",
-            "tech_audit"
+            "tech_audit",
+            "blogs"
           ],
           "title": "Provider",
           "type": "string"

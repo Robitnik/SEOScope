@@ -24,6 +24,7 @@ import importlib
 import inspect
 import json
 import pkgutil
+import re
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,16 @@ import pytest
 pytestmark = pytest.mark.contract
 
 SNAPSHOT_PATH = Path(__file__).parent / "data" / "aiseotools_signatures.json"
+
+# `repr()` за замовчуванням дописує адресу об'єкта в пам'яті: `log=<function <lambda> at
+# 0x7f...>`. Вона різна В КОЖНОМУ процесі, тож такий знімок падав на першому ж наступному
+# прогоні — гейт звинувачував AISeoTools у неадитивній зміні там, де не змінилось нічого
+# (`tech_audit.pipeline.run_import`, `tech_audit.recheck.run_recheck`).
+#
+# Адреса нам і не потрібна: гейт стереже ІМЕНА, ПОРЯДОК і НАЯВНІСТЬ параметрів. Замінюємо
+# адресу маркером — «дефолт лишається тим самим об'єктом-функцією» перевіряється й далі, а
+# перетворення його на `None` чи на іменовану функцію знімок так само помітить.
+_MEMORY_ADDRESS = re.compile(r" at 0x[0-9a-fA-F]+")
 
 seo_audit = pytest.importorskip(
     "seo_audit",
@@ -44,11 +55,15 @@ def _signature_of(name: str, obj: object) -> str:
     Частина винятків AISeoTools не має власного `__init__`, тож
     `inspect.signature` на них падає. Для гейта важлива сама наявність
     символу, тому такий випадок фіксується, а не ламає знімок.
+
+    Адреси в пам'яті вирізаються — див. `_MEMORY_ADDRESS`: без цього знімок
+    недетермінований і гейт валиться сам об себе.
     """
     try:
-        return f"{name}{inspect.signature(obj)}"  # type: ignore[arg-type]
+        signature = f"{name}{inspect.signature(obj)}"  # type: ignore[arg-type]
     except (ValueError, TypeError):
         return f"{name}(<опис недоступний>)"
+    return _MEMORY_ADDRESS.sub("", signature)
 
 
 def _dashboard_modules() -> list[str]:

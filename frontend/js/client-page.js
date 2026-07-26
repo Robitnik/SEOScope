@@ -1,12 +1,13 @@
-import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, isFixtureMode } from "./api.js?v=20260723-audit1";
-import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260723-audit1";
-import { buildAhrefsHash, replaceClientHash } from "./router.js?v=20260723-audit1";
-import { escapeHtml, formatTimestamp, icon, initials, isTerminal, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260723-audit1";
-import { createAnalyticsTab } from "./analytics-tabs.js?v=20260723-audit1";
-import { renderAlertsBlock } from "./alerts-block.js?v=20260723-audit1";
-import { renderChart, destroyChart } from "./charts.js?v=20260723-audit1";
-import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260723-audit1";
-import { watchJob } from "./sse.js?v=20260723-audit1";
+import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, isAbortError, isFixtureMode } from "./api.js?v=20260724-bulkaudit2";
+import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260726-loading1";
+import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260724-blogs1";
+import { buildAhrefsHash, buildBlogsHash, replaceClientHash } from "./router.js?v=20260724-bulkaudit2";
+import { escapeHtml, formatTimestamp, icon, initials, isTerminal, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260724-bulkaudit2";
+import { createAnalyticsTab } from "./analytics-tabs.js?v=20260724-blogs1";
+import { renderAlertsBlock } from "./alerts-block.js?v=20260724-blogs1";
+import { renderChart, destroyChart } from "./charts.js?v=20260724-blogs1";
+import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260724-blogs1";
+import { watchJob } from "./sse.js?v=20260724-blogs1";
 
 const PERIODS = [
   { key: "week", label: "Week" },
@@ -80,6 +81,9 @@ let auditFindings = null;
 let auditBusy = false;
 let stopAuditWatching = null;
 const pendingRecheck = new Set();
+// Client Blogs (task-26). Independent of the selected period: an inventory is
+// a point-in-time crawl, so it loads once per client, not per period change.
+let blogsSummary = null;
 const AUDIT_PAGE_SIZE = 25;
 const GA4_DATASETS = ["ga4_channels", "ga4_landing_pages", "ga4_events", "ga4_devices", "ga4_countries"];
 
@@ -99,6 +103,7 @@ function paramsFromQuery(query) {
     auditCategory: query.get("cat") || "",
     auditSearch: query.get("fq") || "",
     auditOffset: Math.max(0, Number(query.get("foff")) || 0),
+    focus: query.get("focus") === "audit" ? "audit" : "",
   };
 }
 
@@ -130,6 +135,7 @@ export async function initClientPage(clientId, query) {
   auditFindings = null;
   auditBusy = false;
   pendingRecheck.clear();
+  blogsSummary = null;
   destroyChart();
   destroyReportingNinjaChart();
   current = { clientId, ...paramsFromQuery(query) };
@@ -145,14 +151,44 @@ export async function initClientPage(clientId, query) {
   });
   bindShell();
   await loadClient();
+  if (current.focus === "audit") {
+    const audit = document.querySelector("#cp-audit");
+    audit?.setAttribute("tabindex", "-1");
+    audit?.classList.add("audit-section--focused");
+    requestAnimationFrame(() => {
+      audit?.scrollIntoView({ behavior: "smooth", block: "start" });
+      audit?.focus({ preventScroll: true });
+    });
+  }
+}
+
+// Skeleton in / content out. `aria-busy` is what tells a screen reader that a
+// live region is mid-update, so it is set and cleared in exactly one pair of
+// helpers rather than left to each renderer to remember.
+function setBusy(selector, html) {
+  const node = document.querySelector(selector);
+  if (!node) return;
+  node.setAttribute("aria-busy", "true");
+  node.innerHTML = html;
+}
+
+function settle(selector) {
+  document.querySelector(selector)?.setAttribute("aria-busy", "false");
+}
+
+// The two exact date ranges are the anchor of every number on this page, so
+// their placeholder keeps their shape (two labelled chips) instead of collapsing
+// the row to a one-line "Loading…" that later pushes the panel taller.
+function periodDatesSkeleton() {
+  return `<span class="skeleton period-dates-skeleton"><span class="visually-hidden">Loading period dates…</span>
+    <span class="skeleton-line"></span><span class="skeleton-line"></span></span>`;
 }
 
 function shell() {
   return `
-    <a class="back-link" href="/">${icon("arrow-left")}<span>All clients</span></a>
-    <header class="client-page__header" id="cp-header" aria-live="polite">
-      <div class="skeleton-line skeleton-line--title"></div>
-      <div class="skeleton-line skeleton-line--short"></div>
+    <a class="back-link" href="#/">${icon("arrow-left")}<span>All clients</span></a>
+    <header class="client-page__header" id="cp-header" aria-live="polite" aria-busy="true">
+      ${clientHeaderSkeleton()}
     </header>
     <section class="period-panel" aria-label="Comparison period">
       <div class="period-panel__kinds" role="group" aria-label="Period type" id="cp-period-kinds">
@@ -163,7 +199,7 @@ function shell() {
         <label>To<input type="date" id="cp-custom-end" value="${escapeHtml(current.customEnd)}"></label>
         <button type="button" class="button button--quiet" id="cp-custom-apply">Apply</button>
       </div>
-      <p class="period-panel__dates" id="cp-period-dates" aria-live="polite">Loading period dates…</p>
+      <p class="period-panel__dates" id="cp-period-dates" aria-live="polite" aria-busy="true">${periodDatesSkeleton()}</p>
       <div class="period-panel__live">
         <button type="button" class="button button--quiet" id="cp-live-refresh">${icon("refresh")}Refresh live data</button>
         <div class="live-collection" id="cp-live-status" aria-live="polite" hidden></div>
@@ -172,14 +208,17 @@ function shell() {
     </section>
     <div id="cp-gate" class="state-panel" hidden></div>
     <div id="cp-content">
-      <section class="ahrefs-section" id="cp-ahrefs" aria-label="Ahrefs live Site Audit" aria-live="polite">
-        <div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>
+      <section class="blogs-section" id="cp-blogs" aria-label="Client blogs" aria-live="polite" aria-busy="true">
+        ${sectionSkeleton({ label: "blogs", kpis: 1 })}
       </section>
-      <section class="audit-section" id="cp-audit" aria-label="Technical SEO audit" aria-live="polite">
-        <div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>
+      <section class="ahrefs-section" id="cp-ahrefs" aria-label="Ahrefs live Site Audit" aria-live="polite" aria-busy="true">
+        ${sectionSkeleton({ label: "Ahrefs Site Audit", kpis: 3 })}
       </section>
-      <section class="rn-section" id="cp-reporting-ninja" aria-label="Reporting Ninja and GA4 analytics" aria-live="polite">
-        <div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>
+      <section class="audit-section" id="cp-audit" aria-label="Technical SEO audit" aria-live="polite" aria-busy="true">
+        ${sectionSkeleton({ label: "the technical audit", kpis: 4, rows: 5, columns: 3 })}
+      </section>
+      <section class="rn-section" id="cp-reporting-ninja" aria-label="Reporting Ninja and GA4 analytics" aria-live="polite" aria-busy="true">
+        ${sectionSkeleton({ label: "analytics", kpis: 4, chart: true, rows: 4, columns: 3 })}
       </section>
       <div id="cp-gsc-content">
       <section class="analytics-tabs" aria-label="Page and query analytics">
@@ -188,7 +227,7 @@ function shell() {
           <button type="button" role="tab" id="cp-tab-page" aria-controls="cp-tabpanel" aria-selected="${String(current.tab === "page")}">${icon("file-text")}Pages</button>
           <button type="button" role="tab" id="cp-tab-query" aria-controls="cp-tabpanel" aria-selected="${String(current.tab === "query")}">${icon("search")}Queries</button>
         </div>
-        <div id="cp-tabpanel" role="tabpanel" aria-live="polite" aria-busy="true"></div>
+        <div id="cp-tabpanel" role="tabpanel" aria-live="polite" aria-busy="true">${panelSkeleton({ label: "pages and queries", rows: 8, columns: 4 })}</div>
       </section>
       <section class="alerts-section" id="cp-alerts" aria-label="Alerts: drops and growth" aria-live="polite"></section>
       <section class="chart-section" id="cp-chart" aria-label="Clicks and impressions trend"></section>
@@ -251,7 +290,7 @@ function switchTab(tab) {
 
 async function loadClient({ allowAutoLive = true } = {}) {
   try {
-    const dashboard = await getDashboard({ period: "week" });
+    const dashboard = await getDashboard({ period: "week", requestKey: "client-shell" });
     const client = (dashboard.clients || []).find((item) => item.client_id === current.clientId);
     if (!client) {
       renderNotFound();
@@ -267,6 +306,7 @@ async function loadClient({ allowAutoLive = true } = {}) {
     renderAhrefsSummaryCard();
     // Period-independent: kicked off here, never re-run by a period change.
     loadTechAudit();
+    loadBlogsSummary();
     current.reportingNinjaConfigured = Boolean(reportingNinja && reportingNinja.state !== "not_configured");
     current.reportingNinjaSummary = reportingNinja || null;
     if (!gsc || gsc.state === "not_configured") {
@@ -276,16 +316,38 @@ async function loadClient({ allowAutoLive = true } = {}) {
     }
     await loadPeriodData({ allowAutoLive });
   } catch (error) {
-    document.querySelector("#cp-header").innerHTML = `<p class="state-panel state-failed">${icon("wifi-off")}<span><strong>Failed to load client.</strong><br>${escapeHtml(error.message)}</span></p>`;
+    // A superseded request is not a failure: a newer load is already running
+    // and will paint the header. Reporting it would replace a loading page with
+    // a red panel for no reason (that is what "signal is aborted without
+    // reason" was — see `isAbortError`).
+    if (isAbortError(error)) return;
+    renderClientLoadError(error);
   }
 }
 
+function renderClientLoadError(error) {
+  const header = document.querySelector("#cp-header");
+  if (!header) return;
+  header.setAttribute("aria-busy", "false");
+  header.innerHTML = `
+    <div class="state-panel state-failed">
+      ${icon("wifi-off")}
+      <p><strong>Could not load this client.</strong><br>${escapeHtml(error.message)}. Nothing was changed — retry once the connection is back.</p>
+      <button type="button" class="button button--primary" id="cp-retry-client">${icon("refresh")}Retry</button>
+    </div>`;
+  header.querySelector("#cp-retry-client").addEventListener("click", () => {
+    setBusy("#cp-header", clientHeaderSkeleton());
+    loadClient();
+  });
+}
+
 function renderNotFound() {
+  root.querySelector("#cp-header").setAttribute("aria-busy", "false");
   root.querySelector("#cp-header").innerHTML = `
     <div class="state-panel state-failed">
       ${icon("user-x")}
       <p><strong>Client not found.</strong><br>The link may be outdated.</p>
-      <a class="button button--primary" href="/">Back to client list</a>
+      <a class="button button--primary" href="#/">Back to client list</a>
     </div>`;
   document.querySelector(".period-panel")?.remove();
   document.querySelector("#cp-content")?.remove();
@@ -296,11 +358,11 @@ function renderGate(kind) {
   gate.hidden = false;
   if (kind === "not_configured") {
     gate.className = "state-panel state-not_configured";
-    gate.innerHTML = `${icon("plug-off")}<p><strong>Google Search Console is not connected.</strong><br>The GA4 section remains available; search pages, queries and alerts require GSC.</p><a class="button button--quiet" href="/">Manage integrations</a>`;
+    gate.innerHTML = `${icon("plug-off")}<p><strong>Google Search Console is not connected.</strong><br>The GA4 section remains available; search pages, queries and alerts require GSC.</p><a class="button button--quiet" href="#/">Manage integrations</a>`;
     document.querySelector("#cp-gsc-content").hidden = true;
   } else if (kind === "auth_required") {
     gate.className = "state-panel state-auth_required";
-    gate.innerHTML = `${icon("key")}<p><strong>GSC re-authorization required.</strong><br>Data below may be stale or missing until authorization is refreshed on the main dashboard.</p><a class="button button--quiet" href="/">Go to dashboard</a>`;
+    gate.innerHTML = `${icon("key")}<p><strong>GSC re-authorization required.</strong><br>Data below may be stale or missing until authorization is refreshed on the main dashboard.</p><a class="button button--quiet" href="#/">Go to dashboard</a>`;
   }
 }
 
@@ -328,6 +390,7 @@ function renderHeader(client) {
       <strong>${healthText}</strong>
       <small>Health${health ? ` · ${health.coverage_contributing}/${health.coverage_configured} services` : ""}</small>
     </div>`;
+  settle("#cp-header");
 }
 
 function coverageNote() {
@@ -499,9 +562,12 @@ async function maybeStartLiveCollection(rowsCurrent, ga4, chart) {
 async function loadPeriodData({ allowAutoLive = true } = {}) {
   const token = ++requestToken;
   coverageNote();
-  document.querySelector("#cp-tabpanel").setAttribute("aria-busy", "true");
-  document.querySelector("#cp-alerts").innerHTML = `<div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>`;
-  document.querySelector("#cp-reporting-ninja").innerHTML = `<div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>`;
+  const tabpanel = document.querySelector("#cp-tabpanel");
+  tabpanel.setAttribute("aria-busy", "true");
+  tabpanel.innerHTML = panelSkeleton({ label: "pages and queries", rows: 8, columns: 4 });
+  setBusy("#cp-alerts", panelSkeleton({ label: "alerts", rows: 3, columns: 2 }));
+  setBusy("#cp-reporting-ninja", sectionSkeleton({ label: "analytics", kpis: 4, chart: true, rows: 4, columns: 3 }));
+  setBusy("#cp-period-dates", periodDatesSkeleton());
   try {
     const alerts = await getClientAlerts(current.clientId, {
       dimension: current.tab,
@@ -514,6 +580,7 @@ async function loadPeriodData({ allowAutoLive = true } = {}) {
     document.querySelector("#cp-period-dates").innerHTML =
       `<span><strong>Current:</strong> ${formatUaRange(alerts.period_current_start, alerts.period_current_end)}</span>` +
       `<span><strong>Previous:</strong> ${formatUaRange(alerts.period_previous_start, alerts.period_previous_end)}</span>`;
+    settle("#cp-period-dates");
     current.periodCurrentStart = alerts.period_current_start;
     current.periodCurrentEnd = alerts.period_current_end;
 
@@ -543,15 +610,17 @@ async function loadPeriodData({ allowAutoLive = true } = {}) {
     analyticsTab.setData(rowsCurrent, rowsPrevious);
     analyticsTab.render();
     renderAlertsBlock(document.querySelector("#cp-alerts"), alerts);
+    settle("#cp-alerts");
     renderChart(document.querySelector("#cp-chart"), chart, current.period);
     if (ga4?.error) {
       renderReportingNinjaError(document.querySelector("#cp-reporting-ninja"), ga4.error.message);
     } else {
       renderGa4Data(ga4);
     }
+    settle("#cp-reporting-ninja");
     if (allowAutoLive) await maybeStartLiveCollection(rowsCurrent, ga4, chart);
   } catch (error) {
-    if (error.name === "AbortError" || token !== requestToken) return;
+    if (isAbortError(error) || token !== requestToken) return;
     document.querySelector("#cp-tabpanel").innerHTML = `<div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Failed to load data.</strong><br>${escapeHtml(error.message)}</p></div>`;
     document.querySelector("#cp-alerts").innerHTML = "";
   } finally {
@@ -567,7 +636,8 @@ function renderAhrefsSummaryCard() {
   const container = document.querySelector("#cp-ahrefs");
   const link = `<a class="button button--quiet" href="${buildAhrefsHash(current.clientId)}">${icon("arrow-right")}Open Site Audit</a>`;
   if (!current.ahrefsConfigured) {
-    container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Ahrefs · Live Site Audit</p><h2>Technical health and crawl issues</h2></div></div><div class="state-panel state-not_configured">${icon("plug-off")}<p><strong>Ahrefs is not connected.</strong><br>Connect Ahrefs to see Site Audit health.</p><a class="button button--quiet" href="/">Manage integrations</a></div>`;
+    container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Ahrefs · Live Site Audit</p><h2>Technical health and crawl issues</h2></div></div><div class="state-panel state-not_configured">${icon("plug-off")}<p><strong>Ahrefs is not connected.</strong><br>Connect Ahrefs to see Site Audit health.</p><a class="button button--quiet" href="#/">Manage integrations</a></div>`;
+    settle("#cp-ahrefs");
     return;
   }
   const summary = current.ahrefsSummary;
@@ -580,6 +650,34 @@ function renderAhrefsSummaryCard() {
   container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Ahrefs · Live Site Audit</p><h2>Technical health and crawl issues</h2><p class="ahrefs-collected">Last collection: ${formatTimestamp(summary?.last_success_at, "not collected yet")}</p></div><span class="status-label status-${escapeHtml(status)}">${escapeHtml(status)}</span></div>
     <div class="ahrefs-kpis">${cards.map(([label, value, suffix]) => `<article class="ahrefs-kpi"><span>${label}</span><strong>${formatUaNumber(value)}${value === null || value === undefined ? "" : suffix}</strong></article>`).join("")}</div>
     <div class="ahrefs-summary-actions">${link}</div>`;
+  settle("#cp-ahrefs");
+}
+
+// --- Client Blogs (task-26) -------------------------------------------------
+
+async function loadBlogsSummary() {
+  try {
+    blogsSummary = await getBlogsLatest(current.clientId);
+  } catch {
+    blogsSummary = null; // renders as "no run yet" — never a crash on this card
+  }
+  renderBlogsSummaryCard();
+}
+
+function renderBlogsSummaryCard() {
+  const container = document.querySelector("#cp-blogs");
+  if (!container) return;
+  const link = `<a class="button button--quiet" href="${buildBlogsHash(current.clientId)}">${icon("arrow-right")}Open blogs</a>`;
+  if (!blogsSummary?.has_run) {
+    container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Blogs</p><h2>Published posts</h2></div></div><div class="state-panel state-not_configured">${icon("rss")}<p><strong>No blog crawl yet.</strong><br>Open blogs and run "Refresh data" to discover every published post.</p>${link}</div>`;
+    settle("#cp-blogs");
+    return;
+  }
+  const status = blogsSummary.quality || "complete";
+  container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Blogs</p><h2>Published posts</h2><p class="ahrefs-collected">Last crawl: ${formatTimestamp(blogsSummary.observed_at, "not crawled yet")}</p></div><span class="status-label status-${escapeHtml(status)}">${escapeHtml(status)}</span></div>
+    <div class="ahrefs-kpis"><article class="ahrefs-kpi"><span>Posts</span><strong>${formatUaNumber(blogsSummary.post_count)}</strong></article></div>
+    <div class="ahrefs-summary-actions">${link}</div>`;
+  settle("#cp-blogs");
 }
 
 // --- Technical SEO audit (task-25) ----------------------------------------
@@ -618,6 +716,7 @@ function renderAudit() {
     },
     onRecheck: (id) => recheckFinding(id),
   });
+  settle("#cp-audit");
 }
 
 async function loadTechAudit() {
@@ -626,7 +725,7 @@ async function loadTechAudit() {
     renderAudit();
     if (current.auditCategory) await loadAuditFindings();
   } catch (error) {
-    if (error.name === "AbortError") return;
+    if (isAbortError(error)) return;
     renderAuditError(document.querySelector("#cp-audit"), error.message);
   }
 }
@@ -642,7 +741,7 @@ async function loadAuditFindings() {
     });
     renderAudit();
   } catch (error) {
-    if (error.name === "AbortError") return;
+    if (isAbortError(error)) return;
     renderAuditError(document.querySelector("#cp-audit"), error.message);
   }
 }
@@ -747,7 +846,7 @@ async function loadReportingNinjaPeriodData() {
   };
   const definitionSort = current.ga4Dataset === "ga4_events" ? "events" : "sessions";
   const dashboardPromise = current.period === "week" || current.period === "month"
-    ? getDashboard({ period: current.period, anchor: current.anchor || undefined })
+    ? getDashboard({ period: current.period, anchor: current.anchor || undefined, requestKey: "client-reporting-ninja" })
     : Promise.resolve(null);
   const [dashboard, daily, currentDataset, previousDataset, gbpDaily, gbpLocations, gbpSearchTerms, gbpReviews] = await Promise.all([
     dashboardPromise,

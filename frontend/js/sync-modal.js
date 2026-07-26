@@ -1,14 +1,15 @@
-import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob } from "./api.js?v=20260723-audit1";
-import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260723-audit1";
-import { triggerLogin } from "./session-status.js?v=20260723-audit1";
-import { loadActiveJob, saveActiveJob } from "./store.js?v=20260723-audit1";
-import { watchJob } from "./sse.js?v=20260723-audit1";
+import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob, startTechAuditBatch } from "./api.js?v=20260724-bulkaudit2";
+import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260724-bulkaudit2";
+import { triggerLogin } from "./session-status.js?v=20260724-blogs1";
+import { loadActiveJob, saveActiveJob } from "./store.js?v=20260724-blogs1";
+import { watchJob } from "./sse.js?v=20260724-blogs1";
 
 // task-22 follow-up: providers backed by a warm-Chrome browser session (mirrors
 // `BROWSER_PROVIDERS` in `app/integrations/browser_session.py`). `reporting_ninja`
 // authenticates via API key and has no browser session to check.
 const BROWSER_SESSION_PROVIDERS = ["ahrefs", "semrush"];
 const BROWSER_UP_COMMAND = "seo-audit browser-up";
+const AUDIT_NUMBER = new Intl.NumberFormat("en-US");
 
 // task-22: session-stage panel above the progress matrix. State is derived
 // straight from `job.cells` (already streamed over the existing SSE — no new
@@ -160,6 +161,35 @@ function renderSessionStagePanel(job, rerender) {
     </section>`;
 }
 
+const TERMINAL_CELL_STATUSES = new Set([
+  "succeeded", "partial", "failed", "failed_interrupted",
+  "not_configured", "cancelled", "skipped",
+]);
+
+function cellDisplayState(cell) {
+  if (["succeeded", "partial"].includes(cell.status) && cell.quality && cell.quality !== "complete") {
+    return cell.quality;
+  }
+  return cell.status;
+}
+
+function cellDetail(cell, displayState) {
+  if (!TERMINAL_CELL_STATUSES.has(cell.status)) {
+    return cell.error_code || STAGE_LABELS[cell.current_stage] || "Waiting for status";
+  }
+  if (cell.status === "not_configured") return "Integration not connected";
+  if (cell.status === "failed" || cell.status === "failed_interrupted") {
+    return cell.error_code ? `Collection stopped: ${cell.error_code.replaceAll("_", " ")}` : "Collection failed";
+  }
+  if (cell.status === "cancelled") return "Collection cancelled";
+  if (cell.status === "skipped") return "Fresh data already available";
+  if (displayState === "truncated") return "Core metrics complete; detail limited to top results";
+  if (displayState === "partial") return "Some requested data was unavailable";
+  if (displayState === "stale") return "Collected data is older than requested";
+  if (displayState === "unavailable") return "The source returned no usable data";
+  return "Collection complete";
+}
+
 export function createSyncModal({ getDashboard, onFinished, onToast }) {
   const dialog = document.querySelector("#sync-dialog");
   const title = document.querySelector("#sync-title");
@@ -206,6 +236,102 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     footer.innerHTML = `<button class="button button--quiet" type="button" data-close>Cancel</button><button class="button button--primary" type="button" data-start>${icon("player-play")}Start collection</button>`;
     footer.querySelector("[data-close]").addEventListener("click", () => dialog.close());
     footer.querySelector("[data-start]").addEventListener("click", startSelected);
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function auditSelectionCopy(audit = {}) {
+    if (audit.open_errors !== null && audit.open_errors !== undefined) {
+      if (Number(audit.open_errors) === 0) {
+        return ["partial", "truncated"].includes(audit.state)
+          ? "No errors found yet"
+          : "No open errors";
+      }
+      const suffix = ["partial", "truncated"].includes(audit.state) ? "+ errors found" : " open errors";
+      return `${AUDIT_NUMBER.format(audit.open_errors)}${suffix}`;
+    }
+    if (audit.state === "failed") return "Last audit failed";
+    if (["queued", "running"].includes(audit.state)) return "Audit in progress";
+    return "Not audited";
+  }
+
+  function auditSelectionTone(audit = {}) {
+    if (Number(audit.open_errors) > 0) return "has-errors";
+    return stateClass(audit.state || "no_run");
+  }
+
+  function auditPresetIds(preset, dashboard) {
+    const clients = dashboard.clients || [];
+    if (preset === "never") return clients.filter((client) => client.tech_audit?.state === "no_run").map((client) => client.client_id);
+    if (preset === "refresh") {
+      return clients
+        .filter((client) => ["stale", "failed", "partial", "truncated"].includes(client.tech_audit?.state))
+        .map((client) => client.client_id);
+    }
+    return clients.map((client) => client.client_id);
+  }
+
+  function updateAuditSelectionCount() {
+    const count = body.querySelectorAll('input[name="audit-client"]:checked').length;
+    const copy = body.querySelector("[data-audit-count]");
+    if (copy) copy.textContent = `${count} ${count === 1 ? "site" : "sites"} selected`;
+  }
+
+  function applyAuditPreset(preset, dashboard) {
+    const selected = new Set(auditPresetIds(preset, dashboard).map(String));
+    body.querySelectorAll('input[name="audit-client"]').forEach((input) => {
+      input.checked = selected.has(input.value);
+    });
+    body.querySelectorAll("[data-audit-preset]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.auditPreset === preset));
+    });
+    updateAuditSelectionCount();
+  }
+
+  function openAuditSelection({ trigger } = {}) {
+    opener = trigger || document.activeElement;
+    if (active?.kind === "tech_audit" && currentJob && !isTerminal(currentJob.status)) {
+      if (!dialog.open) dialog.showModal();
+      renderProgress(currentJob);
+      return;
+    }
+    const dashboard = getDashboard();
+    if (!dashboard) return;
+    title.textContent = "Run technical audits";
+    subtitle.textContent = "Our crawler audits one site at a time. Closing this window will not stop the batch.";
+    body.innerHTML = `
+      <section class="audit-preflight" aria-label="Technical audit selection">
+        <div class="audit-preflight__signal" aria-hidden="true">${icon("bug")}</div>
+        <div>
+          <p class="eyebrow">Site crawl queue</p>
+          <h3>Choose the sites to inspect</h3>
+          <p>Every selected domain gets an independent crawl. A blocked or failed site will not stop the rest of the queue.</p>
+        </div>
+      </section>
+      <div class="audit-presets" role="group" aria-label="Select audit clients">
+        <button type="button" data-audit-preset="all" aria-pressed="true">All active</button>
+        <button type="button" data-audit-preset="never" aria-pressed="false">Not audited</button>
+        <button type="button" data-audit-preset="refresh" aria-pressed="false">Needs refresh</button>
+        <strong data-audit-count></strong>
+      </div>
+      <fieldset class="selection-group audit-client-selection">
+        <legend class="visually-hidden">Clients to audit</legend>
+        <div class="audit-client-list">
+          ${(dashboard.clients || []).map((client) => `
+            <label class="audit-client-row">
+              <input type="checkbox" name="audit-client" value="${escapeHtml(client.client_id)}" checked>
+              <span class="audit-client-row__index" aria-hidden="true">${String((dashboard.clients || []).indexOf(client) + 1).padStart(2, "0")}</span>
+              <span class="audit-client-row__identity"><strong>${escapeHtml(client.name)}</strong><small>${escapeHtml(client.domain)}</small></span>
+              <span class="audit-client-row__current ${auditSelectionTone(client.tech_audit)}">${escapeHtml(auditSelectionCopy(client.tech_audit))}</span>
+            </label>`).join("")}
+        </div>
+      </fieldset>
+      <p class="audit-capacity-note">${icon("info-circle", "icon icon--tiny")} One site runs at a time because each crawl already scales its own request concurrency.</p>`;
+    footer.innerHTML = `<button class="button button--quiet" type="button" data-close>Cancel</button><button class="button button--primary" type="button" data-start-audit>${icon("player-play")}Run audits</button>`;
+    body.querySelectorAll("[data-audit-preset]").forEach((button) => button.addEventListener("click", () => applyAuditPreset(button.dataset.auditPreset, dashboard)));
+    body.querySelectorAll('input[name="audit-client"]').forEach((input) => input.addEventListener("change", updateAuditSelectionCount));
+    footer.querySelector("[data-close]").addEventListener("click", () => dialog.close());
+    footer.querySelector("[data-start-audit]").addEventListener("click", startAuditSelected);
+    updateAuditSelectionCount();
     if (!dialog.open) dialog.showModal();
   }
 
@@ -289,6 +415,52 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     }
   }
 
+  async function startAuditSelected(event) {
+    const clientIds = [...body.querySelectorAll('input[name="audit-client"]:checked')]
+      .map((input) => input.value);
+    if (!clientIds.length) {
+      onToast("Select at least one site to audit.");
+      body.querySelector('input[name="audit-client"]')?.focus();
+      return;
+    }
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await beginAuditCollection(clientIds);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function beginAuditCollection(clientIds) {
+    try {
+      const dashboard = getDashboard();
+      title.textContent = "Preparing crawl queue";
+      subtitle.textContent = "Validating selected clients and reserving the crawler lane.";
+      body.innerHTML = `<div class="state-panel state-running">${icon("loader-2", "icon icon--spin")}<p><strong>Building technical audit batch</strong><br>${clientIds.length} ${clientIds.length === 1 ? "site" : "sites"} selected.</p></div>`;
+      footer.innerHTML = `<button class="button button--quiet" type="button" disabled>Starting audits…</button>`;
+      const accepted = await startTechAuditBatch({
+        client_ids: clientIds,
+        idempotency_key: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+      }, dashboard);
+      active = {
+        id: accepted.batch_id || accepted.job_id,
+        eventsUrl: accepted.events_url,
+        lastEventId: "",
+        kind: "tech_audit",
+      };
+      saveActiveJob(active);
+      if (accepted.skipped_active_client_ids?.length) {
+        onToast(`${accepted.skipped_active_client_ids.length} active ${accepted.skipped_active_client_ids.length === 1 ? "audit was" : "audits were"} already running.`);
+      }
+      beginWatch();
+      renderProgress({ status: "queued", progress_percent: 0, cells: [] });
+    } catch (error) {
+      openAuditSelection({ trigger: opener });
+      onToast(`Could not start technical audits: ${error.message}`);
+    }
+  }
+
   async function beginCollection({ clientIds, providers, forceRefresh }) {
     sessionOverlays.clear();
     try {
@@ -310,7 +482,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
         source_mode: "auto",
         idempotency_key: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
       }, dashboard);
-      active = { id: accepted.batch_id || accepted.job_id, eventsUrl: accepted.events_url, lastEventId: "" };
+      active = { id: accepted.batch_id || accepted.job_id, eventsUrl: accepted.events_url, lastEventId: "", kind: "metrics" };
       saveActiveJob(active);
       beginWatch();
       title.textContent = "Data collection";
@@ -345,10 +517,11 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       async onTerminal(job) {
         currentJob = job;
         saveActiveJob(null);
-        active = null;
         updateDock(job);
         if (dialog.open) renderProgress(job);
         await onFinished(job);
+        if (dialog.open) renderProgress(job);
+        active = null;
       },
       onError(error) { onToast(`Progress temporarily unavailable: ${error.message}`); },
     });
@@ -359,7 +532,83 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     body.insertAdjacentHTML("afterbegin", `<div class="job-alert"><strong>Live connection interrupted.</strong> Status will resume automatically; the collection keeps running on the server.</div>`);
   }
 
+  function isAuditJob(job) {
+    const cells = job?.cells || [];
+    return active?.kind === "tech_audit"
+      || (cells.length > 0 && cells.every((cell) => cell.provider === "tech_audit"));
+  }
+
+  function auditResultDetail(cell, dashboard) {
+    if (!TERMINAL_CELL_STATUSES.has(cell.status)) {
+      return cell.error_code || STAGE_LABELS[cell.current_stage] || "Waiting for crawler";
+    }
+    if (["failed", "failed_interrupted"].includes(cell.status)) {
+      return cell.error_code ? `Crawler stopped: ${cell.error_code.replaceAll("_", " ")}` : "Crawler stopped before a result was saved";
+    }
+    if (cell.status === "cancelled") return "Stopped by operator";
+    const client = (dashboard?.clients || []).find((item) => String(item.client_id) === String(cell.client_id));
+    const audit = client?.tech_audit;
+    if (audit?.open_errors !== null && audit?.open_errors !== undefined) {
+      const pages = audit.pages_crawled === null || audit.pages_crawled === undefined
+        ? "pages unavailable"
+        : `${AUDIT_NUMBER.format(audit.pages_crawled)} pages`;
+      return `${AUDIT_NUMBER.format(audit.open_errors)} open ${audit.open_errors === 1 ? "error" : "errors"} · ${pages}`;
+    }
+    return cell.status === "partial" ? "Partial crawl saved" : "Audit saved";
+  }
+
+  function auditRunRow(cell, index, dashboard) {
+    const client = (dashboard?.clients || []).find((item) => String(item.client_id) === String(cell.client_id));
+    const displayState = cellDisplayState(cell);
+    const meta = STATE_META[displayState] || STATE_META.running;
+    const value = TERMINAL_CELL_STATUSES.has(cell.status) ? 100 : percent(cell.progress_percent);
+    const spinning = cell.status === "running" ? " icon--spin" : "";
+    return `
+      <li class="audit-run-row ${stateClass(displayState)}" data-status="${escapeHtml(cell.status)}">
+        <span class="audit-run-row__index" aria-hidden="true">${String(index + 1).padStart(2, "0")}</span>
+        <span class="audit-run-row__identity"><strong>${escapeHtml(client?.name || cell.client_id)}</strong><small>${escapeHtml(client?.domain || "Client site")}</small></span>
+        <span class="audit-run-row__stage"><strong>${icon(meta.icon, `icon${spinning}`)}${escapeHtml(meta.label)}</strong><small>${escapeHtml(auditResultDetail(cell, dashboard))}</small></span>
+        <span class="audit-run-row__value">${value}%</span>
+        <progress class="mini-progress" max="100" value="${value}" aria-label="${escapeHtml(client?.name || cell.client_id)}: ${value}%"></progress>
+      </li>`;
+  }
+
+  function renderAuditProgress(job) {
+    const dashboard = getDashboard();
+    const cells = job.cells || [];
+    const progressValue = percent(job.progress_percent);
+    const done = cells.filter((cell) => TERMINAL_CELL_STATUSES.has(cell.status)).length;
+    const failed = cells.filter((cell) => ["failed", "failed_interrupted"].includes(cell.status)).length;
+    const terminal = isTerminal(job.status);
+    title.textContent = terminal
+      ? (failed ? "Audits finished with issues" : "Technical audits complete")
+      : "Technical audits in progress";
+    subtitle.textContent = terminal
+      ? (failed ? `${failed} ${failed === 1 ? "site needs" : "sites need"} another attempt. Successful audit results are already saved.` : "Every selected site reached a final state.")
+      : "The crawler is processing one site at a time; queued sites start automatically.";
+    body.innerHTML = `
+      <section class="audit-progress-hero" aria-label="Technical audit batch progress">
+        <div class="audit-progress-hero__number"><strong>${progressValue}<small>%</small></strong><span>overall</span></div>
+        <div class="audit-progress-hero__track">
+          <div class="audit-progress-hero__labels"><strong>${done} / ${cells.length || "—"} sites complete</strong><span>${terminal ? "Batch finished" : "Crawler lane active"}</span></div>
+          <progress class="progress-track" max="100" value="${progressValue}" aria-label="Overall technical audit progress: ${progressValue}%"></progress>
+          <p>Closing this popup will not stop the audits. Progress restores automatically.</p>
+        </div>
+      </section>
+      ${cells.length
+        ? `<ol class="audit-run-list">${cells.map((cell, index) => auditRunRow(cell, index, dashboard)).join("")}</ol>`
+        : `<div class="state-panel state-running">${icon("loader-2", "icon icon--spin")}<p><strong>Building the crawl queue</strong><br>Selected sites will appear here when the worker claims the batch.</p></div>`}`;
+    footer.innerHTML = footerActions(job);
+    footer.querySelector("[data-close]")?.addEventListener("click", () => dialog.close());
+    footer.querySelector("[data-cancel]")?.addEventListener("click", () => cancelJob());
+    footer.querySelector("[data-retry]")?.addEventListener("click", () => retryFailed());
+  }
+
   function renderProgress(job) {
+    if (isAuditJob(job)) {
+      renderAuditProgress(job);
+      return;
+    }
     const focused = body.contains(document.activeElement) ? document.activeElement.dataset.sessionAction : null;
     const dashboard = getDashboard();
     const clients = new Map((dashboard?.clients || []).map((client) => [String(client.client_id), client.name]));
@@ -373,8 +622,10 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     // `queued` — truthful (it really is waiting), but «Queued» reads as "not
     // started yet" when the run is actually blocked on the operator.
     const awaitingAuth = cells.some((cell) => cell.status === "awaiting_auth");
-    subtitle.textContent = isTerminal(job.status) && hasAttentionCells(cells)
-      ? "Collected data has been saved. Review cells that need attention."
+    subtitle.textContent = isTerminal(job.status) && hasCollectionIssues(cells)
+      ? "Collected data has been saved. Review cells with collection errors."
+      : isTerminal(job.status) && hasSetupCells(cells)
+        ? "Connected integrations collected successfully. Some clients still need a connection."
       : awaitingAuth
         ? "Collection paused: a service login is required."
         : state.label;
@@ -413,9 +664,11 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
 
   function matrixCell(cell) {
     if (!cell) return `<td><span class="matrix-cell state-not_configured"><strong>— Not selected</strong></span></td>`;
-    const meta = STATE_META[cell.status] || STATE_META.running;
-    const value = percent(cell.progress_percent);
-    return `<td><div class="matrix-cell ${stateClass(cell.status)}"><strong>${icon(meta.icon)}${meta.label}</strong><small>${cell.status === "not_configured" ? "Integration not connected" : (cell.error_code || STAGE_LABELS[cell.current_stage] || "Waiting for status")}</small><progress class="mini-progress" max="100" value="${value}" aria-label="${meta.label}: ${value}%"></progress></div></td>`;
+    const displayState = cellDisplayState(cell);
+    const meta = STATE_META[displayState] || STATE_META.running;
+    const value = TERMINAL_CELL_STATUSES.has(cell.status) ? 100 : percent(cell.progress_percent);
+    const iconMarkup = icon(meta.icon, cell.status === "running" ? "icon icon--spin" : "icon");
+    return `<td><div class="matrix-cell ${stateClass(displayState)}"><strong>${iconMarkup}${meta.label}</strong><small>${escapeHtml(cellDetail(cell, displayState))}</small><progress class="mini-progress" max="100" value="${value}" aria-label="${meta.label}: ${value}%"></progress></div></td>`;
   }
 
   function progressSummary(cells) {
@@ -423,13 +676,19 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     return `Completed ${done} of ${cells.length} cells. Closing this window will not stop the collection.`;
   }
 
-  function hasAttentionCells(cells) {
-    return cells.some((cell) => ["partial", "failed", "failed_interrupted", "not_configured"].includes(cell.status));
+  function hasCollectionIssues(cells) {
+    return cells.some((cell) => ["partial", "failed", "failed_interrupted"].includes(cell.status));
+  }
+
+  function hasSetupCells(cells) {
+    return cells.some((cell) => cell.status === "not_configured");
   }
 
   function terminalTitle(job) {
     if (!isTerminal(job.status)) return "Data collection";
-    return hasAttentionCells(job.cells || []) ? "Collection finished with issues" : "Collection finished";
+    if (hasCollectionIssues(job.cells || [])) return "Collection finished with issues";
+    if (hasSetupCells(job.cells || [])) return "Collection finished — setup needed";
+    return "Collection finished";
   }
 
   function footerActions(job) {
@@ -449,8 +708,16 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     if (!currentJob) return;
     footer.querySelector("[data-retry]").disabled = true;
     try {
-      const accepted = await retrySyncJob(currentJob.batch_id || currentJob.job_id || active?.id);
-      active = { id: accepted.batch_id || accepted.job_id, eventsUrl: accepted.events_url, lastEventId: "" };
+      const sourceId = currentJob.batch_id || currentJob.job_id || currentJob.id || active?.id;
+      const retryKind = isAuditJob(currentJob) ? "tech_audit" : "metrics";
+      const accepted = await retrySyncJob(sourceId);
+      const retryId = accepted.batch_id || accepted.job_id || accepted.id || sourceId;
+      active = {
+        id: retryId,
+        eventsUrl: accepted.events_url || `/api/v1/sync-jobs/${retryId}/events`,
+        lastEventId: "",
+        kind: retryKind,
+      };
       saveActiveJob(active);
       beginWatch();
     } catch (error) { onToast(`Could not start the retry: ${error.message}`); }
@@ -458,12 +725,15 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
 
   function updateDock(job) {
     const terminal = isTerminal(job.status);
+    const audit = isAuditJob(job);
     dock.hidden = false;
-    dockTitle.textContent = terminal ? terminalTitle(job) : "Update in progress";
+    dockTitle.textContent = terminal
+      ? (audit ? (hasCollectionIssues(job.cells || []) ? "Audits finished with issues" : "Technical audits complete") : terminalTitle(job))
+      : (audit ? "Technical audits running" : "Update in progress");
     dockCopy.textContent = terminal ? "View results" : "View progress";
     dockPercent.textContent = `${percent(job.progress_percent)}%`;
   }
 
   if (active?.id) beginWatch();
-  return { openSelection };
+  return { openSelection, openAuditSelection };
 }

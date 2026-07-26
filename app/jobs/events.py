@@ -103,7 +103,10 @@ def make_emitter(
                     details=details,
                 )
                 cells = CellRepository(session)
-                cells.set_progress(cell_id, event.percent, current_stage=event.stage)
+                cells.set_progress(
+                    cell_id, event.percent, current_stage=event.stage,
+                    progress_message=message or None,
+                )
                 cells.heartbeat(
                     cell_id, lease_owner=lease_owner, lease_ttl_seconds=lease_ttl_seconds
                 )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.db.repositories.clients import ClientRepository
 from app.integrations.aiseotools_sync import sync_ai_seo_tools_integrations
-from app.schemas.enums import Provider
+from app.schemas.enums import Provider, SourceMode
 
 
 class _FakeNinjaClient:
@@ -18,6 +18,10 @@ class _FakeNinjaClient:
                 {
                     "connection_key": "seo@example.com",
                     "accounts": [
+                        {
+                            "account_id": "https://www.nychearing.com/",
+                            "account_name": "https://www.nychearing.com/",
+                        },
                         {
                             "account_id": "sc-domain:nychearing.com",
                             "account_name": "sc-domain:nychearing.com",
@@ -74,6 +78,7 @@ def test_sync_configures_provider_references_from_aiseotools(
         assert "profile_store" not in semrush
         gsc = clients.get_integration(client_id, Provider.gsc)
         assert gsc.config_json["property"] == "sc-domain:nychearing.com"
+        assert gsc.source_mode == SourceMode.api
         assert "profile_store" not in gsc.config_json
         ga4 = clients.get_integration(client_id, Provider.reporting_ninja)
         assert ga4.config_json["account_id"] == "properties/123"

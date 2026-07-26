@@ -1,11 +1,11 @@
-import { getDashboard, updateIntegration } from "./api.js?v=20260723-audit1";
-import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260723-audit1";
-import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260723-audit1";
-import { createDetailDrawer } from "./detail-drawer.js?v=20260723-audit1";
-import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260723-audit1";
-import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260723-audit1";
-import { getState, setState } from "./store.js?v=20260723-audit1";
-import { createSyncModal } from "./sync-modal.js?v=20260723-audit1";
+import { getDashboard, updateIntegration } from "./api.js?v=20260724-bulkaudit2";
+import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260724-blogs1";
+import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260724-bulkaudit2";
+import { createDetailDrawer } from "./detail-drawer.js?v=20260724-blogs1";
+import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260724-bulkaudit2";
+import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260724-blogs1";
+import { getState, setState } from "./store.js?v=20260724-blogs1";
+import { createSyncModal } from "./sync-modal.js?v=20260724-bulkaudit2";
 
 const grid = document.querySelector("#client-grid");
 const dashboardState = document.querySelector("#dashboard-state");
@@ -35,7 +35,11 @@ sortSelect.addEventListener("change", () => { setState({ sort: sortSelect.value 
 const detailDrawer = createDetailDrawer({ onError: () => setConnection("offline") });
 const syncModal = createSyncModal({
   getDashboard: () => getState().dashboard,
-  onFinished: async () => { await loadDashboard({ quiet: true }); toast("Client data updated."); },
+  onFinished: async (job) => {
+    await loadDashboard({ quiet: true });
+    const audit = (job.cells || []).length > 0 && job.cells.every((cell) => cell.provider === "tech_audit");
+    toast(audit ? "Technical audit cards updated." : "Client data updated.");
+  },
   onToast: toast,
 });
 
@@ -205,6 +209,7 @@ async function handleProviderLogin(provider, button) {
 }
 
 document.querySelector("#sync-all-button").addEventListener("click", (event) => syncModal.openSelection({ trigger: event.currentTarget }));
+document.querySelector("#audit-all-button").addEventListener("click", (event) => syncModal.openAuditSelection({ trigger: event.currentTarget }));
 document.querySelector("#clear-filters").addEventListener("click", clearFilters);
 document.querySelectorAll("[data-period]").forEach((button) => button.addEventListener("click", () => {
   document.querySelectorAll("[data-period]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));

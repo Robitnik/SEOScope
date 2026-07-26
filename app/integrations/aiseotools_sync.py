@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.repositories.clients import ClientRepository
 from app.importers.client_mapping import normalize_domain
-from app.schemas.enums import Provider
+from app.schemas.enums import Provider, SourceMode
 
 _GA4_ACCOUNT_NAMES: dict[str, str] = {
     "19cleveland.com": "19 Cleveland - GA4",
@@ -40,13 +40,20 @@ class IntegrationSyncReport:
 
 def _accounts_by_domain(connections: list[dict[str, Any]]) -> dict[str, tuple[str, str]]:
     found: dict[str, tuple[str, str]] = {}
+    priorities: dict[str, int] = {}
     for connection in connections:
         connection_key = str(connection.get("connection_key") or "")
         for account in connection.get("accounts") or []:
             account_id = str(account.get("account_id") or "")
             domain = normalize_domain(account_id)
             if connection_key and account_id and domain:
-                found.setdefault(domain, (connection_key, account_id))
+                # A domain property covers every protocol/subdomain variant;
+                # a URL-prefix property does not. Reporting Ninja may return
+                # both in either order, so list order must not decide totals.
+                priority = 1 if account_id.casefold().startswith("sc-domain:") else 0
+                if domain not in found or priority > priorities[domain]:
+                    found[domain] = (connection_key, account_id)
+                    priorities[domain] = priority
     return found
 
 
@@ -117,6 +124,7 @@ def sync_ai_seo_tools_integrations(
                 clients.upsert_integration(
                     client.id,
                     Provider.gsc,
+                    source_mode=SourceMode.api,
                     config={
                         "connection_key": connection_key,
                         "account_id": account_id,

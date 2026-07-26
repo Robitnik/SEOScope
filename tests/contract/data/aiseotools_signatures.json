@@ -3,12 +3,15 @@
     "seo_audit.ahrefs_site_audit.collect.collect": "collect(domain: 'str', *, client: 'str' = '', country: 'str' = 'us', market: 'str' = '', audit_date: 'str' = '', csv_dir: 'str | Path | None' = None, limit: 'int' = 1000, fetch_affected: 'bool' = True, api_key: 'str | None' = None, cache_dir: 'str | Path | None' = None, on_event: 'OnEvent | None' = None) -> 'AhrefsMachineFindings'",
     "seo_audit.ahrefs_site_audit.verify.pipeline.verify_issues": "verify_issues(machine: 'AhrefsMachineFindings', screenshot_dir: 'Path | None' = None, max_browser: 'int' = 40, per_issue_cap: 'int' = 100, max_link_targets: 'int' = 800, timeout: 'float' = 12.0, speed_budget_s: 'float | None' = None, progress=None) -> 'dict[str, Any]'",
     "seo_audit.blog_strategy.ahrefs_cache.BudgetExceeded": "BudgetExceeded(<опис недоступний>)",
+    "seo_audit.blog_strategy.inventory.build_inventory": "build_inventory(seed_url: 'str', *, blog_prefixes: 'list[str] | None' = None, concurrency: 'int' = 8, max_tier: 'int' = 2, proxy: 'str | None' = None, max_urls: 'int | None' = None, on_page: 'Callable[[str], None] | None' = None, should_stop: 'Callable[[], bool] | None' = None, on_blog_found: 'Callable[[int], None] | None' = None) -> 'dict'",
+    "seo_audit.blog_strategy.models.BlogPageRecord": "BlogPageRecord(*, url: str, status: int = 0, canonical: str = '', robots: str = '', title: str = '', meta_description: str = '', h1: str = '', h2s: list[str] = <factory>, h3s: list[str] = <factory>, body_text: str = '', body_hash: str = '', word_count: int = 0, published_date: str | None = None, modified_date: str | None = None, schema_types: list[str] = <factory>, internal_links: list[dict] = <factory>, external_links: list[dict] = <factory>, page_role: str = 'unknown', fetch_source: str = '', fetched_at: str = '') -> None",
+    "seo_audit.blog_strategy.wp_api.fetch_wp_posts": "fetch_wp_posts(seed_url: 'str', *, fetcher: 'Fetcher', max_posts: 'int' = 2000, should_stop: 'Callable[[], bool] | None' = None, on_page: 'Callable[[int], None] | None' = None) -> 'list[BlogPageRecord] | None'",
     "seo_audit.browser.errors.AccountLacksAccess": "AccountLacksAccess(prop: 'str', authuser: 'int | None', signed_in_as: 'str' = '')",
     "seo_audit.browser.errors.BotChallenge": "BotChallenge(provider: 'str', url: 'str', evidence: 'str' = '')",
     "seo_audit.browser.errors.BrowserAutomationError": "BrowserAutomationError(<опис недоступний>)",
     "seo_audit.browser.errors.ChromeLaunchError": "ChromeLaunchError(<опис недоступний>)",
     "seo_audit.browser.errors.ExportEmpty": "ExportEmpty(report: 'str', detail: 'str' = '')",
-    "seo_audit.browser.errors.ExportFailed": "ExportFailed(report: 'str', detail: 'str' = '')",
+    "seo_audit.browser.errors.ExportFailed": "ExportFailed(report: 'str', detail: 'str' = '', *, headline: 'str' = '')",
     "seo_audit.browser.errors.ExportTruncated": "ExportTruncated(report: 'str', rows: 'int', cap: 'int')",
     "seo_audit.browser.errors.ProfileLocked": "ProfileLocked(<опис недоступний>)",
     "seo_audit.browser.errors.SelectorDrift": "SelectorDrift(what: 'str', selector: 'str', url: 'str' = '')",
@@ -24,7 +27,8 @@
     "seo_audit.clientreport.ga4_fetcher.discover_ga4_fields": "discover_ga4_fields(client: 'ReportingNinjaClient') -> 'dict[str, str]'",
     "seo_audit.clientreport.ga4_fetcher.fetch_ga4_period": "fetch_ga4_period(client: 'ReportingNinjaClient', connection_key: 'str', account_id: 'str', date_from: 'date', date_to: 'date', field_ids: 'dict[str, str]') -> 'dict[str, int | None]'",
     "seo_audit.clientreport.gsc_fetcher.discover_gsc_fields": "discover_gsc_fields(client: 'ReportingNinjaClient') -> 'dict[str, str]'",
-    "seo_audit.clientreport.gsc_fetcher.fetch_gsc_period": "fetch_gsc_period(client: 'ReportingNinjaClient', connection_key: 'str', account_id: 'str', date_from: 'date', date_to: 'date', field_ids: 'dict[str, str]') -> 'dict[str, int | None]'",
+    "seo_audit.clientreport.gsc_fetcher.fetch_gsc_period_with_cache_control": "fetch_gsc_period_with_cache_control(client: 'ReportingNinjaClient', connection_key: 'str', account_id: 'str', date_from: 'date', date_to: 'date', field_ids: 'dict[str, str]', *, bypass_cache: 'bool' = False) -> 'dict[str, int | None]'",
+    "seo_audit.collect.fetcher.Fetcher": "Fetcher(*, concurrency: 'int' = 8, min_delay: 'float' = 0.2, max_tier: 'int' = 2, retries: 'int' = 3, timeout: 'float' = 20.0, impersonate: 'str' = 'chrome', proxy: 'str | None' = None, batch_size: 'int' = 10, batch_pause: 'float' = 3.0) -> 'None'",
     "seo_audit.gsc.collect.parse_performance": "parse_performance(path: 'Path', forced_type: 'str' = '') -> 'list[GSCQueryRow]'",
     "seo_audit.rank_movement.collect_manual.ManualIngestError": "ManualIngestError(<опис недоступний>)",
     "seo_audit.rank_movement.collect_manual._col": "_col(headers: 'list[str]', *candidates: 'str', avoid: 'tuple[str, ...]' = ()) -> 'str | None'",
@@ -32,11 +36,23 @@
     "seo_audit.rank_movement.collect_manual._read_csv": "_read_csv(path: 'Path') -> 'list[dict[str, str]]'",
     "seo_audit.semrush.client.SemrushAPIError": "SemrushAPIError(code: 'str', message: 'str')",
     "seo_audit.semrush.client.SemrushClient": "SemrushClient(api_key: 'str | None' = None, *, cache_dir: 'Path | None' = None, database: 'str' = 'us', unit_budget: 'int | None' = None)",
-    "seo_audit.semrush.ingest_manual.ingest_semrush": "ingest_semrush(downloads: 'Path', *, domain: 'str', database: 'str' = 'us') -> 'dict'"
+    "seo_audit.semrush.ingest_manual.ingest_semrush": "ingest_semrush(downloads: 'Path', *, domain: 'str', database: 'str' = 'us') -> 'dict'",
+    "seo_audit.tech_audit.agent.schemas.TechVerdict": "TechVerdict(*, issues: list[seo_audit.tech_audit.agent.schemas.IssueVerdict] = <factory>, url_fixes: list[seo_audit.tech_audit.agent.schemas.URLFix] = <factory>, visual_findings: list[seo_audit.tech_audit.agent.schemas.VisualFinding] = <factory>, manual_tasks: list[str] = <factory>) -> None",
+    "seo_audit.tech_audit.models.TechMachineFindings": "TechMachineFindings(*, client: str = '', domain: str = '', project_id: str = '', project_name: str = '', crawl_date: str = '', audit_date: str = '', market: str = '', health_score: int | None = None, cms: str = '', totals: seo_audit.tech_audit.models.AuditTotals = <factory>, issues: list[seo_audit.tech_audit.models.VerifiedIssue] = <factory>, url_status: dict[str, dict] = <factory>, verify_summary: dict = <factory>, issue_type_coverage: dict = <factory>, warnings: list[str] = <factory>) -> None",
+    "seo_audit.tech_audit.pipeline.run_import": "run_import(url: 'str', *, client: 'str' = '', out_dir: 'Path', max_pages: 'int' = 1000, max_tier: 'int' = 2, proxy: 'str | None' = None, concurrency_max: 'int | None' = None, cf_cooldown: 'float' = 10.0, render: 'bool' = True, render_concurrency: 'int' = 8, max_render: 'int | None' = None, log=<function <lambda>>, on_progress: 'Callable[[str, int, int], None] | None' = None)",
+    "seo_audit.tech_audit.recheck.run_recheck": "run_recheck(run_dir: 'Path', *, max_tier: 'int' = 2, proxy: 'str | None' = None, log=<function <lambda>>) -> 'dict'",
+    "seo_audit.tech_audit.report.build_xlsx.build_tech_xlsx": "build_tech_xlsx(verdict: 'TechVerdict', out_path: 'Path', *, machine: 'TechMachineFindings | None' = None, domain: 'str' = '', client: 'str' = '', project_name: 'str' = '', health_score: 'int | None' = None, crawl_date: 'str' = '', audit_date: 'str' = '', verify_summary: 'dict | None' = None, strict: 'bool' = True, machine_only: 'bool' = False) -> 'None'",
+    "seo_audit.tech_audit.report.build_xlsx.tech_report_filename": "tech_report_filename(client: 'str', iso_date: 'str' = '') -> 'str'"
   },
   "seo_audit.dashboard.ahrefs": {
     "collect_site_audit": "collect_site_audit(domain: 'str', *, client: 'str' = '', market: 'str' = '', audit_date: 'str' = '', csv_dir: 'str | Path | None' = None, api_key: 'str | None' = None, cache_dir: 'str | Path | None' = None, run_verify: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'",
     "collect_site_audit_browser": "collect_site_audit_browser(domain: 'str', *, client: 'str' = '', market: 'str' = '', profile: 'str' = 'ahrefs', virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
+  },
+  "seo_audit.dashboard.blogs": {
+    "BlogPost": "BlogPost(*, url: str, title: str = '', description: str = '', word_count: int = 0, published_date: str | None = None, modified_date: str | None = None, status: int = 0) -> None",
+    "BlogsCancelled": "BlogsCancelled(<опис недоступний>)",
+    "BlogsResult": "BlogsResult(*, provider: seo_audit.dashboard.models.Provider = <Provider.blogs: 'blogs'>, domain: str = '', client: str = '', blog_url: str = '', post_count: int = 0, posts: list[seo_audit.dashboard.blogs.BlogPost] = <factory>, crawl_completeness: float = 1.0, warnings: list[str] = <factory>, observed_at: datetime.datetime = <factory>, run_dir: str = '') -> None",
+    "collect_blogs": "collect_blogs(seed_url: 'str', *, client: 'str' = '', out_dir: 'str | Path', blog_url: 'str | None' = None, max_pages: 'int' = 2000, max_tier: 'int' = 2, proxy: 'str | None' = None, on_event: 'OnEvent | None' = None, is_cancelled: 'Callable[[], bool] | None' = None) -> 'BlogsResult'"
   },
   "seo_audit.dashboard.config": {
     "ninja_session_path": "ninja_session_path(override: 'str | os.PathLike[str] | None' = None) -> 'Path'",
@@ -51,8 +67,9 @@
     "DashboardDimensionResult": "DashboardDimensionResult(*, provider: seo_audit.dashboard.models.Provider, quality: seo_audit.dashboard.models.Quality, observed_at: datetime.datetime, data_through: datetime.date | None = None, pages: list[seo_audit.dashboard.gsc.DimensionPeriodResult] = [], queries: list[seo_audit.dashboard.gsc.DimensionPeriodResult] = [], warnings: list[str] = [], error_code: str | None = None, provenance: dict[str, typing.Any] = {}) -> None",
     "DimensionPeriodResult": "DimensionPeriodResult(*, period_role: seo_audit.dashboard.models.PeriodRole, period_start: datetime.date, period_end: datetime.date, rows: list[seo_audit.dashboard.gsc.DimensionValue], truncated: bool, total_rows_available: int) -> None",
     "DimensionValue": "DimensionValue(*, dimension_value: str, clicks: int | None = None, impressions: int | None = None, ctr: decimal.Decimal | None = None, position: decimal.Decimal | None = None) -> None",
-    "collect_gsc_aggregate": "collect_gsc_aggregate(client: 'ReportingNinjaClient', *, gsc_ref: 'dict[str, str]', current: 'DateRange', previous: 'DateRange', on_event: 'OnEvent | None' = None) -> 'DashboardResult'",
+    "collect_gsc_aggregate": "collect_gsc_aggregate(client: 'ReportingNinjaClient', *, gsc_ref: 'dict[str, str]', current: 'DateRange', previous: 'DateRange', field_ids: 'Mapping[str, str] | None' = None, bypass_cache: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'",
     "collect_gsc_dimensions": "collect_gsc_dimensions(prop: 'str', *, current: 'DateRange', previous: 'DateRange', out_dir: 'Path', top_n: 'int' = 1000, profile: 'str' = 'gsc', account: 'int | None' = None, virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardDimensionResult'",
+    "collect_gsc_dimensions_api": "collect_gsc_dimensions_api(client: 'ReportingNinjaClient', *, gsc_ref: 'dict[str, str]', current: 'DateRange', previous: 'DateRange', top_n: 'int' = 1000, max_rows: 'int' = 50000, field_ids: 'Mapping[str, str] | None' = None, bypass_cache: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardDimensionResult'",
     "collect_gsc_direct": "collect_gsc_direct(prop: 'str', *, current: 'DateRange', previous: 'DateRange', out_dir: 'Path', profile: 'str' = 'gsc', account: 'int | None' = None, virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
   },
   "seo_audit.dashboard.models": {
@@ -72,5 +89,19 @@
   "seo_audit.dashboard.semrush": {
     "collect_semrush_api": "collect_semrush_api(domain: 'str', *, database: 'str' = 'us', api_key: 'str | None' = None, cache_dir: 'str | Path | None' = None, unit_budget: 'int | None' = None, on_event: 'OnEvent | None' = None) -> 'DashboardResult'",
     "collect_semrush_browser": "collect_semrush_browser(domain: 'str', *, artifacts_dir: 'str | Path', client: 'str' = '', database: 'str' = 'us', profile: 'str' = 'semrush', reports: 'tuple[str, ...]' = ('organic-positions', 'backlinks', 'refdomains'), virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
+  },
+  "seo_audit.dashboard.tech_audit": {
+    "RecheckResult": "RecheckResult(*, run_dir: str = '', recheck_date: str = '', domain: str = '', client: str = '', rows: list[seo_audit.dashboard.tech_audit.RecheckRow] = <factory>) -> None",
+    "RecheckRow": "RecheckRow(*, slug: str, name: str = '', url: str, status: str, detail: dict[str, typing.Any] = <factory>) -> None",
+    "TechAuditCancelled": "TechAuditCancelled(<опис недоступний>)",
+    "TechAuditCategory": "TechAuditCategory(*, category: str, name: str, severity: str, priority: str, url_count: int = 0, finding_count: int = 0, description: str = '', how_to_fix: str = '') -> None",
+    "TechAuditFinding": "TechAuditFinding(*, category: str, slug: str, name: str, severity: str, url: str, current_value: str = '', evidence: str = '', measured: dict[str, typing.Any] = <factory>, how_to_fix: str = '', method: str = '', live_status: str = '', final_url: str = '', link_targets: list[dict[str, typing.Any]] = <factory>, used_on_pages: list[str] = <factory>) -> None",
+    "TechAuditResult": "TechAuditResult(*, provider: seo_audit.dashboard.models.Provider = <Provider.tech_audit: 'tech_audit'>, domain: str = '', client: str = '', crawl_date: str = '', audit_date: str = '', health_score: int | None = None, cms: str = '', pages_crawled: int = 0, pages_ok: int = 0, pages_discovered: int = 0, max_pages: int = 0, truncated: bool = False, totals: dict[str, typing.Any] = <factory>, categories: list[seo_audit.dashboard.tech_audit.TechAuditCategory] = <factory>, findings: list[seo_audit.dashboard.tech_audit.TechAuditFinding] = <factory>, warnings: list[str] = <factory>, observed_at: datetime.datetime = <factory>, run_dir: str = '') -> None",
+    "build_tech_audit_xlsx": "build_tech_audit_xlsx(run_dir: 'str | Path', out_path: 'str | Path', *, client: 'str' = '', domain: 'str' = '') -> 'Path'",
+    "collect_tech_audit": "collect_tech_audit(url: 'str', *, client: 'str' = '', out_dir: 'str | Path', render: 'bool' = False, max_pages: 'int' = 1000, max_tier: 'int' = 2, proxy: 'str | None' = None, on_event: 'OnEvent | None' = None, is_cancelled: 'Callable[[], bool] | None' = None) -> 'TechAuditResult'",
+    "default_report_filename": "default_report_filename(client: 'str', audit_date: 'str' = '') -> 'str'",
+    "load_machine": "load_machine(run_dir: 'str | Path') -> 'TechMachineFindings'",
+    "recheck_tech_audit": "recheck_tech_audit(run_dir: 'str | Path', *, targets: 'list[tuple[str, str]] | None' = None, max_tier: 'int' = 2, proxy: 'str | None' = None, on_event: 'OnEvent | None' = None) -> 'RecheckResult'",
+    "result_from_machine": "result_from_machine(machine: 'TechMachineFindings', *, run_dir: 'str' = '', observed_at: 'datetime | None' = None) -> 'TechAuditResult'"
   }
 }

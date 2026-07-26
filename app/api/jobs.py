@@ -24,12 +24,13 @@ from sqlalchemy.orm import Session
 from app.api import register_router
 from app.core.config import get_settings
 from app.core.security import PathTraversalError
-from app.db.models import JobEvent, SyncJob, SyncJobProvider, SyncJobStep
+from app.db.models import JobEvent, ProviderSnapshot, SyncJob, SyncJobProvider, SyncJobStep
 from app.db.repositories.artifacts import ArtifactRepository
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.events import EventRepository
 from app.db.repositories.jobs import JobRepository
+from app.db.repositories.snapshots import SnapshotRepository
 from app.db.repositories.steps import StepRepository
 from app.db.session import worker_session_scope
 from app.jobs.control import cancel_run, retry_failed_only
@@ -43,7 +44,7 @@ from app.schemas.api import (
     SyncJobAcceptedDTO,
     SyncJobRequest,
 )
-from app.schemas.enums import METRIC_PROVIDERS, JobStatus, Provider
+from app.schemas.enums import METRIC_PROVIDERS, JobStatus, Provider, Quality
 
 router = APIRouter(prefix="/api/v1", tags=["jobs"])
 
@@ -62,13 +63,15 @@ class ClientsNotFoundError(Exception):
         self.client_ids = client_ids
 
 
-def _to_cell_dto(cell: SyncJobProvider) -> CellProgressDTO:
+def _to_cell_dto(cell: SyncJobProvider, quality: Quality | None = None) -> CellProgressDTO:
     return CellProgressDTO(
         client_id=cell.client_id,
         provider=cell.provider,
         status=cell.status,
+        quality=quality,
         progress_percent=cell.progress_percent,
         current_stage=cell.current_stage,
+        progress_message=cell.progress_message,
         attempt=cell.attempt,
         error_code=cell.error_code,
         units_spent=cell.units_spent,
@@ -76,6 +79,13 @@ def _to_cell_dto(cell: SyncJobProvider) -> CellProgressDTO:
         started_at=cell.started_at,
         finished_at=cell.finished_at,
     )
+
+
+def _snapshot_quality(
+    snapshots: dict[tuple[str, Provider], ProviderSnapshot], cell: SyncJobProvider
+) -> Quality | None:
+    snapshot = snapshots.get((cell.job_id, cell.provider))
+    return snapshot.quality if snapshot is not None else None
 
 
 def _to_step_dto(step: SyncJobStep) -> JobStepDTO:
@@ -97,6 +107,7 @@ def _to_step_dto(step: SyncJobStep) -> JobStepDTO:
 def _to_job_dto(session: Session, job: SyncJob) -> JobDTO:
     cells = CellRepository(session).list_for_job(job.id)
     steps = StepRepository(session).list_for_job(job.id)
+    snapshots = SnapshotRepository(session).latest_for_jobs([job.id])
     return JobDTO(
         id=job.id,
         batch_id=job.batch_id,
@@ -117,7 +128,7 @@ def _to_job_dto(session: Session, job: SyncJob) -> JobDTO:
         error_code=job.error_code,
         error_message=job.error_message,
         steps=[_to_step_dto(s) for s in steps],
-        cells=[_to_cell_dto(c) for c in cells],
+        cells=[_to_cell_dto(c, _snapshot_quality(snapshots, c)) for c in cells],
     )
 
 
@@ -125,6 +136,9 @@ def _to_batch_dto(
     session: Session, batch_id: str, cells: list[SyncJobProvider]
 ) -> BatchProgressDTO:
     status = JobRepository(session).aggregate_status(batch_id=batch_id)
+    snapshots = SnapshotRepository(session).latest_for_jobs(
+        list({cell.job_id for cell in cells})
+    )
     terminal = {
         "succeeded",
         "partial",
@@ -134,8 +148,18 @@ def _to_batch_dto(
         "not_configured",
         "skipped",
     }
+    # A batch is not only "N cells finished": the active cell already carries
+    # measured provider progress.  Averaging those real values gives the popup a
+    # smooth truthful crawl indicator while terminal cells remain exactly 100%.
     progress_percent = (
-        round(100.0 * sum(1 for c in cells if c.status.value in terminal) / len(cells), 2)
+        round(
+            sum(
+                100.0 if c.status.value in terminal else float(c.progress_percent or 0)
+                for c in cells
+            )
+            / len(cells),
+            2,
+        )
         if cells
         else None
     )
@@ -143,7 +167,7 @@ def _to_batch_dto(
         batch_id=batch_id,
         status=status,
         progress_percent=progress_percent,
-        cells=[_to_cell_dto(c) for c in cells],
+        cells=[_to_cell_dto(c, _snapshot_quality(snapshots, c)) for c in cells],
     )
 
 

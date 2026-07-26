@@ -1,4 +1,11 @@
-#client-page-root, #ahrefs-page-root { display: flex; flex-direction: column; gap: 22px; padding-top: 26px; }
+#client-page-root, #ahrefs-page-root, #blogs-page-root { display: flex; flex-direction: column; gap: 22px; padding-top: 26px; }
+/* A flex column's own `scrollWidth` can reflect a deeply-nested `.table-scroll`
+   table's full intrinsic width even though that table visibly clips within its
+   own scroll container (observed on `#blogs-page-root`'s single-table layout;
+   `#client-page-root`/`#ahrefs-page-root` stay within bounds without this, but
+   the guard is harmless there too). Without it, mobile gets page-level
+   horizontal scroll despite every visible box being correctly sized. */
+#blogs-page-root { overflow-x: hidden; }
 
 .back-link { display: inline-flex; align-items: center; gap: 8px; width: fit-content; color: var(--ink-muted); font-weight: 700; text-decoration: none; }
 .back-link:hover { color: var(--ink); }
@@ -34,6 +41,11 @@
 .period-panel__custom input { display: block; margin-top: 4px; min-height: 40px; background: var(--canvas); color: var(--ink); border: 1px solid var(--line); padding: 6px 10px; }
 .period-panel__dates { margin: 0; display: flex; flex-wrap: wrap; gap: 18px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .period-panel__dates strong { color: var(--ink-muted); font-weight: 700; margin-right: 5px; }
+/* Placeholder for the two date chips: same row, same two widths, so the panel
+   does not grow a line when the real ranges arrive. */
+.period-dates-skeleton { display: flex; flex-wrap: wrap; gap: 18px; width: 100%; }
+.period-dates-skeleton .skeleton-line { height: 15px; width: 210px; }
+.period-dates-skeleton .skeleton-line:last-child { width: 230px; }
 .period-panel__live { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .period-panel__live > .button { flex: 0 0 auto; }
 .period-panel__live > .button .icon { width: 16px; height: 16px; }
@@ -73,15 +85,18 @@
 .ahrefs-issues-table tr.is-selected { background: rgb(255 74 23 / 8%); }
 .ahrefs-issue-link { width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .ahrefs-issue-link strong, .ahrefs-issue-link span, .ahrefs-issue-link small { display: block; }
-.ahrefs-issue-link strong { color: var(--ink); }
+.ahrefs-issue-link strong { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ink); }
+.ahrefs-issue-link strong .icon { width: 16px; height: 16px; flex: 0 0 auto; color: var(--ink-dim); }
 .ahrefs-issue-link span { margin-top: 3px; color: var(--ink-muted); }
 .ahrefs-issue-link small { margin-top: 5px; color: var(--ink-dim); }
 .ahrefs-issue-link:hover strong { color: var(--accent); }
+.ahrefs-issue-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .ahrefs-severity { display: inline-block; padding: 3px 7px; border: 1px solid currentcolor; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 .ahrefs-severity--error { color: var(--danger); }
 .ahrefs-severity--warning { color: var(--warning); }
 .ahrefs-severity--notice { color: var(--info); }
-.ahrefs-affected { margin-top: 18px; border-top: 3px solid var(--accent); }
+.ahrefs-affected { margin-top: 18px; border-top: 3px solid var(--accent); scroll-margin-top: 18px; }
+.ahrefs-affected:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ahrefs-affected.state-panel { margin: 18px 20px 20px; border-top-width: 1px; }
 .ahrefs-affected .section-heading h3 { font-size: clamp(17px, 2vw, 22px); }
 .ahrefs-urls-table td:nth-child(2), .ahrefs-urls-table th:nth-child(2) { text-align: left; white-space: normal; min-width: 360px; }
@@ -91,8 +106,20 @@
 .ahrefs-row-details dt, .ahrefs-row-details dd { margin: 0; padding: 5px 7px; background: var(--canvas-raised); overflow-wrap: anywhere; }
 .ahrefs-row-details dt { color: var(--ink-dim); font-size: 10px; text-transform: uppercase; }
 
+/* Client Blogs (task-26): compact summary card (client page + dedicated page). */
+.blogs-section { border: 1px solid var(--line); border-top: 3px solid #2f9e44; background: var(--surface); }
+.blogs-export-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: end; padding: 14px 16px; border-top: 1px solid var(--line); }
+.blogs-export-actions .icon { width: 16px; height: 16px; }
+.blogs-export-actions a.button { text-decoration: none; }
+.blogs-table td:nth-child(1), .blogs-table th:nth-child(1) { min-width: 220px; }
+.blogs-table td:nth-child(2), .blogs-table th:nth-child(2) { text-align: left; white-space: normal; min-width: 320px; color: var(--ink-muted); }
+.blogs-table td:nth-child(4) { text-align: center; }
+.blogs-table td:nth-child(4) a { color: var(--ink); }
+.blogs-table td:nth-child(4) .icon { width: 15px; height: 15px; }
+
 /* Technical SEO audit (task-25): categories -> per-URL machine findings. */
 .audit-section { border: 1px solid var(--line); border-top: 3px solid var(--accent); background: var(--surface); }
+.audit-section--focused { outline: 2px solid var(--accent); outline-offset: 5px; }
 .audit-subtitle { margin: 4px 0 0; color: var(--ink-muted); font-size: 11px; }
 .audit-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: end; padding: 14px 16px; border-bottom: 1px solid var(--line); }
 .audit-actions .icon { width: 16px; height: 16px; }

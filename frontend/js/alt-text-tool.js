@@ -22,6 +22,7 @@ import {
   verifyAltTextItem,
 } from "./api.js?v=20260726-tools2";
 import { buildToolsHash, replaceToolsHash } from "./router.js?v=20260726-tools2";
+import { panelSkeleton } from "./skeleton.js?v=20260726-loading1";
 import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260726-tools2";
 
 const PAGE_SIZE = 50;
@@ -137,7 +138,7 @@ async function renderListView() {
     <section class="tool-panel" id="at-reports" aria-labelledby="at-reports-title">
       <div class="section-heading"><div><h2 id="at-reports-title">Reports</h2></div></div>
       <div class="tool-panel__body" id="at-reports-body">
-        <div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>
+        ${panelSkeleton({ label: "reports", rows: 4, columns: 3 })}
       </div>
     </section>`;
   renderWizard();
@@ -518,13 +519,12 @@ async function renderReportView() {
   root.innerHTML = `
     <a class="back-link" href="${buildToolsHash(TOOL_KEY)}">${icon("arrow-left")}<span>All reports</span></a>
     <header class="tool-header" id="at-report-header" aria-live="polite">
-      <div class="skeleton-line skeleton-line--title"></div>
-      <div class="skeleton-line skeleton-line--short"></div>
+      ${panelSkeleton({ label: "the report", rows: 2, columns: 2 })}
     </header>
     <section class="tool-panel" id="at-rows" aria-labelledby="at-rows-title">
       <div class="section-heading"><div><h2 id="at-rows-title">Images</h2></div></div>
       <div class="tool-panel__body" id="at-rows-body">
-        <div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>
+        ${panelSkeleton({ label: "images", rows: 8, columns: 3 })}
       </div>
     </section>`;
   bindDelegatedHandlers(root.querySelector("#at-rows-body"));

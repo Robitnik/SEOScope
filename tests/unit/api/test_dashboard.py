@@ -155,6 +155,64 @@ def test_dashboard_client_with_gsc_snapshot_has_delta_and_ranges(client, db):
     assert impressions["delta_reason"] == "current_missing"
 
 
+def test_dashboard_ignores_future_and_wrong_period_gsc_snapshots(client, db):
+    client_id = _seed_client_with_gsc_snapshot(db)
+    job_id = CellRepository(db).latest_for_client_provider(client_id, Provider.gsc).job_id
+    snapshots = SnapshotRepository(db)
+    metrics = MetricRepository(db)
+
+    for observed_at, period_start, period_end, value, source_mode in (
+        (datetime.now(UTC), date(2025, 12, 1), date(2025, 12, 31), 999, SourceMode.api),
+        (
+            datetime.now(UTC),
+            date(2026, 1, 5),
+            date(2026, 1, 11),
+            666,
+            SourceMode.browser,
+        ),
+        (
+            datetime(2099, 1, 1, tzinfo=UTC),
+            date(2026, 1, 5),
+            date(2026, 1, 11),
+            777,
+            SourceMode.api,
+        ),
+    ):
+        snapshot = snapshots.create_immutable(
+            job_id=job_id,
+            client_id=client_id,
+            provider=Provider.gsc,
+            source_mode=source_mode,
+            observed_at=observed_at,
+            quality=Quality.complete,
+        )
+        metrics.bulk_insert(
+            snapshot_id=snapshot.id,
+            client_id=client_id,
+            provider=Provider.gsc,
+            values=[
+                MetricValueResult(
+                    metric_key="gsc_clicks",
+                    period_role=PeriodRole.current,
+                    period_start=period_start,
+                    period_end=period_end,
+                    value_numeric=Decimal(value),
+                    unit="count",
+                    quality=Quality.complete,
+                )
+            ],
+        )
+    db.commit()
+
+    response = client.get("/api/v1/dashboard", params={"anchor": "2026-01-12"})
+    card = next(c for c in response.json()["clients"] if c["client_id"] == client_id)
+    gsc = next(p for p in card["providers"] if p["provider"] == Provider.gsc.value)
+    clicks = next(m for m in gsc["metrics"] if m["metric_key"] == "gsc_clicks")
+
+    assert clicks["current_value"] == "100"
+    assert clicks["current_range"] == {"start": "2026-01-05", "end": "2026-01-11"}
+
+
 def test_dashboard_provider_filter(client, db):
     _seed_client_with_gsc_snapshot(db)
 

@@ -1,5 +1,6 @@
-import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260723-audit1";
-import { formatUaNumber } from "./client-page.js?v=20260723-audit1";
+import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260724-blogs1";
+import { panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260726-loading1";
+import { formatUaNumber } from "./client-page.js?v=20260724-blogs1";
 
 const RECHECK_META = {
   fixed: { label: "Fixed", tone: "complete", icon: "circle-check" },
@@ -101,7 +102,7 @@ function findingsBlock(findings, state, pendingRecheck) {
     return `<div class="state-panel audit-findings">${icon("list-search")}<p><strong>Select a category to see every affected URL.</strong></p></div>`;
   }
   if (!findings) {
-    return `<div class="audit-findings"><div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div></div>`;
+    return `<div class="audit-findings" aria-busy="true">${panelSkeleton({ label: "findings", rows: 6, columns: 2 })}</div>`;
   }
   const rows = findings.rows || [];
   const start = findings.total ? findings.offset + 1 : 0;
@@ -160,7 +161,7 @@ export function renderAuditPanel(container, {
   onRunAudit, onSelectCategory, onSearch, onPage, onRecheck,
 }) {
   if (!summary) {
-    container.innerHTML = `${heading(null, exportUrl, busy)}<div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>`;
+    container.innerHTML = `${heading(null, exportUrl, busy)}${sectionSkeleton({ label: "the technical audit", heading: false, kpis: 4, rows: 5, columns: 3 })}`;
     return;
   }
   if (!summary.has_run) {

@@ -27,10 +27,16 @@ from sqlalchemy.orm import Session
 from app.api import register_router
 from app.api.deps import PaginationDep, SessionDep
 from app.core.config import get_settings
-from app.db.models import AnalyticsDatasetRow, ProviderSnapshot
-from app.db.repositories.analytics_datasets import AnalyticsDatasetRepository
+from app.db.models import AnalyticsDatasetRow, ProviderSnapshot, SyncJob
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.jobs import JobRepository
+from app.db.repositories.tech_audits import (
+    CATEGORIES_DATASET,
+    FINDINGS_DATASET,
+    TechAuditReadRepository,
+    audit_provenance,
+    count_findings,
+)
 from app.db.session import worker_session_scope
 from app.integrations.tech_audit import (
     MODE_CRAWL,
@@ -40,6 +46,8 @@ from app.integrations.tech_audit import (
 )
 from app.schemas.api import (
     ErrorDTO,
+    TechAuditBatchAcceptedDTO,
+    TechAuditBatchRunRequest,
     TechAuditCategoryDTO,
     TechAuditFindingDTO,
     TechAuditFindingsDTO,
@@ -48,7 +56,7 @@ from app.schemas.api import (
     TechAuditRunAcceptedDTO,
     TechAuditSummaryDTO,
 )
-from app.schemas.enums import ComparisonMode, PeriodKind, Provider
+from app.schemas.enums import CellStatus, ComparisonMode, PeriodKind, Provider
 
 router = APIRouter(prefix="/api/v1", tags=["tech-audit"])
 
@@ -56,11 +64,6 @@ _NOT_FOUND = ErrorDTO(error_code="client_not_found", message="Client not found")
 _NO_RUN = ErrorDTO(
     error_code="no_audit_run", message="This client has no technical audit run yet"
 ).model_dump()
-
-CATEGORIES_DATASET = "tech_categories"
-FINDINGS_DATASET = "tech_findings"
-RECHECK_DATASET = "tech_recheck"
-
 
 def _text(row: AnalyticsDatasetRow, key: str) -> str:
     return str(row.metrics_json.get(key) or "")
@@ -80,10 +83,7 @@ def _dict(row: AnalyticsDatasetRow, key: str) -> dict[str, Any]:
 
 def _audit_provenance(snapshot: ProviderSnapshot | None) -> dict[str, Any]:
     """The crawl summary the adapter stored alongside its dataset rows."""
-    if snapshot is None:
-        return {}
-    datasets = (snapshot.provenance_json or {}).get("analytics_datasets")
-    return dict(datasets) if isinstance(datasets, dict) else {}
+    return audit_provenance(snapshot)
 
 
 def _parse_dt(raw: Any) -> datetime | None:
@@ -95,10 +95,10 @@ def _parse_dt(raw: Any) -> datetime | None:
         return None
 
 
-def _recheck_map(session: Session, client_id: str) -> dict[str, AnalyticsDatasetRow]:
-    return AnalyticsDatasetRepository(session).latest_rows_by_dimension(
-        client_id, Provider.tech_audit, RECHECK_DATASET
-    )
+def _recheck_map(
+    session: Session, client_id: str, crawl: ProviderSnapshot
+) -> dict[str, AnalyticsDatasetRow]:
+    return TechAuditReadRepository(session).rechecks_for_crawls({client_id: crawl})[client_id]
 
 
 # --- read ------------------------------------------------------------------
@@ -115,22 +115,22 @@ async def get_tech_audit_latest(client_id: str, session: SessionDep) -> TechAudi
     def _run(s: Session) -> TechAuditSummaryDTO | None:
         if ClientRepository(s).get(client_id) is None:
             return None
-        repo = AnalyticsDatasetRepository(s)
-        categories = repo.latest(client_id, Provider.tech_audit, CATEGORIES_DATASET)
-        if not categories:
+        read_repo = TechAuditReadRepository(s)
+        snapshot = read_repo.latest_crawls([client_id]).get(client_id)
+        if snapshot is None:
             return TechAuditSummaryDTO(
                 client_id=client_id, has_run=False, generated_at=datetime.now(UTC)
             )
-
-        snapshot = s.get(ProviderSnapshot, categories[0].snapshot_id)
+        categories = read_repo.rows_for_crawl(snapshot, CATEGORIES_DATASET)
+        findings = read_repo.rows_for_crawl(snapshot, FINDINGS_DATASET)
         prov = _audit_provenance(snapshot)
 
         # Roll the newest recheck verdicts up per category. Findings carry the
         # category, recheck rows carry only the finding key — join on that.
-        findings = repo.latest(client_id, Provider.tech_audit, FINDINGS_DATASET)
         category_of = {row.dimension_value: _text(row, "category") for row in findings}
         rechecks: dict[str, TechAuditRecheckSummaryDTO] = {}
-        for key, row in _recheck_map(s, client_id).items():
+        recheck_rows = _recheck_map(s, client_id, snapshot)
+        for key, row in recheck_rows.items():
             category = category_of.get(key)
             if category is None:
                 continue
@@ -139,10 +139,11 @@ async def get_tech_audit_latest(client_id: str, session: SessionDep) -> TechAudi
             if hasattr(bucket, status):
                 setattr(bucket, status, getattr(bucket, status) + 1)
 
+        counts = count_findings(findings, recheck_rows)
         return TechAuditSummaryDTO(
             client_id=client_id,
             has_run=True,
-            run_id=categories[0].snapshot_id,
+            run_id=snapshot.id,
             observed_at=snapshot.observed_at if snapshot else None,
             audit_date=str(prov.get("audit_date") or "") or None,
             health_score=prov.get("health_score"),
@@ -166,6 +167,13 @@ async def get_tech_audit_latest(client_id: str, session: SessionDep) -> TechAudi
                 )
                 for row in categories
             ],
+            open_errors=counts.open_errors,
+            error_urls=counts.error_urls,
+            open_warnings=counts.open_warnings,
+            open_notices=counts.open_notices,
+            fixed_findings=counts.fixed_findings,
+            unreachable_findings=counts.unreachable_findings,
+            total_findings=counts.total_findings,
             generated_at=datetime.now(UTC),
         )
 
@@ -192,8 +200,9 @@ async def get_tech_audit_findings(
     def _run(s: Session) -> TechAuditFindingsDTO | None:
         if ClientRepository(s).get(client_id) is None:
             return None
-        repo = AnalyticsDatasetRepository(s)
-        rows = repo.latest(client_id, Provider.tech_audit, FINDINGS_DATASET)
+        read_repo = TechAuditReadRepository(s)
+        snapshot = read_repo.latest_crawls([client_id]).get(client_id)
+        rows = read_repo.rows_for_crawl(snapshot, FINDINGS_DATASET) if snapshot else []
         if category:
             rows = [r for r in rows if _text(r, "category") == category]
         if q:
@@ -208,7 +217,7 @@ async def get_tech_audit_findings(
             ]
         total = len(rows)
         window = rows[page.offset : page.offset + page.limit]
-        rechecks = _recheck_map(s, client_id)
+        rechecks = _recheck_map(s, client_id, snapshot) if snapshot else {}
 
         out: list[TechAuditFindingDTO] = []
         for row in window:
@@ -268,6 +277,17 @@ def _create_audit_job(client_id: str, *, mode: str, params: dict[str, Any] | Non
     with worker_session_scope() as session:
         if ClientRepository(session).get(client_id) is None:
             return None
+        if mode == MODE_CRAWL:
+            attempt = TechAuditReadRepository(session).latest_crawl_attempts([client_id]).get(
+                client_id
+            )
+            if attempt and attempt[0].status in {
+                CellStatus.queued,
+                CellStatus.running,
+                CellStatus.awaiting_auth,
+                CellStatus.cancel_requested,
+            }:
+                return attempt[1].id
         jobs = JobRepository(session).create_run(
             client_ids=[client_id],
             providers=[Provider.tech_audit],
@@ -296,16 +316,116 @@ async def start_tech_audit(client_id: str) -> TechAuditRunAcceptedDTO:
     return _accepted(job_id)
 
 
+def _create_audit_batch(
+    body: TechAuditBatchRunRequest,
+) -> tuple[list[SyncJob], list[str], list[str]]:
+    with worker_session_scope() as session:
+        clients = ClientRepository(session)
+        if body.client_ids == "all":
+            requested = [str(client.id) for client in clients.list_active()]
+            missing: list[str] = []
+        else:
+            requested = list(dict.fromkeys(body.client_ids))
+            missing = []
+            enabled: list[str] = []
+            for client_id in requested:
+                client = clients.get(client_id)
+                if client is None or not client.enabled:
+                    missing.append(client_id)
+                else:
+                    enabled.append(client_id)
+            requested = enabled
+        if missing:
+            return [], [], missing
+
+        attempts = TechAuditReadRepository(session).latest_crawl_attempts(requested)
+        active_statuses = {
+            CellStatus.queued,
+            CellStatus.running,
+            CellStatus.awaiting_auth,
+            CellStatus.cancel_requested,
+        }
+        skipped = [
+            client_id
+            for client_id in requested
+            if (attempt := attempts.get(client_id)) and attempt[0].status in active_statuses
+        ]
+        queued = [client_id for client_id in requested if client_id not in skipped]
+        if not queued:
+            return [], skipped, []
+
+        params = {"max_pages": body.max_pages} if body.max_pages is not None else None
+        jobs = JobRepository(session).create_run(
+            client_ids=queued,
+            providers=[Provider.tech_audit],
+            period_kind=PeriodKind.month,
+            comparison_mode=ComparisonMode.closed,
+            anchor_date=datetime.now(UTC).date(),
+            mode=MODE_CRAWL,
+            params=params,
+            idempotency_key=body.idempotency_key,
+        )
+        return jobs, skipped, []
+
+
+@router.post(
+    "/tech-audit/runs",
+    status_code=202,
+    response_model=TechAuditBatchAcceptedDTO,
+    responses={404: {"model": ErrorDTO}, 409: {"model": ErrorDTO}},
+)
+async def start_tech_audit_batch(
+    body: TechAuditBatchRunRequest,
+) -> TechAuditBatchAcceptedDTO:
+    """Queue one crawl per selected active client in a shared batch."""
+    jobs, skipped, missing = await run_in_threadpool(_create_audit_batch, body)
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=ErrorDTO(
+                error_code="client_not_found",
+                message="one or more client_ids do not exist or are disabled",
+                details={"client_ids": missing},
+            ).model_dump(),
+        )
+    if not jobs:
+        raise HTTPException(
+            status_code=409,
+            detail=ErrorDTO(
+                error_code="audits_already_running" if skipped else "no_clients",
+                message=(
+                    "Technical audits are already queued or running for every selected client"
+                    if skipped
+                    else "No active clients matched this request"
+                ),
+                details={"client_ids": skipped},
+            ).model_dump(),
+        )
+
+    batch_id = jobs[0].batch_id
+    job_id = None if batch_id else jobs[0].id
+    id_for_urls = batch_id or jobs[0].id
+    status_url = f"/api/v1/sync-jobs/{id_for_urls}"
+    return TechAuditBatchAcceptedDTO(
+        job_id=job_id,
+        batch_id=batch_id,
+        status_url=status_url,
+        events_url=f"{status_url}/events",
+        queued_count=len(jobs),
+        skipped_active_client_ids=skipped,
+    )
+
+
 def _plan_recheck(client_id: str, wanted: list[tuple[str, str]]) -> dict[str, Any] | None:
     """Resolve the source run dir and drop targets that no crawl can re-verify."""
     with worker_session_scope() as session:
         if ClientRepository(session).get(client_id) is None:
             return None
-        repo = AnalyticsDatasetRepository(session)
-        findings = repo.latest(client_id, Provider.tech_audit, FINDINGS_DATASET)
-        if not findings:
+        read_repo = TechAuditReadRepository(session)
+        snapshot = read_repo.latest_crawls([client_id]).get(client_id)
+        if snapshot is None:
             return {"error": "no_run"}
-        snapshot = session.get(ProviderSnapshot, findings[0].snapshot_id)
+        findings = read_repo.rows_for_crawl(snapshot, FINDINGS_DATASET)
         run_dir = str(_audit_provenance(snapshot).get("run_dir") or "")
         if not run_dir:
             return {"error": "no_run_dir"}
@@ -322,7 +442,12 @@ def _plan_recheck(client_id: str, wanted: list[tuple[str, str]]) -> dict[str, An
                 skipped.append(key)
                 continue
             targets.append({"slug": slug, "url": url})
-        return {"run_dir": run_dir, "targets": targets, "skipped": skipped}
+        return {
+            "run_dir": run_dir,
+            "audit_run_id": snapshot.id,
+            "targets": targets,
+            "skipped": skipped,
+        }
 
 
 @router.post(
@@ -368,7 +493,11 @@ async def recheck_tech_audit_findings(
         _create_audit_job,
         client_id,
         mode=MODE_RECHECK,
-        params={"run_dir": plan["run_dir"], "findings": plan["targets"]},
+        params={
+            "run_dir": plan["run_dir"],
+            "audit_run_id": plan["audit_run_id"],
+            "findings": plan["targets"],
+        },
     )
     if job_id is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
@@ -399,11 +528,9 @@ def _export_xlsx(client_id: str) -> tuple[Path, str] | str:
         client = ClientRepository(session).get(client_id)
         if client is None:
             return "client_not_found"
-        repo = AnalyticsDatasetRepository(session)
-        findings = repo.latest(client_id, Provider.tech_audit, FINDINGS_DATASET)
-        if not findings:
+        snapshot = TechAuditReadRepository(session).latest_crawls([client_id]).get(client_id)
+        if snapshot is None:
             return "no_run"
-        snapshot = session.get(ProviderSnapshot, findings[0].snapshot_id)
         prov = _audit_provenance(snapshot)
         rel_run_dir = str(prov.get("run_dir") or "")
         client_name, client_domain = client.name, client.domain

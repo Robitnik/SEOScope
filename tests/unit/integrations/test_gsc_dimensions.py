@@ -1,8 +1,7 @@
 """Tests for `GscAdapter.collect_dimensions` (task-16, PLAN §21.4).
 
-`seo_audit.dashboard.gsc.collect_gsc_dimensions` is monkeypatched throughout — these
-tests cover only this module's own mapping logic (rank/quality/dimension tagging), not
-the AISeoTools wrapper itself (covered by AISeoTools' own `tests/dashboard/test_gsc.py`).
+`seo_audit.dashboard.gsc.collect_gsc_dimensions_api` is monkeypatched throughout.
+These tests cover the dashboard adapter's Reporting Ninja-only row mapping.
 """
 
 from __future__ import annotations
@@ -30,13 +29,16 @@ def _context(**overrides) -> CollectionContext:
     defaults = dict(
         client_id="client-1",
         provider=Provider.gsc,
-        source_mode=SourceMode.browser,
+        source_mode=SourceMode.api,
         period_kind=PeriodKind.month,
         comparison_mode=ComparisonMode.closed,
         current=CURRENT,
         previous=PREVIOUS,
         timezone="America/New_York",
-        integration_config={"property": "sc-domain:example.com", "profile": "gsc"},
+        integration_config={
+            "connection_key": "seo@example.com",
+            "account_id": "sc-domain:example.com",
+        },
     )
     defaults.update(overrides)
     return CollectionContext(**defaults)
@@ -65,18 +67,27 @@ def _dim_result(
         queries=queries or [],
         warnings=warnings or [],
         error_code=error_code,
-        provenance={"source_mode": "browser", "transport": "gsc_dimensions", "profile": "gsc"},
+        provenance={"source_mode": "api", "transport": "reporting_ninja"},
     )
 
 
 def _patch(monkeypatch, result):
+    from seo_audit.clientreport import api_client
     from seo_audit.dashboard import gsc as real_wrapper
 
-    monkeypatch.setattr(real_wrapper, "collect_gsc_dimensions", lambda *a, **k: result)
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    monkeypatch.setattr(api_client, "ReportingNinjaClient", FakeClient)
+    monkeypatch.setattr(real_wrapper, "collect_gsc_dimensions_api", lambda *a, **k: result)
 
 
-# ── no `property` configured ─────────────────────────────────────────────────
-def test_collect_dimensions_without_property_is_not_configured():
+# ── no Reporting Ninja account configured ───────────────────────────────────
+def test_collect_dimensions_without_reporting_ninja_account_is_not_configured():
     adapter = adapter_module.GscAdapter()
     context = _context(integration_config={})
 
@@ -171,12 +182,21 @@ def test_collect_dimensions_untruncated_period_ranks_rows_in_order(monkeypatch):
 
 # ── adapter-level guard ──────────────────────────────────────────────────────
 def test_collect_dimensions_unexpected_exception_never_raises(monkeypatch):
+    from seo_audit.clientreport import api_client
     from seo_audit.dashboard import gsc as real_wrapper
 
     def _boom(*a, **k):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(real_wrapper, "collect_gsc_dimensions", _boom)
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    monkeypatch.setattr(api_client, "ReportingNinjaClient", FakeClient)
+    monkeypatch.setattr(real_wrapper, "collect_gsc_dimensions_api", _boom)
     adapter = adapter_module.GscAdapter()
 
     out = adapter.collect_dimensions(_context(), lambda e: None)

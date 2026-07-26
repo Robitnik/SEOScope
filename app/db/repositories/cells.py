@@ -121,20 +121,30 @@ class CellRepository:
             CellStatus.cancelled,
         ):
             cell.finished_at = utcnow()
+            cell.progress_percent = 100.0
+            cell.current_stage = "complete"
             if status in (CellStatus.succeeded, CellStatus.partial):
                 cell.last_success_at = utcnow()
         self._session.flush()
         return cell
 
     def set_progress(
-        self, cell_id: str, progress_percent: float | None, *, current_stage: str | None = None
+        self,
+        cell_id: str,
+        progress_percent: float | None,
+        *,
+        current_stage: str | None = None,
+        progress_message: str | None = None,
     ) -> None:
         cell = self._session.get(SyncJobProvider, cell_id)
         if cell is None:
             raise LookupError(f"cell not found: {cell_id}")
-        cell.progress_percent = progress_percent
+        if progress_percent is not None:
+            cell.progress_percent = progress_percent
         if current_stage is not None:
             cell.current_stage = current_stage
+        if progress_message is not None:
+            cell.progress_message = progress_message
         self._session.flush()
 
     def expired_cells(self, *, now: object | None = None) -> list[SyncJobProvider]:

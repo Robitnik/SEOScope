@@ -104,9 +104,9 @@ def _validate_metrics(metrics: list) -> list[str]:  # type: ignore[type-arg]
 
 
 def _map_cell_status(quality: Quality) -> CellStatus:
-    if quality == Quality.complete:
+    if quality in (Quality.complete, Quality.truncated):
         return CellStatus.succeeded
-    # partial/truncated/stale/unavailable: attempt completed, but something
+    # partial/stale/unavailable: attempt completed, but something
     # about the data is incomplete or absent — never a hard failure, and
     # never silently indistinguishable from `succeeded` (PLAN §12).
     return CellStatus.partial
@@ -136,9 +136,34 @@ def _includes_analytics_datasets(snapshot: Any) -> bool:
 def _combine_quality(primary: Quality, secondary: Quality) -> Quality:
     if primary == secondary:
         return primary
-    if primary == Quality.unavailable and secondary == Quality.unavailable:
-        return Quality.unavailable
+    qualities = {primary, secondary}
+    if Quality.partial in qualities:
+        return Quality.partial
+    if Quality.unavailable in qualities:
+        return Quality.partial
+    if Quality.stale in qualities:
+        return Quality.stale
+    if Quality.truncated in qualities:
+        return Quality.truncated
     return Quality.partial
+
+
+def _combine_gsc_dimension_quality(primary: Quality, dimension_result: Any) -> Quality:
+    """Do not mistake the intentional top-N detail view for source loss.
+
+    GSC page/query rows are fully fetched from Reporting Ninja, then capped for
+    dashboard storage with the remainder aggregated into ``Other``. That cut
+    remains visible in dimensional-row quality/provenance, but it must not turn
+    complete aggregate KPIs into a provider-wide ``truncated`` result. A real
+    Reporting Ninja ``max_rows`` truncation still downgrades the snapshot.
+    """
+    if (
+        dimension_result.quality == Quality.truncated
+        and dimension_result.provenance.get("source_truncated") is False
+        and dimension_result.provenance.get("top_n_truncated") is True
+    ):
+        return primary
+    return _combine_quality(primary, dimension_result.quality)
 
 
 def _dimension_input(row: Any) -> DimensionRowInput:
@@ -248,13 +273,16 @@ def _run_cell_unguarded(
             "source_mode": integration.source_mode if integration else None,
         }
 
-    # `tech_audit` (task-25) is self-configured: it audits the client's own site,
-    # so it has no `client_integrations` row to enable and nothing per-client to
-    # set up. Requiring one would make every client `not_configured` forever, and
-    # creating one would put a non-metric provider into the integration lists the
-    # dashboard/UI read. Every other provider keeps the original gate exactly.
-    is_tech_audit = handle.provider == Provider.tech_audit
-    if not is_tech_audit and (integration is None or not cell_repo_read["integration_enabled"]):
+    # `tech_audit` (task-25) and `blogs` (task-26) are self-configured: each
+    # audits/crawls the client's own site, so neither has a `client_integrations`
+    # row to enable or anything per-client to set up. Requiring one would make
+    # every client `not_configured` forever, and creating one would put a
+    # non-metric provider into the integration lists the dashboard/UI read.
+    # Every other provider keeps the original gate exactly.
+    is_self_configured = handle.provider in (Provider.tech_audit, Provider.blogs)
+    if not is_self_configured and (
+        integration is None or not cell_repo_read["integration_enabled"]
+    ):
         return _terminate(
             session_scope, handle, CellStatus.not_configured, error_code="not_configured"
         )
@@ -292,23 +320,31 @@ def _run_cell_unguarded(
 
     job_mode = str(cell_repo_read["mode"])
     integration_config = dict(cell_repo_read["integration_config"])
-    if is_tech_audit:
-        # The audit target is the client's own site; there is no integration row
-        # to carry it (see the gate above), so it comes straight off the client.
+    if is_self_configured:
+        # The audit/crawl target is the client's own site; there is no integration
+        # row to carry it (see the gate above), so it comes straight off the client.
         integration_config.setdefault("domain", cell_repo_read["client_domain"])
 
     context = CollectionContext(
         client_id=handle.client_id,
         provider=handle.provider,
-        source_mode=cell_repo_read["source_mode"] or SourceMode.auto,
+        # Dashboard GSC is Reporting Ninja-only. Even an old integration row
+        # marked auto/browser is normalized to API at the worker boundary so
+        # new snapshots can never reintroduce browser/imported GSC data.
+        source_mode=(
+            SourceMode.api
+            if handle.provider == Provider.gsc
+            else cell_repo_read["source_mode"] or SourceMode.auto
+        ),
         period_kind=cell_repo_read["period_kind"],
         comparison_mode=cell_repo_read["comparison_mode"],
         current=periods.current,
         previous=periods.previous,
         timezone=cell_repo_read["timezone"],
-        # A tech audit is an explicit, on-demand action: "Run audit" must always
-        # re-crawl, never hit the freshness-skip that exists for routine syncs.
-        force_refresh=job_mode in ("force_refresh", "tech_audit", "tech_audit_recheck"),
+        # A tech audit / blog crawl is an explicit, on-demand action: "Run audit"
+        # / "Refresh data" must always re-crawl, never hit the freshness-skip
+        # that exists for routine syncs.
+        force_refresh=job_mode in ("force_refresh", "tech_audit", "tech_audit_recheck", "blogs"),
         job_mode=job_mode,
         job_params=cell_repo_read["job_params"],
         integration_config=integration_config,
@@ -355,7 +391,11 @@ def _run_cell_unguarded(
 
     if not context.force_refresh:
         with session_scope() as session:
-            latest = SnapshotRepository(session).latest_success(handle.client_id, handle.provider)
+            latest = SnapshotRepository(session).latest_success(
+                handle.client_id,
+                handle.provider,
+                source_mode=SourceMode.api if handle.provider == Provider.gsc else None,
+            )
         needs_dimension_backfill = (
             handle.provider == Provider.gsc
             and hasattr(adapter, "collect_dimensions")
@@ -422,7 +462,7 @@ def _run_cell_unguarded(
     snapshot_provenance = dict(result.provenance)
     snapshot_data_through = result.data_through
     if dimension_result is not None:
-        snapshot_quality = _combine_quality(result.quality, dimension_result.quality)
+        snapshot_quality = _combine_gsc_dimension_quality(result.quality, dimension_result)
         snapshot_warnings.extend(dimension_result.warnings)
         snapshot_provenance["dimensions"] = {
             "attempted": True,

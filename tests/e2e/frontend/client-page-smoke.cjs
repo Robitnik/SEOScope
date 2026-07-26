@@ -100,6 +100,31 @@ async function main() {
   await page.locator(".client-card").first().waitFor();
   assert.equal(await page.locator("#dashboard-view").isVisible(), true, "back link returns to a fully rendered dashboard");
 
+  // Ahrefs issue rows are a master-detail control. A click must reveal the
+  // affected URLs even when the full issue list pushes that block far below
+  // the current viewport (the live dataset commonly has 40+ issue rows).
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto(`${baseUrl}/?fixture=normal#/client/client-cleveland/ahrefs`, { waitUntil: "networkidle" });
+  const issueButton = page.locator("[data-ahrefs-issue]").first();
+  await issueButton.waitFor();
+  await issueButton.click();
+  const affectedPages = page.locator("#ahrefs-affected-pages");
+  await affectedPages.locator("h3").waitFor();
+  assert.equal(await issueButton.getAttribute("aria-expanded"), "true", "selected Ahrefs issue exposes its expanded state");
+  assert.match(page.url(), /ahissue=404_page/, "selected Ahrefs issue persists in the URL");
+  await page.waitForFunction(() => document.activeElement?.id === "ahrefs-affected-pages");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "ahrefs-affected-pages", "affected pages receive focus after loading");
+  await page.waitForFunction(() => {
+    const target = document.querySelector("#ahrefs-affected-pages");
+    const box = target?.getBoundingClientRect();
+    return box && box.top >= 0 && box.top < window.innerHeight;
+  });
+  const affectedBox = await affectedPages.boundingBox();
+  assert.equal(Boolean(affectedBox && affectedBox.y >= 0 && affectedBox.y < 1000), true, "affected pages are brought into the viewport");
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.activeElement?.id === "ahrefs-affected-pages");
+  assert.equal(await page.locator('[data-ahrefs-issue="404_page"]').getAttribute("aria-expanded"), "true", "deep-linked Ahrefs issue remains expanded after reload");
+
   console.log("browser errors:", browserErrors.length ? browserErrors.join("\n") : "(none)");
   assert.equal(browserErrors.length, 0, "no uncaught errors or console.error calls");
 

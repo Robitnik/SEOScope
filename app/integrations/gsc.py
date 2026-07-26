@@ -1,20 +1,14 @@
 """`ProviderAdapter` for GSC (task-09; PLAN §2.2/§3.2/§8.2/§8.3).
 
-Combines TWO independent AISeoTools sources into one `CollectionResult`:
-
-- `seo_audit.dashboard.gsc.collect_gsc_aggregate` (Reporting Ninja API, the PLAN §8.3
-  default source) for `gsc_clicks`/`gsc_impressions`/`gsc_avg_position`.
-- `seo_audit.dashboard.gsc.collect_gsc_direct` remains an explicit
-  `source_mode=browser` fallback for legacy/manual runs.
+Uses Reporting Ninja exclusively for aggregate metrics, dimensions and the
+daily series. Browser exports remain available inside AISeoTools for manual
+diagnostics, but are deliberately outside this dashboard adapter so a live
+card can never mix transports.
 
 `gsc_ctr` is deliberately never emitted here: `app.metrics.normalize.normalize_result`
 (task-04) derives it downstream from `gsc_clicks`/`gsc_impressions`, only when both are
 `complete` for the same period (PLAN §12) — duplicating that math here would just be a
 second implementation to keep in sync.
-
-The two sources fail independently, so quality is tracked per metric (not one blanket
-aggregate) — a Ninja outage doesn't have to take `gsc_avg_position` down with it, and a
-browser/session problem doesn't have to take clicks/impressions down with it.
 
 `CollectionContext.integration_config` shape for this provider — all non-secret external
 identifiers (PLAN §7):
@@ -22,14 +16,10 @@ identifiers (PLAN §7):
     {
       "connection_key": "<ninja connection key>",  # required
       "account_id": "sc-domain:example.com",        # required (Ninja account ref)
-      "property": "sc-domain:example.com",          # optional — enables direct avg_position
-      "profile": "gsc",                             # optional, default "gsc"
-      "account": 0,                                 # optional Google authuser override
     }
 
-Only `connection_key`/`account_id` gate `preflight()` — Ninja aggregate is the default
-source and stands on its own; a missing `property` just leaves `gsc_avg_position`
-`unavailable`, not a whole-cell failure.
+Only `connection_key`/`account_id` gate `preflight()`; both identify the exact
+Reporting Ninja Search Console property used for every dataset.
 
 `seo_audit` is only imported lazily, inside method bodies — never at module import time —
 so merely importing/registering this adapter (which `app/integrations/__init__.py` does
@@ -39,11 +29,10 @@ CI; see compose.yaml/docker/entrypoint.sh).
 
 from __future__ import annotations
 
-import tempfile
+import threading
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -63,14 +52,13 @@ from app.schemas.analytics_datasets import (
     AnalyticsDatasetCollectionResult,
     AnalyticsDatasetValueResult,
 )
-from app.schemas.enums import MetricUnit, PeriodRole, Provider, Quality, SourceMode
+from app.schemas.enums import MetricUnit, PeriodRole, Provider, Quality
 
 _AGGREGATE_METRIC_KEY_MAP: dict[str, str] = {
     "clicks": "gsc_clicks",
     "impressions": "gsc_impressions",
     "avg_position": "gsc_avg_position",
 }
-_DIRECT_METRIC_KEY = "gsc_avg_position"
 
 
 # --- Added by task-16 (GSC dimensional data, PLAN §21.4) --------------------
@@ -118,6 +106,20 @@ class DimensionCollectionResult(BaseModel):
 
 class GscAdapter:
     provider = Provider.gsc
+
+    def __init__(self) -> None:
+        self._fields_lock = threading.Lock()
+        self._fields: dict[str, str] | None = None
+
+    def _cached_fields(self) -> dict[str, str] | None:
+        with self._fields_lock:
+            return dict(self._fields) if self._fields is not None else None
+
+    def _remember_fields(self, fields: Any) -> None:
+        if not isinstance(fields, dict) or not fields:
+            return
+        with self._fields_lock:
+            self._fields = {str(key): str(value) for key, value in fields.items()}
 
     def preflight(self, context: CollectionContext) -> PreflightResult:
         cfg = context.integration_config
@@ -170,7 +172,7 @@ class GscAdapter:
         self, context: CollectionContext, emit: Callable[[ProgressEvent], None]
     ) -> CollectionResult:
         from seo_audit.clientreport.api_client import ReportingNinjaClient
-        from seo_audit.dashboard.gsc import collect_gsc_aggregate, collect_gsc_direct
+        from seo_audit.dashboard.gsc import collect_gsc_aggregate
         from seo_audit.dashboard.models import DateRange as SeoDateRange
 
         cfg = context.integration_config
@@ -178,45 +180,26 @@ class GscAdapter:
         previous = SeoDateRange(start=context.previous.start, end=context.previous.end)
         on_event = _bridge_emit(emit)
 
-        client = ReportingNinjaClient()
-        aggregate = collect_gsc_aggregate(
-            client,
-            gsc_ref={"connection_key": cfg["connection_key"], "account_id": cfg["account_id"]},
-            current=current,
-            previous=previous,
-            on_event=on_event,
-        )
+        with ReportingNinjaClient() as client:
+            aggregate = collect_gsc_aggregate(
+                client,
+                gsc_ref={
+                    "connection_key": cfg["connection_key"],
+                    "account_id": cfg["account_id"],
+                },
+                current=current,
+                previous=previous,
+                field_ids=self._cached_fields(),
+                bypass_cache=context.force_refresh,
+                on_event=on_event,
+            )
+        self._remember_fields(aggregate.provenance.get("gsc_fields"))
 
         metrics = _map_aggregate(aggregate, context.current, context.previous)
         warnings = list(aggregate.warnings)
         data_through = aggregate.data_through
         provenance: dict[str, Any] = {"aggregate": dict(aggregate.provenance)}
 
-        prop = cfg.get("property")
-        if context.source_mode == SourceMode.browser and prop:
-            with tempfile.TemporaryDirectory(prefix="gsc-direct-") as tmp:
-                direct = collect_gsc_direct(
-                    prop,
-                    current=current,
-                    previous=previous,
-                    out_dir=Path(tmp),
-                    profile=cfg.get("profile", "gsc"),
-                    account=cfg.get("account"),
-                    # No launch flags — attach-only consumer; see compose.yaml's volume comment.
-                    on_event=on_event,
-                )
-            # Explicit browser mode replaces the API's average-position values,
-            # while clicks/impressions remain the stable Reporting Ninja totals.
-            metrics = [m for m in metrics if m.metric_key != _DIRECT_METRIC_KEY]
-            metrics.extend(_map_direct(direct, context.current, context.previous))
-            warnings.extend(direct.warnings)
-            provenance["direct"] = dict(direct.provenance)
-            if direct.data_through is not None:
-                data_through = (
-                    direct.data_through
-                    if data_through is None
-                    else min(data_through, direct.data_through)
-                )
         return CollectionResult(
             provider=self.provider,
             quality=_overall_quality(m.quality for m in metrics),
@@ -236,9 +219,7 @@ class GscAdapter:
     ) -> DimensionCollectionResult:
         """Per-page/per-query clicks/impressions/CTR/position for two periods.
 
-        Auto/API mode uses Reporting Ninja's cursor-paginated Search Console
-        endpoint. Explicit browser mode keeps the original Performance-export
-        fallback for diagnostics and regression compatibility.
+        Uses Reporting Ninja's cursor-paginated Search Console endpoint.
 
         Never raises, same invariant as `collect()`: any failure becomes
         `quality=unavailable` plus a stable `error_code`.
@@ -287,19 +268,26 @@ class GscAdapter:
         truncated_any = False
 
         with ReportingNinjaClient() as client:
-            fields = discover_gsc_fields(client)
+            fields = self._cached_fields() or discover_gsc_fields(client)
+            self._remember_fields(fields)
             query_fields = ["date", fields["clicks"], fields["impressions"]]
             for optional in ("ctr", "avg_position"):
                 if fields.get(optional):
                     query_fields.append(fields[optional])
-            for role, date_range in (
-                (PeriodRole.current, context.current),
-                (PeriodRole.previous, context.previous),
+            for progress_completed, (role, date_range) in enumerate(
+                (
+                    (PeriodRole.current, context.current),
+                    (PeriodRole.previous, context.previous),
+                ),
+                start=7,
             ):
                 emit(
                     ProgressEvent(
                         provider=self.provider,
                         stage=f"fetch_{role.value}_daily",
+                        completed=progress_completed,
+                        total=9,
+                        percent=round(progress_completed / 9 * 100, 2),
                         message=(
                             f"GSC daily trend {role.value}: "
                             f"{date_range.start} → {date_range.end}"
@@ -344,7 +332,9 @@ class GscAdapter:
                                 "impressions": _dataset_decimal(
                                     row.get(fields["impressions"])
                                 ),
-                                "ctr": _dataset_decimal(row.get(fields.get("ctr", ""))),
+                                "ctr": _reporting_ninja_ctr(
+                                    row.get(fields.get("ctr", ""))
+                                ),
                                 "position": _dataset_decimal(
                                     row.get(fields.get("avg_position", ""))
                                 ),
@@ -373,6 +363,7 @@ class GscAdapter:
                 "transport": "reporting_ninja",
                 "integration": "google_search_console",
                 "datasets": ["gsc_daily"],
+                "gsc_fields": dict(fields),
             },
         )
 
@@ -380,13 +371,11 @@ class GscAdapter:
         self, context: CollectionContext, emit: Callable[[ProgressEvent], None], *, top_n: int
     ) -> DimensionCollectionResult:
         from seo_audit.clientreport.api_client import ReportingNinjaClient
-        from seo_audit.dashboard.gsc import collect_gsc_dimensions, collect_gsc_dimensions_api
+        from seo_audit.dashboard.gsc import collect_gsc_dimensions_api
         from seo_audit.dashboard.models import DateRange as SeoDateRange
 
         cfg = context.integration_config
-        if context.source_mode != SourceMode.browser and (
-            not cfg.get("connection_key") or not cfg.get("account_id")
-        ):
+        if not cfg.get("connection_key") or not cfg.get("account_id"):
             return DimensionCollectionResult(
                 provider=self.provider,
                 quality=Quality.unavailable,
@@ -401,40 +390,22 @@ class GscAdapter:
         previous = SeoDateRange(start=context.previous.start, end=context.previous.end)
         on_event = _bridge_emit(emit)
 
-        if context.source_mode == SourceMode.browser:
-            prop = cfg.get("property")
-            if not prop:
-                return DimensionCollectionResult(
-                    provider=self.provider,
-                    quality=Quality.unavailable,
-                    observed_at=datetime.now(UTC),
-                    warnings=["GSC: property is required for explicit browser mode."],
-                    error_code="not_configured",
-                )
-            with tempfile.TemporaryDirectory(prefix="gsc-dimensions-") as tmp:
-                result = collect_gsc_dimensions(
-                    prop,
-                    current=current,
-                    previous=previous,
-                    out_dir=Path(tmp),
-                    top_n=top_n,
-                    profile=cfg.get("profile", "gsc"),
-                    account=cfg.get("account"),
-                    on_event=on_event,
-                )
-        else:
-            with ReportingNinjaClient() as client:
-                result = collect_gsc_dimensions_api(
-                    client,
-                    gsc_ref={
-                        "connection_key": cfg["connection_key"],
-                        "account_id": cfg["account_id"],
-                    },
-                    current=current,
-                    previous=previous,
-                    top_n=top_n,
-                    on_event=on_event,
-                )
+        with ReportingNinjaClient() as client:
+            result = collect_gsc_dimensions_api(
+                client,
+                gsc_ref={
+                    "connection_key": cfg["connection_key"],
+                    "account_id": cfg["account_id"],
+                },
+                current=current,
+                previous=previous,
+                top_n=top_n,
+                field_ids=self._cached_fields(),
+                bypass_cache=context.force_refresh,
+                on_event=on_event,
+            )
+
+        self._remember_fields(result.provenance.get("gsc_fields"))
 
         rows = [
             *_map_dimension_periods("page", result.pages),
@@ -487,6 +458,11 @@ def _dataset_decimal(value: Any) -> Decimal | None:
         return None
 
 
+def _reporting_ninja_ctr(value: Any) -> Decimal | None:
+    parsed = _dataset_decimal(value)
+    return parsed / Decimal(100) if parsed is not None else None
+
+
 def _map_aggregate(
     aggregate: Any, current: DateRange, previous: DateRange
 ) -> list[MetricValueResult]:
@@ -509,28 +485,6 @@ def _map_aggregate(
                 )
             else:
                 out.append(_unavailable_metric(catalog_key, role, date_range))
-    return out
-
-
-def _map_direct(direct: Any, current: DateRange, previous: DateRange) -> list[MetricValueResult]:
-    by_role = {v.period_role.value: v for v in direct.values}
-    out: list[MetricValueResult] = []
-    for role, date_range in ((PeriodRole.current, current), (PeriodRole.previous, previous)):
-        found = by_role.get(role.value)
-        if found is not None:
-            out.append(
-                MetricValueResult(
-                    metric_key=_DIRECT_METRIC_KEY,
-                    period_role=role,
-                    period_start=found.period_start,
-                    period_end=found.period_end,
-                    value_numeric=found.value_numeric,
-                    unit=MetricUnit(found.unit.value),
-                    quality=Quality(direct.quality.value),
-                )
-            )
-        else:
-            out.append(_unavailable_metric(_DIRECT_METRIC_KEY, role, date_range))
     return out
 
 

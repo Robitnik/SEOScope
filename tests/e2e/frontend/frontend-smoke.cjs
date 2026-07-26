@@ -90,9 +90,9 @@ async function main() {
   await page.locator("#clear-filters").click();
   await page.locator(".client-card").nth(3).waitFor();
 
-  await page.locator('.client-card[data-client-id="client-long-name"] [data-action="integrate"][data-provider="semrush"]').click();
+  await page.locator('.client-card[data-client-id="client-long-name"] [data-action="integrate"][data-provider="reporting_ninja"]').click();
   assert.equal(await page.locator('[name="domain"]').inputValue(), "advanced-restorative-implant-dentistry.example.com", "domain integration is prefilled from the client");
-  assert.equal(await page.locator("[data-account-field]").first().isHidden(), true, "provider-specific integration fields are hidden");
+  assert.equal(await page.locator("[data-account-field]").first().isVisible(), true, "Reporting Ninja account field is shown");
   await page.locator("#integration-dialog [data-close]").first().click();
 
   await page.locator("#sync-all-button").click();

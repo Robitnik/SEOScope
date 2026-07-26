@@ -31,7 +31,7 @@ from app.schemas.api import (
     ProvidersStatusDTO,
     ProviderStatusCellDTO,
 )
-from app.schemas.enums import METRIC_PROVIDERS, CellStatus, Provider
+from app.schemas.enums import METRIC_PROVIDERS, CellStatus, Provider, SourceMode
 
 router = APIRouter(prefix="/api/v1", tags=["providers"])
 
@@ -66,7 +66,11 @@ def _build_status_cell(
         )
 
     latest_cell = CellRepository(session).latest_for_client_provider(client_id, provider)
-    current_snapshot = SnapshotRepository(session).latest_success(client_id, provider)
+    current_snapshot = SnapshotRepository(session).latest_success(
+        client_id,
+        provider,
+        source_mode=SourceMode.api if provider == Provider.gsc else None,
+    )
 
     auth_state = _auth_state_from_cell(latest_cell)
     reason_code: str | None = None

@@ -12,7 +12,15 @@ from app.db.repositories.jobs import JobRepository
 from app.db.repositories.metrics import MetricRepository
 from app.db.repositories.snapshots import SnapshotRepository
 from app.jobs.runner import CellHandle, run_cell
-from app.schemas.enums import CellStatus, JobStatus, PeriodKind, PeriodRole, Provider, Quality
+from app.schemas.enums import (
+    CellStatus,
+    JobStatus,
+    PeriodKind,
+    PeriodRole,
+    Provider,
+    Quality,
+    SourceMode,
+)
 
 
 def _run(session_scope, job_id: str, cell_id: str, client_id: str, provider: Provider, **kwargs):
@@ -112,6 +120,7 @@ def test_custom_job_passes_exact_range_to_adapter(session_scope, make_cell, regi
     assert adapter.last_context.current.end == date(2025, 3, 31)
     assert adapter.last_context.previous.start == date(2025, 1, 29)
     assert adapter.last_context.previous.end == date(2025, 2, 28)
+    assert adapter.last_context.source_mode == SourceMode.api
 
 
 def test_partial_quality_maps_to_partial_cell_status(session_scope, make_cell, register_fake):
@@ -127,6 +136,70 @@ def test_partial_quality_maps_to_partial_cell_status(session_scope, make_cell, r
         # cells succeeding and hard-failing (PLAN §9.2), not a single cell's
         # own data-quality nuance (that nuance lives on the snapshot/metric).
         assert JobRepository(session).get(job_id).status == JobStatus.succeeded
+
+
+def test_top_n_dimensions_keep_complete_provider_quality(
+    session_scope, make_cell, register_fake
+):
+    from app.integrations.gsc import DimensionCollectionResult
+    from app.jobs.fake_adapter import FakeAdapter
+
+    class TruncatedDimensionFake(FakeAdapter):
+        def collect_dimensions(self, context, emit):
+            return DimensionCollectionResult(
+                provider=Provider.gsc,
+                quality=Quality.truncated,
+                observed_at=datetime.now(UTC),
+                data_through=context.current.end,
+                provenance={
+                    "top_n": 1000,
+                    "top_n_truncated": True,
+                    "source_truncated": False,
+                },
+            )
+
+    register_fake(Provider.gsc, TruncatedDimensionFake(Provider.gsc))
+    job_id, cell_id, client_id = make_cell(Provider.gsc, scenario="success")
+
+    status = _run(session_scope, job_id, cell_id, client_id, Provider.gsc)
+
+    assert status == CellStatus.succeeded
+    with session_scope() as session:
+        snapshot = SnapshotRepository(session).latest_success(client_id, Provider.gsc)
+        assert snapshot.quality == Quality.complete
+        assert snapshot.provenance_json["dimensions"]["quality"] == "truncated"
+        assert snapshot.provenance_json["dimensions"]["top_n_truncated"] is True
+        assert CellRepository(session).get(cell_id).progress_percent == 100.0
+
+
+def test_source_truncated_dimensions_remain_truncated(
+    session_scope, make_cell, register_fake
+):
+    from app.integrations.gsc import DimensionCollectionResult
+    from app.jobs.fake_adapter import FakeAdapter
+
+    class SourceTruncatedDimensionFake(FakeAdapter):
+        def collect_dimensions(self, context, emit):
+            return DimensionCollectionResult(
+                provider=Provider.gsc,
+                quality=Quality.truncated,
+                observed_at=datetime.now(UTC),
+                data_through=context.current.end,
+                provenance={
+                    "top_n_truncated": False,
+                    "source_truncated": True,
+                },
+            )
+
+    register_fake(Provider.gsc, SourceTruncatedDimensionFake(Provider.gsc))
+    job_id, cell_id, client_id = make_cell(Provider.gsc, scenario="success")
+
+    status = _run(session_scope, job_id, cell_id, client_id, Provider.gsc)
+
+    assert status == CellStatus.succeeded
+    with session_scope() as session:
+        snapshot = SnapshotRepository(session).latest_success(client_id, Provider.gsc)
+        assert snapshot.quality == Quality.truncated
 
 
 def test_unavailable_quality_persists_snapshot_with_no_metrics(

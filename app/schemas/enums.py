@@ -20,6 +20,11 @@ class Provider(StrEnum):
     # part of the routine multi-provider sync — it runs only on an explicit
     # per-client "Run audit" request. See METRIC_PROVIDERS below.
     tech_audit = "tech_audit"
+    # Machine-only Client Blogs inventory collector (task-26). Same non-metric
+    # shape as tech_audit: produces a deduplicated post list (AnalyticsDatasetRow),
+    # never MetricValues, no catalog entry / health weight, runs only on an
+    # explicit per-client "Refresh data" request. See METRIC_PROVIDERS below.
+    blogs = "blogs"
 
 
 # The four metric-bearing providers — everything the dashboard KPIs, health %,

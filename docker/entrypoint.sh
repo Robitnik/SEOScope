@@ -3,6 +3,25 @@
 # built in the Dockerfile's builder stage — no `poetry run` needed here.
 set -euo pipefail
 
+# Group-writable by default for everything we create. We run as the operator's own uid (compose
+# `user:`), so this is belt-and-braces rather than the load-bearing fix — but AISeoTools' shared
+# `state/locks/` files live on a mount the HOST user also has to open O_RDWR, and a default 022
+# would silently strip the write bit off any lock we happen to create first.
+umask 0002
+
+# The container is not root any more, so a volume whose contents predate that switch is still
+# root-owned and we cannot chown our way out of it. Say so HERE, naming the fix, instead of
+# letting alembic fail three lines later with a SQLite "unable to open database file" that reads
+# like a corrupt database.
+if [ ! -w /app/app_data ]; then
+  echo "FATAL: /app/app_data is not writable by $(id -u):$(id -g)." >&2
+  echo "  The volume was created while this container still ran as root. Fix it once:" >&2
+  echo "    docker compose down" >&2
+  echo "    docker run --rm -v theyovthclientsreport_app_data:/v -v theyovthclientsreport_artifacts:/a \\" >&2
+  echo "      -v theyovthclientsreport_browser_profiles:/b alpine chown -R $(id -u):$(id -g) /v /a /b" >&2
+  exit 1
+fi
+
 # NOTE — AISeoTools is NOT installed here any more. Its dependencies are baked
 # into the image at build time (see Dockerfile), and its own code arrives via
 # the /seo/AISeoTools bind mount, which the build-time editable install already

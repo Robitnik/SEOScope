@@ -13,11 +13,12 @@ from app.db.repositories.analytics_datasets import (
     AnalyticsDatasetRepository,
     AnalyticsDatasetRowInput,
 )
+from app.db.repositories.cells import CellRepository
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.jobs import JobRepository
 from app.db.repositories.snapshots import SnapshotRepository
 from app.integrations.tech_audit import finding_key
-from app.schemas.enums import ComparisonMode, PeriodKind, Provider, Quality, SourceMode
+from app.schemas.enums import CellStatus, ComparisonMode, PeriodKind, Provider, Quality, SourceMode
 
 RUN_DIR = "tech_audit/client/run-1"
 URL_404 = "https://tech.example.com/missing"
@@ -28,7 +29,7 @@ def _client(db, *, slug: str = "acme-tech"):
     return ClientRepository(db).create(
         name="Acme Tech",
         slug=slug,
-        domain="tech.example.com",
+        domain=f"{slug}.example.com",
         timezone="America/New_York",
     )
 
@@ -42,7 +43,7 @@ def _snapshot(db, created, *, provenance: dict, observed: datetime, warnings=Non
         anchor_date=date(2026, 7, 23),
         mode="tech_audit",
     )[0]
-    return SnapshotRepository(db).create_immutable(
+    snapshot = SnapshotRepository(db).create_immutable(
         job_id=job.id,
         client_id=created.id,
         provider=Provider.tech_audit,
@@ -52,6 +53,9 @@ def _snapshot(db, created, *, provenance: dict, observed: datetime, warnings=Non
         warnings=warnings or [],
         provenance={"analytics_datasets": provenance},
     )
+    cell = CellRepository(db).list_for_job(job.id)[0]
+    CellRepository(db).set_status(cell.id, CellStatus.succeeded)
+    return snapshot
 
 
 def _insert(db, created, snapshot, dataset_key: str, rows: list[AnalyticsDatasetRowInput]):
@@ -189,6 +193,11 @@ def test_latest_returns_categories_and_crawl_summary(client, db):
     assert body["pages_crawled"] == 42
     assert body["totals"]["urls_crawled"] == 42
     assert body["warnings"] == ["sitemap points at another host"]
+    assert body["open_errors"] == 1
+    assert body["error_urls"] == 1
+    assert body["open_warnings"] == 0
+    assert body["open_notices"] == 1
+    assert body["total_findings"] == 2
     categories = {c["category"]: c for c in body["categories"]}
     assert categories["http_errors"]["severity"] == "Error"
     assert categories["http_errors"]["recheckable"] is True
@@ -244,6 +253,10 @@ def test_findings_filter_paginate_and_join_latest_recheck(client, db):
     assert row["recheck_status"] == "fixed"
     assert row["recheck_at"].startswith("2026-07-24")
 
+    summary = client.get(f"/api/v1/clients/{created.id}/tech-audit/latest").json()
+    assert summary["open_errors"] == 0
+    assert summary["fixed_findings"] == 1
+
     # The untouched finding keeps a null verdict — never "fixed" by association.
     orphan = client.get(
         f"/api/v1/clients/{created.id}/tech-audit/findings", params={"category": "orphan"}
@@ -259,6 +272,81 @@ def test_findings_search_matches_url(client, db):
     ).json()
     assert body["total"] == 1
     assert body["rows"][0]["slug"] == "orphan_page"
+
+
+def test_old_fixed_recheck_does_not_hide_error_from_a_new_crawl(client, db):
+    created = _seed_run(db)
+    old_crawl = AnalyticsDatasetRepository(db).latest(
+        created.id, Provider.tech_audit, "tech_findings"
+    )[0]
+    recheck_snapshot = _snapshot(
+        db,
+        created,
+        observed=datetime(2026, 7, 24, 9, tzinfo=UTC),
+        provenance={"attempted": True, "run_dir": RUN_DIR, "rechecked": 1},
+    )
+    _insert(
+        db,
+        created,
+        recheck_snapshot,
+        "tech_recheck",
+        [
+            AnalyticsDatasetRowInput(
+                dataset_key="tech_recheck",
+                dimension_key="finding",
+                dimension_value=finding_key("page_4xx", URL_404),
+                metrics={
+                    "slug": "page_4xx",
+                    "url": URL_404,
+                    "status": "fixed",
+                    "checked_at": "2026-07-24T09:00:00+00:00",
+                    "audit_run_id": old_crawl.snapshot_id,
+                },
+                quality=Quality.complete,
+                rank=1,
+            )
+        ],
+    )
+    new_snapshot = _snapshot(
+        db,
+        created,
+        observed=datetime(2026, 7, 25, 9, tzinfo=UTC),
+        provenance={
+            "attempted": True,
+            "run_dir": "tech_audit/client/run-2",
+            "pages_crawled": 1,
+            "datasets": ["tech_categories", "tech_findings"],
+        },
+    )
+    _insert(
+        db,
+        created,
+        new_snapshot,
+        "tech_findings",
+        [
+            AnalyticsDatasetRowInput(
+                dataset_key="tech_findings",
+                dimension_key="finding",
+                dimension_value=finding_key("page_4xx", URL_404),
+                metrics={
+                    "slug": "page_4xx",
+                    "category": "http_errors",
+                    "name": "Page returns 4XX",
+                    "severity": "Error",
+                    "url": URL_404,
+                },
+                quality=Quality.complete,
+                rank=1,
+            )
+        ],
+    )
+    db.commit()
+
+    body = client.get(f"/api/v1/clients/{created.id}/tech-audit/latest").json()
+
+    assert body["run_id"] == new_snapshot.id
+    assert body["open_errors"] == 1
+    assert body["fixed_findings"] == 0
 
 
 def test_start_run_queues_a_tech_audit_job(client, db):
@@ -279,6 +367,55 @@ def test_start_run_queues_a_tech_audit_job(client, db):
 def test_start_run_404_for_unknown_client(client):
     response = client.post("/api/v1/clients/does-not-exist/tech-audit/runs")
     assert response.status_code == 404
+
+
+def test_start_batch_queues_one_crawler_cell_per_client(client, db):
+    first = _client(db, slug="bulk-first")
+    second = _client(db, slug="bulk-second")
+    db.commit()
+
+    response = client.post(
+        "/api/v1/tech-audit/runs",
+        json={
+            "client_ids": [first.id, second.id],
+            "max_pages": 750,
+            "idempotency_key": "bulk-audit-test",
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["batch_id"]
+    assert body["job_id"] is None
+    assert body["queued_count"] == 2
+    jobs = JobRepository(db).list_for_batch(body["batch_id"])
+    assert {job.client_id for job in jobs} == {first.id, second.id}
+    assert all(job.mode == "tech_audit" for job in jobs)
+    assert all(job.params_json == {"max_pages": 750} for job in jobs)
+
+
+def test_start_batch_skips_a_client_with_an_active_audit(client, db):
+    active = _client(db, slug="bulk-active")
+    fresh = _client(db, slug="bulk-fresh")
+    JobRepository(db).create_run(
+        client_ids=[active.id],
+        providers=[Provider.tech_audit],
+        period_kind=PeriodKind.month,
+        comparison_mode=ComparisonMode.closed,
+        anchor_date=date(2026, 7, 24),
+        mode="tech_audit",
+    )
+    db.commit()
+
+    response = client.post(
+        "/api/v1/tech-audit/runs",
+        json={"client_ids": [active.id, fresh.id]},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["queued_count"] == 1
+    assert body["skipped_active_client_ids"] == [active.id]
 
 
 def test_recheck_refuses_graph_scoped_findings(client, db):
@@ -311,7 +448,22 @@ def test_recheck_queues_a_targeted_job_carrying_the_run_dir(client, db):
     assert job is not None
     assert job.mode == "tech_audit_recheck"
     assert job.params_json["run_dir"] == RUN_DIR
+    assert job.params_json["audit_run_id"]
     assert job.params_json["findings"] == [{"slug": "page_4xx", "url": URL_404}]
+
+
+def test_dashboard_card_counts_measured_open_errors(client, db):
+    created = _seed_run(db)
+    db.commit()
+
+    body = client.get("/api/v1/dashboard", params={"period": "week"}).json()
+    card = next(item for item in body["clients"] if item["client_id"] == created.id)
+
+    assert card["tech_audit"]["state"] == "complete"
+    assert card["tech_audit"]["open_errors"] == 1
+    assert card["tech_audit"]["error_urls"] == 1
+    assert card["tech_audit"]["open_notices"] == 1
+    assert card["tech_audit"]["pages_crawled"] == 42
 
 
 def test_recheck_404_when_the_client_never_ran_an_audit(client, db):

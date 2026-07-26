@@ -1,5 +1,5 @@
-import { getSyncJob, isFixtureMode } from "./api.js?v=20260723-audit1";
-import { isTerminal } from "./formatters.js?v=20260723-audit1";
+import { getSyncJob, isFixtureMode } from "./api.js?v=20260724-blogs1";
+import { isTerminal } from "./formatters.js?v=20260724-blogs1";
 
 export function watchJob({ id, eventsUrl, lastEventId = "", onProgress, onConnection, onTerminal, onError }) {
   let stopped = false;

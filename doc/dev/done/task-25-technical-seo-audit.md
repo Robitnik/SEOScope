@@ -325,3 +325,31 @@ GET  .../tech-audit/export.xlsx          → 200, SHB_Tech-Audit_20260723.xlsx, 
 - **Наявні e2e-смоуки (`tests/e2e/frontend/*.cjs`) не проганялись** — вони падають і **без** моїх змін (перевірено через `git stash`): їм потрібен реальний застосунок як BASE_URL, а не статичний сервер. Моя перевірка фронту робилась окремим скриптом проти статики. Варто прогнати їх проти піднятого стека.
 - **Живого прогону проти реального сайту не було** — краул перевірено лише на замоканому `run_import`. Перший реальний `Run audit` варто зробити під наглядом.
 - **`_pending` в адаптері** тримає результат між `collect()` і `collect_datasets()`. Якщо runner колись почне викликати їх не послідовно, це треба буде переробити (є тест на «датасети без collect()»).
+
+---
+
+## 🔧 Follow-up (2026-07-24): live-% прогрес + фікс зависання `image_dims`
+
+**Симптом (ALPHA / alphastyle.store):** клітинка аудиту «висіла» на `0% / Crawling site pages`, а потім гинула. Розбір живої БД: краул 280 стор. відпрацював за ~35 c, але пост-краул крок `probe_image_dimensions` (pipeline.py) тягнув повнорозмірні (`?width=4096`) Shopify-зображення для **~1945 позначених великих картинок**. Він не слав жодних подій → heartbeat замерзав → через 5 хв lease клітинки спливав і **весь краул (тисячі знахідок) губився** як `failed_interrupted`.
+
+**Дві першопричини:**
+
+1. **Жоден crawl-event не ніс `percent`.** Краулер слав `crawled X/Y` як вільний текст (`message`), `percent=None`; `CellRepository.set_progress` ігнорує `None` → `progress_percent` стояв на 0 весь прогін. Тому будь-який сайт висів на «0% / Crawling site pages», а не лише ALPHA.
+2. **`probe_image_dimensions` не мав ні загального дедлайну, ні heartbeat.**
+
+**Що зроблено (усе адитивно, CLI незачеплено):**
+
+- **AISeoTools `seo_audit/techissues/probes/image_probe.py`** — `probe_image_dimensions(...)` отримав keyword-only `overall_deadline` та `on_progress(done, total)`: wall-clock-кеп на весь прохід (при таймауті лишаються часткові розміри — деградація краща за втрату аудиту) + тік на кожну картинку (heartbeat).
+- **AISeoTools `seo_audit/tech_audit/pipeline.py`** — `run_import`/`finish_run`/`_crawl_progress` отримали опційний `on_progress(stage, done, total)`; стадії `crawl` / `probe` / `detect` / `image_dims` тепер репортять структуровано; `image_dims_deadline=90.0` за замовчуванням.
+- **AISeoTools `seo_audit/dashboard/tech_audit.py`** — `collect_tech_audit` будує `_on_progress` із `emit`, який мапить `(stage, done, total)` на монотонний overall-percent через `_STAGE_BANDS` (crawl 5–65, probe 65–72, detect 72–80, image_dims 80–96; фінальний «ready» = 97, persist у застосунку = 100). Cancel тепер поллиться і на цьому «хвості», не лише на checkpoint-ах краулу.
+- **Застосунок `frontend/js/formatters.js`** — додано `STAGE_LABELS` для `probe` / `image_dims` (адаптер уже форвардив `percent`/`completed`/`total`/`stage`, тож бек-змін не було; контракт/OpenAPI без змін).
+
+**Тести:** `tests/test_tech_audit_progress.py` (AISeoTools) — `on_progress` монотонний і б'є 0→100; `overall_deadline` повертає часткові розміри без зависання. Уся стара tech-audit + techissues + dashboard suite зелена (148+38); app tech-audit тести зелені (32).
+
+**Живий прогін (2026-07-24, alphastyle.store):** percent росте безперервно (1→63 crawl → 72 probe → 80 detect → 80→96 image_dims → 97), прогін **завершується** за 230 c (`pages_crawled=235, findings=2885`); `image_dims` упирається в 90-c дедлайн і виходить із частковими розмірами замість того, щоб висіти. Раніше цей самий крок висів 5+ хв.
+
+**Ще follow-ups:**
+
+- **Осиротіла клітинка** `719f89e3-…` (стара ALPHA) лишилась `running`/0% у БД: startup-recovery (`app.jobs.recovery`) її **не** реквелила (`requeued_interrupted=0`) попри прострочений lease — окремий баг recovery, може блокувати доріжку `tech_audit`. Треба розібрати чому `expired_cells` її не підхопив.
+- **Тихі вікна поза `image_dims`:** фаза discovery (`discover_urls`, ~115 c) і блок `probe` (link/sitemap/image HEAD-проби, ~18 c) шлють heartbeat лише на межах. Для ALPHA обидва < 300 c lease, але дуже великий сайт може впертися — варто додати heartbeat і туди.
+- **Комміт/пін AISeoTools** на новий tag лишається свідомим кроком користувача (як зазначено вище).

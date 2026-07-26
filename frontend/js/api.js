@@ -2,6 +2,14 @@ const API_ROOT = "/api/v1";
 const FIXTURE_MODE = new URLSearchParams(location.search).get("fixture");
 const controllers = new Map();
 
+// `request()` cancels the previous in-flight call under the same key, so an
+// abort means "a newer request superseded this one" — never a failure the
+// operator should see. Chrome words it "signal is aborted without reason", and
+// Safari/Firefox differ again, so match the name first and the wording second.
+export function isAbortError(error) {
+  return error?.name === "AbortError" || /\baborted\b/i.test(error?.message || "");
+}
+
 async function request(path, options = {}, key = path) {
   controllers.get(key)?.abort();
   const controller = new AbortController();
@@ -58,7 +66,13 @@ function sortFixtureClients(clients, sort) {
   return sorted;
 }
 
-export async function getDashboard({ period, query, status, provider, sort = "quality", anchor }) {
+// `requestKey` exists because two independent callers on the client page both
+// read `/dashboard`: the page shell (which client is this?) and the Reporting
+// Ninja panel (its per-period provider summary). Under one shared key the
+// second call aborted the first, and the shell rendered "Failed to load
+// client. signal is aborted without reason" over a page that was loading fine.
+// Distinct keys keep each caller cancelling only its own previous request.
+export async function getDashboard({ period, query, status, provider, sort = "quality", anchor, requestKey = "dashboard" }) {
   if (FIXTURE_MODE) {
     if (FIXTURE_MODE === "error") { await wait(500); throw new Error("Fixture connection error"); }
     if (FIXTURE_MODE === "loading") await wait(2400);
@@ -77,7 +91,7 @@ export async function getDashboard({ period, query, status, provider, sort = "qu
   if (status) params.set("status", status);
   if (provider) params.set("provider", provider);
   if (anchor) params.set("anchor", anchor);
-  return request(`/dashboard?${params}`, {}, "dashboard");
+  return request(`/dashboard?${params}`, {}, requestKey);
 }
 
 export async function getClientHistory(clientId, period = "week") {

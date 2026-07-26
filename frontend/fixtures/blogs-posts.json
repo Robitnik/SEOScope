@@ -1,0 +1,59 @@
+{
+  "client_id": "fixture-client",
+  "q": null,
+  "sort": "date_desc",
+  "total": 6,
+  "limit": 25,
+  "offset": 0,
+  "generated_at": "2026-07-23T09:20:00+00:00",
+  "rows": [
+    {
+      "url": "https://fixture-client.example.com/blog/summer-menu-launch",
+      "title": "Our New Summer Menu Has Landed",
+      "description": "A look at the seasonal dishes joining the menu this July, from chilled starters to grilled mains.",
+      "word_count": 612,
+      "published_date": "2026-07-18",
+      "modified_date": null
+    },
+    {
+      "url": "https://fixture-client.example.com/blog/behind-the-bar",
+      "title": "Behind the Bar: Meet Our Head Mixologist",
+      "description": "An interview about craft cocktails, seasonal ingredients, and what makes a great drink menu.",
+      "word_count": 845,
+      "published_date": "2026-07-05",
+      "modified_date": "2026-07-06"
+    },
+    {
+      "url": "https://fixture-client.example.com/blog/private-events-guide",
+      "title": "A Guide to Hosting Private Events With Us",
+      "description": "Everything you need to know about booking, menus, and capacity for private parties.",
+      "word_count": 530,
+      "published_date": "2026-06-22",
+      "modified_date": null
+    },
+    {
+      "url": "https://fixture-client.example.com/blog/wine-pairing-basics",
+      "title": "Wine Pairing Basics for a Weeknight Dinner",
+      "description": "",
+      "word_count": 398,
+      "published_date": "2026-06-10",
+      "modified_date": null
+    },
+    {
+      "url": "https://fixture-client.example.com/blog/staff-spotlight-maria",
+      "title": "Staff Spotlight: Maria, 10 Years Behind the Grill",
+      "description": "A conversation with one of our longest-serving line cooks about how the kitchen has changed.",
+      "word_count": 721,
+      "published_date": null,
+      "modified_date": null
+    },
+    {
+      "url": "https://fixture-client.example.com/blog/sourcing-local-produce",
+      "title": "Where We Source Our Produce",
+      "description": "A behind-the-scenes look at the local farms supplying our kitchen this season.",
+      "word_count": 455,
+      "published_date": "2026-05-14",
+      "modified_date": null
+    }
+  ]
+}

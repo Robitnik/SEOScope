@@ -56,6 +56,53 @@ def test_create_run_persists_custom_range(session):
     assert job.custom_end == date(2025, 3, 31)
 
 
+def test_cell_terminal_progress_is_complete_and_null_updates_do_not_reset_it(session):
+    client = _make_client(session)
+    job = JobRepository(session).create_run(
+        client_ids=[client.id],
+        providers=[Provider.gsc],
+        period_kind=PeriodKind.week,
+        comparison_mode=ComparisonMode.closed,
+        anchor_date=date(2026, 1, 1),
+    )[0]
+    cell = CellRepository(session).list_for_job(job.id)[0]
+    cells = CellRepository(session)
+
+    cells.set_progress(cell.id, 44.44, current_stage="fetch_current_query")
+    cells.set_progress(cell.id, None, current_stage="fetch_previous_query")
+    assert cells.get(cell.id).progress_percent == 44.44
+
+    cells.set_status(cell.id, CellStatus.succeeded)
+    completed = cells.get(cell.id)
+    assert completed.progress_percent == 100.0
+    assert completed.current_stage == "complete"
+
+
+def test_cell_progress_message_is_set_and_null_updates_do_not_reset_it(session):
+    client = _make_client(session)
+    job = JobRepository(session).create_run(
+        client_ids=[client.id],
+        providers=[Provider.gsc],
+        period_kind=PeriodKind.week,
+        comparison_mode=ComparisonMode.closed,
+        anchor_date=date(2026, 1, 1),
+    )[0]
+    cell = CellRepository(session).list_for_job(job.id)[0]
+    cells = CellRepository(session)
+
+    assert cells.get(cell.id).progress_message is None
+
+    cells.set_progress(cell.id, 10.0, progress_message="found 100 posts so far")
+    assert cells.get(cell.id).progress_message == "found 100 posts so far"
+
+    cells.set_progress(cell.id, 20.0, progress_message="found 148 posts so far")
+    assert cells.get(cell.id).progress_message == "found 148 posts so far"
+
+    # An event without a message must not blank out the last real one.
+    cells.set_progress(cell.id, 30.0, current_stage="persist")
+    assert cells.get(cell.id).progress_message == "found 148 posts so far"
+
+
 def test_claim_next_cell_is_atomic_across_two_callers(session, engine):
     from sqlalchemy.orm import sessionmaker
 

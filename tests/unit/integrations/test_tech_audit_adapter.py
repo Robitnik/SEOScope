@@ -216,6 +216,42 @@ def test_crawl_reaching_nothing_is_unavailable_not_zero(monkeypatch):
     assert result.quality == Quality.unavailable
 
 
+def test_clean_crawl_with_no_findings_is_complete(monkeypatch):
+    clean = _crawl_result()
+    clean.findings = []
+    clean.categories = []
+    clean.totals = {"urls_crawled": clean.pages_crawled, "errors": 0}
+    monkeypatch.setattr(adapter_module, "_collect_tech_audit", lambda **_: clean)
+    adapter = TechAuditAdapter()
+    context = _context()
+
+    result = adapter.collect(context, _noop, lambda: False)
+    datasets = adapter.collect_datasets(context, _noop)
+
+    assert result.quality == Quality.complete
+    assert datasets.quality == Quality.complete
+    assert datasets.rows == []
+
+
+def test_page_limit_marks_crawl_and_rows_truncated(monkeypatch):
+    limited = _crawl_result()
+    limited.truncated = True
+    limited.pages_discovered = 1400
+    limited.max_pages = 1000
+    monkeypatch.setattr(adapter_module, "_collect_tech_audit", lambda **_: limited)
+    adapter = TechAuditAdapter()
+    context = _context(job_params={"max_pages": 1000})
+
+    result = adapter.collect(context, _noop, lambda: False)
+    datasets = adapter.collect_datasets(context, _noop)
+
+    assert result.quality == Quality.truncated
+    assert result.provenance["pages_discovered"] == 1400
+    assert datasets.quality == Quality.truncated
+    assert all(row.quality == Quality.truncated for row in datasets.rows)
+    assert datasets.provenance["max_pages"] == 1000
+
+
 def test_crawl_failure_never_raises(monkeypatch):
     def _boom(**_):
         raise RuntimeError("network gone")
@@ -294,6 +330,7 @@ def test_recheck_writes_tech_recheck_rows(monkeypatch, tmp_path):
         job_mode="tech_audit_recheck",
         job_params={
             "run_dir": "tech_audit/client-1/run-1",
+            "audit_run_id": "crawl-snapshot-1",
             "findings": [{"slug": "page_4xx", "url": URL}],
         },
     )
@@ -307,6 +344,7 @@ def test_recheck_writes_tech_recheck_rows(monkeypatch, tmp_path):
     assert row.dimension_value == finding_key("page_4xx", URL)
     assert row.metrics["status"] == "fixed"
     assert row.metrics["checked_at"]
+    assert row.metrics["audit_run_id"] == "crawl-snapshot-1"
 
 
 def test_recheck_skip_categories_match_aiseotools():

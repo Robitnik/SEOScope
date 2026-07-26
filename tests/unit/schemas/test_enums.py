@@ -16,23 +16,24 @@ from app.schemas.enums import (
 
 
 def test_provider_values_are_stable():
-    # Extended additively by task-25: `tech_audit` is the machine-only Technical
-    # SEO Audit collector. It is a Provider (so it reuses the job/cell/SSE
-    # engine) but NOT a metric provider — see the next test.
+    # Extended additively by task-25/task-26: `tech_audit` and `blogs` are
+    # machine-only collectors. Both are a Provider (so they reuse the
+    # job/cell/SSE engine) but NOT metric providers — see the next test.
     assert {p.value for p in Provider} == {
         "ahrefs",
         "semrush",
         "gsc",
         "reporting_ninja",
         "tech_audit",
+        "blogs",
     }
 
 
-def test_metric_providers_exclude_tech_audit():
+def test_metric_providers_exclude_tech_audit_and_blogs():
     """The routine-sync / dashboard / health surface stays the four metric providers.
 
-    `tech_audit` carries no metrics and must never be expanded into a routine
-    "sync all", a dashboard KPI column, or the health score.
+    `tech_audit`/`blogs` carry no metrics and must never be expanded into a
+    routine "sync all", a dashboard KPI column, or the health score.
     """
     assert {p.value for p in METRIC_PROVIDERS} == {
         "ahrefs",
@@ -41,6 +42,7 @@ def test_metric_providers_exclude_tech_audit():
         "reporting_ninja",
     }
     assert Provider.tech_audit not in METRIC_PROVIDERS
+    assert Provider.blogs not in METRIC_PROVIDERS
 
 
 def test_period_kind_values():

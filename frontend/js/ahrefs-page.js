@@ -1,11 +1,13 @@
-import { createSyncJob, getAhrefsAffectedUrls, getAhrefsSiteAudit, getDashboard } from "./api.js?v=20260723-audit1";
-import { buildClientHash, replaceAhrefsHash } from "./router.js?v=20260723-audit1";
-import { escapeHtml, formatTimestamp, icon, initials, PROVIDERS, STAGE_LABELS, STATE_META, percent, stateClass } from "./formatters.js?v=20260723-audit1";
-import { renderAhrefsError, renderAhrefsPanel } from "./ahrefs-panel.js?v=20260723-audit1";
-import { watchJob } from "./sse.js?v=20260723-audit1";
+import { createSyncJob, getAhrefsAffectedUrls, getAhrefsSiteAudit, getDashboard, isAbortError } from "./api.js?v=20260724-blogs1";
+import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260726-loading1";
+import { buildClientHash, replaceAhrefsHash } from "./router.js?v=20260724-blogs1";
+import { escapeHtml, formatTimestamp, icon, initials, PROVIDERS, STAGE_LABELS, STATE_META, percent, stateClass } from "./formatters.js?v=20260724-blogs1";
+import { renderAhrefsError, renderAhrefsPanel } from "./ahrefs-panel.js?v=20260724-blogs1";
+import { watchJob } from "./sse.js?v=20260724-blogs1";
 
 const root = document.querySelector("#ahrefs-page-root");
 let requestToken = 0;
+let affectedRequestToken = 0;
 let current = null;
 let stopLiveWatching = null;
 let liveCollection = null;
@@ -18,6 +20,7 @@ function paramsFromQuery(query) {
     ahrefsSelectedIssue: query.get("ahissue") || "",
     ahrefsUrlSearch: query.get("ahurlq") || "",
     ahrefsUrlOffset: 0,
+    ahrefsRevealSelection: query.has("ahissue"),
   };
 }
 
@@ -35,6 +38,7 @@ export async function initAhrefsPage(clientId, query) {
   stopLiveWatching = null;
   liveCollection = null;
   lastAhrefsData = null;
+  affectedRequestToken += 1;
   current = { clientId, ...paramsFromQuery(query) };
   root.innerHTML = shell();
   bindShell();
@@ -44,9 +48,8 @@ export async function initAhrefsPage(clientId, query) {
 function shell() {
   return `
     <a class="back-link" href="${buildClientHash(current.clientId)}">${icon("arrow-left")}<span>Back to client</span></a>
-    <header class="client-page__header" id="ap-header" aria-live="polite">
-      <div class="skeleton-line skeleton-line--title"></div>
-      <div class="skeleton-line skeleton-line--short"></div>
+    <header class="client-page__header" id="ap-header" aria-live="polite" aria-busy="true">
+      ${clientHeaderSkeleton()}
     </header>
     <section class="period-panel" aria-label="Live Site Audit collection">
       <div class="period-panel__live">
@@ -56,7 +59,7 @@ function shell() {
     </section>
     <div id="ap-content">
       <section class="ahrefs-section" id="ap-ahrefs" aria-label="Ahrefs live Site Audit" aria-live="polite">
-        <div class="skeleton-line skeleton-line--short"></div><div class="skeleton-block"></div>
+        ${sectionSkeleton({ label: "Ahrefs Site Audit", kpis: 3, rows: 6, columns: 3 })}
       </section>
     </div>`;
 }
@@ -83,23 +86,39 @@ async function loadClient() {
     }
     await loadAhrefs();
   } catch (error) {
-    document.querySelector("#ap-header").innerHTML = `<p class="state-panel state-failed">${icon("wifi-off")}<span><strong>Failed to load client.</strong><br>${escapeHtml(error.message)}</span></p>`;
+    // An aborted request means a newer load superseded this one — never an
+    // operator-visible failure (see `isAbortError`).
+    if (isAbortError(error)) return;
+    const header = document.querySelector("#ap-header");
+    header.setAttribute("aria-busy", "false");
+    header.innerHTML = `
+      <div class="state-panel state-failed">
+        ${icon("wifi-off")}
+        <p><strong>Could not load this client.</strong><br>${escapeHtml(error.message)}. Nothing was changed — retry once the connection is back.</p>
+        <button type="button" class="button button--primary" id="ap-retry">${icon("refresh")}Retry</button>
+      </div>`;
+    header.querySelector("#ap-retry").addEventListener("click", () => {
+      header.setAttribute("aria-busy", "true");
+      header.innerHTML = clientHeaderSkeleton();
+      loadClient();
+    });
   }
 }
 
 function renderNotFound() {
+  root.querySelector("#ap-header").setAttribute("aria-busy", "false");
   root.querySelector("#ap-header").innerHTML = `
     <div class="state-panel state-failed">
       ${icon("user-x")}
       <p><strong>Client not found.</strong><br>The link may be outdated.</p>
-      <a class="button button--primary" href="/">Back to client list</a>
+      <a class="button button--primary" href="#/">Back to client list</a>
     </div>`;
   document.querySelector(".period-panel")?.remove();
   document.querySelector("#ap-content")?.remove();
 }
 
 function renderGate() {
-  document.querySelector("#ap-content").innerHTML = `<div class="state-panel state-not_configured">${icon("plug-off")}<p><strong>Ahrefs is not connected for this client.</strong><br>Connect Ahrefs from the dashboard to enable Live Site Audit.</p><a class="button button--quiet" href="/">Manage integrations</a></div>`;
+  document.querySelector("#ap-content").innerHTML = `<div class="state-panel state-not_configured">${icon("plug-off")}<p><strong>Ahrefs is not connected for this client.</strong><br>Connect Ahrefs from the dashboard to enable Live Site Audit.</p><a class="button button--quiet" href="#/">Manage integrations</a></div>`;
   document.querySelector("#ap-live-refresh").disabled = true;
 }
 
@@ -216,17 +235,48 @@ async function loadAhrefsAffected(issueSlug, offset = 0, query = current.ahrefsU
 
 async function loadAhrefs() {
   const token = ++requestToken;
+  const affectedToken = ++affectedRequestToken;
   try {
     const audit = await getAhrefsSiteAudit(current.clientId);
     if (token !== requestToken) return;
     const selectedExists = (audit.issues || []).some((issue) => issue.slug === current.ahrefsSelectedIssue);
     if (!selectedExists) current.ahrefsSelectedIssue = audit.issues?.[0]?.slug || "";
     const affected = await loadAhrefsAffected(current.ahrefsSelectedIssue, 0);
-    if (token !== requestToken) return;
+    if (token !== requestToken || affectedToken !== affectedRequestToken) return;
     renderAhrefs({ summary: current.ahrefsSummary, audit, affected });
+    if (current.ahrefsRevealSelection) {
+      current.ahrefsRevealSelection = false;
+      revealAffectedPages({ focus: true });
+    }
   } catch (error) {
-    if (token !== requestToken) return;
+    if (token !== requestToken || affectedToken !== affectedRequestToken) return;
     renderAhrefsError(document.querySelector("#ap-ahrefs"), error.message);
+  }
+}
+
+function revealAffectedPages({ focus = false } = {}) {
+  requestAnimationFrame(() => {
+    const target = document.querySelector("#ahrefs-affected-pages");
+    if (!target) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+    if (focus) target.focus({ preventScroll: true });
+  });
+}
+
+async function updateAffected(issueSlug, offset, query, { reveal = false } = {}) {
+  const token = ++affectedRequestToken;
+  renderAhrefs({ ...lastAhrefsData, affected: null, affectedError: "" });
+  if (reveal) revealAffectedPages();
+  try {
+    const affected = await loadAhrefsAffected(issueSlug, offset, query);
+    if (token !== affectedRequestToken || current.ahrefsSelectedIssue !== issueSlug) return;
+    renderAhrefs({ ...lastAhrefsData, affected, affectedError: "" });
+    if (reveal) revealAffectedPages({ focus: true });
+  } catch (error) {
+    if (token !== affectedRequestToken || current.ahrefsSelectedIssue !== issueSlug) return;
+    renderAhrefs({ ...lastAhrefsData, affected: null, affectedError: error.message });
+    if (reveal) revealAffectedPages({ focus: true });
   }
 }
 
@@ -240,22 +290,18 @@ function renderAhrefs(data) {
       persist();
       renderAhrefs(lastAhrefsData);
     },
-    async onSelectIssue(slug) {
+    onSelectIssue(slug) {
       current.ahrefsSelectedIssue = slug;
       current.ahrefsUrlOffset = 0;
       current.ahrefsUrlSearch = "";
       persist();
-      renderAhrefs({ ...lastAhrefsData, affected: null });
-      const affected = await loadAhrefsAffected(slug, 0, "");
-      renderAhrefs({ ...lastAhrefsData, affected });
+      void updateAffected(slug, 0, "", { reveal: true });
     },
-    async onAffectedPage(offset, query = current.ahrefsUrlSearch) {
+    onAffectedPage(offset, query = current.ahrefsUrlSearch) {
       current.ahrefsUrlOffset = offset;
       current.ahrefsUrlSearch = query;
       persist();
-      renderAhrefs({ ...lastAhrefsData, affected: null });
-      const affected = await loadAhrefsAffected(current.ahrefsSelectedIssue, offset, query);
-      renderAhrefs({ ...lastAhrefsData, affected });
+      void updateAffected(current.ahrefsSelectedIssue, offset, query);
     },
   });
 }

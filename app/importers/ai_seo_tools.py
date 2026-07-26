@@ -41,7 +41,7 @@ from app.importers.parsers import semrush as semrush_parser
 from app.importers.scanner import RunArtifact, scan_source
 from app.metrics.normalize import normalize_result
 from app.schemas.adapter import CollectionResult
-from app.schemas.enums import Provider
+from app.schemas.enums import Provider, SourceMode
 
 ParseFn = Callable[..., "list[ParsedArtifact] | ParseSkip"]
 
@@ -126,6 +126,7 @@ def _sync_integrations(client_repo: ClientRepository, client_id: str, entry: Cli
         client_repo.upsert_integration(
             client_id,
             Provider.gsc,
+            source_mode=SourceMode.api,
             config=merged(
                 Provider.gsc,
                 {"account_id": entry.gsc_account_id, "connection_key": entry.connection_key},

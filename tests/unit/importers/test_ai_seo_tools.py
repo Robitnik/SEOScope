@@ -170,6 +170,7 @@ def test_clients_json_code_becomes_display_name_and_syncs_integration(tmp_path, 
         assert integration.provider.value == "gsc"
         assert integration.config_json["account_id"] == "sc-domain:acme.com"
         assert integration.config_json["connection_key"] == "seo@x.com"
+        assert integration.source_mode.value == "api"
 
 
 def test_existing_client_gets_integration_even_when_artifact_was_seen(

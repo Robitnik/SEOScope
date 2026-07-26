@@ -76,6 +76,32 @@ def test_latest_success_excludes_unavailable(session):
     assert repo.latest_success(job.client_id, Provider.ahrefs) is None
 
 
+def test_latest_success_can_require_reporting_ninja_api_source(session):
+    job = _make_job(session)
+    repo = SnapshotRepository(session)
+    imported = repo.create_immutable(
+        job_id=job.id,
+        client_id=job.client_id,
+        provider=Provider.gsc,
+        source_mode=SourceMode.browser,
+        observed_at=datetime(2026, 1, 8, tzinfo=UTC),
+        quality=Quality.complete,
+    )
+    live = repo.create_immutable(
+        job_id=job.id,
+        client_id=job.client_id,
+        provider=Provider.gsc,
+        source_mode=SourceMode.api,
+        observed_at=datetime(2026, 1, 7, tzinfo=UTC),
+        quality=Quality.complete,
+    )
+
+    assert repo.latest_success(job.client_id, Provider.gsc).id == imported.id
+    assert repo.latest_success(
+        job.client_id, Provider.gsc, source_mode=SourceMode.api
+    ).id == live.id
+
+
 def test_bulk_insert_metrics_preserves_none_and_decimal(session):
     job = _make_job(session)
     snapshot = SnapshotRepository(session).create_immutable(
