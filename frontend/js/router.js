@@ -100,7 +100,7 @@ async function activate() {
     blogsRoot?.setAttribute("hidden", "");
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     toolsRoot?.removeAttribute("hidden");
-    const { initToolsRoute } = await import("./tools-page.js?v=20260726-tools1");
+    const { initToolsRoute } = await import("./tools-page.js?v=20260726-tools2");
     await initToolsRoute(route);
   } else if (route.name === "ahrefs") {
     dashboardView?.setAttribute("hidden", "");

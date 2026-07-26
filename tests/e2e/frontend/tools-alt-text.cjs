@@ -49,6 +49,34 @@ async function main() {
   assert.equal(await page.locator(".tool-card").count(), 1, "the empty state clears the search");
   await page.screenshot({ path: path.join(screenshots, "tools-hub-1440.png"), fullPage: true });
 
+  // 1b. Audit files are named client-first by agency convention, so the client
+  // must be picked automatically from the file name (regression: this silently
+  // stopped working behind a stale cached module).
+  await page.goto(`${baseUrl}/?fixture=normal#/tools/alt-text`, { waitUntil: "networkidle" });
+  await page.locator("#at-file").waitFor();
+  await page.locator("#at-file").setInputFiles({
+    name: "19Cleveland_Ahrefs-Audit_21072026.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: Buffer.from("PKfixture"),
+  });
+  await page.locator("#at-map-form").waitFor();
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator("#at-client option:checked").innerText(), "19 Cleveland",
+    "the client is picked from the client-first file name");
+  assert.match(await page.locator("#at-client-hint").innerText(), /file name/,
+    "the auto-pick is disclosed, not silent");
+  // A file with no client prefix must not guess one.
+  await page.locator("#at-map-cancel").click();
+  await page.locator("#at-file").setInputFiles({
+    name: "generic-image-audit.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: Buffer.from("PKfixture"),
+  });
+  await page.locator("#at-map-form").waitFor();
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator("#at-client").inputValue(), "",
+    "no client is invented when the file name does not name one");
+
   // 2. Deep link straight into a report — state comes from the URL alone.
   await page.goto(`${baseUrl}/?fixture=normal${REPORT}`, { waitUntil: "networkidle" });
   await page.locator(".at-table tbody tr").first().waitFor();

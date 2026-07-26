@@ -722,7 +722,9 @@ export async function getAltTextItems(reportId, { q, status, urlKind, verify, li
 export async function uploadAltTextSource(file) {
   if (FIXTURE_MODE) {
     await wait(400);
-    return fixture("alt-text-upload");
+    // Ім'я файлу віддаємо справжнє: на ньому тримається авто-вибір клієнта,
+    // тож фікстура з чужою назвою ховала б цю поведінку від тестів.
+    return { ...(await fixture("alt-text-upload")), source_filename: file.name };
   }
   // Raw bytes, not multipart: one file, no other form fields — the same choice
   // the logo upload made server-side (`app/api/clients.py`).

@@ -20,9 +20,9 @@ import {
   setAltTextItemStatus,
   uploadAltTextSource,
   verifyAltTextItem,
-} from "./api.js?v=20260726-tools1";
-import { buildToolsHash, replaceToolsHash } from "./router.js?v=20260726-tools1";
-import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260726-tools1";
+} from "./api.js?v=20260726-tools2";
+import { buildToolsHash, replaceToolsHash } from "./router.js?v=20260726-tools2";
+import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260726-tools2";
 
 const PAGE_SIZE = 50;
 const TOOL_KEY = "alt-text";
@@ -440,22 +440,32 @@ export function guessClient(filename, clients) {
   const normalize = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "");
   const stem = normalize(String(filename).replace(/\.[^.]+$/, ""));
   if (!stem) return null;
+  const candidatesFor = (client) =>
+    [client.name, String(client.domain || "").replace(/\.[a-z.]+$/, "")]
+      .map(normalize)
+      .filter((value) => value.length >= 3);
+
   let best = null;
   let bestLength = 0;
   clients.forEach((client) => {
-    [client.name, String(client.domain || "").replace(/\.[a-z.]+$/, "")]
-      .map(normalize)
-      .filter((value) => value.length >= 3)
-      .forEach((candidate) => {
-        // Саме префікс: клієнт стоїть НА ПОЧАТКУ імені файлу за домовленістю.
-        // Найдовший збіг виграє, щоб «Sapphire NY» перемогло «Sapphire».
-        if (stem.startsWith(candidate) && candidate.length > bestLength) {
-          best = client;
-          bestLength = candidate.length;
-        }
-      });
+    candidatesFor(client).forEach((candidate) => {
+      // Саме префікс: клієнт стоїть НА ПОЧАТКУ імені файлу за домовленістю.
+      // Найдовший збіг виграє, щоб «Sapphire NY» перемогло «Sapphire».
+      if (stem.startsWith(candidate) && candidate.length > bestLength) {
+        best = client;
+        bestLength = candidate.length;
+      }
+    });
   });
-  return best;
+  if (best) return best;
+
+  // Запасний прохід для файлів, де клієнт не перший (`Ahrefs-Audit_SAPHNY`):
+  // збіг лише по ЦІЛОМУ токену імені файлу і лише якщо він однозначний —
+  // підрядок тут дав би хибні спрацювання на кшталт «SDS» усередині слова.
+  const tokens = new Set(String(filename).replace(/\.[^.]+$/, "").split(/[^a-zA-Z0-9]+/).map(normalize));
+  const matches = clients.filter((client) =>
+    candidatesFor(client).some((candidate) => tokens.has(candidate)));
+  return matches.length === 1 ? matches[0] : null;
 }
 
 async function submitReport({ force = false } = {}) {
