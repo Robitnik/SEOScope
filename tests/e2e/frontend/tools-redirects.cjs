@@ -94,6 +94,15 @@ async function main() {
   const detail = page.locator(".rd-detail").first();
   assert.equal(await detail.locator(".rd-hop").count(), 3, "the detail lists all three responses");
   assert.match(await detail.innerText(), /http → https/, "the detail names what changed on the hop");
+  // "From → to" must be readable without inferring it from the next hop's URL.
+  assert.match(await detail.locator(".rd-route").innerText(), /old-collection[\s\S]*collections\/summer/,
+    "the detail states where the link starts and where it ends");
+  assert.match(await detail.locator(".rd-route").innerText(), /via 2 redirects/,
+    "the route summary counts the redirects");
+  assert.equal(await detail.locator(".rd-hop__to").count(), 2,
+    "every redirect hop says explicitly where it points");
+  assert.match(await detail.locator(".rd-hop__to").first().innerText(), /redirects to/i,
+    "the target of a hop is labelled, not implied");
   assert.match(await detail.innerText(), /Mixed 301 and 302/, "mixed permanence is explained");
   assert.match(await detail.locator(".rd-hop--final").innerText(), /destination/i,
     "the last hop is marked as the destination");

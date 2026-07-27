@@ -58,8 +58,8 @@ def _upload(client: Any, content: bytes, filename: str = "audit.xlsx") -> Any:
     )
 
 
-def _create_report(client: Any, **overrides: Any) -> dict[str, Any]:
-    upload = _upload(client, _xlsx({"Images": AUDIT_SHEET}))
+def _create_report(client: Any, _source: bytes | None = None, **overrides: Any) -> dict[str, Any]:
+    upload = _upload(client, _source if _source is not None else _xlsx({"Images": AUDIT_SHEET}))
     assert upload.status_code == 200, upload.text
     payload = {
         "upload_id": upload.json()["upload_id"],
@@ -259,8 +259,12 @@ def test_create_report_rejects_an_expired_upload(api_client: Any) -> None:
 def test_reimporting_the_same_file_and_sheet_points_at_the_existing_report(
     api_client: Any,
 ) -> None:
-    first = _create_report(api_client)
-    upload = _upload(api_client, _xlsx({"Images": AUDIT_SHEET}))
+    # Ті самі **байти** для обох завантажень: `openpyxl` пише в архів час
+    # створення, тож два виклики `_xlsx()` по різні боки від межі секунди дають
+    # різний sha256 — і перевірка ідемпотентності проходила через раз.
+    source = _xlsx({"Images": AUDIT_SHEET})
+    first = _create_report(api_client, _source=source)
+    upload = _upload(api_client, source)
     payload = {
         "upload_id": upload.json()["upload_id"],
         "title": "Duplicate",
@@ -275,7 +279,7 @@ def test_reimporting_the_same_file_and_sheet_points_at_the_existing_report(
     assert detail["details"]["existing_report_id"] == first["id"]
 
     # Свідоме повторне створення лишається можливим.
-    upload = _upload(api_client, _xlsx({"Images": AUDIT_SHEET}))
+    upload = _upload(api_client, source)
     payload["upload_id"] = upload.json()["upload_id"]
     forced = api_client.post("/api/v1/tools/alt-text/reports?force=true", json=payload)
     assert forced.status_code == 201

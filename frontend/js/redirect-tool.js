@@ -104,6 +104,10 @@ const FLAG_COPY = {
     label: "Cache-buster added",
     hint: "A random parameter was appended, so a query-dependent redirect may differ from a plain visit.",
   },
+  cache_buster_broke_the_url: {
+    label: "Cache-buster broke the URL",
+    hint: "With the cache-busting parameter the site answered 404/403, so the link was re-checked without it. This result is the clean one.",
+  },
 };
 
 const CHANGE_COPY = {
@@ -791,6 +795,29 @@ function flagChips(flags) {
     .join("")}${rest > 0 ? `<span class="rd-flag rd-flag--rest">+${rest}</span>` : ""}</span>`;
 }
 
+// «Звідки → куди» одним рядком, до самих кроків: на це питання оператор
+// відповідає першим, і воно мусить читатися без розбору списку хопів.
+// Відсутність редіректів — теж явне твердження, а не порожнє місце.
+function routeSummary(target, hops) {
+  const redirects = hops.filter((hop) => hop.location).length;
+  const from = target.normalized_url || hops[0]?.url || "";
+  const to = target.final_url || hops[hops.length - 1]?.url || "";
+  if (!redirects) {
+    if (!to) return "";
+    return `
+      <p class="rd-route rd-route--direct">${icon("circle-check", "icon icon--tiny")}
+        <span>No redirects — this URL answered directly.</span></p>`;
+  }
+  return `
+    <p class="rd-route">
+      <code translate="no">${escapeHtml(from)}</code>
+      <span class="rd-route__arrow" aria-hidden="true">${icon("arrow-narrow-right", "icon icon--tiny")}</span>
+      <span class="visually-hidden">redirects to</span>
+      <code translate="no">${escapeHtml(to)}</code>
+      <span class="rd-route__count">via ${redirects} redirect${redirects === 1 ? "" : "s"}</span>
+    </p>`;
+}
+
 // Головний екран інструмента: ланцюжок вертикально, крок за кроком.
 function chainDetail(target, { idPrefix }) {
   const hops = target.hops || [];
@@ -814,6 +841,12 @@ function chainDetail(target, { idPrefix }) {
             ${hop.elapsed_ms ? `<span class="rd-hop__time">${hop.elapsed_ms} ms</span>` : ""}
             ${isFinal ? '<span class="rd-flag rd-flag--final">destination</span>' : ""}
           </span>
+          ${hop.location ? `
+            <span class="rd-hop__to">
+              ${icon("corner-down-right", "icon icon--tiny")}
+              <span class="rd-hop__to-label">redirects to</span>
+              <code translate="no">${escapeHtml(hop.location)}</code>
+            </span>` : ""}
           ${changes.length ? `<span class="rd-hop__changes">${icon("arrow-narrow-right", "icon icon--tiny")}${escapeHtml(changes.join(" · "))}</span>` : ""}
         </span>
       </li>`;
@@ -825,6 +858,7 @@ function chainDetail(target, { idPrefix }) {
   const page = target.final_page;
   return `
     <div class="rd-detail" data-detail="${escapeHtml(idPrefix)}">
+      ${routeSummary(target, hops)}
       ${hops.length
         ? `<ol class="rd-hops">${steps}</ol>`
         : `<p class="rd-detail__empty">${icon("wifi-off")}<span>The server never answered, so there is no chain to show.</span></p>`}

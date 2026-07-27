@@ -25,7 +25,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from html.parser import HTMLParser
 from http import HTTPStatus
@@ -40,7 +40,12 @@ from app.tools.http_safety import (
     build_cache_busted_url,
     safe_host,
 )
-from app.tools.redirects.input import SUPPORTED_SCHEMES, UrlInputError, normalize_url
+from app.tools.redirects.input import (
+    SUPPORTED_SCHEMES,
+    UrlEntry,
+    UrlInputError,
+    normalize_url,
+)
 
 # Ліміти. Кожен хоп — реальний запит до чужого сайту, тож стелі свідомо низькі.
 MAX_HOPS_CAP = 25
@@ -428,6 +433,7 @@ class _State:
     normalized_url: str
     hops: list[Hop] = field(default_factory=list)
     notes: tuple[str, ...] = ()
+    used_cache_buster: bool = False
     started: float = field(default_factory=time.monotonic)
 
     def elapsed_ms(self) -> int:
@@ -445,6 +451,11 @@ def trace_redirects(
 
     Ніколи не кидає на мережевих проблемах: кожна причина — окремий вердикт із
     деталями, бо «не змогли перевірити» і «редіректів немає» — різні речі.
+
+    Якщо ввімкнений cache-buster зіпсував відповідь (частина сайтів віддає 404
+    або блокує будь-який невідомий query-параметр), трейс автоматично
+    повторюється **без** нього: інакше інструмент показував би 404 там, де
+    сторінка насправді жива. Обидві спроби чесно позначені прапорцями.
     """
     options = options or TraceOptions()
     try:
@@ -464,10 +475,40 @@ def trace_redirects(
             flags=(),
         )
 
-    state = _State(input_url=entry.input_url, normalized_url=entry.url, notes=entry.notes)
     fetch = fetcher or (lambda target: fetch_no_redirect(target, timeout=options.timeout_seconds))
+    result = _walk(entry, options, fetch, use_cache_buster=options.cache_buster, nonce=nonce)
+    if options.cache_buster and result.verdict in _CACHE_BUSTER_SUSPECTS:
+        clean = _walk(entry, options, fetch, use_cache_buster=False, nonce=nonce)
+        if clean.verdict not in _CACHE_BUSTER_SUSPECTS:
+            # Той самий URL без параметра відповів нормально → показуємо його,
+            # але кажемо, що cache-buster саме тут і був причиною.
+            return replace(clean, flags=(*clean.flags, "cache_buster_broke_the_url"))
+    return result
 
-    current = build_cache_busted_url(entry.url, nonce) if options.cache_buster else entry.url
+
+# Вердикти, які cache-buster може створити на порожньому місці: сайт бачить
+# невідомий параметр і віддає 404/403 або взагалі відмовляє.
+_CACHE_BUSTER_SUSPECTS = frozenset(
+    {Verdict.broken, Verdict.blocked, Verdict.fetch_failed, Verdict.broken_chain}
+)
+
+
+def _walk(
+    entry: UrlEntry,
+    options: TraceOptions,
+    fetch: Fetcher,
+    *,
+    use_cache_buster: bool,
+    nonce: str | None,
+) -> TraceResult:
+    """Один прохід ланцюжка (без fallback-логіки)."""
+    state = _State(
+        input_url=entry.input_url,
+        normalized_url=entry.url,
+        notes=entry.notes,
+        used_cache_buster=use_cache_buster,
+    )
+    current = build_cache_busted_url(entry.url, nonce) if use_cache_buster else entry.url
     visited: set[str] = set()
 
     for _ in range(options.max_hops + 1):
@@ -748,6 +789,6 @@ def _flags(
         if page.possible_js_redirect:
             flags.append("possible_js_redirect")
 
-    if options.cache_buster:
+    if state.used_cache_buster:
         flags.append("cache_buster_used")
     return tuple(flags)

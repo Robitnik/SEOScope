@@ -468,6 +468,17 @@
  * інструмента, тому він отримує найбільше простору й акцентну лінію. */
 .rd-detail-row td { padding: 0; background: var(--canvas-raised); border-bottom: 1px solid var(--line); }
 .rd-detail { display: grid; gap: 16px; padding: 18px 20px; border-left: 3px solid var(--accent); }
+/* «Звідки → куди» до списку кроків: головна відповідь читається першою. */
+.rd-route {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 10px 12px;
+  border: 1px solid var(--line); background: var(--surface);
+}
+.rd-route code { color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.rd-route__arrow .icon { color: var(--accent); }
+.rd-route__count { color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+.rd-route--direct { color: var(--ink-muted); font-size: 12px; }
+.rd-route--direct .icon { color: var(--success); }
+
 .rd-hops { list-style: none; display: grid; gap: 0; margin: 0; padding: 0; }
 .rd-hop {
   display: grid; grid-template-columns: 28px 1fr; gap: 12px; padding: 12px 0;
@@ -488,6 +499,12 @@
 .rd-hop__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .rd-hop__text { color: var(--ink-muted); font-size: 11px; }
 .rd-hop__time { color: var(--ink-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+/* Явне «куди веде цей крок»: без цього рядка оператор мусив би виводити
+ * напрямок із URL наступного хопа. */
+.rd-hop__to { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-width: 0; }
+.rd-hop__to .icon { flex: 0 0 auto; color: var(--accent); }
+.rd-hop__to-label { color: var(--ink-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.rd-hop__to code { color: var(--ink-muted); font-size: 12px; overflow-wrap: anywhere; }
 .rd-hop__changes { display: flex; align-items: center; gap: 6px; color: var(--info); font-size: 11px; }
 .rd-hop__changes .icon { flex: 0 0 auto; }
 .rd-detail__empty { display: flex; align-items: center; gap: 12px; margin: 0; color: var(--ink-muted); font-size: 12px; }

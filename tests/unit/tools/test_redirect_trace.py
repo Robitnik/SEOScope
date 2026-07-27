@@ -457,6 +457,41 @@ class TestOptions:
         assert "cache_buster_used" in result.flags
         assert result.verdict is Verdict.ok_direct
 
+    def test_cache_buster_is_dropped_when_it_breaks_the_url(self) -> None:
+        """Реальний кейс: сайт віддає 404 на будь-який невідомий query."""
+        clean = "https://a.example/vip/bachelor-parties/"
+
+        def picky(url: str) -> RawResponse:
+            if "?" in url:
+                return page("<title>Page not found</title>", status=404)
+            return page("<title>Bachelor parties</title>")
+
+        result = trace_redirects(
+            clean, options=TraceOptions(cache_buster=True), fetcher=picky, nonce="abcd1234"
+        )
+        assert result.verdict is Verdict.ok_direct
+        assert result.final_status == 200
+        assert result.final_url == clean
+        # Чесно кажемо, що саме cache-buster дав хибний 404.
+        assert "cache_buster_broke_the_url" in result.flags
+        assert "cache_buster_used" not in result.flags
+
+    def test_a_real_404_survives_the_fallback(self) -> None:
+        """Якщо сторінка мертва й без параметра — вердикт лишається `broken`."""
+        server = _Server({})  # усе відповідає 404
+        result = trace_redirects(
+            "https://a.example/gone", options=TraceOptions(cache_buster=True), fetcher=server
+        )
+        assert result.verdict is Verdict.broken
+        assert "cache_buster_broke_the_url" not in result.flags
+        assert "cache_buster_used" in result.flags
+
+    def test_no_fallback_when_the_buster_is_off(self) -> None:
+        server = _Server({})
+        result = trace_redirects("https://a.example/gone", fetcher=server)
+        assert result.verdict is Verdict.broken
+        assert server.requested == ["https://a.example/gone"]
+
     @pytest.mark.parametrize(
         ("raw", "expected"),
         [({}, 20), ({"max_hops": 3}, 3), ({"max_hops": 999}, 25), ({"max_hops": 0}, 1),
