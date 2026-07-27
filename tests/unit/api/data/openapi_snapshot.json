@@ -7568,7 +7568,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Unprocessable Entity"
           }
         },
         "summary": "Create Report",

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.api import register_router
 from app.api.deps import SessionDep
-from app.db.models import Client, MetricValue, SyncJobProvider
+from app.db.models import Client, MetricValue, ProviderSnapshot, SyncJobProvider
 from app.db.repositories.analytics_datasets import AnalyticsDatasetRepository
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.clients import ClientRepository
@@ -159,6 +159,53 @@ def _anchor_datetime(anchor: date | None) -> datetime:
     return datetime.combine(anchor, time(12, 0), tzinfo=UTC)
 
 
+def _latest_gsc_aware_success(
+    snapshots: SnapshotRepository,
+    client_id: str,
+    provider: Provider,
+    *,
+    before: datetime | None = None,
+    period_start: date | None = None,
+    period_end: date | None = None,
+) -> ProviderSnapshot | None:
+    """`latest_success`, but for GSC an `api` (live Reporting Ninja) snapshot
+    for the requested period always wins over an `auto`/`browser`/`pdf` one
+    for that same period, regardless of which was collected more recently.
+
+    GSC's non-`api` transports are lower fidelity (e.g. avg position off a
+    browser export is a simple, not impressions-weighted, mean), so letting
+    a later-inserted import silently outrank an existing `api` snapshot
+    would swap in a less accurate number for no visible reason. Only when no
+    `api` snapshot exists for the period do we fall back to another
+    transport instead of showing nothing.
+    """
+    if provider == Provider.gsc:
+        preferred = snapshots.latest_success(
+            client_id,
+            provider,
+            before=before,
+            period_start=period_start,
+            period_end=period_end,
+            source_mode=SourceMode.api,
+        )
+        if preferred is not None:
+            return preferred
+    return snapshots.latest_success(
+        client_id,
+        provider,
+        before=before,
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+
+def _period_end_bound(day: date) -> datetime:
+    """End-of-day boundary for a period's last date, same convention as the
+    health backfill's `as_of` (line ~592): `datetime.combine(day, time(23, 59), tzinfo=UTC)`.
+    """
+    return datetime.combine(day, time(23, 59), tzinfo=UTC)
+
+
 def _build_provider_summary(
     session: Session,
     *,
@@ -184,25 +231,45 @@ def _build_provider_summary(
 
     specs = metrics_for(provider)
     has_range_metrics = any(spec.comparison_kind == "range" for spec in specs)
-    required_source_mode = SourceMode.api if provider == Provider.gsc else None
-    current_snapshot = snapshots.latest_success(
+    # `current` intentionally stays unbounded by the period's end for
+    # snapshot metrics (Ahrefs/Semrush): it means "the latest known reading",
+    # not "reading as of the period's last day" — a snapshot collected
+    # moments ago must show up as `current` immediately, even under the
+    # default `closed` comparison mode where "current period" is the last
+    # *fully elapsed* week/month and so never includes today (verified by
+    # `test_dashboard_keeps_last_success_visible_next_to_auth_required_badge`
+    # and `test_dashboard_distinguishes_not_configured_failed_and_collected`,
+    # both of which assert a just-collected snapshot is visible as current).
+    # Only `previous` (below) is bound to its own period's end — that's the
+    # PLAN §12 rule ("snapshot metric compared against the last valid
+    # snapshot in the corresponding period") and it governs the comparison
+    # target, not what counts as "current".
+    #
+    # `_latest_gsc_aware_success` drops the old blanket GSC-only
+    # `source_mode == api` filter (it hid every legitimately matching
+    # `auto`/`pdf`/`browser` GSC snapshot, not just wrong-cadence ones — the
+    # exact `period_start`/`period_end` match below already guards cadence
+    # independently of transport) while keeping `api` as the preferred
+    # transport when one exists for the period, so a later-inserted lower-
+    # fidelity import never silently outranks it.
+    current_snapshot = _latest_gsc_aware_success(
+        snapshots,
         client_id,
         provider,
         before=as_of or now,
         period_start=periods.current.start if has_range_metrics else None,
         period_end=periods.current.end if has_range_metrics else None,
-        source_mode=required_source_mode,
     )
     if current_snapshot is None:
         # Keep the last collected range visible as stale when the requested
         # period has not been collected yet, but never substitute a different
         # cadence (the production defect was a monthly import labelled as a
         # weekly result). Exact range above always wins when both exist.
-        fallback = snapshots.latest_success(
+        fallback = _latest_gsc_aware_success(
+            snapshots,
             client_id,
             provider,
             before=as_of or now,
-            source_mode=required_source_mode,
         )
         if fallback is not None and (
             not has_range_metrics
@@ -261,11 +328,17 @@ def _build_provider_summary(
     current_values = {
         (v.metric_key, v.period_role): v for v in metrics_repo.for_snapshot(current_snapshot.id)
     }
+    # Bound to the *previous period's* end (PLAN §12), not
+    # `current_snapshot.observed_at` — that used to pick whichever collection
+    # ran right before this one (often the same batch, minutes apart),
+    # comparing near-duplicate collections instead of period vs. period. Only
+    # matters for `comparison_kind == "snapshot"` specs below (range specs
+    # take their `previous` from `current_values`, the same snapshot's own
+    # `PeriodRole.previous` rows) — harmless no-op for range providers.
     previous_snapshot = snapshots.latest_success(
         client_id,
         provider,
-        before=current_snapshot.observed_at,
-        source_mode=required_source_mode,
+        before=min(current_snapshot.observed_at, _period_end_bound(periods.previous.end)),
     )
     previous_values = (
         {(v.metric_key, v.period_role): v for v in metrics_repo.for_snapshot(previous_snapshot.id)}
@@ -803,7 +876,6 @@ async def get_client_metrics_history(
                     client_id,
                     spec.key,
                     n=min(history * 20, 2080),
-                    source_mode=SourceMode.api if spec.provider == Provider.gsc else None,
                 ),
                 period=period,
                 comparison_kind=spec.comparison_kind,
