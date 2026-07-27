@@ -354,6 +354,162 @@
 .at-status__select[data-status="skipped"] { color: var(--ink-dim); }
 .at-status small { display: block; margin-top: 4px; color: var(--ink-dim); font-size: 10px; }
 
+/* --- Redirect Checker (task-29) -------------------------------------------- */
+
+/* Форма вставки. Textarea — головний контрол сторінки, тож він великий і
+ * моношрифтовий: оператор бачить, що саме вставив. */
+.rd-form { display: grid; gap: 14px; max-width: 780px; }
+.rd-form .form-field { display: block; margin: 0; color: var(--ink-muted); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .07em; font-weight: 700; }
+.rd-form .form-field small { text-transform: none; letter-spacing: 0; color: var(--ink-dim); }
+.rd-form textarea, .rd-form input, .rd-form select {
+  display: block; width: 100%; margin-top: 6px; min-height: 44px; padding: 9px 11px; font-size: 16px;
+  background: var(--canvas); color: var(--ink); border: 1px solid var(--line);
+  text-transform: none; letter-spacing: 0; font-weight: 400;
+}
+.rd-form textarea { font-family: var(--font-mono, ui-monospace, monospace); font-size: 13px; line-height: 1.55; resize: vertical; }
+.rd-form__grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.rd-form__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.rd-form__note { display: flex; align-items: center; gap: 7px; margin: 0; max-width: 46ch; color: var(--ink-dim); font-size: 11px; }
+.rd-form__note .icon { flex: 0 0 auto; color: var(--info); }
+.rd-options { border: 1px solid var(--line); background: var(--canvas-raised); }
+.rd-options summary {
+  padding: 10px 12px; color: var(--ink-muted); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .06em; cursor: pointer;
+}
+.rd-options summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rd-options__grid {
+  display: grid; gap: 14px; padding: 4px 12px 14px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.rd-options__grid .form-field input { max-width: 110px; }
+/* Лейбл і чекбокс — один щедрий hit-target без мертвих зон (AGENTS.md §8). */
+.checkbox-field {
+  display: flex; align-items: start; gap: 10px; min-height: 44px; padding: 8px 0;
+  color: var(--ink-muted); font-size: 12px; cursor: pointer;
+}
+.checkbox-field input { width: 18px; height: 18px; margin-top: 2px; flex: 0 0 auto; accent-color: var(--accent); }
+.checkbox-field small { display: block; margin-top: 3px; color: var(--ink-dim); font-size: 11px; }
+.checkbox-field code { color: var(--ink); font-size: 11px; }
+
+/* Швидкий трейс без збереження. */
+.rd-quick:empty { display: none; }
+.rd-quick__card {
+  margin-top: 18px; border: 1px solid var(--line); border-left: 3px solid var(--info); background: var(--canvas-raised);
+}
+.rd-quick__head {
+  display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 14px;
+  padding: 14px 16px; border-bottom: 1px solid var(--line-soft);
+}
+.rd-quick__url { margin: 4px 0 0; font-family: var(--font-body); font-size: 14px; text-transform: none;
+  letter-spacing: 0; overflow-wrap: anywhere; }
+.rd-quick__actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 16px 16px; }
+
+/* Таблиця рядків. */
+.rd-toolbar { padding: 0 0 14px; }
+.rd-table { min-width: 1060px; }
+.rd-table td { font-size: 12px; }
+.rd-link, .rd-dest { max-width: 300px; }
+.rd-link > *, .rd-dest > *, .rd-verdict > * { margin-top: 6px; }
+.rd-link > :first-child, .rd-dest > :first-child, .rd-verdict > :first-child { margin-top: 0; }
+.rd-link__text, .rd-dest__url {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  color: var(--ink-muted); overflow-wrap: anywhere;
+}
+.rd-dest__status { display: block; color: var(--ink-dim); font-size: 10px; }
+.rd-note { display: flex; align-items: start; gap: 6px; color: var(--info); font-size: 10px; }
+.rd-note .icon { flex: 0 0 auto; margin-top: 1px; }
+.rd-error { display: block; color: var(--ink-muted); font-size: 11px; overflow-wrap: anywhere; }
+
+/* Стрічка ланцюжка: `301 → 302 → 200`. Статус — число + колір + позиція, тобто
+ * ніколи не колір сам (AGENTS.md §7). */
+.rd-chain { min-width: 190px; }
+.rd-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.rd-strip--pending { color: var(--ink-dim); font-size: 11px; gap: 6px; }
+.rd-strip__count { display: block; margin-top: 5px; color: var(--ink-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.rd-status {
+  display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px;
+  border: 1px solid var(--line); background: var(--canvas); font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rd-status--good { border-color: rgb(101 214 154 / 45%); color: var(--success); }
+.rd-status--info { border-color: rgb(123 199 255 / 45%); color: var(--info); }
+.rd-status--warn { border-color: rgb(255 196 94 / 45%); color: var(--warning); }
+.rd-status--bad { border-color: rgb(255 116 116 / 45%); color: var(--danger); }
+.rd-arrow .icon { width: 13px; height: 13px; color: var(--ink-dim); }
+
+/* Вердикт і прапорці. */
+.rd-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
+.rd-badge small { color: var(--ink-dim); }
+.rd-badge--good { color: var(--success); }
+.rd-badge--warn { color: var(--warning); }
+.rd-badge--bad { color: var(--danger); }
+.rd-badge--none { color: var(--ink-dim); }
+.rd-flags { display: flex; flex-wrap: wrap; gap: 5px; }
+.rd-flag {
+  display: inline-flex; padding: 1px 6px; border: 1px solid var(--line); color: var(--ink-dim);
+  font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+}
+.rd-flag--rest { border-style: dashed; }
+.rd-flag--final { border-color: var(--line-accent); color: var(--accent); }
+.rd-chip { display: inline-flex; align-items: center; gap: 5px; margin: 0 6px 4px 0; font-size: 11px; font-variant-numeric: tabular-nums; }
+.rd-chip--good { color: var(--success); }
+.rd-chip--warn { color: var(--warning); }
+.rd-chip--bad { color: var(--danger); }
+.rd-findings { min-width: 150px; }
+.rd-findings--header { display: flex; flex-wrap: wrap; gap: 0 12px; margin: 2px 0 0; }
+.rd-actions { margin-top: 4px; }
+.rd-rejected { color: var(--ink-muted); font-size: 11px; }
+.rd-rejected summary { cursor: pointer; color: var(--warning); }
+.rd-rejected ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.rd-rejected code { color: var(--ink); overflow-wrap: anywhere; }
+
+/* Розкритий рядок: ланцюжок вертикально, крок за кроком. Це головний екран
+ * інструмента, тому він отримує найбільше простору й акцентну лінію. */
+.rd-detail-row td { padding: 0; background: var(--canvas-raised); border-bottom: 1px solid var(--line); }
+.rd-detail { display: grid; gap: 16px; padding: 18px 20px; border-left: 3px solid var(--accent); }
+.rd-hops { list-style: none; display: grid; gap: 0; margin: 0; padding: 0; }
+.rd-hop {
+  display: grid; grid-template-columns: 28px 1fr; gap: 12px; padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.rd-hop:last-child { border-bottom: 0; }
+.rd-hop__index {
+  display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--line);
+  color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.rd-hop--final .rd-hop__index { border-color: var(--line-accent); color: var(--accent); }
+.rd-hop__body { display: grid; gap: 6px; min-width: 0; }
+.rd-hop__url { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rd-hop__url code { color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+/* Копія URL хопа — допоміжна дія: тримаємо її 28×28 (як у таблиці), інакше
+ * `.icon-button` з app.css роздувається до 44px і перебиває сам URL. */
+.rd-hop__url .icon-button { flex: 0 0 auto; min-width: 28px; min-height: 28px; width: 28px; height: 28px; }
+.rd-hop__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rd-hop__text { color: var(--ink-muted); font-size: 11px; }
+.rd-hop__time { color: var(--ink-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.rd-hop__changes { display: flex; align-items: center; gap: 6px; color: var(--info); font-size: 11px; }
+.rd-hop__changes .icon { flex: 0 0 auto; }
+.rd-detail__empty { display: flex; align-items: center; gap: 12px; margin: 0; color: var(--ink-muted); font-size: 12px; }
+.rd-detail__empty .icon { width: 22px; height: 22px; color: var(--ink-dim); }
+.rd-detail__error { display: flex; align-items: start; gap: 7px; margin: 0; color: var(--warning); font-size: 12px; }
+.rd-detail__error .icon { flex: 0 0 auto; margin-top: 2px; }
+.rd-detail__actions { margin: 0; }
+.rd-page-facts {
+  display: grid; gap: 8px 24px; margin: 0; padding: 12px 14px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  border: 1px solid var(--line); background: var(--surface);
+}
+.rd-page-facts dt { color: var(--ink-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.rd-page-facts dd { margin: 3px 0 0; color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.rd-advice { border-left: 3px solid var(--warning); background: rgb(255 196 94 / 7%); padding: 12px 14px; }
+.rd-advice h4 {
+  margin: 0 0 8px; font-family: var(--font-body); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--ink-muted);
+}
+.rd-advice ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--ink-muted); font-size: 12px; }
+.rd-advice strong { color: var(--ink); }
+
 @media (max-width: 860px) {
   /* `.app-header` (app.css) — flex без wrap: без цього нав'ю немає куди
    * переїхати, і на 390px воно наїжджало на логотип. Перевизначаємо тут, у
@@ -370,6 +526,19 @@
    * тож ховаємо саме її. Жодних даних при цьому не втрачається. */
   .at-table th:nth-child(2), .at-table td:nth-child(2) { display: none; }
   .at-table { min-width: 980px; }
+  /* На вузькому екрані «Destination» дублює те, що видно в розкритому
+   * ланцюжку (останній хоп), тож ховаємо саме її, а не дані. */
+  .rd-table th:nth-child(4), .rd-table td:nth-child(4) { display: none; }
+  /* Номер рядка — довідкова колонка (він є в експорті й у деталях): на 390px
+   * вона з'їдала місце й відсовувала вердикт — головну інформацію — за
+   * горизонтальний скрол. */
+  .rd-table th:nth-child(1), .rd-table td:nth-child(1):not([colspan]) { display: none; }
+  .rd-table { min-width: 660px; }
+  .rd-link { max-width: 190px; }
+  /* Дві іконки-дії мусять лишатися в один рядок: інакше вузька клітинка
+   * ставить їх одну під одну й рядок виростає у два з половиною рази. */
+  .rd-link .at-actions, .rd-dest .at-actions { flex-wrap: nowrap; }
+  .rd-hop { grid-template-columns: 24px 1fr; gap: 10px; }
   .tools-grid { grid-template-columns: 1fr; }
   .at-map__file .button { margin-left: 0; }
   .at-file__control { gap: 10px; }

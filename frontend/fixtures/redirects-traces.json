@@ -1,0 +1,247 @@
+{
+  "loop-a": {
+    "input_url": "https://acme.example/loop-a",
+    "normalized_url": "https://acme.example/loop-a",
+    "verdict": "loop",
+    "hop_count": 2,
+    "final_url": "https://acme.example/loop-a",
+    "final_status": null,
+    "flags": ["temporary_redirect"],
+    "final_page": null,
+    "error_code": "redirect_loop",
+    "error_detail": "The chain comes back to a URL it already visited.",
+    "elapsed_ms": 604,
+    "checked_at": "2026-07-27T09:16:00Z",
+    "hops": [
+      {
+        "index": 1,
+        "url": "https://acme.example/loop-a",
+        "method": "GET",
+        "status": 302,
+        "status_text": "Found",
+        "kind": "http",
+        "permanence": "temporary",
+        "location": "https://acme.example/loop-b",
+        "changes": ["path_change"],
+        "elapsed_ms": 288,
+        "notes": []
+      },
+      {
+        "index": 2,
+        "url": "https://acme.example/loop-b",
+        "method": "GET",
+        "status": 302,
+        "status_text": "Found",
+        "kind": "http",
+        "permanence": "temporary",
+        "location": "https://acme.example/loop-a",
+        "changes": ["path_change"],
+        "elapsed_ms": 316,
+        "notes": []
+      }
+    ]
+  },
+  "blog/2019": {
+    "input_url": "acme.example/blog/2019/office-lighting",
+    "normalized_url": "https://acme.example/blog/2019/office-lighting",
+    "verdict": "ok_redirect",
+    "hop_count": 1,
+    "final_url": "https://acme.example/blog/office-lighting/",
+    "final_status": 200,
+    "flags": ["normalized_input", "canonical_mismatch"],
+    "final_page": {
+      "title": "Office lighting that people actually like — Acme",
+      "canonical": "https://acme.example/blog/lighting/",
+      "meta_robots": "index,follow",
+      "possible_js_redirect": false
+    },
+    "error_code": null,
+    "error_detail": null,
+    "elapsed_ms": 498,
+    "checked_at": "2026-07-27T09:16:04Z",
+    "hops": [
+      {
+        "index": 1,
+        "url": "https://acme.example/blog/2019/office-lighting",
+        "method": "GET",
+        "status": 301,
+        "status_text": "Moved Permanently",
+        "kind": "http",
+        "permanence": "permanent",
+        "location": "https://acme.example/blog/office-lighting/",
+        "changes": ["path_change", "trailing_slash_added"],
+        "elapsed_ms": 214,
+        "notes": []
+      },
+      {
+        "index": 2,
+        "url": "https://acme.example/blog/office-lighting/",
+        "method": "GET",
+        "status": 200,
+        "status_text": "OK",
+        "kind": "http",
+        "permanence": null,
+        "location": null,
+        "changes": [],
+        "elapsed_ms": 284,
+        "notes": []
+      }
+    ]
+  },
+  "%D0%BA%D0%B0%D1%82%D0%B0%D0%BB%D0%BE%D0%B3": {
+    "input_url": "https://acme.example/каталог/освітлення-для-офісу-та-переговорних-кімнат?utm_source=newsletter&utm_campaign=summer",
+    "normalized_url": "https://acme.example/%D0%BA%D0%B0%D1%82%D0%B0%D0%BB%D0%BE%D0%B3/%D0%BE%D1%81%D0%B2%D1%96%D1%82%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F-%D0%B4%D0%BB%D1%8F-%D0%BE%D1%84%D1%96%D1%81%D1%83-%D1%82%D0%B0-%D0%BF%D0%B5%D1%80%D0%B5%D0%B3%D0%BE%D0%B2%D0%BE%D1%80%D0%BD%D0%B8%D1%85-%D0%BA%D1%96%D0%BC%D0%BD%D0%B0%D1%82?utm_source=newsletter&utm_campaign=summer",
+    "verdict": "chain",
+    "hop_count": 2,
+    "final_url": "https://acme.example/",
+    "final_status": 200,
+    "flags": ["normalized_input", "query_dropped", "redirect_to_homepage"],
+    "final_page": {
+      "title": "Acme Interiors",
+      "canonical": "https://acme.example/",
+      "meta_robots": null,
+      "possible_js_redirect": true
+    },
+    "error_code": null,
+    "error_detail": null,
+    "elapsed_ms": 962,
+    "checked_at": "2026-07-27T09:16:09Z",
+    "hops": [
+      {
+        "index": 1,
+        "url": "https://acme.example/%D0%BA%D0%B0%D1%82%D0%B0%D0%BB%D0%BE%D0%B3/%D0%BE%D1%81%D0%B2%D1%96%D1%82%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F-%D0%B4%D0%BB%D1%8F-%D0%BE%D1%84%D1%96%D1%81%D1%83-%D1%82%D0%B0-%D0%BF%D0%B5%D1%80%D0%B5%D0%B3%D0%BE%D0%B2%D0%BE%D1%80%D0%BD%D0%B8%D1%85-%D0%BA%D1%96%D0%BC%D0%BD%D0%B0%D1%82?utm_source=newsletter&utm_campaign=summer",
+        "method": "GET",
+        "status": 301,
+        "status_text": "Moved Permanently",
+        "kind": "http",
+        "permanence": "permanent",
+        "location": "https://acme.example/catalog/lighting",
+        "changes": ["path_change", "query_dropped"],
+        "elapsed_ms": 402,
+        "notes": []
+      },
+      {
+        "index": 2,
+        "url": "https://acme.example/catalog/lighting",
+        "method": "GET",
+        "status": 302,
+        "status_text": "Found",
+        "kind": "http",
+        "permanence": "temporary",
+        "location": "https://acme.example/",
+        "changes": ["path_change"],
+        "elapsed_ms": 268,
+        "notes": []
+      },
+      {
+        "index": 3,
+        "url": "https://acme.example/",
+        "method": "GET",
+        "status": 200,
+        "status_text": "OK",
+        "kind": "http",
+        "permanence": null,
+        "location": null,
+        "changes": [],
+        "elapsed_ms": 292,
+        "notes": []
+      }
+    ]
+  },
+  "meta-refresh": {
+    "input_url": "https://acme.example/meta-refresh",
+    "normalized_url": "https://acme.example/meta-refresh",
+    "verdict": "ok_redirect",
+    "hop_count": 1,
+    "final_url": "https://acme.example/landing/",
+    "final_status": 200,
+    "flags": ["meta_refresh_used"],
+    "final_page": {
+      "title": "Landing — Acme",
+      "canonical": "https://acme.example/landing/",
+      "meta_robots": "noindex",
+      "possible_js_redirect": false
+    },
+    "error_code": null,
+    "error_detail": null,
+    "elapsed_ms": 655,
+    "checked_at": "2026-07-27T09:16:12Z",
+    "hops": [
+      {
+        "index": 1,
+        "url": "https://acme.example/meta-refresh",
+        "method": "GET",
+        "status": 200,
+        "status_text": "OK",
+        "kind": "meta_refresh",
+        "permanence": null,
+        "location": "https://acme.example/landing/",
+        "changes": ["path_change", "trailing_slash_added"],
+        "elapsed_ms": 331,
+        "notes": ["meta_refresh"]
+      },
+      {
+        "index": 2,
+        "url": "https://acme.example/landing/",
+        "method": "GET",
+        "status": 200,
+        "status_text": "OK",
+        "kind": "http",
+        "permanence": null,
+        "location": null,
+        "changes": [],
+        "elapsed_ms": 324,
+        "notes": []
+      }
+    ]
+  },
+  "unreachable": {
+    "input_url": "https://nowhere.acme.example/",
+    "normalized_url": "https://nowhere.acme.example/",
+    "verdict": "fetch_failed",
+    "hop_count": 0,
+    "final_url": "https://nowhere.acme.example/",
+    "final_status": null,
+    "flags": [],
+    "final_page": null,
+    "error_code": "url_error",
+    "error_detail": "nowhere.acme.example could not be reached: Name or service not known.",
+    "elapsed_ms": 1204,
+    "checked_at": "2026-07-27T09:16:15Z",
+    "hops": []
+  },
+  "default": {
+    "input_url": "https://acme.example/",
+    "normalized_url": "https://acme.example/",
+    "verdict": "ok_direct",
+    "hop_count": 0,
+    "final_url": "https://acme.example/",
+    "final_status": 200,
+    "flags": [],
+    "final_page": {
+      "title": "Acme Interiors",
+      "canonical": "https://acme.example/",
+      "meta_robots": null,
+      "possible_js_redirect": false
+    },
+    "error_code": null,
+    "error_detail": null,
+    "elapsed_ms": 288,
+    "checked_at": "2026-07-27T09:16:18Z",
+    "hops": [
+      {
+        "index": 1,
+        "url": "https://acme.example/",
+        "method": "GET",
+        "status": 200,
+        "status_text": "OK",
+        "kind": "http",
+        "permanence": null,
+        "location": null,
+        "changes": [],
+        "elapsed_ms": 288,
+        "notes": []
+      }
+    ]
+  }
+}

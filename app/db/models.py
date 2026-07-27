@@ -558,6 +558,88 @@ class AltTextItem(Base):
     verify_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
 
+class RedirectCheck(Base):
+    """Один прогін інструмента Redirect Checker (task-29).
+
+    Той самий вибір, що в `AltTextReport`: мутабельні таблиці інструмента, а не
+    immutable `AnalyticsDatasetRow` — рядок перезаписується при повторному
+    трейсі, і провайдера/періоду тут немає.
+
+    `client_id` опційний: ланцюжки перевіряють і для проспекта, і «просто так»
+    (розбір чужого backlink-а).
+    """
+
+    __tablename__ = "redirect_checks"
+    __table_args__ = (Index("ix_redirect_checks_created_at", "created_at"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="SET NULL"), default=None
+    )
+    title: Mapped[str] = mapped_column(String(200))
+    # Скільки URL прислали / скільки лишилось після нормалізації й дедуплікації.
+    # Різниця видима в UI: рядки не зникають молча.
+    input_count: Mapped[int] = mapped_column(Integer, default=0)
+    target_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Скільки прибрала дедуплікація і чи вдарився список у cap — окремі числа,
+    # бо «прислали 250, перевіряємо 200» оператор має бачити, а не вгадувати.
+    duplicate_count: Mapped[int] = mapped_column(Integer, default=0)
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    # З якими опціями прогін зроблено (max_hops, follow_meta_refresh, cache_buster):
+    # без цього результат неможливо трактувати через тиждень.
+    options_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # Рядки, які посиланням не є (`mailto:`, сміття) — з причиною, а не тихо.
+    rejected_json: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class RedirectCheckTarget(Base):
+    """Один вхідний URL прогону: ланцюжок + вердикт + прапорці.
+
+    Хопи лежать у `chain_json`, а не в третій таблиці: ланцюжок завжди читається
+    цілком (ніколи не фільтрується й не агрегується по хопах), тож JSON дає
+    атомарний запис «як воно було» одним UPDATE-ом і не плодить рядків, які
+    ніхто не питає окремо.
+
+    `checked_at is None` означає **«не перевіряли»** — і це не те саме, що
+    «редіректів немає» (PLAN §12).
+    """
+
+    __tablename__ = "redirect_check_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "check_id", "row_index", name="uq_redirect_check_targets_check_id_row_index"
+        ),
+        Index("ix_redirect_check_targets_check_status", "check_id", "run_status"),
+        Index("ix_redirect_check_targets_check_verdict", "check_id", "verdict"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    check_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("redirect_checks.id", ondelete="CASCADE"), index=True
+    )
+    row_index: Mapped[int] = mapped_column(Integer)
+    # Як вставили (traceability) і що реально запитували.
+    input_url: Mapped[str] = mapped_column(String(2048))
+    normalized_url: Mapped[str] = mapped_column(String(2048))
+    input_notes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    run_status: Mapped[str] = mapped_column(String(12), default="queued")
+    verdict: Mapped[str | None] = mapped_column(String(24), default=None)
+    final_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+    final_status_code: Mapped[int | None] = mapped_column(Integer, default=None)
+    # Кількість **редіректів** (0 = прямий 200), а не довжина списку хопів.
+    hop_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    chain_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    flags_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    final_page_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    error_code: Mapped[str | None] = mapped_column(String(32), default=None)
+    # Причина без секретів: URL можуть містити токени, тож тут лише хост+причина.
+    error_detail: Mapped[str | None] = mapped_column(String(1000), default=None)
+    elapsed_ms: Mapped[int | None] = mapped_column(Integer, default=None)
+    checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
+
 def _reject_update(mapper: Any, connection: Any, target: Base) -> None:
     raise ValueError(f"{type(target).__name__} rows are immutable after commit")
 

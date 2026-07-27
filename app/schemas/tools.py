@@ -165,3 +165,170 @@ class AltTextItemStatusRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: ItemStatus
+
+
+# --- інструмент Redirect Checker (task-29) -------------------------------------
+
+# Прогрес рядка прогону. `failed` — це «не змогли виконати перевірку», а не
+# «ланцюжок поганий»: стан ланцюжка описує `verdict`.
+RedirectRunStatus = Literal["queued", "running", "done", "failed"]
+
+# Одинадцять окремих станів замість «ок / не ок» (PLAN §12). `blocked` ніколи не
+# показується як `broken`: бот-захист ≠ мертва сторінка.
+RedirectVerdict = Literal[
+    "ok_direct",
+    "ok_redirect",
+    "chain",
+    "loop",
+    "too_many_hops",
+    "broken",
+    "broken_chain",
+    "blocked",
+    "unsupported_scheme",
+    "unsafe_url",
+    "fetch_failed",
+]
+
+HopKindDTO = Literal["http", "meta_refresh"]
+PermanenceDTO = Literal["permanent", "temporary"]
+
+
+class RedirectOptionsDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_hops: int = Field(default=20, ge=1, le=25)
+    follow_meta_refresh: bool = True
+    # Вимкнений за замовчуванням: cache-buster змінює URL, а частина сайтів
+    # редіректить залежно від query — тобто зіпсував би саме те, що ми міряємо.
+    cache_buster: bool = False
+
+
+class RedirectHopDTO(BaseModel):
+    """Один крок ланцюжка — рівно те, що віддав сервер."""
+
+    index: int
+    url: str
+    method: str = "GET"
+    status: int
+    status_text: str = ""
+    kind: HopKindDTO = "http"
+    # `None` на фінальному хопі: він нікуди не веде.
+    permanence: PermanenceDTO | None = None
+    location: str | None = None
+    # Що саме змінилося на цьому кроці (`scheme_http_to_https`, `www_added`, …).
+    changes: list[str] = []
+    elapsed_ms: int | None = None
+    notes: list[str] = []
+
+
+class RedirectFinalPageDTO(BaseModel):
+    """Факти з фінальної сторінки — лише коли вона віддала HTML."""
+
+    title: str | None = None
+    canonical: str | None = None
+    meta_robots: str | None = None
+    # JS-редіректи stdlib не бачить; це підказка людині, не вердикт.
+    possible_js_redirect: bool = False
+
+
+class RedirectTraceDTO(BaseModel):
+    """Результат одного трейсу (`POST /trace` — без запису в БД)."""
+
+    input_url: str
+    normalized_url: str
+    verdict: RedirectVerdict
+    hops: list[RedirectHopDTO] = []
+    # Кількість **редіректів** (0 = прямий 200), а не довжина списку хопів.
+    hop_count: int = 0
+    final_url: str | None = None
+    final_status: int | None = None
+    flags: list[str] = []
+    final_page: RedirectFinalPageDTO | None = None
+    error_code: str | None = None
+    error_detail: str | None = None
+    elapsed_ms: int = 0
+    checked_at: datetime | None = None
+
+
+class RedirectTraceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1, max_length=2048)
+    options: RedirectOptionsDTO | None = None
+
+
+class RejectedUrlDTO(BaseModel):
+    """Рядок, який посиланням не є — з причиною, а не тихо викинутий."""
+
+    input_url: str
+    error_code: str
+    message: str
+
+
+class RedirectTargetDTO(BaseModel):
+    """Рядок прогону. Свідомо **не** підклас `RedirectTraceDTO`.
+
+    Тут `verdict` і `hop_count` можуть бути `None` — рядок ще не перевіряли, і це
+    не «редіректів немає» та не «нуль хопів» (PLAN §12). У результату трейсу
+    вердикт є завжди, тож зливати ці дві форми в одну означало б послабити
+    контракт саме там, де він важливий.
+    """
+
+    id: str
+    row_index: int
+    run_status: RedirectRunStatus
+    input_url: str
+    normalized_url: str
+    # Що ми зробили з вставленим рядком (`scheme_added`, `fragment_dropped`).
+    input_notes: list[str] = []
+    verdict: RedirectVerdict | None = None
+    hops: list[RedirectHopDTO] = []
+    hop_count: int | None = None
+    final_url: str | None = None
+    final_status: int | None = None
+    flags: list[str] = []
+    final_page: RedirectFinalPageDTO | None = None
+    error_code: str | None = None
+    error_detail: str | None = None
+    elapsed_ms: int | None = None
+    # `None` = не перевіряли.
+    checked_at: datetime | None = None
+
+
+class RedirectTargetsPageDTO(BaseModel):
+    check_id: str
+    total: int
+    limit: int
+    offset: int
+    rows: list[RedirectTargetDTO]
+
+
+class RedirectCheckCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Сирі рядки з textarea: нормалізацію й дедуплікацію робить сервер, щоб
+    # правила були в одному місці, а не подвоєні у фронті.
+    urls: list[str] = Field(min_length=1)
+    title: str | None = Field(default=None, max_length=200)
+    client_id: str | None = None
+    options: RedirectOptionsDTO | None = None
+
+
+class RedirectCheckSummaryDTO(BaseModel):
+    id: str
+    title: str
+    client_id: str | None = None
+    client_name: str | None = None
+    input_count: int
+    target_count: int
+    run_status_counts: dict[str, int] = {}
+    verdict_counts: dict[str, int] = {}
+    created_at: datetime
+    updated_at: datetime
+
+
+class RedirectCheckDTO(RedirectCheckSummaryDTO):
+    options: RedirectOptionsDTO
+    rejected: list[RejectedUrlDTO] = []
+    duplicate_count: int = 0
+    truncated: bool = False

@@ -10,6 +10,17 @@
       "icon": "photo",
       "stat_label": "reports",
       "stat_value": "3"
+    },
+    {
+      "key": "redirects",
+      "name": "Redirect Checker",
+      "summary": "Paste a link and see the whole redirect chain hop by hop — status, destination and what changed on every step.",
+      "tags": ["redirects", "http", "migration", "audit", "3xx", "seo"],
+      "route": "#/tools/redirects",
+      "status": "available",
+      "icon": "arrow-right-circle",
+      "stat_label": "checks",
+      "stat_value": "2"
     }
   ]
 }

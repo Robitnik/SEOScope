@@ -35,7 +35,8 @@ async function main() {
   // 1. Hub: catalog renders, search filters, empty search state offers a way out.
   await page.goto(`${baseUrl}/?fixture=normal#/tools`, { waitUntil: "networkidle" });
   await page.locator(".tool-card").first().waitFor();
-  assert.equal(await page.locator(".tool-card").count(), 1, "the catalog renders one tool card");
+  // Task-29 added a second tool to the catalog; the hub is a growing shelf.
+  assert.equal(await page.locator(".tool-card").count(), 2, "the catalog renders every registered tool");
   assert.equal(await page.locator("[data-nav='tools']").getAttribute("aria-current"), "page",
     "global nav marks the active section");
   assert.equal(await page.locator("#dashboard-command-bar").isHidden(), true,
@@ -46,7 +47,7 @@ async function main() {
   await page.locator("#tools-search").fill("nothing-matches-this");
   assert.equal(await page.locator(".tool-card").count(), 0, "a non-matching search empties the grid");
   await page.locator("#tools-clear").click();
-  assert.equal(await page.locator(".tool-card").count(), 1, "the empty state clears the search");
+  assert.equal(await page.locator(".tool-card").count(), 2, "the empty state clears the search");
   await page.screenshot({ path: path.join(screenshots, "tools-hub-1440.png"), fullPage: true });
 
   // 1b. Audit files are named client-first by agency convention, so the client

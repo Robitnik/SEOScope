@@ -14,6 +14,7 @@ const root = document.querySelector("#tools-page-root");
 // Реєстр модулів інструментів: ключ із каталогу → динамічний імпорт сторінки.
 const TOOL_MODULES = {
   "alt-text": () => import("./alt-text-tool.js?v=20260726-tools2"),
+  "redirects": () => import("./redirect-tool.js?v=20260727-redirects1"),
 };
 
 export async function initToolsRoute(route) {

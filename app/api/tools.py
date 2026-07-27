@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.api import register_router
 from app.api.deps import SessionDep
-from app.db.models import AltTextReport
+from app.db.models import AltTextReport, RedirectCheck
 from app.schemas.tools import ToolCardDTO, ToolsCatalogDTO
 
 router = APIRouter(prefix="/api/v1", tags=["tools"])
@@ -47,6 +48,17 @@ _TOOLS: tuple[_ToolEntry, ...] = (
         route="#/tools/alt-text",
         icon="photo",
     ),
+    _ToolEntry(
+        key="redirects",
+        name="Redirect Checker",
+        summary=(
+            "Paste a link and see the whole redirect chain hop by hop — status, "
+            "destination and what changed on every step."
+        ),
+        tags=("redirects", "http", "migration", "audit", "3xx", "seo"),
+        route="#/tools/redirects",
+        icon="arrow-right-circle",
+    ),
 )
 
 
@@ -61,14 +73,28 @@ def _alt_text_stat(session: Session) -> tuple[str | None, str | None]:
     return label, str(total)
 
 
+def _redirects_stat(session: Session) -> tuple[str | None, str | None]:
+    total = session.scalar(select(func.count()).select_from(RedirectCheck)) or 0
+    if not total:
+        # «Ще не користувалися» — це не `0 checks` (PLAN §12).
+        return None, None
+    return ("check" if total == 1 else "checks"), str(total)
+
+
+# Статистику дає сам інструмент: хаб не знає, що для нього «одиниця роботи».
+_STATS: dict[str, Callable[[Session], tuple[str | None, str | None]]] = {
+    "alt-text": _alt_text_stat,
+    "redirects": _redirects_stat,
+}
+
+
 @router.get("/tools", response_model=ToolsCatalogDTO)
 async def list_tools(session: SessionDep) -> ToolsCatalogDTO:
     def _read(sync_session: Session) -> ToolsCatalogDTO:
         cards = []
         for entry in _TOOLS:
-            stat_label, stat_value = (None, None)
-            if entry.key == "alt-text":
-                stat_label, stat_value = _alt_text_stat(sync_session)
+            stat = _STATS.get(entry.key)
+            stat_label, stat_value = stat(sync_session) if stat else (None, None)
             cards.append(
                 ToolCardDTO(
                     key=entry.key,

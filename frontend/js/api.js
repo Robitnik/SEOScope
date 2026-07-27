@@ -834,6 +834,156 @@ export function altTextExportXlsxUrl(reportId) {
   return `${API_ROOT}/tools/alt-text/reports/${reportId}/export.xlsx`;
 }
 
+// --- Redirect Checker (task-29) ---------------------------------------------
+
+// Fixture mode keeps a mutable copy of one check so the whole loop (create →
+// run row by row → filter → re-run) works without a backend, exactly like the
+// alt-text fixture above. Traces come from a fixture keyed by URL shape, so the
+// e2e run can assert on concrete verdicts.
+let redirectsFixture = null;
+const REDIRECTS_FIXTURE_KEY = "yovth:redirects-fixture";
+
+async function redirectFixtureState() {
+  if (redirectsFixture === null) {
+    const stored = sessionStorage.getItem(REDIRECTS_FIXTURE_KEY);
+    if (stored) {
+      redirectsFixture = JSON.parse(stored);
+    } else {
+      const [check, targets] = await Promise.all([
+        fixture("redirects-check"),
+        fixture("redirects-targets"),
+      ]);
+      redirectsFixture = { check: structuredClone(check), rows: structuredClone(targets.rows) };
+    }
+  }
+  return redirectsFixture;
+}
+
+function saveRedirectsFixture() {
+  sessionStorage.setItem(REDIRECTS_FIXTURE_KEY, JSON.stringify(redirectsFixture));
+}
+
+function redirectFixtureCounts(rows) {
+  const runStatus = { queued: 0, running: 0, done: 0, failed: 0 };
+  const verdicts = {};
+  rows.forEach((row) => {
+    runStatus[row.run_status] = (runStatus[row.run_status] || 0) + 1;
+    if (row.verdict) verdicts[row.verdict] = (verdicts[row.verdict] || 0) + 1;
+  });
+  return { runStatus, verdicts };
+}
+
+function withRedirectCounts(check, rows) {
+  const counts = redirectFixtureCounts(rows);
+  return { ...check, run_status_counts: counts.runStatus, verdict_counts: counts.verdicts };
+}
+
+export async function traceRedirect(url, options = null) {
+  if (FIXTURE_MODE) {
+    await wait(320);
+    const traces = await fixture("redirects-traces");
+    const key = Object.keys(traces).find((candidate) => url.includes(candidate));
+    return { ...(traces[key] || traces.default), input_url: url };
+  }
+  return request("/tools/redirects/trace", {
+    method: "POST",
+    body: JSON.stringify(options ? { url, options } : { url }),
+  }, "redirects-trace");
+}
+
+export async function getRedirectChecks() {
+  if (FIXTURE_MODE) {
+    await wait(140);
+    if (FIXTURE_MODE === "tools-empty") return [];
+    const state = await redirectFixtureState();
+    return [withRedirectCounts(state.check, state.rows)];
+  }
+  return request("/tools/redirects/checks", {}, "redirects-checks");
+}
+
+export async function getRedirectCheck(checkId) {
+  if (FIXTURE_MODE) {
+    await wait(140);
+    const state = await redirectFixtureState();
+    return withRedirectCounts(state.check, state.rows);
+  }
+  return request(`/tools/redirects/checks/${checkId}`, {}, "redirects-check");
+}
+
+export async function getRedirectTargets(checkId, { q, verdict, runStatus, flag, limit = 50, offset = 0 } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(140);
+    const state = await redirectFixtureState();
+    const needle = (q || "").trim().toLocaleLowerCase("en-US");
+    const rows = state.rows.filter((row) => {
+      const haystack = `${row.input_url} ${row.normalized_url} ${row.final_url || ""}`;
+      return (!needle || haystack.toLocaleLowerCase("en-US").includes(needle))
+        && (!verdict || row.verdict === verdict)
+        && (!runStatus || row.run_status === runStatus)
+        && (!flag || (row.flags || []).includes(flag));
+    });
+    return { check_id: checkId, total: rows.length, limit, offset, rows: rows.slice(offset, offset + limit) };
+  }
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (q) params.set("q", q);
+  if (verdict) params.set("verdict", verdict);
+  if (runStatus) params.set("run_status", runStatus);
+  if (flag) params.set("flag", flag);
+  return request(`/tools/redirects/checks/${checkId}/targets?${params}`, {}, "redirects-targets");
+}
+
+export async function createRedirectCheck(payload) {
+  if (FIXTURE_MODE) {
+    await wait(320);
+    const state = await redirectFixtureState();
+    return withRedirectCounts({ ...state.check, title: payload.title || state.check.title }, state.rows);
+  }
+  return request("/tools/redirects/checks", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, "redirects-create");
+}
+
+// Deliberately NOT sharing an abort key with the other calls: the page runs
+// several rows concurrently, and `request()` cancels same-key calls — one shared
+// key would make every new row abort the previous one.
+export async function runRedirectTarget(checkId, targetId) {
+  if (FIXTURE_MODE) {
+    await wait(360);
+    const state = await redirectFixtureState();
+    const row = state.rows.find((item) => item.id === targetId);
+    const traces = await fixture("redirects-traces");
+    const key = Object.keys(traces).find((candidate) => row.normalized_url.includes(candidate));
+    Object.assign(row, traces[key] || traces.default, {
+      run_status: "done",
+      checked_at: new Date().toISOString(),
+      input_url: row.input_url,
+      normalized_url: row.normalized_url,
+      id: row.id,
+      row_index: row.row_index,
+    });
+    saveRedirectsFixture();
+    return { ...row };
+  }
+  return request(`/tools/redirects/checks/${checkId}/targets/${targetId}/run`, {
+    method: "POST",
+    body: "{}",
+  }, `redirects-run-${targetId}`);
+}
+
+export async function deleteRedirectCheck(checkId) {
+  if (FIXTURE_MODE) { await wait(200); return null; }
+  return request(`/tools/redirects/checks/${checkId}`, { method: "DELETE" });
+}
+
+export function redirectsExportCsvUrl(checkId) {
+  return `${API_ROOT}/tools/redirects/checks/${checkId}/export.csv`;
+}
+
+export function redirectsExportXlsxUrl(checkId) {
+  return `${API_ROOT}/tools/redirects/checks/${checkId}/export.xlsx`;
+}
+
 // Portfolio Trends (task-28): one line per client for a single daily metric.
 // `client_ids` is a repeated query param (FastAPI `Query(list[str])`), not CSV.
 export async function getPortfolioSeries({ metric, bucket = "week", days = 90, clientIds } = {}) {

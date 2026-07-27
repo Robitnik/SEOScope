@@ -11,34 +11,58 @@
 без `httpx`/`lxml`: вони є в образі лише транзитивно через optional-групу
 `local` (AISeoTools), тож на CI/деплої без bind-mount інструмент з ними
 зламався б.
+
+SSRF-гард, browser-UA, cache-buster і no-cache-заголовки живуть у спільному
+`app.tools.http_safety` (витягнуті task-29 для Redirect Checker, без зміни
+поведінки) і реекспортуються звідси — імена, на які спираються виклики й
+тести цього інструмента, лишились ті самі.
 """
 
 from __future__ import annotations
 
-import ipaddress
 import re
-import secrets
-import socket
 import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from html.parser import HTMLParser
-from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import urljoin
 
 from app.tools.alt_text.wp_media import derive_search_key
+from app.tools.http_safety import (
+    CACHE_BUSTER_PARAM,
+    MAX_REDIRECTS,
+    NO_CACHE_HEADERS,
+    USER_AGENT,
+    GuardedRedirectHandler,
+    UnsafeUrlError,
+    assert_public_http_url,
+    build_cache_busted_url,
+)
 
-CACHE_BUSTER_PARAM = "yvcheck"
+__all__ = [
+    "CACHE_BUSTER_PARAM",
+    "MAX_BODY_BYTES",
+    "MAX_REDIRECTS",
+    "REQUEST_TIMEOUT_SECONDS",
+    "USER_AGENT",
+    "FetchedPage",
+    "Fetcher",
+    "PageImage",
+    "UnsafeUrlError",
+    "VerifyResult",
+    "VerifyStatus",
+    "assert_public_http_url",
+    "build_cache_busted_url",
+    "fetch_page",
+    "find_page_images",
+    "normalize_alt",
+    "verify_alt",
+]
+
 REQUEST_TIMEOUT_SECONDS = 15.0
 MAX_BODY_BYTES = 5 * 1024 * 1024
-MAX_REDIRECTS = 5
-# Частина хостингів ріже дефолтний `Python-urllib/*` як бота — тоді перевірка
-# показувала б «сторінка недоступна» там, де вона цілком доступна.
-USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/126.0 Safari/537.36 TheYovthClientPulse/1.0"
-)
 
 _WHITESPACE = re.compile(r"\s+")
 # Атрибути, під якими lazy-load-плагіни ховають справжній src.
@@ -75,76 +99,7 @@ class VerifyResult:
     candidates_matched: int = 0
 
 
-class UnsafeUrlError(ValueError):
-    """URL, який ми відмовляємось запитувати (SSRF-гард, PLAN §13)."""
-
-    code = "unsafe_url"
-
-
 Fetcher = Callable[[str], FetchedPage]
-
-
-# --- URL: cache-buster і SSRF-гард --------------------------------------------
-
-
-def build_cache_busted_url(page_url: str, nonce: str | None = None) -> str:
-    """Доклеїти рандомний параметр, не зламавши наявний query."""
-    parts = urlsplit(page_url.strip())
-    token = nonce or secrets.token_hex(4)
-    pairs = [
-        chunk
-        for chunk in parts.query.split("&")
-        if chunk and not chunk.startswith(f"{CACHE_BUSTER_PARAM}=")
-    ]
-    pairs.append(urlencode({CACHE_BUSTER_PARAM: token}))
-    # fragment відкидаємо: серверу він однаково не надсилається.
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, "&".join(pairs), ""))
-
-
-def assert_public_http_url(url: str) -> None:
-    """Пустити лише http(s) на публічну адресу.
-
-    Сторінки для перевірки приходять із файлу, тобто це фактично операторський
-    ввід — без цього гарда інструмент став би сканером внутрішньої мережі й
-    metadata-ендпоінтів.
-    """
-    parts = urlsplit(url)
-    if parts.scheme not in {"http", "https"}:
-        raise UnsafeUrlError("Only http:// and https:// pages can be checked.")
-    host = parts.hostname
-    if not host:
-        raise UnsafeUrlError("The page URL has no host.")
-    try:
-        resolved = socket.getaddrinfo(host, parts.port or (443 if parts.scheme == "https" else 80))
-    except OSError as exc:
-        raise UnsafeUrlError(f"Could not resolve {host}.") from exc
-    for info in resolved:
-        try:
-            address = ipaddress.ip_address(info[4][0])
-        except ValueError as exc:
-            # Резолвер віддав щось, що ми не вміємо перевірити — відмовляємо,
-            # а не пропускаємо «про всяк випадок».
-            raise UnsafeUrlError(f"{host} resolved to an unrecognized address.") from exc
-        if not address.is_global or address.is_multicast:
-            raise UnsafeUrlError(f"{host} resolves to a non-public address ({address}).")
-
-
-class _GuardedRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Перевіряти SSRF-гардом кожен redirect, а не лише перший URL."""
-
-    max_redirections = MAX_REDIRECTS
-
-    def redirect_request(
-        self,
-        req: urllib.request.Request,
-        fp: object,
-        code: int,
-        msg: str,
-        headers: object,
-        newurl: str,
-    ) -> urllib.request.Request | None:
-        assert_public_http_url(urljoin(req.full_url, newurl))
-        return super().redirect_request(req, fp, code, msg, headers, newurl)  # type: ignore[arg-type]
 
 
 def fetch_page(url: str) -> FetchedPage:
@@ -156,11 +111,10 @@ def fetch_page(url: str) -> FetchedPage:
             "User-Agent": USER_AGENT,
             "Accept": "text/html,application/xhtml+xml",
             "Accept-Language": "en-US,en;q=0.9",
-            "Cache-Control": "no-cache, no-store, max-age=0",
-            "Pragma": "no-cache",
+            **NO_CACHE_HEADERS,
         },
     )
-    opener = urllib.request.build_opener(_GuardedRedirectHandler)
+    opener = urllib.request.build_opener(GuardedRedirectHandler)
     with opener.open(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
         raw = response.read(MAX_BODY_BYTES + 1)
         truncated = len(raw) > MAX_BODY_BYTES

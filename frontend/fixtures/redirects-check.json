@@ -1,0 +1,27 @@
+{
+  "id": "9c1f0a44-3e57-4c0a-9a1b-6f5f1d0f7a10",
+  "title": "Acme · Redirects · 27 Jul · 6 links",
+  "client_id": "11111111-1111-4111-8111-111111111111",
+  "client_name": "Acme Interiors",
+  "input_count": 9,
+  "target_count": 6,
+  "duplicate_count": 1,
+  "truncated": false,
+  "options": { "max_hops": 20, "follow_meta_refresh": true, "cache_buster": false },
+  "rejected": [
+    {
+      "input_url": "mailto:hello@acme.example",
+      "error_code": "unsupported_scheme",
+      "message": "“mailto:” links cannot be traced — only http:// and https:// can."
+    },
+    {
+      "input_url": "see the sheet for the rest",
+      "error_code": "invalid_url",
+      "message": "This line has no URL in it."
+    }
+  ],
+  "run_status_counts": { "queued": 6, "running": 0, "done": 0, "failed": 0 },
+  "verdict_counts": {},
+  "created_at": "2026-07-27T09:14:00Z",
+  "updated_at": "2026-07-27T09:14:00Z"
+}

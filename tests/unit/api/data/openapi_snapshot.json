@@ -3608,6 +3608,791 @@
         "title": "Quality",
         "type": "string"
       },
+      "RedirectCheckCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedirectOptionsDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "urls": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Urls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "title": "RedirectCheckCreateRequest",
+        "type": "object"
+      },
+      "RedirectCheckDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duplicate_count": {
+            "default": 0,
+            "title": "Duplicate Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_count": {
+            "title": "Input Count",
+            "type": "integer"
+          },
+          "options": {
+            "$ref": "#/components/schemas/RedirectOptionsDTO"
+          },
+          "rejected": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RejectedUrlDTO"
+            },
+            "title": "Rejected",
+            "type": "array"
+          },
+          "run_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Run Status Counts",
+            "type": "object"
+          },
+          "target_count": {
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verdict_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Verdict Counts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "input_count",
+          "target_count",
+          "created_at",
+          "updated_at",
+          "options"
+        ],
+        "title": "RedirectCheckDTO",
+        "type": "object"
+      },
+      "RedirectCheckSummaryDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_count": {
+            "title": "Input Count",
+            "type": "integer"
+          },
+          "run_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Run Status Counts",
+            "type": "object"
+          },
+          "target_count": {
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verdict_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Verdict Counts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "input_count",
+          "target_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RedirectCheckSummaryDTO",
+        "type": "object"
+      },
+      "RedirectFinalPageDTO": {
+        "description": "\u0424\u0430\u043a\u0442\u0438 \u0437 \u0444\u0456\u043d\u0430\u043b\u044c\u043d\u043e\u0457 \u0441\u0442\u043e\u0440\u0456\u043d\u043a\u0438 \u2014 \u043b\u0438\u0448\u0435 \u043a\u043e\u043b\u0438 \u0432\u043e\u043d\u0430 \u0432\u0456\u0434\u0434\u0430\u043b\u0430 HTML.",
+        "properties": {
+          "canonical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical"
+          },
+          "meta_robots": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Robots"
+          },
+          "possible_js_redirect": {
+            "default": false,
+            "title": "Possible Js Redirect",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "RedirectFinalPageDTO",
+        "type": "object"
+      },
+      "RedirectHopDTO": {
+        "description": "\u041e\u0434\u0438\u043d \u043a\u0440\u043e\u043a \u043b\u0430\u043d\u0446\u044e\u0436\u043a\u0430 \u2014 \u0440\u0456\u0432\u043d\u043e \u0442\u0435, \u0449\u043e \u0432\u0456\u0434\u0434\u0430\u0432 \u0441\u0435\u0440\u0432\u0435\u0440.",
+        "properties": {
+          "changes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Ms"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "kind": {
+            "default": "http",
+            "enum": [
+              "http",
+              "meta_refresh"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "method": {
+            "default": "GET",
+            "title": "Method",
+            "type": "string"
+          },
+          "notes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "permanence": {
+            "anyOf": [
+              {
+                "enum": [
+                  "permanent",
+                  "temporary"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permanence"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "status_text": {
+            "default": "",
+            "title": "Status Text",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "url",
+          "status"
+        ],
+        "title": "RedirectHopDTO",
+        "type": "object"
+      },
+      "RedirectOptionsDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_buster": {
+            "default": false,
+            "title": "Cache Buster",
+            "type": "boolean"
+          },
+          "follow_meta_refresh": {
+            "default": true,
+            "title": "Follow Meta Refresh",
+            "type": "boolean"
+          },
+          "max_hops": {
+            "default": 20,
+            "maximum": 25.0,
+            "minimum": 1.0,
+            "title": "Max Hops",
+            "type": "integer"
+          }
+        },
+        "title": "RedirectOptionsDTO",
+        "type": "object"
+      },
+      "RedirectTargetDTO": {
+        "description": "\u0420\u044f\u0434\u043e\u043a \u043f\u0440\u043e\u0433\u043e\u043d\u0443. \u0421\u0432\u0456\u0434\u043e\u043c\u043e **\u043d\u0435** \u043f\u0456\u0434\u043a\u043b\u0430\u0441 `RedirectTraceDTO`.\n\n\u0422\u0443\u0442 `verdict` \u0456 `hop_count` \u043c\u043e\u0436\u0443\u0442\u044c \u0431\u0443\u0442\u0438 `None` \u2014 \u0440\u044f\u0434\u043e\u043a \u0449\u0435 \u043d\u0435 \u043f\u0435\u0440\u0435\u0432\u0456\u0440\u044f\u043b\u0438, \u0456 \u0446\u0435\n\u043d\u0435 \u00ab\u0440\u0435\u0434\u0456\u0440\u0435\u043a\u0442\u0456\u0432 \u043d\u0435\u043c\u0430\u0454\u00bb \u0442\u0430 \u043d\u0435 \u00ab\u043d\u0443\u043b\u044c \u0445\u043e\u043f\u0456\u0432\u00bb (PLAN \u00a712). \u0423 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u0443 \u0442\u0440\u0435\u0439\u0441\u0443\n\u0432\u0435\u0440\u0434\u0438\u043a\u0442 \u0454 \u0437\u0430\u0432\u0436\u0434\u0438, \u0442\u043e\u0436 \u0437\u043b\u0438\u0432\u0430\u0442\u0438 \u0446\u0456 \u0434\u0432\u0456 \u0444\u043e\u0440\u043c\u0438 \u0432 \u043e\u0434\u043d\u0443 \u043e\u0437\u043d\u0430\u0447\u0430\u043b\u043e \u0431 \u043f\u043e\u0441\u043b\u0430\u0431\u0438\u0442\u0438\n\u043a\u043e\u043d\u0442\u0440\u0430\u043a\u0442 \u0441\u0430\u043c\u0435 \u0442\u0430\u043c, \u0434\u0435 \u0432\u0456\u043d \u0432\u0430\u0436\u043b\u0438\u0432\u0438\u0439.",
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "elapsed_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Ms"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Detail"
+          },
+          "final_page": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedirectFinalPageDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "final_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Status"
+          },
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "flags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "hop_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hop Count"
+          },
+          "hops": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RedirectHopDTO"
+            },
+            "title": "Hops",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_notes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Input Notes",
+            "type": "array"
+          },
+          "input_url": {
+            "title": "Input Url",
+            "type": "string"
+          },
+          "normalized_url": {
+            "title": "Normalized Url",
+            "type": "string"
+          },
+          "row_index": {
+            "title": "Row Index",
+            "type": "integer"
+          },
+          "run_status": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Run Status",
+            "type": "string"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok_direct",
+                  "ok_redirect",
+                  "chain",
+                  "loop",
+                  "too_many_hops",
+                  "broken",
+                  "broken_chain",
+                  "blocked",
+                  "unsupported_scheme",
+                  "unsafe_url",
+                  "fetch_failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          }
+        },
+        "required": [
+          "id",
+          "row_index",
+          "run_status",
+          "input_url",
+          "normalized_url"
+        ],
+        "title": "RedirectTargetDTO",
+        "type": "object"
+      },
+      "RedirectTargetsPageDTO": {
+        "properties": {
+          "check_id": {
+            "title": "Check Id",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RedirectTargetDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "check_id",
+          "total",
+          "limit",
+          "offset",
+          "rows"
+        ],
+        "title": "RedirectTargetsPageDTO",
+        "type": "object"
+      },
+      "RedirectTraceDTO": {
+        "description": "\u0420\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442 \u043e\u0434\u043d\u043e\u0433\u043e \u0442\u0440\u0435\u0439\u0441\u0443 (`POST /trace` \u2014 \u0431\u0435\u0437 \u0437\u0430\u043f\u0438\u0441\u0443 \u0432 \u0411\u0414).",
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "elapsed_ms": {
+            "default": 0,
+            "title": "Elapsed Ms",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Detail"
+          },
+          "final_page": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedirectFinalPageDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "final_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Status"
+          },
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "flags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "hop_count": {
+            "default": 0,
+            "title": "Hop Count",
+            "type": "integer"
+          },
+          "hops": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RedirectHopDTO"
+            },
+            "title": "Hops",
+            "type": "array"
+          },
+          "input_url": {
+            "title": "Input Url",
+            "type": "string"
+          },
+          "normalized_url": {
+            "title": "Normalized Url",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "ok_direct",
+              "ok_redirect",
+              "chain",
+              "loop",
+              "too_many_hops",
+              "broken",
+              "broken_chain",
+              "blocked",
+              "unsupported_scheme",
+              "unsafe_url",
+              "fetch_failed"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "input_url",
+          "normalized_url",
+          "verdict"
+        ],
+        "title": "RedirectTraceDTO",
+        "type": "object"
+      },
+      "RedirectTraceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedirectOptionsDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "RedirectTraceRequest",
+        "type": "object"
+      },
+      "RejectedUrlDTO": {
+        "description": "\u0420\u044f\u0434\u043e\u043a, \u044f\u043a\u0438\u0439 \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f\u043c \u043d\u0435 \u0454 \u2014 \u0437 \u043f\u0440\u0438\u0447\u0438\u043d\u043e\u044e, \u0430 \u043d\u0435 \u0442\u0438\u0445\u043e \u0432\u0438\u043a\u0438\u043d\u0443\u0442\u0438\u0439.",
+        "properties": {
+          "error_code": {
+            "title": "Error Code",
+            "type": "string"
+          },
+          "input_url": {
+            "title": "Input Url",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "input_url",
+          "error_code",
+          "message"
+        ],
+        "title": "RejectedUrlDTO",
+        "type": "object"
+      },
       "SheetPreviewDTO": {
         "properties": {
           "header_row_index": {
@@ -8507,6 +9292,574 @@
           }
         },
         "summary": "Upload Source",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/redirects/checks": {
+      "get": {
+        "operationId": "list_checks_api_v1_tools_redirects_checks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RedirectCheckSummaryDTO"
+                  },
+                  "title": "Response List Checks Api V1 Tools Redirects Checks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Checks",
+        "tags": [
+          "tools"
+        ]
+      },
+      "post": {
+        "description": "\u0421\u0442\u0432\u043e\u0440\u0438\u0442\u0438 \u043f\u0440\u043e\u0433\u0456\u043d: \u043d\u043e\u0440\u043c\u0430\u043b\u0456\u0437\u0443\u0432\u0430\u0442\u0438 \u0441\u043f\u0438\u0441\u043e\u043a \u0456 \u043f\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u0438 \u0440\u044f\u0434\u043a\u0438 \u0432 `queued`.\n\n\u0421\u0430\u043c \u043e\u0431\u0445\u0456\u0434 \u0442\u0443\u0442 **\u043d\u0435** \u0432\u0456\u0434\u0431\u0443\u0432\u0430\u0454\u0442\u044c\u0441\u044f: 200 URL \u2014 \u0446\u0435 \u0445\u0432\u0438\u043b\u0438\u043d\u0438 \u0440\u0435\u0430\u043b\u044c\u043d\u0438\u0445 \u0437\u0430\u043f\u0438\u0442\u0456\u0432,\n\u0442\u043e\u0431\u0442\u043e \u043d\u0435 \u043e\u0434\u0438\u043d HTTP-\u0437\u0430\u043f\u0438\u0442. \u0420\u044f\u0434\u043a\u0438 \u043f\u0440\u043e\u0433\u0430\u043d\u044f\u0454 \u0444\u0440\u043e\u043d\u0442 \u043f\u043e \u043e\u0434\u043d\u043e\u043c\u0443.",
+        "operationId": "create_check_api_v1_tools_redirects_checks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedirectCheckCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedirectCheckDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Create Check",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/redirects/checks/{check_id}": {
+      "delete": {
+        "operationId": "delete_check_api_v1_tools_redirects_checks__check_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Check",
+        "tags": [
+          "tools"
+        ]
+      },
+      "get": {
+        "operationId": "get_check_api_v1_tools_redirects_checks__check_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedirectCheckDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Check",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/redirects/checks/{check_id}/export.csv": {
+      "get": {
+        "operationId": "export_csv_api_v1_tools_redirects_checks__check_id__export_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Csv",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/redirects/checks/{check_id}/export.xlsx": {
+      "get": {
+        "operationId": "export_xlsx_api_v1_tools_redirects_checks__check_id__export_xlsx_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Xlsx",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/redirects/checks/{check_id}/targets": {
+      "get": {
+        "operationId": "list_targets_api_v1_tools_redirects_checks__check_id__targets_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Verdict"
+            }
+          },
+          {
+            "in": "query",
+            "name": "run_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "flag",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Flag"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedirectTargetsPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Targets",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/redirects/checks/{check_id}/targets/{target_id}/run": {
+      "post": {
+        "description": "\u041f\u0440\u043e\u0439\u0442\u0438 \u043b\u0430\u043d\u0446\u044e\u0436\u043e\u043a \u043e\u0434\u043d\u043e\u0433\u043e \u0440\u044f\u0434\u043a\u0430 \u0439 \u0437\u0431\u0435\u0440\u0435\u0433\u0442\u0438 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442.\n\n\u041f\u043e\u0432\u0442\u043e\u0440\u043d\u0438\u0439 \u0432\u0438\u043a\u043b\u0438\u043a \u043b\u0435\u0433\u0430\u043b\u044c\u043d\u0438\u0439 (\u043f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u043a \u0440\u044f\u0434\u043a\u0430), \u0430\u043b\u0435 **\u043f\u0430\u0440\u0430\u043b\u0435\u043b\u044c\u043d\u0438\u0439** \u2014 \u043d\u0456:\n`claim_target` \u0430\u0442\u043e\u043c\u0430\u0440\u043d\u043e \u0431\u0435\u0440\u0435 \u0440\u044f\u0434\u043e\u043a \u0443 \u0440\u043e\u0431\u043e\u0442\u0443, \u0442\u043e\u0436 \u043f\u043e\u0434\u0432\u0456\u0439\u043d\u0438\u0439 \u043a\u043b\u0456\u043a \u043d\u0435 \u0434\u0430\u0454 \u0434\u0432\u043e\u0445\n\u0437\u0430\u043f\u0438\u0442\u0456\u0432 \u0434\u043e \u0447\u0443\u0436\u043e\u0433\u043e \u0441\u0430\u0439\u0442\u0443.",
+        "operationId": "run_target_api_v1_tools_redirects_checks__check_id__targets__target_id__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedirectTargetDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Target",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/redirects/trace": {
+      "post": {
+        "description": "\u0412\u0441\u0442\u0430\u0432\u0438\u043b\u0438 \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f \u2014 \u043f\u043e\u0431\u0430\u0447\u0438\u043b\u0438 \u043b\u0430\u043d\u0446\u044e\u0436\u043e\u043a. \u041d\u0456\u0447\u043e\u0433\u043e \u043d\u0435 \u0441\u0442\u0432\u043e\u0440\u044e\u0454\u043c\u043e.\n\n\u0413\u043e\u043b\u043e\u0432\u043d\u0438\u0439 \u0448\u043b\u044f\u0445 \u0456\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u0430: \u043d\u0443\u043b\u044c \u043a\u043b\u0456\u043a\u0456\u0432, \u043d\u0443\u043b\u044c \u0441\u0443\u0442\u043d\u043e\u0441\u0442\u0435\u0439. \u0425\u0442\u043e \u0445\u043e\u0447\u0435 \u0456\u0441\u0442\u043e\u0440\u0456\u044e,\n\u043d\u0430\u0442\u0438\u0441\u043a\u0430\u0454 \u00abSave as check\u00bb \u0456 \u0439\u0434\u0435 \u0447\u0435\u0440\u0435\u0437 `POST /checks`.",
+        "operationId": "trace_one_api_v1_tools_redirects_trace_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedirectTraceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedirectTraceDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trace One",
         "tags": [
           "tools"
         ]
