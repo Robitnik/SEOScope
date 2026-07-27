@@ -3018,6 +3018,265 @@
         "title": "PeriodRole",
         "type": "string"
       },
+      "PortfolioBucketDTO": {
+        "properties": {
+          "days_expected": {
+            "title": "Days Expected",
+            "type": "integer"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "provisional": {
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "days_expected",
+          "provisional"
+        ],
+        "title": "PortfolioBucketDTO",
+        "type": "object"
+      },
+      "PortfolioClientSeriesDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "days_expected": {
+            "default": 0,
+            "title": "Days Expected",
+            "type": "integer"
+          },
+          "days_with_data": {
+            "default": 0,
+            "title": "Days With Data",
+            "type": "integer"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "first_day": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Day"
+          },
+          "last_day": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Day"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "points": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PortfolioPointDTO"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id",
+          "name",
+          "domain"
+        ],
+        "title": "PortfolioClientSeriesDTO",
+        "type": "object"
+      },
+      "PortfolioExcludedClientDTO": {
+        "description": "A client left out of `series` \u2014 always with a reason, never silently\ndropped (PLAN \u00a712/\u00a721 \u2014 absence must stay explainable).",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "no_data",
+              "not_configured"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "name",
+          "domain",
+          "state",
+          "reason"
+        ],
+        "title": "PortfolioExcludedClientDTO",
+        "type": "object"
+      },
+      "PortfolioMetricDTO": {
+        "properties": {
+          "better_direction": {
+            "$ref": "#/components/schemas/BetterDirection"
+          },
+          "dataset_key": {
+            "title": "Dataset Key",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/MetricUnit"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "provider",
+          "unit",
+          "better_direction",
+          "dataset_key",
+          "field"
+        ],
+        "title": "PortfolioMetricDTO",
+        "type": "object"
+      },
+      "PortfolioPointDTO": {
+        "properties": {
+          "days_with_data": {
+            "title": "Days With Data",
+            "type": "integer"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/Quality"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "days_with_data",
+          "quality"
+        ],
+        "title": "PortfolioPointDTO",
+        "type": "object"
+      },
+      "PortfolioSeriesDTO": {
+        "properties": {
+          "bucket": {
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "title": "Bucket",
+            "type": "string"
+          },
+          "buckets": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PortfolioBucketDTO"
+            },
+            "title": "Buckets",
+            "type": "array"
+          },
+          "excluded": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PortfolioExcludedClientDTO"
+            },
+            "title": "Excluded",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/PortfolioMetricDTO"
+          },
+          "range": {
+            "$ref": "#/components/schemas/DateRange"
+          },
+          "series": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PortfolioClientSeriesDTO"
+            },
+            "title": "Series",
+            "type": "array"
+          }
+        },
+        "required": [
+          "metric",
+          "bucket",
+          "range",
+          "generated_at"
+        ],
+        "title": "PortfolioSeriesDTO",
+        "type": "object"
+      },
       "PreflightResult": {
         "additionalProperties": false,
         "description": "Result of `preflight()`: can this cell even attempt a collection?",
@@ -4458,6 +4717,138 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/analytics/portfolio-series": {
+      "get": {
+        "operationId": "get_portfolio_series_api_v1_analytics_portfolio_series_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "title": "Metric",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "default": "week",
+              "enum": [
+                "day",
+                "week",
+                "month"
+              ],
+              "title": "Bucket",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "maximum": 400,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "client_ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Ids"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioSeriesDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Portfolio Series",
+        "tags": [
+          "portfolio"
+        ]
+      }
+    },
     "/api/v1/artifacts/{artifact_id}": {
       "get": {
         "description": "Raw diagnostic artifact download (PLAN \u00a713): only ever serves a path\n`ArtifactRepository.get_for_download` has already verified resolves\ninside the artifacts root \u2014 never a caller-controlled path.",

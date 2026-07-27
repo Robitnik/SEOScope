@@ -4,6 +4,8 @@ const CLIENT_ROUTE = /^#\/client\/([^/?]+)/;
 // Tools hub and one tool, optionally deep-linked to a single report
 // (`#/tools/alt-text/<reportId>`). Added by task-27.
 const TOOLS_ROUTE = /^#\/tools(?:\/([^/?]+))?(?:\/([^/?]+))?/;
+// Portfolio Trends (task-28): one top-level page, no sub-resource segment.
+const TRENDS_ROUTE = /^#\/trends/;
 
 export function parseRoute() {
   const hash = location.hash || "";
@@ -17,6 +19,7 @@ export function parseRoute() {
       query,
     };
   }
+  if (TRENDS_ROUTE.test(hash)) return { name: "trends", query };
   const ahrefsMatch = hash.match(AHREFS_ROUTE);
   if (ahrefsMatch) return { name: "ahrefs", clientId: decodeURIComponent(ahrefsMatch[1]), query };
   const blogsMatch = hash.match(BLOGS_ROUTE);
@@ -45,6 +48,14 @@ export function buildAhrefsHash(clientId, params = {}) {
 
 export function buildBlogsHash(clientId, params = {}) {
   return buildHash(`#/client/${encodeURIComponent(clientId)}/blogs`, params);
+}
+
+export function buildTrendsHash(params = {}) {
+  return buildHash("#/trends", params);
+}
+
+export function replaceTrendsHash(params) {
+  history.replaceState(null, "", `${location.pathname}${location.search}${buildTrendsHash(params)}`);
 }
 
 export function buildToolsHash(toolKey = null, reportId = null, params = {}) {
@@ -82,58 +93,58 @@ async function activate() {
   const ahrefsRoot = document.querySelector("#ahrefs-page-root");
   const blogsRoot = document.querySelector("#blogs-page-root");
   const toolsRoot = document.querySelector("#tools-page-root");
+  const trendsRoot = document.querySelector("#trends-page-root");
   const dashboardChrome = [
     document.querySelector("#dashboard-header-actions"),
     document.querySelector("#dashboard-command-bar"),
   ];
+  const allRoots = [clientRoot, ahrefsRoot, blogsRoot, toolsRoot, trendsRoot];
   // Global nav marks the active destination for assistive tech and for the eye
   // (`aria-current`), since a cross-route move is a full reload here.
   document.querySelectorAll("[data-nav]").forEach((link) => {
-    const isActive = link.dataset.nav === (route.name === "tools" ? "tools" : "dashboard");
+    const isActive = link.dataset.nav === (
+      route.name === "tools" || route.name === "trends" ? route.name : "dashboard"
+    );
     if (isActive) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
   if (route.name === "tools") {
     dashboardView?.setAttribute("hidden", "");
-    clientRoot?.setAttribute("hidden", "");
-    ahrefsRoot?.setAttribute("hidden", "");
-    blogsRoot?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== toolsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     toolsRoot?.removeAttribute("hidden");
     const { initToolsRoute } = await import("./tools-page.js?v=20260726-tools2");
     await initToolsRoute(route);
+  } else if (route.name === "trends") {
+    dashboardView?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== trendsRoot).forEach((el) => el?.setAttribute("hidden", ""));
+    dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
+    trendsRoot?.removeAttribute("hidden");
+    const { initTrendsPage } = await import("./trends-page.js?v=20260727-trends1");
+    await initTrendsPage(route.query);
   } else if (route.name === "ahrefs") {
     dashboardView?.setAttribute("hidden", "");
-    clientRoot?.setAttribute("hidden", "");
-    blogsRoot?.setAttribute("hidden", "");
-    toolsRoot?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== ahrefsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     ahrefsRoot?.removeAttribute("hidden");
     const { initAhrefsPage } = await import("./ahrefs-page.js?v=20260724-blogs1");
     initAhrefsPage(route.clientId, route.query);
   } else if (route.name === "blogs") {
     dashboardView?.setAttribute("hidden", "");
-    clientRoot?.setAttribute("hidden", "");
-    ahrefsRoot?.setAttribute("hidden", "");
-    toolsRoot?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== blogsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     blogsRoot?.removeAttribute("hidden");
     const { initBlogsPage } = await import("./blogs-page.js?v=20260724-blogs1");
     initBlogsPage(route.clientId, route.query);
   } else if (route.name === "client") {
     dashboardView?.setAttribute("hidden", "");
-    ahrefsRoot?.setAttribute("hidden", "");
-    blogsRoot?.setAttribute("hidden", "");
-    toolsRoot?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== clientRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     clientRoot?.removeAttribute("hidden");
     const { initClientPage } = await import("./client-page.js?v=20260724-bulkaudit2");
     initClientPage(route.clientId, route.query);
   } else {
-    clientRoot?.setAttribute("hidden", "");
-    ahrefsRoot?.setAttribute("hidden", "");
-    blogsRoot?.setAttribute("hidden", "");
-    toolsRoot?.setAttribute("hidden", "");
+    allRoots.forEach((el) => el?.setAttribute("hidden", ""));
     dashboardView?.removeAttribute("hidden");
     dashboardChrome.forEach((el) => el?.removeAttribute("hidden"));
     await import("./dashboard.js?v=20260724-bulkaudit2");

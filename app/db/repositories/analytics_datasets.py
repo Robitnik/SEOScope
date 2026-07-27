@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -154,4 +155,45 @@ class AnalyticsDatasetRepository:
         out: dict[str, AnalyticsDatasetRow] = {}
         for row in rows:
             out.setdefault(row.dimension_value, row)
+        return out
+
+    # --- Added by task-28 (Portfolio Trends): the trends page needs one
+    # day-level dataset (`gsc_daily`/`ga4_daily`) read across MANY clients at
+    # once and clipped to an arbitrary day window — `for_period` requires an
+    # exact `(period_start, period_end)` match against one stored period, and
+    # `latest_rows_by_dimension` is scoped to a single client. This mirrors
+    # both: "newest `created_at` wins per dimension_value" (same rule as
+    # `latest_rows_by_dimension`), but multi-client and window-bounded.
+    # `dimension_value` is a `YYYY-MM-DD` string (task-09's daily datasets),
+    # so it sorts and compares correctly as text against ISO date bounds.
+    # See this task's Completion report, "Contract changes", for the rationale.
+
+    def daily_series(
+        self,
+        client_ids: Sequence[str],
+        provider: Provider,
+        dataset_key: str,
+        since: date,
+        until: date,
+    ) -> dict[str, dict[date, AnalyticsDatasetRow]]:
+        if not client_ids:
+            return {}
+        rows = self._session.scalars(
+            select(AnalyticsDatasetRow)
+            .where(
+                AnalyticsDatasetRow.client_id.in_(client_ids),
+                AnalyticsDatasetRow.provider == provider,
+                AnalyticsDatasetRow.dataset_key == dataset_key,
+                AnalyticsDatasetRow.dimension_value >= since.isoformat(),
+                AnalyticsDatasetRow.dimension_value <= until.isoformat(),
+            )
+            .order_by(AnalyticsDatasetRow.created_at.desc())
+        )
+        out: dict[str, dict[date, AnalyticsDatasetRow]] = {}
+        for row in rows:
+            try:
+                day = date.fromisoformat(row.dimension_value)
+            except ValueError:
+                continue
+            out.setdefault(row.client_id, {}).setdefault(day, row)
         return out

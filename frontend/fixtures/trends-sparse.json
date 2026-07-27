@@ -1,0 +1,1874 @@
+{
+  "gsc_clicks": {
+    "metric": {
+      "key": "gsc_clicks",
+      "label": "Clicks",
+      "provider": "gsc",
+      "unit": "count",
+      "better_direction": "up",
+      "dataset_key": "gsc_daily",
+      "field": "clicks"
+    },
+    "bucket": "week",
+    "range": {
+      "start": "2026-06-08",
+      "end": "2026-07-19"
+    },
+    "buckets": [
+      {
+        "start": "2026-06-08",
+        "end": "2026-06-14",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-15",
+        "end": "2026-06-21",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-22",
+        "end": "2026-06-28",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-29",
+        "end": "2026-07-05",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-06",
+        "end": "2026-07-12",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-13",
+        "end": "2026-07-19",
+        "days_expected": 7,
+        "provisional": false
+      }
+    ],
+    "series": [
+      {
+        "client_id": "c-cleveland",
+        "name": "19CLEVELAND",
+        "domain": "19cleveland.com",
+        "points": [
+          {
+            "value": "161",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "167",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "173",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "179",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "185",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "191",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-3xe",
+        "name": "3XE",
+        "domain": "exxxoticaexpo.com",
+        "points": [
+          {
+            "value": "132",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "138",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "144",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "150",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "156",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "162",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-alpha",
+        "name": "ALPHA",
+        "domain": "alphastyle.store",
+        "points": [
+          {
+            "value": "202",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "208",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "214",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "220",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "226",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "232",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-effys",
+        "name": "EFFYS",
+        "domain": "effyscafe.com",
+        "points": [
+          {
+            "value": "243",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "249",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "255",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "261",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "267",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "273",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-goreport",
+        "name": "GOREPORT",
+        "domain": "goreport.com",
+        "points": [
+          {
+            "value": "91",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "97",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "103",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "109",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "115",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "121",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-grillpoint",
+        "name": "GRILLPOINT",
+        "domain": "grillpointnyc.com",
+        "points": [
+          {
+            "value": "272",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "278",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "284",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "290",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "296",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "302",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-hearwell",
+        "name": "HEARWELL",
+        "domain": "hearwellservices.com",
+        "points": [
+          {
+            "value": "313",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "319",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "325",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "331",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "337",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "343",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-laxton",
+        "name": "LAXTON",
+        "domain": "laxton.se",
+        "points": [
+          {
+            "value": "50",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "56",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "62",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "68",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "74",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "80",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-sapphire",
+        "name": "NYSAPPHIRE",
+        "domain": "nysapphire.com",
+        "points": [
+          {
+            "value": "354",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "360",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "366",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "372",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "378",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "384",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-shawarma",
+        "name": "SHAWARMA MIA",
+        "domain": "shawarma-mia.com",
+        "points": [
+          {
+            "value": "383",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "389",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "395",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "401",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "407",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "413",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      }
+    ],
+    "excluded": [],
+    "generated_at": "2026-07-27T10:00:00Z"
+  },
+  "gsc_impressions": {
+    "metric": {
+      "key": "gsc_impressions",
+      "label": "Impressions",
+      "provider": "gsc",
+      "unit": "count",
+      "better_direction": "up",
+      "dataset_key": "gsc_daily",
+      "field": "impressions"
+    },
+    "bucket": "week",
+    "range": {
+      "start": "2026-06-08",
+      "end": "2026-07-19"
+    },
+    "buckets": [
+      {
+        "start": "2026-06-08",
+        "end": "2026-06-14",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-15",
+        "end": "2026-06-21",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-22",
+        "end": "2026-06-28",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-29",
+        "end": "2026-07-05",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-06",
+        "end": "2026-07-12",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-13",
+        "end": "2026-07-19",
+        "days_expected": 7,
+        "provisional": false
+      }
+    ],
+    "series": [
+      {
+        "client_id": "c-cleveland",
+        "name": "19CLEVELAND",
+        "domain": "19cleveland.com",
+        "points": [
+          {
+            "value": "161",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "167",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "173",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "179",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "185",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "191",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-3xe",
+        "name": "3XE",
+        "domain": "exxxoticaexpo.com",
+        "points": [
+          {
+            "value": "132",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "138",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "144",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "150",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "156",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "162",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-alpha",
+        "name": "ALPHA",
+        "domain": "alphastyle.store",
+        "points": [
+          {
+            "value": "202",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "208",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "214",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "220",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "226",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "232",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-effys",
+        "name": "EFFYS",
+        "domain": "effyscafe.com",
+        "points": [
+          {
+            "value": "243",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "249",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "255",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "261",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "267",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "273",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-goreport",
+        "name": "GOREPORT",
+        "domain": "goreport.com",
+        "points": [
+          {
+            "value": "91",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "97",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "103",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "109",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "115",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "121",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-grillpoint",
+        "name": "GRILLPOINT",
+        "domain": "grillpointnyc.com",
+        "points": [
+          {
+            "value": "272",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "278",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "284",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "290",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "296",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "302",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-hearwell",
+        "name": "HEARWELL",
+        "domain": "hearwellservices.com",
+        "points": [
+          {
+            "value": "313",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "319",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "325",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "331",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "337",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "343",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-laxton",
+        "name": "LAXTON",
+        "domain": "laxton.se",
+        "points": [
+          {
+            "value": "50",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "56",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "62",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "68",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "74",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "80",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-sapphire",
+        "name": "NYSAPPHIRE",
+        "domain": "nysapphire.com",
+        "points": [
+          {
+            "value": "354",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "360",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "366",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "372",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "378",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "384",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-shawarma",
+        "name": "SHAWARMA MIA",
+        "domain": "shawarma-mia.com",
+        "points": [
+          {
+            "value": "383",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "389",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "395",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "401",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "407",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "413",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      }
+    ],
+    "excluded": [],
+    "generated_at": "2026-07-27T10:00:00Z"
+  },
+  "rn_sessions": {
+    "metric": {
+      "key": "rn_sessions",
+      "label": "Sessions",
+      "provider": "reporting_ninja",
+      "unit": "count",
+      "better_direction": "up",
+      "dataset_key": "ga4_daily",
+      "field": "sessions"
+    },
+    "bucket": "week",
+    "range": {
+      "start": "2026-06-08",
+      "end": "2026-07-19"
+    },
+    "buckets": [
+      {
+        "start": "2026-06-08",
+        "end": "2026-06-14",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-15",
+        "end": "2026-06-21",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-22",
+        "end": "2026-06-28",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-29",
+        "end": "2026-07-05",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-06",
+        "end": "2026-07-12",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-13",
+        "end": "2026-07-19",
+        "days_expected": 7,
+        "provisional": false
+      }
+    ],
+    "series": [
+      {
+        "client_id": "c-cleveland",
+        "name": "19CLEVELAND",
+        "domain": "19cleveland.com",
+        "points": [
+          {
+            "value": "161",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "167",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "173",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "179",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "185",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "191",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-3xe",
+        "name": "3XE",
+        "domain": "exxxoticaexpo.com",
+        "points": [
+          {
+            "value": "132",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "138",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "144",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "150",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "156",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "162",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-alpha",
+        "name": "ALPHA",
+        "domain": "alphastyle.store",
+        "points": [
+          {
+            "value": "202",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "208",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "214",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "220",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "226",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "232",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-effys",
+        "name": "EFFYS",
+        "domain": "effyscafe.com",
+        "points": [
+          {
+            "value": "243",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "249",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "255",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "261",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "267",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "273",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-goreport",
+        "name": "GOREPORT",
+        "domain": "goreport.com",
+        "points": [
+          {
+            "value": "91",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "97",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "103",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "109",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "115",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "121",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-grillpoint",
+        "name": "GRILLPOINT",
+        "domain": "grillpointnyc.com",
+        "points": [
+          {
+            "value": "272",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "278",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "284",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "290",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "296",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "302",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-hearwell",
+        "name": "HEARWELL",
+        "domain": "hearwellservices.com",
+        "points": [
+          {
+            "value": "313",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "319",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "325",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "331",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "337",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "343",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-laxton",
+        "name": "LAXTON",
+        "domain": "laxton.se",
+        "points": [
+          {
+            "value": "50",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "56",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "62",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "68",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "74",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "80",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-sapphire",
+        "name": "NYSAPPHIRE",
+        "domain": "nysapphire.com",
+        "points": [
+          {
+            "value": "354",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "360",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "366",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "372",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "378",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "384",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-shawarma",
+        "name": "SHAWARMA MIA",
+        "domain": "shawarma-mia.com",
+        "points": [
+          {
+            "value": "383",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "389",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "395",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "401",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "407",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "413",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      }
+    ],
+    "excluded": [],
+    "generated_at": "2026-07-27T10:00:00Z"
+  },
+  "rn_users": {
+    "metric": {
+      "key": "rn_users",
+      "label": "Users",
+      "provider": "reporting_ninja",
+      "unit": "count",
+      "better_direction": "up",
+      "dataset_key": "ga4_daily",
+      "field": "users"
+    },
+    "bucket": "week",
+    "range": {
+      "start": "2026-06-08",
+      "end": "2026-07-19"
+    },
+    "buckets": [
+      {
+        "start": "2026-06-08",
+        "end": "2026-06-14",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-15",
+        "end": "2026-06-21",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-22",
+        "end": "2026-06-28",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-29",
+        "end": "2026-07-05",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-06",
+        "end": "2026-07-12",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-13",
+        "end": "2026-07-19",
+        "days_expected": 7,
+        "provisional": false
+      }
+    ],
+    "series": [
+      {
+        "client_id": "c-cleveland",
+        "name": "19CLEVELAND",
+        "domain": "19cleveland.com",
+        "points": [
+          {
+            "value": "161",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "167",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "173",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "179",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "185",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "191",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-3xe",
+        "name": "3XE",
+        "domain": "exxxoticaexpo.com",
+        "points": [
+          {
+            "value": "132",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "138",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "144",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "150",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "156",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "162",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-alpha",
+        "name": "ALPHA",
+        "domain": "alphastyle.store",
+        "points": [
+          {
+            "value": "202",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "208",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "214",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "220",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "226",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "232",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-effys",
+        "name": "EFFYS",
+        "domain": "effyscafe.com",
+        "points": [
+          {
+            "value": "243",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "249",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "255",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "261",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "267",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "273",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-goreport",
+        "name": "GOREPORT",
+        "domain": "goreport.com",
+        "points": [
+          {
+            "value": "91",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "97",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "103",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "109",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "115",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "121",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-grillpoint",
+        "name": "GRILLPOINT",
+        "domain": "grillpointnyc.com",
+        "points": [
+          {
+            "value": "272",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "278",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "284",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "290",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "296",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "302",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-hearwell",
+        "name": "HEARWELL",
+        "domain": "hearwellservices.com",
+        "points": [
+          {
+            "value": "313",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "319",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "325",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "331",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "337",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "343",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-laxton",
+        "name": "LAXTON",
+        "domain": "laxton.se",
+        "points": [
+          {
+            "value": "50",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "56",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "62",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "68",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "74",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "80",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-sapphire",
+        "name": "NYSAPPHIRE",
+        "domain": "nysapphire.com",
+        "points": [
+          {
+            "value": "354",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "360",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "366",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "372",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "378",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "384",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-shawarma",
+        "name": "SHAWARMA MIA",
+        "domain": "shawarma-mia.com",
+        "points": [
+          {
+            "value": "383",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "389",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "395",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "401",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "407",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "413",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      }
+    ],
+    "excluded": [],
+    "generated_at": "2026-07-27T10:00:00Z"
+  }
+}

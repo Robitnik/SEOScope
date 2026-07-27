@@ -833,3 +833,24 @@ export function altTextExportCsvUrl(reportId) {
 export function altTextExportXlsxUrl(reportId) {
   return `${API_ROOT}/tools/alt-text/reports/${reportId}/export.xlsx`;
 }
+
+// Portfolio Trends (task-28): one line per client for a single daily metric.
+// `client_ids` is a repeated query param (FastAPI `Query(list[str])`), not CSV.
+export async function getPortfolioSeries({ metric, bucket = "week", days = 90, clientIds } = {}) {
+  if (FIXTURE_MODE) {
+    if (FIXTURE_MODE === "error") { await wait(400); throw new Error("Fixture connection error"); }
+    await wait(220);
+    const name = FIXTURE_MODE === "trends-empty"
+      ? "trends-empty"
+      : FIXTURE_MODE === "trends-partial"
+        ? "trends-partial"
+        : FIXTURE_MODE === "trends-sparse"
+          ? "trends-sparse"
+          : "trends-normal";
+    const bundle = await fixture(name);
+    return bundle[metric] || bundle.gsc_clicks;
+  }
+  const params = new URLSearchParams({ metric, bucket, days: String(days) });
+  (clientIds || []).forEach((id) => params.append("client_ids", id));
+  return request(`/analytics/portfolio-series?${params}`, {}, `portfolio-series-${metric}`);
+}

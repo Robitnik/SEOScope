@@ -14,8 +14,9 @@
     <link rel="stylesheet" href="/css/app.css?v=20260724-bulkaudit2">
     <link rel="stylesheet" href="/css/client-page.css?v=20260724-bulkaudit2">
     <link rel="stylesheet" href="/css/tools.css?v=20260726-tools2">
+    <link rel="stylesheet" href="/css/trends.css?v=20260727-trends1">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260726-tools2"></script>
+    <script type="module" src="/js/router.js?v=20260727-trends1"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -36,6 +37,10 @@
           <a href="#/tools" data-nav="tools">
             <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-tool"></use></svg>
             <span>Tools</span>
+          </a>
+          <a href="#/trends" data-nav="trends">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-chart-line"></use></svg>
+            <span>Trends</span>
           </a>
         </nav>
         <div class="header-actions" id="dashboard-header-actions" hidden>
@@ -131,6 +136,8 @@
     <main class="app-main" id="blogs-page-root" hidden></main>
 
     <main class="app-main" id="tools-page-root" hidden></main>
+
+    <main class="app-main" id="trends-page-root" hidden></main>
     </div>
 
     <div class="job-dock" id="job-dock" hidden>

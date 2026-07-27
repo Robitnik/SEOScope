@@ -1,0 +1,125 @@
+/* Portfolio Trends (task-28): one line per client for one daily metric.
+ *
+ * Reuses the existing vocabulary — `.period-panel__kinds` (client-page.css)
+ * for every segmented control, `.chart-wrap`/`.chart-section` (app.css/
+ * client-page.css) for the canvas, `.analytics-table`/`.table-scroll`
+ * (client-page.css) for the data table, `.state-panel` (app.css) for empty/
+ * error states. Only what does not exist yet lives here. */
+
+#trends-page-root { display: grid; gap: 22px; padding-top: 26px; min-width: 0; }
+#trends-page-root > * { min-width: 0; }
+
+.trends-header { display: grid; gap: 8px; }
+.trends-header h1 { font-size: clamp(28px, 4.5vw, 48px); }
+.trends-lead { margin: 0; max-width: 72ch; color: var(--ink-muted); }
+
+.trends-toolbar {
+  display: flex; flex-wrap: wrap; gap: 18px; padding: 16px 18px;
+  border: 1px solid var(--line); background: var(--canvas-raised);
+}
+.trends-control { display: grid; gap: 6px; }
+.trends-control__label { color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+
+.trends-section { display: grid; gap: 18px; min-width: 0; }
+
+.trends-note {
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 9px 12px;
+  border-left: 3px solid var(--info); background: rgb(123 199 255 / 7%);
+  color: var(--ink-muted); font-size: 12px;
+}
+.trends-note .icon { width: 16px; height: 16px; flex: 0 0 auto; color: var(--info); }
+
+/* --- client picker ---------------------------------------------------------- */
+
+.trends-picker { border: 1px solid var(--line); background: var(--canvas-raised); }
+.trends-picker summary {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px; list-style: none;
+  color: var(--ink); font-weight: 700; cursor: pointer; min-height: 44px;
+}
+.trends-picker summary::-webkit-details-marker { display: none; }
+.trends-picker summary::before { content: "▸"; display: inline-block; color: var(--ink-dim); transition: transform .14s ease; }
+.trends-picker[open] summary::before { transform: rotate(90deg); }
+.trends-picker summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.trends-picker__body { padding: 0 16px 16px; display: grid; gap: 10px; }
+.trends-picker__hint { margin: 0; color: var(--ink-muted); font-size: 11px; }
+.trends-picker__list {
+  list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1px;
+  background: var(--line-soft); border: 1px solid var(--line);
+  max-height: 260px; overflow-y: auto;
+}
+.trends-picker__row { background: var(--surface); }
+.trends-picker__row label { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; cursor: pointer; }
+.trends-picker__row input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: var(--accent); }
+.trends-picker__row.is-disabled label { cursor: default; opacity: .5; }
+.trends-picker__name { color: var(--ink); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trends-picker__domain { margin-left: auto; color: var(--ink-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trends-picker__reason { margin-left: auto; color: var(--ink-dim); font-size: 10px; text-align: right; }
+.trends-note a { color: var(--info); font-weight: 700; }
+
+.trends-chart-section .chart-wrap { height: 380px; }
+
+.trends-cli {
+  margin: 8px 0 0; padding: 10px 12px; background: var(--canvas); border: 1px solid var(--line);
+  overflow-x: auto;
+}
+.trends-cli code { color: var(--ink); font-size: 12px; white-space: pre; }
+
+.trends-table td:first-child, .trends-table th:first-child { text-align: left; min-width: 220px; }
+.trends-table small.muted { color: var(--ink-dim); }
+
+/* --- small multiples ("All clients" view) --------------------------------- */
+
+.trend-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.trend-card {
+  display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--line);
+  background: var(--surface); min-width: 0;
+}
+.trend-card header { display: grid; gap: 2px; min-width: 0; }
+.trend-card header strong { color: var(--ink); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trend-card header span { color: var(--ink-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Chart.js's responsive resize needs an explicitly-sized, positioned parent
+ * to measure — without `position: relative` + `width: 100%` here it falls
+ * back to its default 300px canvas width and forces the card wider than its
+ * grid cell (same rule `.chart-wrap` already follows for the main chart). */
+.trend-card__chart { position: relative; width: 100%; min-width: 0; height: 56px; overflow: hidden; }
+.trend-card__chart canvas { max-width: 100%; }
+/* `flex-wrap: wrap` + `min-width: 0` on both children: a wide delta (e.g. a
+ * genuine "+1024.0%" off a near-zero base) must drop to its own line INSIDE
+ * the card, never escape its border into the next card's space. */
+.trend-card footer { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; min-width: 0; }
+.trend-card__value { min-width: 0; font-family: var(--font-display); font-size: 22px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.trend-card__delta { min-width: 0; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.trend-card__delta[data-trend="good"] { color: var(--success); }
+.trend-card__delta[data-trend="bad"] { color: var(--danger); }
+.trend-card--excluded { background: var(--canvas-raised); border-style: dashed; }
+.trend-card__reason { margin: 0; color: var(--ink-muted); font-size: 11px; }
+
+/* --- excluded list ---------------------------------------------------------- */
+
+.trends-excluded { border: 1px solid var(--line); background: var(--surface); padding: 16px 18px 18px; }
+.trends-excluded h2 { font-size: 15px; text-transform: uppercase; margin-bottom: 10px; }
+.trends-excluded ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--line-soft); }
+.trends-excluded li {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 12px;
+  background: var(--canvas-raised); font-size: 12px;
+}
+.trends-excluded .status-label { flex: 0 0 auto; }
+.trends-excluded .muted { color: var(--ink-dim); }
+
+@media (max-width: 860px) {
+  .app-header { flex-wrap: wrap; }
+}
+
+@media (max-width: 720px) {
+  .trends-toolbar { flex-direction: column; align-items: stretch; }
+  .trends-toolbar .period-panel__kinds { width: 100%; }
+  .trends-toolbar .period-panel__kinds button { flex: 1; }
+  .trend-grid { grid-template-columns: 1fr; }
+  .trends-picker__list { grid-template-columns: 1fr; }
+  .trends-picker__domain, .trends-picker__reason { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trend-card { transition: none; }
+}

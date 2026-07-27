@@ -831,3 +831,65 @@ class BlogsRunAcceptedDTO(BaseModel):
     job_id: str
     status_url: str
     events_url: str
+
+
+# --- Portfolio Trends (task-28) --------------------------------------------
+# `GET /api/v1/analytics/portfolio-series`: one line per client for a single
+# daily metric (GSC clicks/impressions, GA4 sessions/users), bucketed into
+# day/week/month. Read-only, same shape family as `AnalyticsDatasetRowDTO`
+# above — `None` means "not collected", never `0` (PLAN §12).
+
+
+class PortfolioMetricDTO(BaseModel):
+    key: str
+    label: str
+    provider: Provider
+    unit: MetricUnit
+    better_direction: BetterDirection
+    dataset_key: str
+    field: str
+
+
+class PortfolioBucketDTO(BaseModel):
+    start: date
+    end: date
+    days_expected: int
+    provisional: bool
+
+
+class PortfolioPointDTO(BaseModel):
+    value: Decimal | None
+    days_with_data: int
+    quality: Quality
+
+
+class PortfolioClientSeriesDTO(BaseModel):
+    client_id: str
+    name: str
+    domain: str
+    points: list[PortfolioPointDTO] = []
+    first_day: date | None = None
+    last_day: date | None = None
+    days_with_data: int = 0
+    days_expected: int = 0
+
+
+class PortfolioExcludedClientDTO(BaseModel):
+    """A client left out of `series` — always with a reason, never silently
+    dropped (PLAN §12/§21 — absence must stay explainable)."""
+
+    client_id: str
+    name: str
+    domain: str
+    state: Literal["no_data", "not_configured"]
+    reason: str
+
+
+class PortfolioSeriesDTO(BaseModel):
+    metric: PortfolioMetricDTO
+    bucket: Literal["day", "week", "month"]
+    range: DateRange
+    buckets: list[PortfolioBucketDTO] = []
+    series: list[PortfolioClientSeriesDTO] = []
+    excluded: list[PortfolioExcludedClientDTO] = []
+    generated_at: datetime
