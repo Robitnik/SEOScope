@@ -333,7 +333,7 @@ input::placeholder { color: var(--ink-dim); }
 /* Section heading: eyebrow + display heading on the left, status label right —
    mirrors `.section-heading`, including its bottom rule. */
 .skeleton__heading { display: flex; align-items: start; justify-content: space-between; gap: 20px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
-.skeleton__heading > div { display: grid; gap: 9px; min-width: 0; flex: 1; }
+.skeleton__heading .skeleton__stack { display: grid; gap: 9px; min-width: 0; flex: 1; }
 .skeleton__status { width: 84px; height: 20px; flex: 0 0 auto; background: var(--skeleton-tone); }
 
 /* KPI strip: same 1px-divided grid the real `.ahrefs-kpis` / `.rn-kpi-grid` use. */
@@ -343,8 +343,10 @@ input::placeholder { color: var(--ink-dim); }
 .skeleton__kpis--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .skeleton__kpi { min-width: 0; padding: 15px 16px; border-right: 1px solid var(--line); display: grid; gap: 10px; justify-items: start; }
 .skeleton__kpi:last-child { border-right: 0; }
-.skeleton__kpi .skeleton-line:first-child { width: 62%; height: 9px; }
-.skeleton__kpi .skeleton-line:last-child { width: 45%; height: 28px; background: var(--skeleton-tone-strong); }
+/* Capped in px as well as %: a KPI label is a short uppercase word, so a
+   full-width bar in a wide single-KPI strip would read as a paragraph. */
+.skeleton__kpi .skeleton-line:first-child { width: 62%; max-width: 130px; height: 9px; }
+.skeleton__kpi .skeleton-line:last-child { width: 45%; max-width: 96px; height: 28px; background: var(--skeleton-tone-strong); }
 
 /* Table rows: one wide label column, then right-aligned number columns, on the
    same 9px/10px padding and hairline dividers as `.analytics-table`. */
@@ -368,11 +370,14 @@ input::placeholder { color: var(--ink-dim); }
    right, on the same 52px/108px rhythm as the real header. */
 .skeleton--header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .skeleton__identity { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1; }
-.skeleton__identity > div { display: grid; gap: 9px; flex: 1; min-width: 0; }
+.skeleton__stack { display: grid; gap: 9px; flex: 1; min-width: 0; max-width: 420px; }
 .skeleton__logo { width: 52px; height: 52px; flex: 0 0 auto; background: var(--skeleton-tone-strong); border: 1px solid var(--line); }
 
 /* Dashboard client cards keep their own frame so the grid does not reflow. */
 .skeleton-card { min-height: 650px; border: 1px solid var(--line); border-top: 3px solid var(--line); background: var(--surface); }
+/* The second provider block opens with its own divider, exactly as the real
+   card's `.provider-block` does. */
+.skeleton-card .skeleton__kpis + .skeleton__rows + .skeleton__kpis { border-top: 1px solid var(--line); }
 
 @keyframes skeleton-appear { from { opacity: 0; } to { opacity: 1; } }
 @keyframes skeleton-sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
@@ -382,7 +387,14 @@ input::placeholder { color: var(--ink-dim); }
 }
 
 @media (max-width: 720px) {
-  .skeleton__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Only the wide strips fold — a 1- or 2-KPI strip already fits, and folding
+     it would open an empty cell the real card never has. */
+  .skeleton__kpis--3, .skeleton__kpis--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .skeleton__kpi { border-bottom: 1px solid var(--line); }
+  .skeleton__kpis--4 .skeleton__kpi:nth-child(2n), .skeleton__kpis--3 .skeleton__kpi:nth-child(2n) { border-right: 0; }
+  /* The real header stacks into one column below 720px — so does its skeleton. */
+  .skeleton--header { flex-direction: column; align-items: stretch; }
+  .skeleton__stack { max-width: none; }
   .skeleton__row { grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr)); }
   .skeleton__row .skeleton-line:nth-child(n + 4) { display: none; }
 }

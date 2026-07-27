@@ -16,7 +16,7 @@ function lines(count, className = "skeleton-line") {
 function headingBlock({ status = true } = {}) {
   return `
     <div class="skeleton__heading">
-      <div><div class="skeleton-line skeleton-line--eyebrow"></div><div class="skeleton-line skeleton-line--title"></div></div>
+      <div class="skeleton__stack"><div class="skeleton-line skeleton-line--eyebrow"></div><div class="skeleton-line skeleton-line--title"></div></div>
       ${status ? `<div class="skeleton__status"></div>` : ""}
     </div>`;
 }
@@ -76,11 +76,16 @@ export function clientHeaderSkeleton() {
 
 /** Dashboard grid: cards keep their real frame so the grid never reflows. */
 export function cardSkeletons(count = 4) {
+  // A real card is an identity header followed by one block per configured
+  // provider (label pair + a four-row metric table) — GSC, Ahrefs and
+  // Reporting Ninja — and that is what fills its 650px. Three provider blocks
+  // reproduce that height instead of leaving the card half empty while it
+  // loads.
+  const providerBlock = `${kpiBlock(2)}${rowBlock(4, 3)}`;
   const card = `<article class="skeleton skeleton-card">
       <span class="visually-hidden">Loading client…</span>
       ${headingBlock()}
-      ${kpiBlock(2)}
-      ${rowBlock(6, 3)}
+      ${providerBlock.repeat(3)}
     </article>`;
   return card.repeat(count);
 }
