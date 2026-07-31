@@ -346,6 +346,19 @@ function renderContent(content, payload) {
   const sorted = [...universe].sort((a, b) => totalOf(b) - totalOf(a));
   const lastFinished = lastFinishedBucketIndex(payload.buckets);
 
+  if (current.clients !== null && current.clients.length === 0) {
+    content.innerHTML = `
+      ${renderPicker({ sorted, excluded: excludedByGroup, manualMode: true, manualSet: new Set(), capped: [] })}
+      <div class="state-panel">
+        ${icon("filter-off")}
+        <p><strong>No clients selected.</strong><br>${sorted.length} ${sorted.length === 1 ? "client has" : "clients have"} data in this range — pick some above, or take them all.</p>
+        <button type="button" class="button button--primary" id="tr-empty-all">${icon("check")}Select all</button>
+      </div>`;
+    bindPickerEvents(content);
+    content.querySelector("#tr-empty-all").addEventListener("click", () => selectAllClients(content));
+    return;
+  }
+
   // Manual selection (the picker) narrows `sorted` down first; automatic mode
   // (the picker's default) leaves it untouched and relies on the view-based
   // cap below — same top-N-by-volume behaviour as before the picker existed.
@@ -424,6 +437,22 @@ function renderContent(content, payload) {
 // Manual mode is entered the moment the operator touches any checkbox — up to
 // then the picker just mirrors the automatic top-N-by-volume selection, so
 // the boxes always show what is actually on screen, not a separate opinion.
+function selectAllClients(content) {
+  const selectable = filterByClientGroup(lastPayload.series || [], current.group).map((item) => item.client_id);
+  current.clients = selectable;
+  if (selectable.length > MAX_SERIES) {
+    current.view = "all";
+    // The view control lives in the toolbar, outside the re-rendered content —
+    // without this it would keep showing «Compare» while the chart is already
+    // in All-clients mode.
+    root.querySelectorAll("#tr-view button").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.view === current.view));
+    });
+  }
+  persist();
+  renderContent(content, lastPayload);
+}
+
 function renderPicker({ sorted, excluded, manualMode, manualSet, capped }) {
   const autoSelectedIds = new Set(capped.map((item) => item.client_id));
   const total = sorted.length + excluded.length;
@@ -444,23 +473,30 @@ function renderPicker({ sorted, excluded, manualMode, manualSet, capped }) {
   }).join("");
 
   const excludedRows = excluded.map((item) => `
-    <li class="trends-picker__row is-disabled">
+      <li class="trends-picker__row is-disabled" title="${escapeHtml(item.reason)}">
       <label>
         <input type="checkbox" value="${escapeHtml(item.client_id)}" disabled>
         <span class="trends-picker__name">${escapeHtml(item.name)}</span>
-        <span class="trends-picker__reason">${escapeHtml(item.reason)}</span>
+        <span class="trends-picker__reason">not connected</span>
       </label>
     </li>`).join("");
 
+  // The count is the thing an operator reads first, so it is a badge, not part
+  // of a sentence; the mode (automatic vs hand-picked) sits next to it because
+  // «8 of 14» means something different in each.
   return `
     <details class="trends-picker" id="tr-picker" ${manualMode ? "open" : ""}>
-      <summary>Clients (${selectedCount} / ${total} shown)</summary>
+      <summary>
+        <span class="trends-picker__title">Clients</span>
+        <span class="trends-picker__count"><strong>${selectedCount}</strong> of ${total}</span>
+        <span class="trends-picker__mode">${manualMode ? "hand-picked" : `automatic · top ${MAX_SERIES} by volume`}</span>
+      </summary>
       <div class="trends-picker__body">
-        <p class="trends-picker__hint">Pick specific clients for Compare/Indexed (up to ${MAX_SERIES}) — All clients has no limit.</p>
         <div class="trends-picker__actions">
-          <button type="button" class="link-button" id="tr-picker-all">Select all${current.view === "all" ? "" : ` (switches to All clients)`}</button>
-          <button type="button" class="link-button" id="tr-picker-none">Clear</button>
-          ${manualMode ? `<button type="button" class="link-button" id="tr-picker-reset">Reset to automatic (top ${MAX_SERIES} by volume)</button>` : ""}
+          <button type="button" class="chip-button" id="tr-picker-all">${icon("checks", "icon icon--tiny")}Select all</button>
+          <button type="button" class="chip-button" id="tr-picker-none" ${selectedCount ? "" : "disabled"}>${icon("square-off", "icon icon--tiny")}Clear</button>
+          ${manualMode ? `<button type="button" class="chip-button" id="tr-picker-reset">${icon("wand", "icon icon--tiny")}Back to automatic</button>` : ""}
+          <p class="trends-picker__hint">Compare and Indexed draw up to ${MAX_SERIES} lines; All clients has no limit.</p>
         </div>
         <ul class="trends-picker__list">${rows}${excludedRows}</ul>
       </div>
@@ -472,21 +508,7 @@ function bindPickerEvents(content) {
   // chart at MAX_SERIES lines, so selecting every client while one of those is
   // active would silently drop the overflow — the one thing a control called
   // «Select all» must never do.
-  content.querySelector("#tr-picker-all")?.addEventListener("click", () => {
-    const selectable = filterByClientGroup(lastPayload.series || [], current.group).map((item) => item.client_id);
-    current.clients = selectable;
-    if (selectable.length > MAX_SERIES) {
-      current.view = "all";
-      // The view control lives in the toolbar, outside the re-rendered content —
-      // without this it would keep showing «Compare» while the chart is already
-      // in All-clients mode.
-      root.querySelectorAll("#tr-view button").forEach((button) => {
-        button.setAttribute("aria-pressed", String(button.dataset.view === current.view));
-      });
-    }
-    persist();
-    renderContent(content, lastPayload);
-  });
+  content.querySelector("#tr-picker-all")?.addEventListener("click", () => selectAllClients(content));
   content.querySelector("#tr-picker-none")?.addEventListener("click", () => {
     current.clients = [];
     persist();
