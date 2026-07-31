@@ -160,6 +160,12 @@ class SyncJobProvider(Base):
     heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     # `(provider, profile_name)` browser/session lock key — PLAN §8.3.
     profile_key: Mapped[str | None] = mapped_column(String(255), default=None)
+    # Which parallel lane claimed this cell (task-31), kept after it finishes so
+    # the run stays readable after the fact. `None` = never claimed into a
+    # numbered lane (still queued, or a single-lane provider). The scheduler
+    # never reads it back — capacity is counted from `running` cells per
+    # `profile_key` — it exists so progress and logs can name the lane.
+    slot: Mapped[int | None] = mapped_column(Integer, default=None)
     units_spent: Mapped[int | None] = mapped_column(Integer, default=None)
     units_estimated: Mapped[int | None] = mapped_column(Integer, default=None)
     error_code: Mapped[str | None] = mapped_column(String(100), default=None)

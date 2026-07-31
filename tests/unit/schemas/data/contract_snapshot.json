@@ -170,6 +170,18 @@
               ],
               "default": null
             },
+            "slot": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Slot"
+            },
             "started_at": {
               "anyOf": [
                 {
@@ -459,6 +471,18 @@
             }
           ],
           "default": null
+        },
+        "slot": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slot"
         },
         "started_at": {
           "anyOf": [
@@ -1604,6 +1628,11 @@
       "additionalProperties": false,
       "description": "Everything an adapter needs to run one `(client, provider)` cell.",
       "properties": {
+        "browser_slot": {
+          "default": 0,
+          "title": "Browser Slot",
+          "type": "integer"
+        },
         "client_id": {
           "title": "Client Id",
           "type": "string"
@@ -3154,6 +3183,18 @@
                 }
               ],
               "default": null
+            },
+            "slot": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Slot"
             },
             "started_at": {
               "anyOf": [

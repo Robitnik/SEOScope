@@ -73,6 +73,7 @@ def _to_cell_dto(cell: SyncJobProvider, quality: Quality | None = None) -> CellP
         current_stage=cell.current_stage,
         progress_message=cell.progress_message,
         attempt=cell.attempt,
+        slot=cell.slot,
         error_code=cell.error_code,
         units_spent=cell.units_spent,
         units_estimated=cell.units_estimated,

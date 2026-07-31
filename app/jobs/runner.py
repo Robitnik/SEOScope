@@ -76,6 +76,10 @@ class CellHandle:
     job_id: str
     client_id: str
     provider: Provider
+    # Which parallel lane claimed this cell (task-31); `0` when the provider
+    # runs a single lane, which is every provider until the dispatcher is
+    # configured otherwise.
+    slot: int = 0
 
 
 def _safe_error(exc: BaseException) -> tuple[str, str]:
@@ -348,6 +352,7 @@ def _run_cell_unguarded(
         job_mode=job_mode,
         job_params=cell_repo_read["job_params"],
         integration_config=integration_config,
+        browser_slot=handle.slot,
     )
 
     try:

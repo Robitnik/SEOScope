@@ -269,6 +269,10 @@ class SemrushAdapter:
                 # profile (root-owned Preferences; a SingletonLock naming a dead container id).
                 # See the volume comment in compose.yaml.
                 on_event=on_event,
+                # task-31: which window of that one warm Chrome this lane owns.
+                # `0` when the provider runs a single lane, i.e. what every run
+                # did before parallel slots existed.
+                slot=context.browser_slot,
             )
             source_used = "browser"
 

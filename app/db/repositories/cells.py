@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, exists, select, update
+from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.orm import Session, aliased
 
 from app.db.base import utcnow
@@ -26,8 +26,27 @@ class CellRepository:
         self._session = session
 
     def claim_next_cell(
-        self, provider: Provider, *, lease_owner: str, lease_ttl_seconds: int = 300
+        self,
+        provider: Provider,
+        *,
+        lease_owner: str,
+        lease_ttl_seconds: int = 300,
+        profile_capacity: int = 1,
+        slot: int | None = None,
     ) -> SyncJobProvider | None:
+        """Claim the oldest queued cell for `provider`, or `None`.
+
+        `profile_capacity` (task-31) turns the profile lock from a mutex into a
+        counting semaphore: up to N cells sharing one `profile_key` may be
+        `running` at once — N browser windows driven on one logged-in profile.
+        `profile_capacity=1` is exactly the previous behaviour.
+
+        The capacity check lives INSIDE the claim `UPDATE`, never as a separate
+        `SELECT` before it: two lanes reading "count < N" in the same instant
+        would both proceed and overshoot. As one statement, SQLite's single
+        writer (PLAN §5.1) serialises them, and `rowcount` proves which one won
+        — the same argument this module's own atomicity already rests on.
+        """
         now = utcnow()
         stmt = (
             select(SyncJobProvider)
@@ -37,7 +56,9 @@ class CellRepository:
             .order_by(SyncJobProvider.created_at)
         )
         for cell in self._session.scalars(stmt):
-            if cell.profile_key is not None and not self.acquire_profile_lock(cell.profile_key):
+            if cell.profile_key is not None and self.profile_slots_free(
+                cell.profile_key, capacity=profile_capacity
+            ) <= 0:
                 continue
 
             claim_conditions = [
@@ -47,10 +68,14 @@ class CellRepository:
             if cell.profile_key is not None:
                 holder = aliased(SyncJobProvider)
                 claim_conditions.append(
-                    ~exists().where(
+                    select(func.count())
+                    .select_from(holder)
+                    .where(
                         holder.profile_key == cell.profile_key,
                         holder.status == CellStatus.running,
                     )
+                    .scalar_subquery()
+                    < profile_capacity
                 )
 
             result = cast(
@@ -64,6 +89,7 @@ class CellRepository:
                         lease_expires_at=now + timedelta(seconds=lease_ttl_seconds),
                         heartbeat_at=now,
                         started_at=cell.started_at or now,
+                        slot=slot,
                     )
                 ),
             )
@@ -74,12 +100,27 @@ class CellRepository:
         return None
 
     def acquire_profile_lock(self, profile_key: str) -> bool:
-        """True if no cell is currently `running` while holding this profile key."""
-        stmt = select(SyncJobProvider.id).where(
-            SyncJobProvider.profile_key == profile_key,
-            SyncJobProvider.status == CellStatus.running,
+        """True if no cell is currently `running` while holding this profile key.
+
+        The single-slot question, kept for callers that mean exactly that;
+        `profile_slots_free` is the general form used by the claim above.
+        """
+        return self.profile_slots_free(profile_key, capacity=1) > 0
+
+    def profile_slots_free(self, profile_key: str, *, capacity: int = 1) -> int:
+        """How many more cells may run on `profile_key` right now (never < 0)."""
+        running = (
+            self._session.scalar(
+                select(func.count())
+                .select_from(SyncJobProvider)
+                .where(
+                    SyncJobProvider.profile_key == profile_key,
+                    SyncJobProvider.status == CellStatus.running,
+                )
+            )
+            or 0
         )
-        return self._session.scalars(stmt).first() is None
+        return max(0, capacity - int(running))
 
     def release_profile_lock(self, cell_id: str) -> None:
         """No-op beyond documentation: a lock frees the instant its cell leaves
@@ -202,6 +243,9 @@ class CellRepository:
             raise ValueError(f"cannot retry cell in status {cell.status!r}: {cell_id}")
         cell.status = CellStatus.queued
         cell.attempt += 1
+        # A retry is claimed afresh and may land in a different lane; carrying
+        # the old slot over would name a lane this attempt never ran in.
+        cell.slot = None
         cell.lease_owner = None
         cell.lease_expires_at = None
         cell.heartbeat_at = None
@@ -251,13 +295,20 @@ class CellRepository:
         )
         return list(self._session.scalars(stmt))
 
-    def awaiting_auth_cells(self) -> list[SyncJobProvider]:
+    def awaiting_auth_cells(self, provider: Provider | None = None) -> list[SyncJobProvider]:
         """`awaiting_auth` cells left over from a previous process — no lane
         from a previous instance can still be polling them after a restart,
         so they are always safe to requeue unconditionally (mirrors
         `stale_cancel_requested_cells`).
+
+        `provider` (task-31) narrows this to one provider's parked cells: with
+        several lanes per provider, more than one cell can be parked on the
+        same dead session, and the lane that wins the auth gate has to resolve
+        all of them — not just the one it happened to be holding.
         """
         stmt = select(SyncJobProvider).where(SyncJobProvider.status == CellStatus.awaiting_auth)
+        if provider is not None:
+            stmt = stmt.where(SyncJobProvider.provider == provider)
         return list(self._session.scalars(stmt))
 
     def request_cancel(self, *, job_id: str | None = None, batch_id: str | None = None) -> int:

@@ -14,10 +14,12 @@ from app.db.models import Client, ClientIntegration
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.jobs import JobRepository
 from app.integrations.browser_session import SessionState
+from app.jobs.auth_gate import AuthGate
 from app.jobs.dispatcher import Dispatcher
 from app.jobs.fake_adapter import FakeAdapter
 from app.jobs.lane import run_lane
 from app.jobs.recovery import run_startup_recovery
+from app.jobs.slots import SlotPool
 from app.schemas.adapter import CollectionResult
 from app.schemas.enums import CellStatus, ComparisonMode, JobStatus, PeriodKind, Provider, Quality
 
@@ -234,6 +236,94 @@ def test_other_provider_lane_keeps_collecting_while_one_is_paused(session_scope,
     finally:
         dispatcher.stop()
         thread.join(timeout=5)
+
+
+def test_multiple_lanes_pause_once_and_all_resume_together(session_scope, register_fake):
+    """task-31: N lanes of one provider must behave like task-21's single lane.
+
+    Only one lane may wait for the login (otherwise the operator is asked N
+    times and N lanes race to close the same backlog), the others must stop
+    claiming instead of feeding clients to a session known to be dead, and
+    every cell parked on that session — not just the pauser's own — has to be
+    requeued when the login comes back.
+    """
+    jobs = [_make_client(session_scope, Provider.semrush, f"multi{i}") for i in range(4)]
+    with session_scope() as session:
+        first_client_id = JobRepository(session).get(jobs[0]).client_id
+
+    login_event = threading.Event()
+    login_event.set()
+    adapter = _AuthOnceThenSucceedAdapter(Provider.semrush, first_client_id, login_event)
+    register_fake(Provider.semrush, adapter)
+
+    probes: list[float] = []
+
+    def check_session(_provider):
+        probes.append(time.monotonic())
+        return SessionState.alive if login_event.is_set() else SessionState.expired
+
+    pool = SlotPool(2)
+    gate = AuthGate()
+    stop_event = threading.Event()
+    threads = [
+        threading.Thread(
+            target=run_lane,
+            kwargs={
+                "provider": Provider.semrush,
+                "session_scope": session_scope,
+                "lease_owner": f"test-worker-{index}",
+                "stop_event": stop_event,
+                "lease_ttl_seconds": 60,
+                "poll_interval_seconds": 0.02,
+                "check_session": check_session,
+                "auth_pause_timeout_seconds": 30,
+                "slots": pool,
+                "auth_gate": gate,
+            },
+            daemon=True,
+        )
+        for index in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    try:
+
+        def _someone_parked() -> bool:
+            with session_scope() as session:
+                repo = CellRepository(session)
+                return any(
+                    repo.list_for_job(job_id)[0].status == CellStatus.awaiting_auth
+                    for job_id in jobs
+                )
+
+        _wait_until(_someone_parked, timeout=5.0)
+        # Exactly one lane holds the pause; the gate is shut for everyone else.
+        assert gate.is_open is False
+
+        def _no_cell_starts_while_paused() -> bool:
+            with session_scope() as session:
+                repo = CellRepository(session)
+                return not any(
+                    repo.list_for_job(job_id)[0].status == CellStatus.running for job_id in jobs
+                )
+
+        time.sleep(0.2)
+        assert _no_cell_starts_while_paused(), "клітинку віддали в мертву сесію під час паузи"
+
+        login_event.set()
+
+        def _all_done() -> bool:
+            with session_scope() as session:
+                repo = JobRepository(session)
+                return all(repo.get(job_id).status == JobStatus.succeeded for job_id in jobs)
+
+        _wait_until(_all_done, timeout=8.0)
+        assert gate.is_open is True
+    finally:
+        stop_event.set()
+        gate.release()
+        for thread in threads:
+            thread.join(timeout=5)
 
 
 def test_startup_recovery_requeues_stranded_awaiting_auth_cell(session_scope, make_cell):

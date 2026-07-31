@@ -1549,6 +1549,17 @@
               }
             ]
           },
+          "slot": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot"
+          },
           "started_at": {
             "anyOf": [
               {

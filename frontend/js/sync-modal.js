@@ -739,7 +739,111 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
   }
 
   function structureKeyOf(job, clientIds, providers) {
-    return JSON.stringify(["metrics", clientIds, providers, job.cells?.length || 0]);
+    return JSON.stringify(["metrics", clientIds, providers, job.cells?.length || 0, laneCount(job.cells || [])]);
+  }
+
+  // --- Browser lanes (task-31) ----------------------------------------------
+  //
+  // A provider may collect several clients at once — one per lane, where a lane
+  // is physically one window of the single logged-in warm Chrome. The matrix
+  // answers "how is each client doing"; this answers "what are the N browsers
+  // doing right now", which is the question an operator watching a long run
+  // actually has. Rows appear only when the run really used more than one lane
+  // (`slot` is null for single-lane providers), so nothing changes for a run
+  // that never parallelised.
+
+  function laneCount(cells) {
+    const slots = cells.map((cell) => cell.slot).filter((slot) => Number.isInteger(slot));
+    return slots.length ? Math.max(...slots) + 1 : 0;
+  }
+
+  // What a lane is doing, or — when it is between clients — the last thing it
+  // actually collected. `not_configured`/`skipped` cells pass through a lane in
+  // milliseconds without doing any work, so they are never worth reporting as
+  // "last": they would bury the result the operator is waiting to see.
+  const LANE_REPORTABLE = new Set(["succeeded", "partial", "failed", "failed_interrupted", "cancelled"]);
+
+  function laneRank(cell) {
+    if (cell.status === "running") return 3;
+    if (LANE_REPORTABLE.has(cell.status)) return 2;
+    return 1;
+  }
+
+  function laneCells(cells) {
+    const lanes = new Map();
+    cells.forEach((cell) => {
+      if (!Number.isInteger(cell.slot)) return;
+      const current = lanes.get(cell.slot);
+      if (!current) {
+        lanes.set(cell.slot, cell);
+        return;
+      }
+      const rank = laneRank(cell) - laneRank(current);
+      if (rank > 0) lanes.set(cell.slot, cell);
+      else if (rank === 0 && Date.parse(cell.finished_at || 0) > Date.parse(current.finished_at || 0)) {
+        lanes.set(cell.slot, cell);
+      }
+    });
+    return lanes;
+  }
+
+  function laneCopy(cell, clients) {
+    if (!cell || (cell.status !== "running" && !LANE_REPORTABLE.has(cell.status))) {
+      return { state: "idle", label: "Idle", detail: "Waiting for the next client" };
+    }
+    const name = clients.get(String(cell.client_id)) || cell.client_id;
+    const provider = (PROVIDERS[cell.provider] || { label: cell.provider }).label;
+    if (cell.status === "running") {
+      return {
+        state: "running",
+        label: `${name} · ${provider}`,
+        detail: cell.progress_message || STAGE_LABELS[cell.current_stage] || "Collecting…",
+      };
+    }
+    const meta = STATE_META[cellDisplayState(cell)] || STATE_META.running;
+    return { state: cellDisplayState(cell), label: "Idle", detail: `Last: ${name} · ${meta.label}` };
+  }
+
+  function laneRowMarkup(index) {
+    return `
+      <li class="lane-row" data-lane="${index}">
+        <span class="lane-row__index" aria-hidden="true">${index + 1}</span>
+        <span class="lane-row__body">
+          <strong data-lane-label></strong>
+          <small data-lane-detail></small>
+        </span>
+        <span class="lane-row__value" data-lane-value></span>
+      </li>`;
+  }
+
+  function renderLanePanel(cells) {
+    const lanes = laneCount(cells);
+    if (lanes < 2) return "";
+    return `
+      <section class="lane-panel" aria-label="Browser lanes">
+        <div class="lane-panel__heading">
+          <span>Browser lanes</span>
+          <span class="lane-panel__note">${lanes} windows · one shared login</span>
+        </div>
+        <ul class="lane-list">${Array.from({ length: lanes }, (_, index) => laneRowMarkup(index)).join("")}</ul>
+      </section>`;
+  }
+
+  function patchLanePanel(cells, clients) {
+    const lanes = laneCells(cells);
+    body.querySelectorAll("[data-lane]").forEach((row) => {
+      const index = Number(row.dataset.lane);
+      const cell = lanes.get(index);
+      const copy = laneCopy(cell, clients);
+      row.className = `lane-row ${stateClass(copy.state)}`;
+      const label = row.querySelector("[data-lane-label]");
+      if (label.textContent !== copy.label) label.textContent = copy.label;
+      const detail = row.querySelector("[data-lane-detail]");
+      if (detail.textContent !== copy.detail) detail.textContent = copy.detail;
+      const value = row.querySelector("[data-lane-value]");
+      const text = cell && cell.status === "running" ? `${percent(cell.progress_percent)}%` : "—";
+      if (value.textContent !== text) value.textContent = text;
+    });
   }
 
   function cellKey(cell) {
@@ -824,6 +928,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     sessionPanelHtml = renderSessionStagePanel(job, () => { if (dialog.open) renderProgress(currentJob); });
     body.innerHTML = `
       <div data-session-region>${sessionPanelHtml}</div>
+      ${renderLanePanel(cells)}
       <div class="progress-overview">
         <span class="progress-number" data-progress-number>0%</span>
         <div>
@@ -888,6 +993,8 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       return;
     }
     const cells = job.cells || [];
+    const dashboard = getDashboard();
+    const clients = new Map((dashboard?.clients || []).map((client) => [String(client.client_id), client.name]));
     const clientIds = [...new Set(cells.map((cell) => String(cell.client_id)))];
     const providers = PROVIDER_ORDER.filter((provider) => cells.some((cell) => cell.provider === provider));
     const { titleText, subtitleText } = progressHeadings(job, cells);
@@ -910,6 +1017,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       track.value = progressValue;
       track.setAttribute("aria-label", `Overall progress: ${progressValue}%`);
     }
+    patchLanePanel(cells, clients);
     const copy = body.querySelector("[data-progress-copy]");
     if (copy) copy.textContent = progressSummary(cells);
     const eta = body.querySelector("[data-progress-eta]");

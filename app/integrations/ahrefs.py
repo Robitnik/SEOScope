@@ -117,6 +117,7 @@ def collect_site_audit_browser(
     client: str,
     market: str,
     on_event: Callable[[DashboardProgressEvent], None],
+    slot: int = 0,
 ) -> DashboardResult:
     """Lazy seam over the AISeoTools BROWSER Site Audit collector (no API, no units).
 
@@ -124,13 +125,16 @@ def collect_site_audit_browser(
     (`adapter_module.collect_site_audit_browser`)."""
     from seo_audit.dashboard.ahrefs import collect_site_audit_browser as _impl
 
-    return _impl(domain, client=client, market=market, on_event=on_event)
+    # `slot` (task-31) selects the browser window this lane drives; 0 keeps the
+    # single-lane behaviour, so older test doubles of this seam still match.
+    return _impl(domain, client=client, market=market, on_event=on_event, slot=slot)
 
 
 def collect_site_audit_detail_browser(
     domain: str,
     *,
     emit: Callable[[ProgressEvent], None],
+    slot: int = 0,
 ) -> dict[str, object]:
     """Export and parse every Site Audit issue and its affected page rows.
 
@@ -154,7 +158,7 @@ def collect_site_audit_detail_browser(
     )
     downloads = download_capture_dir()
     downloads.mkdir(parents=True, exist_ok=True)
-    with BrowserSession("ahrefs") as session:
+    with BrowserSession("ahrefs", slot=slot) as session:
         audit = AhrefsSiteAudit(session)
         project_id = audit.resolve_project(domain)
         if not project_id:
@@ -282,7 +286,11 @@ class AhrefsAdapter:
         # stretches), so it must never be the silent default.
         if context.source_mode in (SourceMode.auto, SourceMode.browser):
             result = collect_site_audit_browser(
-                domain, client=client_label, market=market, on_event=on_event
+                domain,
+                client=client_label,
+                market=market,
+                on_event=on_event,
+                slot=context.browser_slot,
             )
             # csv_dir remains a fallback if the live scrape produced nothing usable.
             if bool(csv_dir) and (result is None or result.quality.value == "unavailable"):
@@ -345,7 +353,9 @@ class AhrefsAdapter:
             )
         domain = str(context.integration_config.get("domain", ""))
         try:
-            detail = collect_site_audit_detail_browser(domain, emit=emit)
+            detail = collect_site_audit_detail_browser(
+                domain, emit=emit, slot=context.browser_slot
+            )
         except Exception as exc:  # noqa: BLE001 - optional detail never loses overview KPIs
             return AnalyticsDatasetCollectionResult(
                 provider=self.provider,

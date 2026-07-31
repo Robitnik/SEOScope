@@ -331,6 +331,11 @@ function readMockLogins() {
 
 function writeMockLogins(logins) { localStorage.setItem(MOCK_LOGINS_KEY, JSON.stringify(logins)); }
 
+// How many parallel browser lanes fixture mode pretends the worker runs. Mirrors
+// `browser_parallel_slots` in `app/core/config.py`; fixtures are for visual QA,
+// so the shape has to match what the real run looks like.
+const FIXTURE_LANES = 3;
+
 function mockCellStatus(cell, elapsed) {
   if (cell.status === "not_configured" || cell.status === "cancelled") return cell;
   if (cell.provider === "tech_audit") {
@@ -344,19 +349,25 @@ function mockCellStatus(cell, elapsed) {
     if (progress >= 100) return { ...cell, status: "succeeded", quality: "complete", progress_percent: 100, current_stage: "complete" };
     return { ...cell, status: "running", progress_percent: progress, current_stage: stage };
   }
-  const offset = cell.provider_index * 300 + cell.client_index * 1350;
+  // task-31: a provider drives `FIXTURE_LANES` windows of its one profile, so
+  // clients are dealt out across lanes and only queue behind the client that
+  // shares their lane — the same shape the real dispatcher produces.
+  const offset = cell.provider_index * 300 + Math.floor(cell.client_index / FIXTURE_LANES) * 1350;
   if (cell.provider === AUTH_DEMO_PROVIDER && cell.client_index === AUTH_DEMO_CLIENT_INDEX) {
     return mockAuthDemoCellStatus(cell, elapsed, offset);
   }
   const progress = Math.max(0, Math.min(100, Math.floor((elapsed - offset) / 38)));
-  if (progress <= 0) return { ...cell, status: "queued", progress_percent: 0, current_stage: "queued" };
+  // Slot appears at claim time, exactly like the worker sets it: a queued cell
+  // has not been handed to a lane yet.
+  if (progress <= 0) return { ...cell, slot: null, status: "queued", progress_percent: 0, current_stage: "queued" };
+  const cellWithSlot = { ...cell, slot: cell.lane };
   const stages = ["preflight", "authenticate", "fetch_current", "fetch_previous", "normalize", "validate", "persist"];
   const stage = stages[Math.min(stages.length - 1, Math.floor(progress / 15))];
   if (progress >= 100) {
     const demoFailure = cell.provider === "semrush" && cell.client_index === 1 && !cell.retried;
-    return { ...cell, status: demoFailure ? "failed" : "succeeded", progress_percent: 100, current_stage: "complete", error_code: demoFailure ? "RATE_LIMITED" : null };
+    return { ...cellWithSlot, status: demoFailure ? "failed" : "succeeded", progress_percent: 100, current_stage: "complete", error_code: demoFailure ? "RATE_LIMITED" : null };
   }
-  return { ...cell, status: "running", progress_percent: progress, current_stage: stage };
+  return { ...cellWithSlot, status: "running", progress_percent: progress, current_stage: stage };
 }
 
 function mockAuthDemoCellStatus(cell, elapsed, offset) {
@@ -398,7 +409,7 @@ export async function createSyncJob(payload, dashboard) {
   providers.forEach((provider, providerIndex) => clientIds.forEach((clientId, clientIndex) => {
     const client = dashboard.clients.find((item) => item.client_id === clientId);
     const configured = client?.providers?.find((item) => item.provider === provider)?.state !== "not_configured";
-    cells.push({ client_id: clientId, provider, provider_index: providerIndex, client_index: clientIndex, status: configured ? "queued" : "not_configured", progress_percent: 0, current_stage: "queued" });
+    cells.push({ client_id: clientId, provider, provider_index: providerIndex, client_index: clientIndex, lane: provider === "tech_audit" ? null : clientIndex % FIXTURE_LANES, status: configured ? "queued" : "not_configured", progress_percent: 0, current_stage: "queued" });
   }));
   const jobs = readMockJobs();
   jobs[id] = { id, batch_id: id, job_id: id, status: "queued", started_at: Date.now(), cells, client_ids: clientIds, providers };

@@ -112,6 +112,78 @@ def test_services_run_in_parallel_while_clients_run_sequentially(
     assert cross_lane, "жодна пара різних сервісів не перетнулась у часі — доріжки не паралельні"
 
 
+def test_provider_lanes_run_up_to_capacity_at_once(temp_db, fake_adapters, seed_client):
+    """task-31: with N lanes configured, N cells of the SAME provider overlap —
+    and never more than N, because the cap is enforced in the claim itself."""
+    scenarios = {Provider.ahrefs: FakeScenario(stage_seconds=0.05, profile_store="main")}
+    client_ids = [
+        seed_client(slug=f"p{index}", domain=f"p{index}.example.com", scenarios=scenarios)
+        for index in range(6)
+    ]
+
+    job_ids, _ = _create_run(temp_db, client_ids, [Provider.ahrefs])
+
+    with running_worker(
+        temp_db.session_scope,
+        providers=(Provider.ahrefs,),
+        parallelism={Provider.ahrefs: 3},
+    ):
+        wait_for(_all_terminal(temp_db, job_ids), timeout=30, what="усі клітинки завершені")
+
+    with temp_db.session_scope() as session:
+        repo = CellRepository(session)
+        cells = [cell for job_id in job_ids for cell in repo.list_for_job(job_id)]
+
+    spans = [(cell.started_at, cell.finished_at) for cell in cells]
+    assert len(spans) == 6
+    assert all(start is not None and end is not None for start, end in spans)
+
+    # Peak concurrency measured off the recorded spans — the same evidence the
+    # single-lane test uses, read the other way round.
+    edges = sorted(
+        [(start, 1) for start, _ in spans] + [(end, -1) for _, end in spans],
+        key=lambda edge: (edge[0], edge[1]),
+    )
+    peak = 0
+    current = 0
+    for _, delta in edges:
+        current += delta
+        peak = max(peak, current)
+
+    assert peak > 1, "жодні дві клітинки одного сервісу не перетнулись — паралельності немає"
+    assert peak <= 3, f"перевищено місткість профілю: одночасно виконувалось {peak} клітинок"
+    assert {cell.slot for cell in cells} <= {0, 1, 2}
+    assert len({cell.slot for cell in cells}) > 1, "усі клітинки пройшли через один слот"
+
+
+def test_single_lane_provider_still_runs_one_cell_at_a_time(temp_db, fake_adapters, seed_client):
+    """The default stays what PLAN §9.1 promised: capacity 1 per profile."""
+    scenarios = {Provider.ahrefs: FakeScenario(stage_seconds=0.05, profile_store="main")}
+    client_ids = [
+        seed_client(slug=f"s{index}", domain=f"s{index}.example.com", scenarios=scenarios)
+        for index in range(3)
+    ]
+
+    job_ids, _ = _create_run(temp_db, client_ids, [Provider.ahrefs])
+
+    with running_worker(temp_db.session_scope, providers=(Provider.ahrefs,)):
+        wait_for(_all_terminal(temp_db, job_ids), timeout=30, what="усі клітинки завершені")
+
+    with temp_db.session_scope() as session:
+        repo = CellRepository(session)
+        spans = [
+            (cell.started_at, cell.finished_at)
+            for job_id in job_ids
+            for cell in repo.list_for_job(job_id)
+        ]
+
+    for left in spans:
+        for right in spans:
+            if left is right:
+                continue
+            assert not (left[0] < right[1] and right[0] < left[1]), "клітинки перетнулись у часі"
+
+
 def test_one_failed_cell_never_touches_its_neighbours(temp_db, fake_adapters, seed_client):
     """Виняток у клітинці ізольований: доріжка триває, решта клітинок штатні."""
     client_id = seed_client(

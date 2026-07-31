@@ -29,6 +29,7 @@ def running_worker(
     lease_ttl_seconds: int = 300,
     cell_timeout_seconds: int = TEST_CELL_TIMEOUT_SECONDS,
     poll_interval_seconds: float = 0.05,
+    parallelism: dict[Any, int] | None = None,
 ) -> Iterator[Any]:
     """Запустити диспетчер у фоновому потоці й гарантовано зупинити його.
 
@@ -50,6 +51,9 @@ def running_worker(
         lease_ttl_seconds=lease_ttl_seconds,
         cell_timeout_seconds=cell_timeout_seconds,
         supervisor_interval_seconds=0.05,
+        # task-31: how many lanes each provider gets. Omitted -> one lane per
+        # provider, i.e. exactly the dispatcher every existing test asserts on.
+        parallelism=parallelism,
     )
     thread = threading.Thread(target=dispatcher.run_forever, name="test-dispatcher", daemon=True)
     thread.start()

@@ -14,18 +14,42 @@ import signal
 import socket
 import types
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import worker_session_scope
 from app.integrations.browser_session import check_session
 from app.jobs.dispatcher import Dispatcher
 from app.jobs.recovery import run_startup_recovery
+from app.schemas.enums import Provider
 
 logger = get_logger(__name__)
 
 
 def _lease_owner() -> str:
     return f"{socket.gethostname()}:{os.getpid()}"
+
+
+def _parallelism(settings: Settings) -> dict[Provider, int]:
+    """How many lanes each provider gets (task-31).
+
+    Clamped to `[1, max_browser_parallel_slots]` here rather than trusted from
+    the environment: this number decides how many sessions hit a provider at
+    once, and a stray `BROWSER_PARALLEL_SLOTS=50` should be a slow config, not
+    an account-level incident. Crawl-style providers stay single-lane — they
+    already scale their own request concurrency, and the UI promises "one site
+    at a time".
+    """
+    ceiling = settings.max_browser_parallel_slots
+    default_slots = max(1, min(settings.browser_parallel_slots, ceiling))
+    single = set(settings.single_lane_providers)
+    overrides = settings.provider_parallel_slots
+
+    def _for(provider: Provider) -> int:
+        if provider.value in single:
+            return 1
+        return max(1, min(overrides.get(provider.value, default_slots), ceiling))
+
+    return {provider: _for(provider) for provider in Provider}
 
 
 def main() -> None:
@@ -35,6 +59,9 @@ def main() -> None:
     logger.info("worker_starting lease_owner=%s", _lease_owner())
     run_startup_recovery(worker_session_scope)
 
+    parallelism = _parallelism(settings)
+    logger.info("worker_parallelism %s", {p.value: n for p, n in parallelism.items()})
+
     dispatcher = Dispatcher(
         session_scope=worker_session_scope,
         lease_owner=_lease_owner(),
@@ -43,6 +70,8 @@ def main() -> None:
         # wired in — see app.jobs.runner.assume_session_alive's docstring for
         # why the job engine's own default is a no-op instead.
         check_session=check_session,
+        parallelism=parallelism,
+        lane_start_stagger_seconds=settings.lane_start_stagger_seconds,
     )
 
     def _handle_signal(signum: int, _frame: types.FrameType | None) -> None:

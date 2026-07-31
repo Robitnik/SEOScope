@@ -246,3 +246,69 @@ Read-only: `app/api/**` (крім адитивного DTO через task-02), 
 - `TODO`: паралелізувати завантаження (потребує окремого browser-контексту на слот або per-target download behavior) — зняло б обмеження §1.5.
 - `TODO`: авто-тюнінг N за спостережуваною тривалістю клітинок і частотою challenge.
 - `TODO(task-32)`: планувальник — паралельні слоти роблять нічний повний refresh реалістичним за часом.
+
+---
+
+## ✅ Completion report
+
+- **Дата:** 2026-07-31
+- **Гілка / комміт:** `task-30-live-data-refresh` @ (комміт нижче)
+- **Статус:** done-with-followups
+
+### Що зроблено
+
+- Профільний лок перетворено з **mutex** на **counting semaphore**: `claim_next_cell(profile_capacity=N)` дозволяє N клітинок одного `profile_key` бути `running` одночасно.
+- У воркері з'явилися **слоти**: `SlotPool` видає номер доріжки, він же — ідентичність вікна браузера; номер персиститься в `sync_job_providers.slot` (міграція `b7d21e9f4c83`) і віддається в `CellProgressDTO.slot`.
+- Диспетчер піднімає **N потоків на провайдера** (`provider_parallelism`), супервізор перезапускає окремий потік, а не всю доріжку.
+- **Один auth-gate на провайдера**: рівно одна доріжка чекає логін, решта припиняють клеймити; на резюмі/таймауті обробляються **всі** припарковані клітинки цього провайдера, а не лише своя.
+- **AISeoTools — адитивно**: `BrowserProfile(slot=…)` (окремий `busy_lock` на слот), реєстр вікон `*.window` із CDP `targetId`, slot-aware `find_or_open_window`, `BrowserSession(slot=…)`, `slot=` в `dashboard.ahrefs/semrush`. `slot=0` лишає всі старі шляхи й поведінку незмінними.
+- У модалці — панель **«Browser lanes»**: рядок на вікно з клієнтом, стадією і відсотком; з'являється лише коли прогін реально використав більше однієї доріжки.
+
+### Виміряно на живому стеку (2026-07-31)
+
+| Прогін | Доріжок | Результат |
+|---|---|---|
+| GSC + Reporting Ninja, 22 клітинки (11 клієнтів) | 1 → **3** | **180 с → 60 с (×3)**, усі 22 `succeeded` |
+| Ahrefs, 3 клієнти | 3 | KPI зібрані, але **всі три** детальні експорти впали в `TimeoutError` → `partial` |
+| Ahrefs, 2 клієнти | 2 | обидві `succeeded`, quality `complete`, попереджень нема, ~100 с |
+| Semrush, 3 клієнти | 2 | 2 м 09 с; якість (`truncated`/`unavailable`) **збігається з історичним однодоріжковим** прогоном 23.07 — це не регресія паралельності, а відома selector-drift проблема Semrush |
+
+Перший 3-доріжковий Ahrefs-прогін також показав окремий ефект: три однакові важкі SPA-навігації, стартовані в ту саму мілісекунду, дали 2 з 3 `Page.goto` таймаутів. Звідси **`lane_start_stagger_seconds = 8`** — рознесення старту доріжок; після першої клітинки вони розходяться самі.
+
+### Як зроблено (ключові рішення)
+
+- **Перевірка місткості — всередині `UPDATE`**, не окремим `SELECT`: інакше дві доріжки прочитали б «є вільне місце» в один момент і разом перевищили б ліміт. Атомарність тримає single-writer SQLite, як і решта claim-логіки.
+- **Слот-пул у пам'яті, не в БД**: один worker-процес (PLAN §5.1) — пул авторитетний; слот померлого процесу зникає разом із ним, тоді як персистентний пул потребував би власного recovery. Крос-процесна безпека лишається на БД-семафорі + `flock` на слот.
+- **Ідентичність вікна — CDP `targetId` у файлі-претензії** (`locks/{store}.{provider}[.sN].window`). Пошук «за хостом» не розрізняє два вікна Ahrefs, тож без цього слоти 0 і 1 бралися б за одне вікно. Файли живуть у `state/locks` — єдиній писабельній для контейнера теці; вміст — лише id, без секретів.
+- **Виміряні дефолти замість смаку**: `provider_parallel_slots = {"ahrefs": 2, "semrush": 2}`, решта метричних провайдерів — 3, `tech_audit`/`blogs` — 1. Причина ahrefs=2 структурна: bulk-експорт іде через store-wide `download_lock` (CDP `setDownloadBehavior` — browser-global), тож третя доріжка додає чергу до фази, яка **не** паралелиться, і виштовхує решту за Playwright-таймаути.
+- Головні файли: `app/jobs/{slots,auth_gate,dispatcher,lane}.py`, `app/db/repositories/cells.py`, `app/core/config.py`, `AISeoTools: seo_audit/browser/{profile,session}.py`.
+
+### Контрактні зміни (Contract changes)
+
+Усе адитивне: `CollectionContext.browser_slot: int = 0`, `CellProgressDTO.slot: int | None`, колонка `sync_job_providers.slot`, три keyword-only `slot=0` в AISeoTools (`BrowserSession`, `collect_site_audit_browser`, `collect_semrush_browser`). Три знімки контрактів перегенеровано; діфи містять **лише додані** поля/параметри.
+
+### Як перевірити (verification)
+
+```bash
+docker compose up -d --build
+docker compose exec api poetry run alembic upgrade head
+docker compose exec api poetry run pytest -q          # 1031 passed
+docker compose logs worker | grep worker_parallelism  # {'ahrefs': 2, 'semrush': 2, 'gsc': 3, ...}
+```
+
+Живий прогін: `POST /api/v1/sync-jobs` на 3 клієнтів × `gsc,reporting_ninja` → у модалці видно панель «Browser lanes», у БД `slot` = 0/1/2 і клітинки перекриваються в часі. Для браузерного: `providers=["ahrefs"]` — у `~/.local/share/seo-audit/state/locks/` з'являються `main.ahrefs.s1.*`/`main.ahrefs.s2.*`, а `*.window` містять **різні** `targetId`.
+
+### Тести
+
+- `tests/unit/db/test_cells_capacity.py` (9): дефолт = 1, рівно N одночасних, звільнення місця, запис слоту, скидання слоту на retry, клітинки без профілю не лімітуються, 8 потоків проти capacity=3 не перевищують ліміт.
+- `tests/unit/jobs/test_slots.py` (6) і `test_auth_gate.py` (9): унікальність слотів під конкуренцією, повернення слоту при винятку, рівно один паузер, повторне взяття після release, пробудження на release.
+- `tests/unit/jobs/test_auth_pause_resume.py`: новий `test_multiple_lanes_pause_once_and_all_resume_together`.
+- `tests/integration/test_job_matrix.py`: `test_provider_lanes_run_up_to_capacity_at_once` (пікова конкурентність >1 і ≤3, слоти різні) + `test_single_lane_provider_still_runs_one_cell_at_a_time` (старий контракт лишився).
+- `tests/harness/worker.py`: адитивний `parallelism=` (зона task-13 — точковий, задокументований дотик).
+
+### Follow-ups / борг
+
+- **Ahrefs на 3 доріжках** лишається недосяжним, доки детальний експорт іде через store-wide `download_lock`. Розв'язок — окремий browser-контекст на слот або per-target download behavior; це окрема таска з власною живою перевіркою.
+- Semrush selector drift (`Semrush table Export button did not resolve`) — **дошло з-перед task-31**, не чіпалось тут; варте окремої таски.
+- Авто-деградація місткості по частоті challenge/`auth_required` (§3.8 плану) **не реалізована**: за живі прогони жодного challenge не було, тож поріг нема на чому калібрувати. Наразі роль запобіжника грає конфіг (`provider_parallel_slots`, cap 4).
+- `lane_start_stagger_seconds` — емпіричні 8 с; авто-тюнінг за спостережуваною тривалістю клітинок лишається follow-up-ом.

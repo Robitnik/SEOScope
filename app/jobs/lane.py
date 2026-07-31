@@ -1,10 +1,17 @@
-"""One lane per service (PLAN §9.1): claim-next-cell -> run-cell -> repeat,
-strictly sequential within the lane. A dedicated OS thread per lane is what
-gives "between services in parallel, within a service sequential": Python
-threads release the GIL for the blocking I/O `run_cell` actually does
-(network calls, browser automation, `time.sleep` in the fake adapter), so
-several lanes genuinely overlap in wall-clock time even though only one
-`claim_next_cell` call for a given provider is ever in flight at once.
+"""One lane (PLAN §9.1): claim-next-cell -> run-cell -> repeat, strictly
+sequential inside this lane. A dedicated OS thread per lane is what gives
+"services overlap in wall-clock time": Python threads release the GIL for the
+blocking I/O `run_cell` actually does (network calls, browser automation,
+`time.sleep` in the fake adapter).
+
+task-31: a provider may now run SEVERAL lanes at once — one per slot, i.e. one
+per window of the single logged-in warm Chrome profile. Each lane still does
+one cell at a time; what changed is that "within a service sequential" became
+"within a service, at most `capacity` at a time", enforced in the claim itself
+(`CellRepository.claim_next_cell(profile_capacity=...)`) rather than by there
+being only one thread. Lanes of one provider share exactly two things, both
+passed in by the dispatcher: the `SlotPool` (which window) and the `AuthGate`
+(who waits for a login).
 
 task-21: when `run_cell` reports a cell `awaiting_auth` (its session died —
 either the cheap pre-check or a live `collect()` discovered it), the lane
@@ -27,8 +34,10 @@ from typing import Any
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.jobs import JobRepository
 from app.integrations.browser_session import SessionState
+from app.jobs.auth_gate import AuthGate
 from app.jobs.events import append_cell_status_event
 from app.jobs.runner import DEFAULT_CELL_TIMEOUT_SECONDS, CellHandle, assume_session_alive, run_cell
+from app.jobs.slots import SlotPool
 from app.schemas.enums import CellStatus, Provider
 
 logger = logging.getLogger(__name__)
@@ -79,60 +88,111 @@ def run_lane(
     cell_timeout_seconds: int = DEFAULT_CELL_TIMEOUT_SECONDS,
     check_session: Callable[[Provider], SessionState] | None = None,
     auth_pause_timeout_seconds: float = DEFAULT_AUTH_PAUSE_TIMEOUT_SECONDS,
+    slots: SlotPool | None = None,
+    auth_gate: AuthGate | None = None,
 ) -> None:
-    """Blocking loop for one provider's lane; returns only once `stop_event`
-    is set (graceful shutdown) or an unhandled exception escapes (the
-    dispatcher supervises this and restarts the lane — PLAN §9.2).
+    """Blocking loop for one lane of one provider; returns only once
+    `stop_event` is set (graceful shutdown) or an unhandled exception escapes
+    (the dispatcher supervises this and restarts the lane — PLAN §9.2).
 
     `check_session` defaults to `assume_session_alive` — see that function's
     docstring for why the real primitive is not the default here either.
+
+    task-31: `slots`/`auth_gate` are what let SEVERAL lanes of one provider run
+    at once. The slot index is both the DB capacity unit and the browser-window
+    identity handed to the adapter; the gate makes sure a dead session is
+    waited on by exactly one of those lanes. Both default to the single-lane
+    behaviour, so a caller that passes neither gets task-21's lane unchanged.
     """
     raw_check = check_session or assume_session_alive
     memo = _MemoizedCheckSession(raw_check)
+    pool = slots or SlotPool(1)
+    gate = auth_gate or AuthGate()
 
     while not stop_event.is_set():
-        handle: CellHandle | None = None
-        with session_scope() as session:
-            cell = CellRepository(session).claim_next_cell(
-                provider, lease_owner=lease_owner, lease_ttl_seconds=lease_ttl_seconds
-            )
-            if cell is not None:
-                handle = CellHandle(
-                    cell_id=cell.id, job_id=cell.job_id, client_id=cell.client_id, provider=provider
-                )
+        # A shut gate means another lane of this provider is waiting for the
+        # operator to log in. Claiming now would just hand the next client the
+        # same dead session — the exact failure task-21 removed.
+        if not gate.is_open:
+            gate.wait_until_open(poll_interval_seconds)
+            continue
 
-        if handle is None:
+        slot = pool.acquire()
+        if slot is None:
+            # Every lane of this profile is busy. Not an error: the DB claim
+            # would refuse too, this only avoids asking.
             stop_event.wait(poll_interval_seconds)
             continue
 
-        try:
-            status = run_cell(
-                handle,
-                session_scope=session_scope,
-                lease_owner=lease_owner,
-                lease_ttl_seconds=lease_ttl_seconds,
-                cell_timeout_seconds=cell_timeout_seconds,
-                check_session=memo,
-            )
-        except Exception:  # noqa: BLE001 - run_cell already guards; belt-and-suspenders only
-            logger.exception(
-                "lane_run_cell_raised_unexpectedly provider=%s cell_id=%s", provider, handle.cell_id
-            )
-            continue
+        with pool.hold(slot):
+            handle: CellHandle | None = None
+            with session_scope() as session:
+                cell = CellRepository(session).claim_next_cell(
+                    provider,
+                    lease_owner=lease_owner,
+                    lease_ttl_seconds=lease_ttl_seconds,
+                    profile_capacity=pool.capacity,
+                    slot=slot,
+                )
+                if cell is not None:
+                    handle = CellHandle(
+                        cell_id=cell.id,
+                        job_id=cell.job_id,
+                        client_id=cell.client_id,
+                        provider=provider,
+                        slot=slot,
+                    )
 
-        if status == CellStatus.awaiting_auth:
-            # The pause/resume poll always talks to the *real* check, live —
-            # only the "already confirmed alive this pass" fast path is cached.
-            _await_auth_and_resume(
-                handle,
-                provider,
-                check_session=raw_check,
-                session_scope=session_scope,
-                stop_event=stop_event,
-                poll_interval_seconds=poll_interval_seconds,
-                timeout_seconds=auth_pause_timeout_seconds,
-            )
-            memo.invalidate()
+            if handle is None:
+                stop_event.wait(poll_interval_seconds)
+                continue
+
+            try:
+                status = run_cell(
+                    handle,
+                    session_scope=session_scope,
+                    lease_owner=lease_owner,
+                    lease_ttl_seconds=lease_ttl_seconds,
+                    cell_timeout_seconds=cell_timeout_seconds,
+                    check_session=memo,
+                )
+            except Exception:  # noqa: BLE001 - run_cell already guards; belt-and-suspenders only
+                logger.exception(
+                    "lane_run_cell_raised_unexpectedly provider=%s slot=%s cell_id=%s",
+                    provider,
+                    slot,
+                    handle.cell_id,
+                )
+                continue
+
+            if status == CellStatus.awaiting_auth:
+                if not gate.try_become_pauser(slot):
+                    # Another lane is already waiting for this provider's login.
+                    # Ours stays parked in `awaiting_auth`; the pauser's resume
+                    # requeues every such cell, and its timeout closes them.
+                    logger.info(
+                        "lane_auth_pause_delegated provider=%s slot=%s cell_id=%s",
+                        provider.value,
+                        slot,
+                        handle.cell_id,
+                    )
+                    continue
+                try:
+                    # The pause/resume poll always talks to the *real* check,
+                    # live — only the "already confirmed alive this pass" fast
+                    # path is cached.
+                    _await_auth_and_resume(
+                        handle,
+                        provider,
+                        check_session=raw_check,
+                        session_scope=session_scope,
+                        stop_event=stop_event,
+                        poll_interval_seconds=poll_interval_seconds,
+                        timeout_seconds=auth_pause_timeout_seconds,
+                    )
+                finally:
+                    gate.release()
+                memo.invalidate()
 
 
 def _await_auth_and_resume(
@@ -203,19 +263,31 @@ def _await_auth_and_resume(
 
         if check_session(provider) == SessionState.alive:
             with session_scope() as session:
-                CellRepository(session).set_status(
-                    handle.cell_id, CellStatus.queued, error_code=None, error_message=None
-                )
-                append_cell_status_event(
-                    session,
-                    job_id=handle.job_id,
-                    provider=provider,
-                    status=CellStatus.queued,
-                    message="session restored; cell requeued",
-                )
-                JobRepository(session).sync_status_from_cells(handle.job_id)
+                cells = CellRepository(session)
+                jobs = JobRepository(session)
+                # Every cell parked on this provider's session, not just ours:
+                # with several lanes (task-31) more than one can be waiting on
+                # the same login, and only the lane holding the auth gate gets
+                # here — so anything it leaves parked would stay parked forever.
+                parked = cells.awaiting_auth_cells(provider)
+                for cell in parked:
+                    cells.set_status(
+                        cell.id, CellStatus.queued, error_code=None, error_message=None
+                    )
+                    append_cell_status_event(
+                        session,
+                        job_id=cell.job_id,
+                        provider=provider,
+                        status=CellStatus.queued,
+                        message="session restored; cell requeued",
+                    )
+                for job_id in {cell.job_id for cell in parked}:
+                    jobs.sync_status_from_cells(job_id)
             logger.info(
-                "lane_resumed_after_login provider=%s cell_id=%s", provider.value, handle.cell_id
+                "lane_resumed_after_login provider=%s cell_id=%s requeued=%d",
+                provider.value,
+                handle.cell_id,
+                len(parked),
             )
             return
 
@@ -225,20 +297,24 @@ def _await_auth_and_resume(
                 jobs = JobRepository(session)
                 affected_job_ids = {handle.job_id}
 
-                cells.set_status(
-                    handle.cell_id,
-                    CellStatus.failed,
-                    error_code="auth_required",
-                    error_message="login not completed before timeout",
-                )
-                append_cell_status_event(
-                    session,
-                    job_id=handle.job_id,
-                    provider=provider,
-                    status=CellStatus.failed,
-                    error_code="auth_required",
-                    message="login not completed before timeout",
-                )
+                # Read before writing: this returns our own cell too, plus any
+                # cell another lane parked on the same dead session (task-31).
+                for cell in cells.awaiting_auth_cells(provider):
+                    cells.set_status(
+                        cell.id,
+                        CellStatus.failed,
+                        error_code="auth_required",
+                        error_message="login not completed before timeout",
+                    )
+                    append_cell_status_event(
+                        session,
+                        job_id=cell.job_id,
+                        provider=provider,
+                        status=CellStatus.failed,
+                        error_code="auth_required",
+                        message="login not completed before timeout",
+                    )
+                    affected_job_ids.add(cell.job_id)
                 # The rest of this provider's queue is behind the same dead
                 # session: close it out now, honestly, rather than each cell
                 # re-pausing for another full `timeout_seconds` in turn.

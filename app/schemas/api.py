@@ -350,6 +350,10 @@ class CellProgressDTO(BaseModel):
     # over `current_stage`'s static per-stage label when present.
     progress_message: str | None = None
     attempt: int = 1
+    # Which parallel lane collected this cell (task-31). `None` = a provider
+    # running a single lane, or a cell not claimed yet — the progress UI shows
+    # per-lane rows only when this is present.
+    slot: int | None = None
     error_code: str | None = None
     units_spent: int | None = None
     units_estimated: int | None = None

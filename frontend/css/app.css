@@ -519,6 +519,20 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
  * UI invented — `etaCopy` says "estimating" until it has a real sample. */
 .progress-eta { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 0; color: var(--ink-dim); font-size: 11px; }
 .progress-eta__clock { font-variant-numeric: tabular-nums; }
+/* task-31: what each parallel browser window is doing right now. Rows only
+ * appear when a run actually used more than one lane. */
+.lane-panel { border: 1px solid var(--line); background: var(--surface); margin-bottom: 20px; }
+.lane-panel__heading { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); color: var(--ink-muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.lane-panel__note { color: var(--ink-dim); }
+.lane-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--line-soft); }
+.lane-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 14px; background: var(--surface); }
+.lane-row__index { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--line); color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+.lane-row.state-running .lane-row__index { border-color: var(--line-accent); color: var(--accent); }
+.lane-row__body { min-width: 0; display: grid; gap: 2px; }
+.lane-row__body strong { font-size: 13px; color: var(--state-color, var(--ink)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-row__body small { color: var(--ink-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-row__value { color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
 .job-alert { padding: 11px 13px; margin-bottom: 16px; border-left: 3px solid var(--warning); background: rgb(255 196 94 / 8%); color: var(--ink-muted); }
 .job-alert strong { color: var(--ink); }
 

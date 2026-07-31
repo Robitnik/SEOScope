@@ -80,6 +80,12 @@ class CollectionContext(BaseModel):
     # Paths to mounted session/browser-profile files. The paths themselves
     # are not secrets; the files they point to must never enter the DB.
     session_paths: dict[str, str] = {}
+    # Which parallel lane this cell runs in (task-31). For a browser provider
+    # it selects the window to drive inside the ONE shared warm Chrome profile
+    # — two concurrent cells of the same provider must not land on the same
+    # window. `0` is the single-lane behaviour every adapter had before, so an
+    # adapter that ignores this field keeps working unchanged.
+    browser_slot: int = 0
 
 
 class MetricValueResult(BaseModel):

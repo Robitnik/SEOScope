@@ -20,7 +20,7 @@
     "seo_audit.browser.providers.gsc.GSCConsole": "GSCConsole(session, *, authuser: 'int | None' = None)",
     "seo_audit.browser.providers.gsc.resolve_authuser": "resolve_authuser(session, profile: 'str', prop: 'str', *, override: 'int | None' = None, max_accounts: 'int' = 6, forget: 'bool' = False, cache_path: 'Path | None' = None) -> 'tuple[int | None, list[str], bool]'",
     "seo_audit.browser.providers.semrush.SemrushSiteExplorer": "SemrushSiteExplorer(session: 'Any')",
-    "seo_audit.browser.session.BrowserSession": "BrowserSession(provider: 'str', *, pacing: 'HumanPacing | None' = None, downloads_dir: 'Path | None' = None, virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, require_auth: 'bool' = True, allow_warm: 'bool' = True)",
+    "seo_audit.browser.session.BrowserSession": "BrowserSession(provider: 'str', *, pacing: 'HumanPacing | None' = None, downloads_dir: 'Path | None' = None, virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, require_auth: 'bool' = True, allow_warm: 'bool' = True, slot: 'int' = 0)",
     "seo_audit.clientreport.api_client.APIError": "APIError(error_code: 'str', message: 'str')",
     "seo_audit.clientreport.api_client.RateLimitError": "RateLimitError(retry_after: 'float')",
     "seo_audit.clientreport.api_client.ReportingNinjaClient": "ReportingNinjaClient(api_key: 'str | None' = None)",
@@ -46,7 +46,7 @@
   },
   "seo_audit.dashboard.ahrefs": {
     "collect_site_audit": "collect_site_audit(domain: 'str', *, client: 'str' = '', market: 'str' = '', audit_date: 'str' = '', csv_dir: 'str | Path | None' = None, api_key: 'str | None' = None, cache_dir: 'str | Path | None' = None, run_verify: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'",
-    "collect_site_audit_browser": "collect_site_audit_browser(domain: 'str', *, client: 'str' = '', market: 'str' = '', profile: 'str' = 'ahrefs', virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
+    "collect_site_audit_browser": "collect_site_audit_browser(domain: 'str', *, client: 'str' = '', market: 'str' = '', profile: 'str' = 'ahrefs', slot: 'int' = 0, virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
   },
   "seo_audit.dashboard.blogs": {
     "BlogPost": "BlogPost(*, url: str, title: str = '', description: str = '', word_count: int = 0, published_date: str | None = None, modified_date: str | None = None, status: int = 0) -> None",
@@ -88,7 +88,7 @@
   },
   "seo_audit.dashboard.semrush": {
     "collect_semrush_api": "collect_semrush_api(domain: 'str', *, database: 'str' = 'us', api_key: 'str | None' = None, cache_dir: 'str | Path | None' = None, unit_budget: 'int | None' = None, on_event: 'OnEvent | None' = None) -> 'DashboardResult'",
-    "collect_semrush_browser": "collect_semrush_browser(domain: 'str', *, artifacts_dir: 'str | Path', client: 'str' = '', database: 'str' = 'us', profile: 'str' = 'semrush', reports: 'tuple[str, ...]' = ('organic-positions', 'backlinks', 'refdomains'), virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
+    "collect_semrush_browser": "collect_semrush_browser(domain: 'str', *, artifacts_dir: 'str | Path', client: 'str' = '', database: 'str' = 'us', profile: 'str' = 'semrush', slot: 'int' = 0, reports: 'tuple[str, ...]' = ('organic-positions', 'backlinks', 'refdomains'), virtual_display: 'bool' = False, no_sandbox: 'bool' = False, clear_stale_singletons: 'bool' = False, on_event: 'OnEvent | None' = None) -> 'DashboardResult'"
   },
   "seo_audit.dashboard.tech_audit": {
     "RecheckResult": "RecheckResult(*, run_dir: str = '', recheck_date: str = '', domain: str = '', client: str = '', rows: list[seo_audit.dashboard.tech_audit.RecheckRow] = <factory>) -> None",
