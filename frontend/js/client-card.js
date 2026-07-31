@@ -1,6 +1,6 @@
-import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260724-bulkaudit2";
-import { buildClientHash } from "./router.js?v=20260724-bulkaudit2";
-import { cardSkeletons } from "./skeleton.js?v=20260726-loading1";
+import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260731-refresh1";
+import { buildClientHash } from "./router.js?v=20260731-refresh1";
+import { cardSkeletons } from "./skeleton.js?v=20260731-refresh1";
 
 function providerIcon(provider) {
   const meta = PROVIDERS[provider];

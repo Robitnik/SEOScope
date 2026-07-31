@@ -188,6 +188,40 @@ def test_response_shape_matches_contract(client, db):
     assert body["series"][0]["points"][0]["value"] == "50"  # 5 clicks * 10 = impressions
 
 
+def test_metric_reports_source_lag_days(client, db):
+    """task-30: the freshness chip has to say "up to date" vs "N days behind"
+    honestly, and the trailing days a source still revises (GSC 3, GA4 2) are
+    not derivable from anything else in the payload."""
+    client_id = _seed_client_with_days(db, configure=True, days={"2026-07-20": 5})
+
+    gsc = client.get(
+        "/api/v1/analytics/portfolio-series"
+        f"?metric=gsc_clicks&client_ids={client_id}&start=2026-07-20&end=2026-07-20"
+    ).json()
+    ga4 = client.get(
+        "/api/v1/analytics/portfolio-series"
+        f"?metric=rn_users&client_ids={client_id}&start=2026-07-20&end=2026-07-20"
+    ).json()
+
+    assert gsc["metric"]["lag_days"] == 3
+    assert ga4["metric"]["lag_days"] == 2
+
+
+def test_series_last_day_is_the_last_day_with_data(client, db):
+    """The freshness chip reads `last_day` per client; a gap at the end of the
+    window must move it back, not be papered over by the window's own end."""
+    client_id = _seed_client_with_days(
+        db, configure=True, days={"2026-07-20": 5, "2026-07-22": 7}
+    )
+
+    body = client.get(
+        "/api/v1/analytics/portfolio-series"
+        f"?metric=gsc_clicks&client_ids={client_id}&bucket=day&start=2026-07-20&end=2026-07-27"
+    ).json()
+
+    assert body["series"][0]["last_day"] == "2026-07-22"
+
+
 def test_endpoint_never_creates_a_sync_job(client, db):
     client_id = _seed_client_with_days(db, configure=True, days={"2026-07-20": 5})
     before = db.query(SyncJob).count()

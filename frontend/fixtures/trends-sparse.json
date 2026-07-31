@@ -7,7 +7,8 @@
       "unit": "count",
       "better_direction": "up",
       "dataset_key": "gsc_daily",
-      "field": "clicks"
+      "field": "clicks",
+      "lag_days": 3
     },
     "bucket": "week",
     "range": {
@@ -475,7 +476,8 @@
       "unit": "count",
       "better_direction": "up",
       "dataset_key": "gsc_daily",
-      "field": "impressions"
+      "field": "impressions",
+      "lag_days": 3
     },
     "bucket": "week",
     "range": {
@@ -943,7 +945,8 @@
       "unit": "count",
       "better_direction": "up",
       "dataset_key": "ga4_daily",
-      "field": "sessions"
+      "field": "sessions",
+      "lag_days": 2
     },
     "bucket": "week",
     "range": {
@@ -1411,7 +1414,8 @@
       "unit": "count",
       "better_direction": "up",
       "dataset_key": "ga4_daily",
-      "field": "users"
+      "field": "users",
+      "lag_days": 2
     },
     "bucket": "week",
     "range": {

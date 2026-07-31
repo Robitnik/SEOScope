@@ -1,8 +1,8 @@
-import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob, startTechAuditBatch } from "./api.js?v=20260724-bulkaudit2";
-import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260724-bulkaudit2";
-import { triggerLogin } from "./session-status.js?v=20260724-blogs1";
-import { loadActiveJob, saveActiveJob } from "./store.js?v=20260724-blogs1";
-import { watchJob } from "./sse.js?v=20260724-blogs1";
+import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob, startTechAuditBatch } from "./api.js?v=20260731-refresh1";
+import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260731-refresh1";
+import { triggerLogin } from "./session-status.js?v=20260731-refresh1";
+import { loadActiveJob, saveActiveJob } from "./store.js?v=20260731-refresh1";
+import { watchJob } from "./sse.js?v=20260731-refresh1";
 
 // task-22 follow-up: providers backed by a warm-Chrome browser session (mirrors
 // `BROWSER_PROVIDERS` in `app/integrations/browser_session.py`). `reporting_ninja`
@@ -217,6 +217,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     opener = trigger || document.activeElement;
     const dashboard = getDashboard();
     if (!dashboard) return;
+    resetProgressView();
     title.textContent = clientId ? "Update client" : "Update metrics";
     subtitle.textContent = "Collection runs in the background. Closing this window won't stop it.";
     const selectedClients = clientId ? [clientId] : dashboard.clients.map((client) => client.client_id);
@@ -296,6 +297,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     }
     const dashboard = getDashboard();
     if (!dashboard) return;
+    resetProgressView();
     title.textContent = "Run technical audits";
     subtitle.textContent = "Our crawler audits one site at a time. Closing this window will not stop the batch.";
     body.innerHTML = `
@@ -357,6 +359,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
   }
 
   function renderBrowserRequired(offline, selection) {
+    resetProgressView();
     title.textContent = "Update metrics";
     subtitle.textContent = "Collection has not started yet.";
     body.innerHTML = `
@@ -435,6 +438,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
   async function beginAuditCollection(clientIds) {
     try {
       const dashboard = getDashboard();
+      resetProgressView();
       title.textContent = "Preparing crawl queue";
       subtitle.textContent = "Validating selected clients and reserving the crawler lane.";
       body.innerHTML = `<div class="state-panel state-running">${icon("loader-2", "icon icon--spin")}<p><strong>Building technical audit batch</strong><br>${clientIds.length} ${clientIds.length === 1 ? "site" : "sites"} selected.</p></div>`;
@@ -461,8 +465,97 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     }
   }
 
+  // --- Rolling-window refresh preset (task-30) ------------------------------
+  //
+  // The routine sync collects CLOSED periods, so the in-progress week is never
+  // requested and the day-level GSC/GA4 series the Portfolio Trends page reads
+  // stops at the last closed period end. Only a `custom` window ending
+  // yesterday can fill it — plus `force_refresh`, or the freshness gate skips
+  // every cell that already has a recent snapshot and the run collects nothing
+  // (`app/jobs/runner.py`, same reason `yovth-report backfill-daily-history`
+  // hardcodes it).
+
+  function isoDay(offsetDays) {
+    // UTC on purpose: the worker builds its window in UTC too, so this cannot
+    // drift a day against the server around midnight local time.
+    return new Date(Date.now() - offsetDays * 86_400_000).toISOString().slice(0, 10);
+  }
+
+  function refreshWindow(windowDays) {
+    // `end` is yesterday: today is still being written by both sources, and a
+    // partial today would land as a real (wrong) low value for that day.
+    return { start: isoDay(windowDays), end: isoDay(1), days: windowDays };
+  }
+
+  function openMetricsRefresh({ clientIds, providers = ["gsc", "reporting_ninja"], windowDays = 30, trigger } = {}) {
+    opener = trigger || document.activeElement;
+    // A live run is never replaced by a second one — show it instead.
+    if (active?.id && currentJob && !isTerminal(currentJob.status)) {
+      if (!dialog.open) dialog.showModal();
+      renderProgress(currentJob);
+      return;
+    }
+    resetProgressView();
+    const window_ = refreshWindow(windowDays);
+    const selection = { clientIds, providers, ...window_ };
+    const providerLabels = providers.map((provider) => (PROVIDERS[provider] || { label: provider }).label).join(" and ");
+    title.textContent = "Refresh trend data";
+    subtitle.textContent = "Collection runs in the background. Closing this window won't stop it.";
+    body.innerHTML = `
+      <section class="refresh-preflight" aria-label="Refresh scope">
+        <div class="refresh-preflight__signal" aria-hidden="true">${icon("cloud-download")}</div>
+        <div>
+          <p class="eyebrow">Day-level history</p>
+          <h3>${escapeHtml(window_.start)} → ${escapeHtml(window_.end)}</h3>
+          <p>${clientIds.length} ${clientIds.length === 1 ? "client" : "clients"} · ${escapeHtml(providerLabels)} · re-collects every day in the window.</p>
+        </div>
+      </section>
+      <dl class="refresh-facts">
+        <div><dt>Window</dt><dd>${window_.days} days, ending yesterday</dd></div>
+        <div><dt>Mode</dt><dd>Re-collect (ignores the freshness skip)</dd></div>
+        <div><dt>Source lag</dt><dd>GSC finalizes 3 days, GA4 2 — newest buckets stay provisional</dd></div>
+      </dl>
+      <p class="refresh-note">${icon("info-circle", "icon icon--tiny")} This is a metered live collection: each client costs about 2 Search Console queries and 12 GA4 queries, whatever the window length.</p>`;
+    footer.innerHTML = `<button class="button button--quiet" type="button" data-close>Cancel</button><button class="button button--primary" type="button" data-start-refresh>${icon("refresh")}Refresh data</button>`;
+    footer.querySelector("[data-close]").addEventListener("click", () => dialog.close());
+    footer.querySelector("[data-start-refresh]").addEventListener("click", (event) => {
+      event.currentTarget.disabled = true;
+      beginRefresh(selection);
+    });
+    if (!dialog.open) dialog.showModal();
+  }
+
+  async function beginRefresh({ clientIds, providers, start, end }) {
+    sessionOverlays.clear();
+    resetProgressView();
+    try {
+      const dashboard = getDashboard();
+      const accepted = await createSyncJob({
+        client_ids: clientIds,
+        providers,
+        period_kind: "custom",
+        comparison_mode: "closed",
+        custom_start: start,
+        custom_end: end,
+        mode: "force_refresh",
+        source_mode: "auto",
+        idempotency_key: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+      }, dashboard);
+      active = { id: accepted.batch_id || accepted.job_id, eventsUrl: accepted.events_url, lastEventId: "", kind: "metrics" };
+      saveActiveJob(active);
+      beginWatch();
+      title.textContent = "Data collection";
+      subtitle.textContent = `Collecting ${start} → ${end}. Closing this window won't stop it.`;
+      renderProgress({ status: "queued", progress_percent: 0, cells: [] });
+    } catch (error) {
+      onToast(`Could not start the refresh: ${error.message}`);
+      dialog.close();
+    }
+  }
+
   async function beginCollection({ clientIds, providers, forceRefresh }) {
     sessionOverlays.clear();
+    resetProgressView();
     try {
       const dashboard = getDashboard();
       title.textContent = "History import";
@@ -586,7 +679,11 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     subtitle.textContent = terminal
       ? (failed ? `${failed} ${failed === 1 ? "site needs" : "sites need"} another attempt. Successful audit results are already saved.` : "Every selected site reached a final state.")
       : "The crawler is processing one site at a time; queued sites start automatically.";
-    body.innerHTML = `
+    // Same no-flicker rule as the metrics matrix, one size smaller: the audit
+    // list has no interactive children, so a string diff is enough to stop the
+    // list from being rebuilt (and scrolled back to the top) on every tick.
+    structureKey = null;
+    const html = `
       <section class="audit-progress-hero" aria-label="Technical audit batch progress">
         <div class="audit-progress-hero__number"><strong>${progressValue}<small>%</small></strong><span>overall</span></div>
         <div class="audit-progress-hero__track">
@@ -598,10 +695,191 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       ${cells.length
         ? `<ol class="audit-run-list">${cells.map((cell, index) => auditRunRow(cell, index, dashboard)).join("")}</ol>`
         : `<div class="state-panel state-running">${icon("loader-2", "icon icon--spin")}<p><strong>Building the crawl queue</strong><br>Selected sites will appear here when the worker claims the batch.</p></div>`}`;
-    footer.innerHTML = footerActions(job);
-    footer.querySelector("[data-close]")?.addEventListener("click", () => dialog.close());
-    footer.querySelector("[data-cancel]")?.addEventListener("click", () => cancelJob());
-    footer.querySelector("[data-retry]")?.addEventListener("click", () => retryFailed());
+    if (html !== auditHtml) {
+      auditHtml = html;
+      body.innerHTML = html;
+    }
+    const nextFooter = footerActions(job);
+    if (nextFooter !== footerHtml) {
+      footerHtml = nextFooter;
+      footer.innerHTML = nextFooter;
+      footer.querySelector("[data-close]")?.addEventListener("click", () => dialog.close());
+      footer.querySelector("[data-cancel]")?.addEventListener("click", () => cancelJob());
+      footer.querySelector("[data-retry]")?.addEventListener("click", () => retryFailed());
+    }
+  }
+
+  // --- Live progress v2 (task-30) -------------------------------------------
+  //
+  // This used to rebuild `body.innerHTML` on every SSE tick. With several cells
+  // in flight that meant visible flicker, a matrix scrolled back to the top on
+  // each update, and focus that had to be restored by hand afterwards.
+  //
+  // The render is split by what actually changes: a FULL build only when the
+  // structure does (which clients/providers exist, audit vs metrics), and cheap
+  // per-node patches for values (percent, state, stage text). Two regions that
+  // carry their own interactive state — the session panel and the footer — are
+  // diffed as strings and replaced only when their markup really changed, which
+  // is what keeps the «Log in» button from being torn out from under a click.
+  let structureKey = null;
+  let sessionPanelHtml = null;
+  let footerHtml = null;
+  let auditHtml = null;
+  let clockTimer = null;
+
+  /** Anything that writes `body`/`footer` outside the progress renderer must
+   * call this, or the next `renderProgress` would patch nodes that are no
+   * longer in the DOM and silently show nothing. */
+  function resetProgressView() {
+    structureKey = null;
+    sessionPanelHtml = null;
+    footerHtml = null;
+    auditHtml = null;
+    stopClock();
+  }
+
+  function structureKeyOf(job, clientIds, providers) {
+    return JSON.stringify(["metrics", clientIds, providers, job.cells?.length || 0]);
+  }
+
+  function cellKey(cell) {
+    return `${cell.client_id}|${cell.provider}`;
+  }
+
+  function runStartedAt(cells) {
+    const stamps = cells.map((cell) => Date.parse(cell.started_at)).filter((value) => Number.isFinite(value));
+    return stamps.length ? Math.min(...stamps) : null;
+  }
+
+  function formatDuration(seconds) {
+    if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes} min`;
+    return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+  }
+
+  function formatClock(ms) {
+    const total = Math.max(0, Math.round(ms / 1000));
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  }
+
+  // Determinate, measured, and honest about not knowing yet (AGENTS §9: never
+  // animate a fake percentage). The sample deliberately ignores `skipped` /
+  // `not_configured` cells: those finish in milliseconds and would drag the
+  // median down until the estimate reads as minutes when it is really an hour.
+  function etaCopy(cells) {
+    const collected = cells.filter((cell) => ["succeeded", "partial", "failed", "failed_interrupted"].includes(cell.status));
+    const remaining = cells.filter((cell) => !TERMINAL_CELL_STATUSES.has(cell.status)).length;
+    if (!remaining) return "";
+    const durations = collected
+      .map((cell) => (Date.parse(cell.finished_at) - Date.parse(cell.started_at)) / 1000)
+      .filter((value) => Number.isFinite(value) && value >= 0)
+      .sort((a, b) => a - b);
+    const running = cells.filter((cell) => cell.status === "running").length;
+    const lanes = Math.max(1, running);
+    if (durations.length < 3) return `${remaining} ${remaining === 1 ? "cell" : "cells"} left · estimating time…`;
+    const median = durations[Math.floor(durations.length / 2)];
+    return `${remaining} ${remaining === 1 ? "cell" : "cells"} left · about ${formatDuration((median * remaining) / lanes)} to go`;
+  }
+
+  function ensureClockTicking(getCells) {
+    if (clockTimer) return;
+    clockTimer = setInterval(() => {
+      const node = body.querySelector("[data-run-clock]");
+      const started = runStartedAt(getCells());
+      if (!node || started === null) {
+        clearInterval(clockTimer);
+        clockTimer = null;
+        return;
+      }
+      node.textContent = formatClock(Date.now() - started);
+    }, 1000);
+  }
+
+  function stopClock() {
+    if (!clockTimer) return;
+    clearInterval(clockTimer);
+    clockTimer = null;
+  }
+
+  function progressHeadings(job, cells) {
+    const state = STATE_META[job.status] || STATE_META.running;
+    // A lane parked on `awaiting_auth` still aggregates to a job-level
+    // `queued` — truthful (it really is waiting), but «Queued» reads as "not
+    // started yet" when the run is actually blocked on the operator.
+    const awaitingAuth = cells.some((cell) => cell.status === "awaiting_auth");
+    const subtitleText = isTerminal(job.status) && hasCollectionIssues(cells)
+      ? "Collected data has been saved. Review cells with collection errors."
+      : isTerminal(job.status) && hasSetupCells(cells)
+        ? "Connected integrations collected successfully. Some clients still need a connection."
+      : awaitingAuth
+        ? "Collection paused: a service login is required."
+        : state.label;
+    return { titleText: terminalTitle(job), subtitleText };
+  }
+
+  function buildProgress(job, cells, clientIds, providers) {
+    const dashboard = getDashboard();
+    const clients = new Map((dashboard?.clients || []).map((client) => [String(client.client_id), client.name]));
+    sessionPanelHtml = renderSessionStagePanel(job, () => { if (dialog.open) renderProgress(currentJob); });
+    body.innerHTML = `
+      <div data-session-region>${sessionPanelHtml}</div>
+      <div class="progress-overview">
+        <span class="progress-number" data-progress-number>0%</span>
+        <div>
+          <progress class="progress-track" data-progress-track max="100" value="0" aria-label="Overall progress: 0%"></progress>
+          <div class="progress-copy" data-progress-copy></div>
+          <p class="progress-eta"><span data-progress-eta></span><span class="progress-eta__clock" data-run-clock-wrap hidden> · running <span data-run-clock>00:00</span></span></p>
+        </div>
+      </div>
+      ${clientIds.length
+        ? `<div class="matrix-wrap"><table class="progress-matrix"><thead><tr><th scope="col">Client</th>${providers.map((provider) => `<th scope="col">${PROVIDERS[provider].label}</th>`).join("")}</tr></thead><tbody>${clientIds.map((clientId) => `<tr><td>${escapeHtml(clients.get(clientId) || clientId)}</td>${providers.map((provider) => matrixCell(cells.find((cell) => String(cell.client_id) === clientId && cell.provider === provider), clientId, provider)).join("")}</tr>`).join("")}</tbody></table></div>`
+        : `<div class="state-panel"><p><strong>Building the queue.</strong><br>The table will appear once the server responds.</p></div>`}`;
+    bindSessionButtons();
+  }
+
+  function bindSessionButtons() {
+    body.querySelectorAll("[data-session-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.getAttribute("aria-disabled") === "true") return;
+        handleLoginClick(button.dataset.sessionAction);
+      });
+    });
+  }
+
+  function patchSessionPanel(job) {
+    const region = body.querySelector("[data-session-region]");
+    if (!region) return;
+    const html = renderSessionStagePanel(job, () => { if (dialog.open) renderProgress(currentJob); });
+    if (html === sessionPanelHtml) return;
+    const focused = region.contains(document.activeElement) ? document.activeElement.dataset.sessionAction : null;
+    sessionPanelHtml = html;
+    region.innerHTML = html;
+    bindSessionButtons();
+    if (focused) region.querySelector(`[data-session-action="${focused}"]`)?.focus();
+  }
+
+  function patchCell(cell) {
+    const node = body.querySelector(`[data-cell="${CSS.escape(cellKey(cell))}"]`);
+    if (!node) return;
+    const displayState = cellDisplayState(cell);
+    const meta = STATE_META[displayState] || STATE_META.running;
+    const value = TERMINAL_CELL_STATUSES.has(cell.status) ? 100 : percent(cell.progress_percent);
+    node.className = `matrix-cell ${stateClass(displayState)}`;
+    const label = node.querySelector("[data-cell-label]");
+    const nextLabel = `${icon(meta.icon, cell.status === "running" ? "icon icon--spin" : "icon")}${meta.label}`;
+    if (label.dataset.render !== nextLabel) {
+      label.innerHTML = nextLabel;
+      label.dataset.render = nextLabel;
+    }
+    const detail = node.querySelector("[data-cell-detail]");
+    const nextDetail = cellDetail(cell, displayState);
+    if (detail.textContent !== nextDetail) detail.textContent = nextDetail;
+    const bar = node.querySelector("[data-cell-progress]");
+    if (Number(bar.value) !== value) {
+      bar.value = value;
+      bar.setAttribute("aria-label", `${meta.label}: ${value}%`);
+    }
   }
 
   function renderProgress(job) {
@@ -609,44 +887,55 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       renderAuditProgress(job);
       return;
     }
-    const focused = body.contains(document.activeElement) ? document.activeElement.dataset.sessionAction : null;
-    const dashboard = getDashboard();
-    const clients = new Map((dashboard?.clients || []).map((client) => [String(client.client_id), client.name]));
     const cells = job.cells || [];
     const clientIds = [...new Set(cells.map((cell) => String(cell.client_id)))];
     const providers = PROVIDER_ORDER.filter((provider) => cells.some((cell) => cell.provider === provider));
+    const { titleText, subtitleText } = progressHeadings(job, cells);
+    if (title.textContent !== titleText) title.textContent = titleText;
+    if (subtitle.textContent !== subtitleText) subtitle.textContent = subtitleText;
+
+    const nextKey = structureKeyOf(job, clientIds, providers);
+    if (nextKey !== structureKey) {
+      structureKey = nextKey;
+      buildProgress(job, cells, clientIds, providers);
+    } else {
+      patchSessionPanel(job);
+    }
+
     const progressValue = percent(job.progress_percent);
-    const state = STATE_META[job.status] || STATE_META.running;
-    title.textContent = terminalTitle(job);
-    // A lane parked on `awaiting_auth` still aggregates to a job-level
-    // `queued` — truthful (it really is waiting), but «Queued» reads as "not
-    // started yet" when the run is actually blocked on the operator.
-    const awaitingAuth = cells.some((cell) => cell.status === "awaiting_auth");
-    subtitle.textContent = isTerminal(job.status) && hasCollectionIssues(cells)
-      ? "Collected data has been saved. Review cells with collection errors."
-      : isTerminal(job.status) && hasSetupCells(cells)
-        ? "Connected integrations collected successfully. Some clients still need a connection."
-      : awaitingAuth
-        ? "Collection paused: a service login is required."
-        : state.label;
-    body.innerHTML = `
-      ${renderSessionStagePanel(job, () => { if (dialog.open) renderProgress(currentJob); })}
-      <div class="progress-overview">
-        <span class="progress-number">${progressValue}%</span>
-        <div><progress class="progress-track" max="100" value="${progressValue}" aria-label="Overall progress: ${progressValue}%"></progress><div class="progress-copy">${progressSummary(cells)}</div></div>
-      </div>
-      ${clientIds.length ? `<div class="matrix-wrap"><table class="progress-matrix"><thead><tr><th scope="col">Client</th>${providers.map((provider) => `<th scope="col">${PROVIDERS[provider].label}</th>`).join("")}</tr></thead><tbody>${clientIds.map((clientId) => `<tr><td>${clients.get(clientId) || clientId}</td>${providers.map((provider) => matrixCell(cells.find((cell) => String(cell.client_id) === clientId && cell.provider === provider))).join("")}</tr>`).join("")}</tbody></table></div>` : `<div class="state-panel"><p><strong>Building the queue.</strong><br>The table will appear once the server responds.</p></div>`}`;
-    footer.innerHTML = footerActions(job);
-    footer.querySelector("[data-close]")?.addEventListener("click", () => dialog.close());
-    footer.querySelector("[data-cancel]")?.addEventListener("click", () => cancelJob());
-    footer.querySelector("[data-retry]")?.addEventListener("click", () => retryFailed());
-    body.querySelectorAll("[data-session-action]").forEach((button) => {
-      button.addEventListener("click", () => {
-        if (button.getAttribute("aria-disabled") === "true") return;
-        handleLoginClick(button.dataset.sessionAction);
-      });
-    });
-    if (focused) body.querySelector(`[data-session-action="${focused}"]`)?.focus();
+    const number = body.querySelector("[data-progress-number]");
+    if (number) number.textContent = `${progressValue}%`;
+    const track = body.querySelector("[data-progress-track]");
+    if (track && Number(track.value) !== progressValue) {
+      track.value = progressValue;
+      track.setAttribute("aria-label", `Overall progress: ${progressValue}%`);
+    }
+    const copy = body.querySelector("[data-progress-copy]");
+    if (copy) copy.textContent = progressSummary(cells);
+    const eta = body.querySelector("[data-progress-eta]");
+    if (eta) eta.textContent = etaCopy(cells);
+    const clockWrap = body.querySelector("[data-run-clock-wrap]");
+    const started = runStartedAt(cells);
+    if (clockWrap) {
+      const live = !isTerminal(job.status) && started !== null;
+      clockWrap.hidden = !live;
+      if (live) {
+        body.querySelector("[data-run-clock]").textContent = formatClock(Date.now() - started);
+        ensureClockTicking(() => currentJob?.cells || []);
+      } else {
+        stopClock();
+      }
+    }
+    cells.forEach(patchCell);
+
+    const nextFooter = footerActions(job);
+    if (nextFooter !== footerHtml) {
+      footerHtml = nextFooter;
+      footer.innerHTML = nextFooter;
+      footer.querySelector("[data-close]")?.addEventListener("click", () => dialog.close());
+      footer.querySelector("[data-cancel]")?.addEventListener("click", () => cancelJob());
+      footer.querySelector("[data-retry]")?.addEventListener("click", () => retryFailed());
+    }
   }
 
   async function handleLoginClick(provider) {
@@ -662,13 +951,17 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     if (dialog.open) renderProgress(currentJob);
   }
 
-  function matrixCell(cell) {
+  // `data-cell` is the patch anchor for live progress v2 — every value inside
+  // is addressed by its own `data-cell-*` hook so an update never has to
+  // re-create the node (see `patchCell`).
+  function matrixCell(cell, clientId, provider) {
     if (!cell) return `<td><span class="matrix-cell state-not_configured"><strong>— Not selected</strong></span></td>`;
     const displayState = cellDisplayState(cell);
     const meta = STATE_META[displayState] || STATE_META.running;
     const value = TERMINAL_CELL_STATUSES.has(cell.status) ? 100 : percent(cell.progress_percent);
     const iconMarkup = icon(meta.icon, cell.status === "running" ? "icon icon--spin" : "icon");
-    return `<td><div class="matrix-cell ${stateClass(displayState)}"><strong>${iconMarkup}${meta.label}</strong><small>${escapeHtml(cellDetail(cell, displayState))}</small><progress class="mini-progress" max="100" value="${value}" aria-label="${meta.label}: ${value}%"></progress></div></td>`;
+    const key = escapeHtml(`${clientId ?? cell.client_id}|${provider ?? cell.provider}`);
+    return `<td><div class="matrix-cell ${stateClass(displayState)}" data-cell="${key}"><strong data-cell-label>${iconMarkup}${meta.label}</strong><small data-cell-detail>${escapeHtml(cellDetail(cell, displayState))}</small><progress class="mini-progress" data-cell-progress max="100" value="${value}" aria-label="${meta.label}: ${value}%"></progress></div></td>`;
   }
 
   function progressSummary(cells) {
@@ -735,5 +1028,5 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
   }
 
   if (active?.id) beginWatch();
-  return { openSelection, openAuditSelection };
+  return { openSelection, openAuditSelection, openMetricsRefresh, hasActiveJob: () => Boolean(active?.id) };
 }

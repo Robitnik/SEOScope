@@ -2,16 +2,18 @@
 // portfolio for a single daily metric (GSC clicks/impressions, GA4
 // sessions/users). See docs/dev/done/task-28-portfolio-trends-page.md.
 //
-// The page never triggers collection — it only reads whatever day-level
-// history the routine sync (or the `backfill-daily-history` CLI) already
-// stored. An empty result is a normal, well-explained state (§5), not a
-// failure.
+// Reading stays read-only: the chart renders whatever day-level history is
+// already stored, and an empty result is a normal, well-explained state (§5),
+// not a failure. task-30 adds the one thing that was missing — telling the
+// operator HOW STALE that history is and letting them start the rolling-window
+// collection that fixes it, without leaving the page for a CLI.
 
-import { getPortfolioSeries, isAbortError } from "./api.js?v=20260727-trends1";
-import { buildTrendsHash, replaceTrendsHash } from "./router.js?v=20260727-trends1";
-import { STATE_META, escapeHtml, icon, stateClass } from "./formatters.js?v=20260727-trends1";
-import { sectionSkeleton } from "./skeleton.js?v=20260727-trends1";
-import { filterByClientGroup } from "./client-groups.js?v=20260727-trends1";
+import { getPortfolioSeries, isAbortError } from "./api.js?v=20260731-refresh1";
+import { buildTrendsHash, replaceTrendsHash } from "./router.js?v=20260731-refresh1";
+import { STATE_META, escapeHtml, icon, stateClass } from "./formatters.js?v=20260731-refresh1";
+import { sectionSkeleton } from "./skeleton.js?v=20260731-refresh1";
+import { filterByClientGroup } from "./client-groups.js?v=20260731-refresh1";
+import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260731-refresh1";
 import {
   MAX_SERIES,
   buildSummary,
@@ -20,7 +22,16 @@ import {
   destroyTrendsChart,
   renderLineChart,
   renderSparklineGrid,
-} from "./trends-chart.js?v=20260727-trends1";
+} from "./trends-chart.js?v=20260731-refresh1";
+
+// Both daily datasets behind this page's four metrics (`gsc_daily`,
+// `ga4_daily`) are refreshed together: the operator asks "make this page
+// current", not "make this one series current", and re-collecting one provider
+// would leave the other three metrics visibly behind.
+const REFRESH_PROVIDERS = ["gsc", "reporting_ninja"];
+const REFRESH_WINDOWS = [14, 30, 90];
+const DEFAULT_REFRESH_WINDOW = 30;
+const DAY_MS = 86_400_000;
 
 const root = document.querySelector("#trends-page-root");
 
@@ -100,6 +111,7 @@ function shell() {
       <p class="eyebrow">Portfolio / Trends</p>
       <h1>Client Trends</h1>
       <p class="trends-lead">Every client, one metric, side by side — who is growing and who needs a look this week.</p>
+      <div class="trends-freshness" id="tr-freshness" aria-live="polite"></div>
     </header>
 
     <section class="trends-toolbar" aria-label="Trend controls">
@@ -160,6 +172,98 @@ function bindControls() {
   });
 }
 
+// --- Freshness + refresh (task-30) -----------------------------------------
+
+function parseDay(value) {
+  const parsed = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatDay(value) {
+  return new Date(`${value}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+/** How current the stored history is, judged against what the SOURCE can
+ * actually have finalized by now — not against today. GSC revises its last
+ * ~3 days and GA4 its last ~2 (`lag_days`), so "yesterday is missing" is the
+ * normal state of a healthy series, and calling that "1 day behind" would make
+ * the chip permanently red for no reason. */
+function freshnessOf(payload, visibleSeries) {
+  const days = visibleSeries.map((item) => item.last_day).filter(Boolean).map(parseDay).filter((value) => value !== null);
+  if (!days.length) return { state: "no_data", dataThrough: null, daysBehind: null };
+  const dataThrough = Math.max(...days);
+  const lagDays = Number(payload.metric?.lag_days ?? 0);
+  const expected = Date.parse(`${new Date(Date.now() - DAY_MS).toISOString().slice(0, 10)}T00:00:00Z`) - lagDays * DAY_MS;
+  const daysBehind = Math.max(0, Math.round((expected - dataThrough) / DAY_MS));
+  return {
+    state: daysBehind === 0 ? "current" : daysBehind <= 2 ? "lagging" : "stale",
+    dataThrough: new Date(dataThrough).toISOString().slice(0, 10),
+    daysBehind,
+  };
+}
+
+function refreshableClientIds(payload, group) {
+  // Everything the page could plot for this metric: clients already in the
+  // chart plus clients that have the integration but no rows yet. A
+  // `not_configured` client is deliberately left out — its cell would resolve
+  // to `not_configured` and add noise to the progress matrix without ever
+  // producing a data point.
+  const inChart = filterByClientGroup(payload.series || [], group).map((item) => item.client_id);
+  const noData = filterByClientGroup((payload.excluded || []).filter((item) => item.state === "no_data"), group)
+    .map((item) => item.client_id);
+  return [...new Set([...inChart, ...noData])];
+}
+
+function clientDirectory(payload) {
+  return [...(payload.series || []), ...(payload.excluded || [])].map((item) => ({
+    client_id: item.client_id,
+    name: item.name,
+    domain: item.domain,
+  }));
+}
+
+function renderFreshness(payload) {
+  const host = root.querySelector("#tr-freshness");
+  const visible = filterByClientGroup(payload.series || [], current.group);
+  const freshness = freshnessOf(payload, visible);
+  const clientIds = refreshableClientIds(payload, current.group);
+  const chip = freshness.state === "no_data"
+    ? `<span class="freshness-chip freshness-chip--stale">${icon("cloud-off", "icon icon--tiny")}No daily history collected</span>`
+    : `<span class="freshness-chip freshness-chip--${freshness.state}">${icon(freshness.state === "current" ? "circle-check" : "clock-exclamation", "icon icon--tiny")}Data through ${escapeHtml(formatDay(freshness.dataThrough))}${freshness.daysBehind === 0 ? " · up to date" : ` · ${freshness.daysBehind} ${freshness.daysBehind === 1 ? "day" : "days"} behind`}</span>`;
+  host.innerHTML = `
+    ${chip}
+    <div class="trends-refresh">
+      <label class="trends-refresh__window">
+        <span class="visually-hidden">Refresh window</span>
+        <select id="tr-window">${REFRESH_WINDOWS.map((days) => `<option value="${days}" ${days === DEFAULT_REFRESH_WINDOW ? "selected" : ""}>Last ${days} days</option>`).join("")}</select>
+      </label>
+      <button type="button" class="button button--primary" id="tr-refresh" ${clientIds.length ? "" : "disabled"}>${icon("refresh")}Refresh data</button>
+    </div>
+    <p class="trends-refresh__note">Collects day-level Search Console and GA4 history. GSC finalizes its last 3 days and GA4 its last 2, so the newest buckets stay provisional.</p>`;
+  host.querySelector("#tr-refresh")?.addEventListener("click", (event) => startRefresh(payload, event.currentTarget));
+}
+
+function startRefresh(payload, trigger) {
+  const clientIds = refreshableClientIds(payload, current.group);
+  if (!clientIds.length) {
+    showToast("No client on this page has a connected Search Console or GA4 integration.");
+    return;
+  }
+  const windowDays = Number(root.querySelector("#tr-window")?.value) || DEFAULT_REFRESH_WINDOW;
+  // The modal names clients and (in fixture mode) builds its cells from this;
+  // the trends page has no dashboard payload, so it supplies the same shape
+  // from what it already knows about the portfolio.
+  configureJobProgress({
+    getDashboard: () => ({ clients: clientDirectory(payload), period_kind: "custom" }),
+    onFinished: async () => {
+      showToast("Trend data updated.");
+      await load({ quiet: true });
+    },
+    onToast: showToast,
+  });
+  getJobProgress().openMetricsRefresh({ clientIds, providers: REFRESH_PROVIDERS, windowDays, trigger });
+}
+
 function totalOf(series) {
   return series.points.reduce((sum, point) => sum + (point.value === null ? 0 : Number(point.value)), 0);
 }
@@ -171,19 +275,30 @@ function lastFinishedBucketIndex(buckets) {
   return -1;
 }
 
-async function load() {
+// `quiet` reloads keep the current chart on screen while the new payload is
+// fetched (used after a refresh run finishes): swapping a rendered chart for a
+// skeleton and back would throw away scroll position and read as a failure
+// even though nothing went wrong.
+async function load({ quiet = false } = {}) {
   const token = ++requestToken;
   const content = root.querySelector("#tr-content");
-  content.setAttribute("aria-busy", "true");
-  content.innerHTML = sectionSkeleton({ label: "portfolio trends", chart: true, rows: 6, columns: 5 });
-  destroyTrendsChart();
-  destroySparklines();
+  if (!quiet) {
+    content.setAttribute("aria-busy", "true");
+    content.innerHTML = sectionSkeleton({ label: "portfolio trends", chart: true, rows: 6, columns: 5 });
+    destroyTrendsChart();
+    destroySparklines();
+  }
 
   try {
     const payload = await getPortfolioSeries({ metric: current.metric, bucket: current.bucket, days: current.days });
     if (token !== requestToken) return;
     content.setAttribute("aria-busy", "false");
     lastPayload = payload;
+    renderFreshness(payload);
+    if (quiet) {
+      destroyTrendsChart();
+      destroySparklines();
+    }
     renderContent(content, payload);
   } catch (error) {
     if (isAbortError(error)) return;

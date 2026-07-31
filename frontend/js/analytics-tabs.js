@@ -1,5 +1,5 @@
-import { escapeHtml, icon } from "./formatters.js?v=20260724-blogs1";
-import { formatUaCtr, formatUaDelta, formatUaNumber, formatUaPosition } from "./client-page.js?v=20260724-blogs1";
+import { escapeHtml, icon } from "./formatters.js?v=20260731-refresh1";
+import { formatUaCtr, formatUaDelta, formatUaNumber, formatUaPosition } from "./client-page.js?v=20260731-refresh1";
 
 const PAGE_SIZE = 20;
 const SORT_OPTIONS = [

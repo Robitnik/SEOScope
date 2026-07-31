@@ -848,6 +848,12 @@ class PortfolioMetricDTO(BaseModel):
     better_direction: BetterDirection
     dataset_key: str
     field: str
+    # Added by task-30: how many trailing days this source still revises (GSC
+    # ~3, GA4 ~2 — `app.metrics.portfolio.SeriesSpec.lag_days`). `buckets[]`
+    # only carries the resulting `provisional` flag, so a consumer that must
+    # say "up to date" vs "N days behind" honestly — the trends page's
+    # freshness chip — cannot derive this number from the payload otherwise.
+    lag_days: int = 0
 
 
 class PortfolioBucketDTO(BaseModel):

@@ -1,11 +1,11 @@
-import { getDashboard, updateIntegration } from "./api.js?v=20260724-bulkaudit2";
-import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260724-blogs1";
-import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260724-bulkaudit2";
-import { createDetailDrawer } from "./detail-drawer.js?v=20260724-blogs1";
-import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260724-bulkaudit2";
-import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260724-blogs1";
-import { getState, setState } from "./store.js?v=20260724-blogs1";
-import { createSyncModal } from "./sync-modal.js?v=20260724-bulkaudit2";
+import { getDashboard, updateIntegration } from "./api.js?v=20260731-refresh1";
+import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260731-refresh1";
+import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260731-refresh1";
+import { createDetailDrawer } from "./detail-drawer.js?v=20260731-refresh1";
+import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260731-refresh1";
+import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260731-refresh1";
+import { getState, setState } from "./store.js?v=20260731-refresh1";
+import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260731-refresh1";
 
 const grid = document.querySelector("#client-grid");
 const dashboardState = document.querySelector("#dashboard-state");
@@ -33,7 +33,9 @@ const sortSelect = document.querySelector("#sort-select");
 sortSelect.addEventListener("change", () => { setState({ sort: sortSelect.value }, { persist: true }); loadDashboard(); });
 
 const detailDrawer = createDetailDrawer({ onError: () => setConnection("offline") });
-const syncModal = createSyncModal({
+// The dialog itself is owned by `job-progress.js` (one instance for the whole
+// app — see that module); this page only contributes its own callbacks.
+configureJobProgress({
   getDashboard: () => getState().dashboard,
   onFinished: async (job) => {
     await loadDashboard({ quiet: true });
@@ -42,6 +44,7 @@ const syncModal = createSyncModal({
   },
   onToast: toast,
 });
+const syncModal = getJobProgress();
 
 function setConnection(state) {
   const element = document.querySelector("#connection-status");
@@ -126,13 +129,9 @@ function clearFilters() {
   loadDashboard();
 }
 
+// One implementation, shared with every other page through `job-progress.js`.
 function toast(message) {
-  const region = document.querySelector("#toast-region");
-  const element = document.createElement("div");
-  element.className = "toast-message";
-  element.textContent = message;
-  region.append(element);
-  setTimeout(() => element.remove(), 4200);
+  showToast(message);
 }
 
 // Copies the button's `data-copy` text and confirms without stealing focus:

@@ -1,13 +1,13 @@
-import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, isAbortError, isFixtureMode } from "./api.js?v=20260724-bulkaudit2";
-import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260726-loading1";
-import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260724-blogs1";
-import { buildAhrefsHash, buildBlogsHash, replaceClientHash } from "./router.js?v=20260724-bulkaudit2";
-import { escapeHtml, formatTimestamp, icon, initials, isTerminal, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260724-bulkaudit2";
-import { createAnalyticsTab } from "./analytics-tabs.js?v=20260724-blogs1";
-import { renderAlertsBlock } from "./alerts-block.js?v=20260724-blogs1";
-import { renderChart, destroyChart } from "./charts.js?v=20260724-blogs1";
-import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260724-blogs1";
-import { watchJob } from "./sse.js?v=20260724-blogs1";
+import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, isAbortError, isFixtureMode } from "./api.js?v=20260731-refresh1";
+import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260731-refresh1";
+import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260731-refresh1";
+import { buildAhrefsHash, buildBlogsHash, replaceClientHash } from "./router.js?v=20260731-refresh1";
+import { escapeHtml, formatTimestamp, icon, initials, isTerminal, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260731-refresh1";
+import { createAnalyticsTab } from "./analytics-tabs.js?v=20260731-refresh1";
+import { renderAlertsBlock } from "./alerts-block.js?v=20260731-refresh1";
+import { renderChart, destroyChart } from "./charts.js?v=20260731-refresh1";
+import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260731-refresh1";
+import { watchJob } from "./sse.js?v=20260731-refresh1";
 
 const PERIODS = [
   { key: "week", label: "Week" },

@@ -3172,6 +3172,11 @@
             "title": "Label",
             "type": "string"
           },
+          "lag_days": {
+            "default": 0,
+            "title": "Lag Days",
+            "type": "integer"
+          },
           "provider": {
             "$ref": "#/components/schemas/Provider"
           },
