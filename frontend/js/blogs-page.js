@@ -1,9 +1,9 @@
-import { getBlogsLatest, getBlogsPosts, getDashboard, blogsExportCsvUrl, blogsExportXlsxUrl, startBlogsRun, isAbortError } from "./api.js?v=20260803-progress2";
-import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260803-progress2";
-import { buildClientHash, replaceBlogsHash } from "./router.js?v=20260803-progress2";
-import { escapeHtml, formatTimestamp, icon, initials, PROVIDERS, STAGE_LABELS, STATE_META, percent, stateClass } from "./formatters.js?v=20260803-progress2";
-import { renderBlogsError, renderBlogsPanel } from "./blogs-panel.js?v=20260803-progress2";
-import { watchJob } from "./sse.js?v=20260803-progress2";
+import { getBlogsLatest, getBlogsPosts, getDashboard, blogsExportCsvUrl, blogsExportXlsxUrl, startBlogsRun, isAbortError } from "./api.js?v=20260803-connect1";
+import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260803-connect1";
+import { buildClientHash, replaceBlogsHash } from "./router.js?v=20260803-connect1";
+import { escapeHtml, formatTimestamp, icon, initials, PROVIDERS, STAGE_LABELS, STATE_META, percent, stateClass } from "./formatters.js?v=20260803-connect1";
+import { renderBlogsError, renderBlogsPanel } from "./blogs-panel.js?v=20260803-connect1";
+import { watchJob } from "./sse.js?v=20260803-connect1";
 
 const root = document.querySelector("#blogs-page-root");
 let requestToken = 0;

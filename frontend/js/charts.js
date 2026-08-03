@@ -1,5 +1,5 @@
-import { escapeHtml } from "./formatters.js?v=20260803-progress2";
-import { formatUaNumber, formatUaRange } from "./client-page.js?v=20260803-progress2";
+import { escapeHtml } from "./formatters.js?v=20260803-connect1";
+import { formatUaNumber, formatUaRange } from "./client-page.js?v=20260803-connect1";
 
 const uaShortDay = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short" });
 const uaShortMonth = new Intl.DateTimeFormat("en-US", { month: "short" });

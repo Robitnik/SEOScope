@@ -1,5 +1,5 @@
-import { escapeHtml, formatDate, formatTimestamp, icon } from "./formatters.js?v=20260803-progress2";
-import { formatUaNumber } from "./client-page.js?v=20260803-progress2";
+import { escapeHtml, formatDate, formatTimestamp, icon } from "./formatters.js?v=20260803-connect1";
+import { formatUaNumber } from "./client-page.js?v=20260803-connect1";
 
 const SORTS = [
   ["date_desc", "Newest first"],
