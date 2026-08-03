@@ -289,3 +289,20 @@ docker compose exec api curl -s -X POST \
 - **GSC-прогалини не закриваються автоматично:** `alphastyle.store`, `laxton.se`, `goreport.com` не мають Search Console property в Reporting Ninja — це дані, а не код. UI тепер каже про це прямо.
 - **Докстрінг `tests/unit/api/test_openapi_snapshot.py` застарів:** радить `python -m tests.unit.api.test_openapi_snapshot`, але `tests/unit` не пакет; робоча форма — `python tests/unit/api/test_openapi_snapshot.py`.
 - **e2e прогнати не вдалося:** node-харнес потребує `playwright-core`, якого в середовищі немає. Еквівалент перевірено Python-Playwright у контейнері (він і зловив баг із фокусом на прихованому полі).
+
+---
+
+## Доповнення (2026-08-03, після живої перевірки)
+
+Три речі, які виявились лише на реальних даних:
+
+1. **Кеш-бастер.** Розмітка діалогу поїхала в `index.html`, а `dashboard.js`/`api.js` лишились на тому самому `?v=` — клієнт зі старими модулями малював нову розмітку старим скриптом. Headless-перевірки цього не ловлять принципово: кожен запуск стартує з порожнім кешем. **Правило: будь-яка зміна у `frontend/` вимагає підняття `?v=` у всіх файлах.**
+
+2. **`laxton.se` є в Google Search Console, але не в Reporting Ninja.** З'єднання `seo@theyovth.com` (status `active`, без пагінації) віддає рівно 22 property, і його серед них немає — при тому що GA4-бік того ж з'єднання Laxton бачить. Це дані, а не код: property треба поділити з цим Google-акаунтом і оновити з'єднання в Ninja. Порожнє «No account matches» змушувало думати, що зламався інструмент, тож звіт тепер називає з'єднання, кількість видимих акаунтів і справжню наступну дію.
+
+3. **Список інвентарю створив нову небезпеку.** Показавши всі 22 property, перший рядок опинявся позначеним — а це був `rockwellandrose.com` зі схожістю 0.38. Один клік на Connect прив'язав би LAXTON до чужого сайту. Тому: преселект лише для не-`weak` кандидата, а `IntegrationCandidate.suggested` розділяє «правдоподібні» (показуються одразу) від «інвентар» (за кнопкою «Show all N accounts» і через пошук).
+
+Пошук навмисно шукає по **всьому** інвентарю, а не лише по показаному: змушувати оператора спершу тиснути «show all», щоб знайти назву, яку він і так знає, — зайва робота.
+
+### Додаткові тести
+`test_gsc_miss_names_the_connection_and_shows_its_inventory`, `test_plausible_candidates_are_suggested_but_the_rest_is_inventory`, `test_gsc_related_subdomain_stays_suggested`. Разом: `1088 passed, 1 skipped`.

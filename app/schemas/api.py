@@ -303,6 +303,10 @@ class IntegrationCandidateDTO(BaseModel):
     reason: str
     source_mode: SourceMode
     integration_config: dict[str, Any] = {}
+    # `False` means "part of the connection's inventory, not a plausible match".
+    # The UI shows suggested candidates up front and keeps the rest behind a
+    # "show all" toggle and the search box.
+    suggested: bool = True
 
 
 class IntegrationDiscoveryDTO(BaseModel):

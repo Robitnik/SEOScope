@@ -1,5 +1,5 @@
-import { escapeHtml, icon } from "./formatters.js?v=20260803-connect2";
-import { formatUaDelta, formatUaNumber, formatUaPercent, formatUaRange } from "./client-page.js?v=20260803-connect2";
+import { escapeHtml, icon } from "./formatters.js?v=20260803-connect4";
+import { formatUaDelta, formatUaNumber, formatUaPercent, formatUaRange } from "./client-page.js?v=20260803-connect4";
 
 const SKIP_REASON_COPY = {
   missing_period_data: "GSC dimensional data has not been collected for one of the two periods yet.",

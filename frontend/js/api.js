@@ -554,8 +554,8 @@ function fixtureDiscovery(clientId, provider) {
       message: "Several GA4 accounts could match this domain. Pick the right one.",
       applied: null, preflight: null,
       candidates: [
-        { label: "Acme Corp - GA4", detail: "properties/111", confidence: "strong", reason: "name similarity 0.94", source_mode: "auto", integration_config: { connection_key: "seo@example.com", account_id: "properties/111" } },
-        { label: "Acme Corp (old)", detail: "properties/222", confidence: "weak", reason: "name similarity 0.71", source_mode: "auto", integration_config: { connection_key: "seo@example.com", account_id: "properties/222" } },
+        { label: "Acme Corp - GA4", detail: "properties/111", confidence: "strong", reason: "name similarity 0.94", suggested: true, source_mode: "auto", integration_config: { connection_key: "seo@example.com", account_id: "properties/111" } },
+        { label: "Acme Corp (old)", detail: "properties/222", confidence: "weak", reason: "name similarity 0.71", suggested: true, source_mode: "auto", integration_config: { connection_key: "seo@example.com", account_id: "properties/222" } },
       ],
     };
   }

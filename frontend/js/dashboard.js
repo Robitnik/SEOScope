@@ -1,11 +1,11 @@
-import { discoverIntegration, getDashboard, updateIntegration } from "./api.js?v=20260803-connect2";
-import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260803-connect2";
-import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260803-connect2";
-import { createDetailDrawer } from "./detail-drawer.js?v=20260803-connect2";
-import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260803-connect2";
-import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260803-connect2";
-import { getState, setState } from "./store.js?v=20260803-connect2";
-import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260803-connect2";
+import { discoverIntegration, getDashboard, updateIntegration } from "./api.js?v=20260803-connect4";
+import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260803-connect4";
+import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260803-connect4";
+import { createDetailDrawer } from "./detail-drawer.js?v=20260803-connect4";
+import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260803-connect4";
+import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260803-connect4";
+import { getState, setState } from "./store.js?v=20260803-connect4";
+import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260803-connect4";
 
 const grid = document.querySelector("#client-grid");
 const dashboardState = document.querySelector("#dashboard-state");
@@ -238,6 +238,9 @@ const discoveryStatus = document.querySelector("#integration-status");
 const discoveryDetail = document.querySelector("#integration-detail");
 const discoveryChoices = document.querySelector("#integration-choices");
 const discoveryChoiceList = document.querySelector("#integration-choice-list");
+const discoveryChoiceEmpty = document.querySelector("#integration-choice-empty");
+const discoverySearch = document.querySelector("#integration-search");
+const discoveryShowAll = document.querySelector("#integration-show-all");
 const manualBlock = document.querySelector("#integration-manual");
 const manualToggle = document.querySelector("#integration-manual-toggle");
 const connectButton = document.querySelector("#integration-connect");
@@ -265,20 +268,64 @@ function renderDiscoveryDetail(rows) {
   discoveryDetail.hidden = !rows.length;
 }
 
-function renderCandidates(candidates) {
+// The provider can expose dozens of accounts. Only plausible ones are listed up
+// front; the rest stay behind "show all" and the search box, so a genuine match
+// is not buried under twenty unrelated properties.
+let candidateView = { all: [], showAll: false, query: "" };
+
+function visibleCandidates() {
+  const { all, showAll, query } = candidateView;
+  const needle = query.trim().toLowerCase();
+  // Typing searches the whole inventory: making the operator press "show all"
+  // before they can search for a name they already know would be busywork.
+  // `!== false` rather than a truthy check: the DTO defaults `suggested` to
+  // true, so an absent field means "show it", not "hide it".
+  const pool = showAll || needle ? all : all.filter((candidate) => candidate.suggested !== false);
+  if (!needle) return pool;
+  return pool.filter((candidate) => `${candidate.label} ${candidate.detail}`.toLowerCase().includes(needle));
+}
+
+function renderCandidateList() {
+  const visible = visibleCandidates();
   // Preselect only a candidate we actually believe in. When nothing matched,
   // the list is just the connection's inventory — checking its first row would
   // invite a one-click connection to an unrelated property.
-  const preselect = candidates[0] && candidates[0].confidence !== "weak" ? 0 : -1;
-  discoveryChoiceList.innerHTML = candidates.map((candidate, index) => `
+  const preselect = visible[0] && visible[0].confidence !== "weak" ? visible[0].index : -1;
+  discoveryChoiceList.innerHTML = visible.map((candidate) => `
     <label class="choice">
-      <input type="radio" name="integration-candidate" value="${index}"${index === preselect ? " checked" : ""}>
+      <input type="radio" name="integration-candidate" value="${candidate.index}"${candidate.index === preselect ? " checked" : ""}>
       <span class="choice__body">
         <strong>${escapeHtml(candidate.label)}</strong>
         <small>${escapeHtml(candidate.detail)} · ${escapeHtml(candidate.reason)}</small>
       </span>
       <span class="choice__badge confidence-${candidate.confidence}">${escapeHtml(CONFIDENCE_LABEL[candidate.confidence] || candidate.confidence)}</span>
     </label>`).join("");
+
+  const hiddenCount = candidateView.all.filter((item) => item.suggested === false).length;
+  discoveryShowAll.hidden = hiddenCount === 0;
+  discoveryShowAll.textContent = candidateView.showAll
+    ? "Show likely matches only"
+    : `Show all ${candidateView.all.length} accounts`;
+  discoveryShowAll.setAttribute("aria-expanded", String(candidateView.showAll));
+
+  discoveryChoiceEmpty.hidden = visible.length > 0;
+  if (!visible.length) {
+    discoveryChoiceEmpty.textContent = candidateView.query.trim()
+      ? `No account matches “${candidateView.query.trim()}”.`
+      : "No likely match — search, or show all accounts in this connection.";
+  }
+}
+
+function renderCandidates(candidates) {
+  // The index is carried on the candidate because filtering reorders the list,
+  // while the radio value has to keep pointing at the original entry.
+  candidateView = {
+    all: candidates.map((candidate, index) => ({ ...candidate, index })),
+    showAll: false,
+    query: "",
+  };
+  discoverySearch.value = "";
+  renderCandidateList();
   discoveryChoices.hidden = false;
 }
 
@@ -364,6 +411,15 @@ async function openIntegration(client, provider, trigger) {
 }
 
 manualToggle.addEventListener("click", showManualEntry);
+
+discoverySearch.addEventListener("input", () => {
+  candidateView.query = discoverySearch.value;
+  renderCandidateList();
+});
+discoveryShowAll.addEventListener("click", () => {
+  candidateView.showAll = !candidateView.showAll;
+  renderCandidateList();
+});
 
 connectButton.addEventListener("click", async () => {
   const selected = discoveryChoiceList.querySelector("input:checked");

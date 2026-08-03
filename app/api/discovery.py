@@ -61,6 +61,7 @@ def _to_candidate_dto(candidate: IntegrationCandidate) -> IntegrationCandidateDT
         reason=candidate.reason,
         source_mode=candidate.source_mode,
         integration_config=dict(candidate.integration_config),
+        suggested=candidate.suggested,
     )
 
 

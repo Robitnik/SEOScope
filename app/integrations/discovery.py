@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from typing import Any, Literal
 
@@ -40,8 +40,9 @@ GA4_INTEGRATION_ID = "ga4"
 _STRONG_SCORE = 0.92
 _WEAK_SCORE = 0.55
 _AUTO_MARGIN = 0.15
-_MAX_SCORED_CANDIDATES = 8
-_MAX_FALLBACK_CANDIDATES = 25
+# Інвентар з'єднання цілком: фронт показує правдоподібні одразу, решту — за
+# кнопкою і через пошук, тож обрізати список немає сенсу (у Ninja їх ~30).
+_MAX_INVENTORY = 100
 
 # Входження коротшого рядка в довший рахуємо окремим сигналом, але лише від цієї
 # довжини — інакше «nyc» збігалося б із половиною ростера.
@@ -91,6 +92,10 @@ class IntegrationCandidate:
     score: float
     source_mode: SourceMode
     integration_config: dict[str, Any]
+    # Чи варто показувати цей варіант одразу. `False` — це просто інвентар
+    # з'єднання: він потрібен, щоб оператор бачив, що взагалі доступне, але
+    # вивалювати 20+ нерелевантних рядків за замовчуванням не можна.
+    suggested: bool = True
     # Пряма ознака, а не статистична схожість: явний аліас або назва акаунта,
     # що сама резолвиться в домен клієнта. Такий збіг застосовується попри
     # наявність не менш схожого сусіда — інакше «19 Cleveland» програвало б
@@ -323,13 +328,14 @@ def _gsc_candidates(
                 score=max(score, _WEAK_SCORE) if related else score,
                 source_mode=SourceMode.api,
                 integration_config=config,
+                suggested=related,
             )
         )
 
     if exact is not None:
         return [exact]
     others.sort(key=lambda candidate: candidate.score, reverse=True)
-    return others[:_MAX_FALLBACK_CANDIDATES]
+    return others[:_MAX_INVENTORY]
 
 
 def _ga4_candidates(
@@ -368,13 +374,14 @@ def _ga4_candidates(
         )
 
     # Рішучі збіги — першими серед рівних за score.
+    # Рішучі збіги — першими серед рівних за score.
     scored.sort(key=lambda candidate: (candidate.score, candidate.decisive), reverse=True)
-    relevant = [candidate for candidate in scored if candidate.score >= _WEAK_SCORE]
-    if relevant:
-        return relevant[:_MAX_SCORED_CANDIDATES]
-    # Нічого правдоподібного — все одно віддаємо список, відсортований за
-    # схожістю, щоб оператор обрав руками. Глухого кута не буває (AGENTS §6).
-    return scored[:_MAX_FALLBACK_CANDIDATES]
+    # Правдоподібні показуємо одразу, решту віддаємо як інвентар за кнопкою
+    # «show all» — глухого кута не буває, але й стіни з 30 рядків теж.
+    return [
+        replace(candidate, suggested=candidate.score >= _WEAK_SCORE)
+        for candidate in scored[:_MAX_INVENTORY]
+    ]
 
 
 def best_ga4_account(

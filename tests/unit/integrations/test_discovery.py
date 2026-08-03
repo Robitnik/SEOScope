@@ -121,6 +121,45 @@ def test_gsc_miss_names_the_connection_and_shows_its_inventory(monkeypatch):
         "sc-domain:nychearing.com",
     }
     assert all(c.confidence == "weak" for c in outcome.candidates)
+    # ...але позначений як «не пропозиція»: фронт тримає його за «show all»,
+    # інакше замість відповіді оператор отримує стіну з 22 чужих доменів.
+    assert all(c.suggested is False for c in outcome.candidates)
+
+
+def test_plausible_candidates_are_suggested_but_the_rest_is_inventory(monkeypatch):
+    """Розділення на «показати одразу» і «показати за кнопкою»."""
+    _patch_ninja(
+        monkeypatch,
+        _connections(
+            ("properties/1", "Laxton"),
+            ("properties/2", "Laxton Nordic"),
+            ("properties/3", "Completely Different Co"),
+        ),
+    )
+    monkeypatch.setattr(discovery, "GA4_ACCOUNT_ALIASES", {})
+
+    outcome = discover(Provider.reporting_ninja, domain="laxton.se", client_name="LAXTON")
+
+    by_label = {c.label: c for c in outcome.candidates}
+    assert by_label["Laxton"].suggested is True
+    assert by_label["Laxton Nordic"].suggested is True
+    assert by_label["Completely Different Co"].suggested is False
+
+
+def test_gsc_related_subdomain_stays_suggested(monkeypatch):
+    """Субдомен — правдоподібний варіант, його ховати за кнопкою не можна."""
+    _patch_ninja(
+        monkeypatch,
+        _connections(
+            ("sc-domain:blog.laxton.se", "blog.laxton.se"),
+            ("sc-domain:someoneelse.com", "someoneelse.com"),
+        ),
+    )
+    outcome = discover(Provider.gsc, domain="laxton.se", client_name="LAXTON")
+
+    by_label = {c.label: c for c in outcome.candidates}
+    assert by_label["sc-domain:blog.laxton.se"].suggested is True
+    assert by_label["sc-domain:someoneelse.com"].suggested is False
 
 
 def test_gsc_subdomain_is_offered_as_a_weak_candidate_not_auto_applied(monkeypatch):

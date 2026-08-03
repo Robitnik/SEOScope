@@ -2310,6 +2310,11 @@
           },
           "source_mode": {
             "$ref": "#/components/schemas/SourceMode"
+          },
+          "suggested": {
+            "default": true,
+            "title": "Suggested",
+            "type": "boolean"
           }
         },
         "required": [
