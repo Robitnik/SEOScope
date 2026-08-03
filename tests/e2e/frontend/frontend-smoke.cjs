@@ -90,7 +90,13 @@ async function main() {
   await page.locator("#clear-filters").click();
   await page.locator(".client-card").nth(3).waitFor();
 
+  // task-33: Connect looks the account up at the provider first. Manual entry
+  // is the fallback, revealed on demand, so no outcome is a dead end.
   await page.locator('.client-card[data-client-id="client-long-name"] [data-action="integrate"][data-provider="reporting_ninja"]').click();
+  await page.locator("#integration-choices .choice").first().waitFor();
+  assert.equal(await page.locator("[data-account-field]").first().isVisible(), false, "manual fields stay hidden while candidates are offered");
+  assert.equal(await page.locator("#integration-connect").isVisible(), true, "picking a candidate is the primary action");
+  await page.locator("#integration-manual-toggle").click();
   assert.equal(await page.locator('[name="domain"]').inputValue(), "advanced-restorative-implant-dentistry.example.com", "domain integration is prefilled from the client");
   assert.equal(await page.locator("[data-account-field]").first().isVisible(), true, "Reporting Ninja account field is shown");
   await page.locator("#integration-dialog [data-close]").first().click();
