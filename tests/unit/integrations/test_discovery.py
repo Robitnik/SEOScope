@@ -85,13 +85,42 @@ def test_gsc_config_matches_the_importer_shape(monkeypatch):
     }
 
 
-def test_gsc_unrelated_domain_is_not_matched(monkeypatch):
+def test_gsc_unrelated_domain_is_never_auto_applied(monkeypatch):
     _patch_ninja(monkeypatch, _connections(("sc-domain:someoneelse.com", "someoneelse.com")))
     outcome = discover(Provider.gsc, domain="laxton.se", client_name="LAXTON")
 
-    assert outcome.status == "not_found"
     assert outcome.auto_apply is None
-    assert outcome.candidates == []
+    assert outcome.status == "needs_choice"
+
+
+def test_gsc_miss_names_the_connection_and_shows_its_inventory(monkeypatch):
+    """Живий кейс: laxton.se є в Google Search Console, але не в Ninja.
+
+    Порожнє «not found» змушувало оператора думати, що зламався інструмент.
+    Звіт має назвати з'єднання, показати скільки property в ньому видно, і
+    підказати справжню дію — поділитися property й оновити з'єднання.
+    """
+    _patch_ninja(
+        monkeypatch,
+        _connections(
+            ("sc-domain:pjclarkes.com", "pjclarkes.com"),
+            ("sc-domain:nychearing.com", "nychearing.com"),
+            key="seo@theyovth.com",
+        ),
+    )
+    outcome = discover(Provider.gsc, domain="laxton.se", client_name="LAXTON")
+
+    assert outcome.status == "needs_choice"
+    assert outcome.auto_apply is None
+    assert "seo@theyovth.com" in outcome.message
+    assert "2 accounts" in outcome.message
+    assert "refresh the connection" in outcome.message
+    # Інвентар справді показаний, а не прихований.
+    assert {c.label for c in outcome.candidates} == {
+        "sc-domain:pjclarkes.com",
+        "sc-domain:nychearing.com",
+    }
+    assert all(c.confidence == "weak" for c in outcome.candidates)
 
 
 def test_gsc_subdomain_is_offered_as_a_weak_candidate_not_auto_applied(monkeypatch):

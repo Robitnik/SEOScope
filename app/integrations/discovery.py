@@ -280,7 +280,7 @@ def _gsc_candidates(
 
     exact: IntegrationCandidate | None = None
     exact_priority = -1
-    near: list[IntegrationCandidate] = []
+    others: list[IntegrationCandidate] = []
 
     for connection_key, account_id, _name in _iter_accounts(connections):
         account_domain = normalize_domain(account_id)
@@ -304,24 +304,32 @@ def _gsc_candidates(
                     source_mode=SourceMode.api,
                     integration_config=config,
                 )
-        elif target in account_domain or account_domain in target:
-            # Субдомен або навпаки: не той самий ресурс, але достатньо близький,
-            # щоб показати оператору замість глухого «not found».
-            near.append(
-                IntegrationCandidate(
-                    label=account_id,
-                    detail=connection_key,
-                    confidence="weak",
-                    reason=f"related domain ({account_domain})",
-                    score=_WEAK_SCORE,
-                    source_mode=SourceMode.api,
-                    integration_config=config,
-                )
+            continue
+        # Не збіг — але оператор має побачити, що саме з'єднання взагалі
+        # містить. Порожній список змушує його гадати, чи то інструмент
+        # зламався, чи то property справді немає (AGENTS §6).
+        related = target in account_domain or account_domain in target
+        score = _similarity(_name_key(account_domain), _name_key(target))
+        others.append(
+            IntegrationCandidate(
+                label=account_id,
+                detail=connection_key,
+                confidence="weak",
+                reason=(
+                    f"related domain ({account_domain})"
+                    if related
+                    else f"available in this connection · similarity {score:.2f}"
+                ),
+                score=max(score, _WEAK_SCORE) if related else score,
+                source_mode=SourceMode.api,
+                integration_config=config,
             )
+        )
 
     if exact is not None:
         return [exact]
-    return near[:_MAX_SCORED_CANDIDATES]
+    others.sort(key=lambda candidate: candidate.score, reverse=True)
+    return others[:_MAX_FALLBACK_CANDIDATES]
 
 
 def _ga4_candidates(
@@ -506,9 +514,28 @@ def discover(
             auto_apply=auto,
             message=f"Matched {label} account {auto.label}.",
         )
+
+    if any(candidate.score >= _STRONG_SCORE for candidate in candidates):
+        return DiscoveryOutcome(
+            status="needs_choice",
+            candidates=candidates,
+            auto_apply=None,
+            message=f"Several {label} accounts could match {domain}. Pick the right one.",
+        )
+
+    # Нічого правдоподібного. Найважливіше тут — сказати, ДЕ саме шукали і
+    # скільки всього видно: інакше оператор бачить у Google property, якого
+    # немає в Ninja, і думає, що зламався інструмент.
+    accounts = _iter_accounts(connections)
+    keys = sorted({connection_key for connection_key, _id, _name in accounts})
+    where = f"Connection {keys[0]}" if len(keys) == 1 else f"{len(keys)} connections"
     return DiscoveryOutcome(
         status="needs_choice",
         candidates=candidates,
         auto_apply=None,
-        message=f"Several {label} accounts could match {domain}. Pick the right one.",
+        message=(
+            f"No {label} account matches {domain}. {where} exposes {len(accounts)} "
+            f"accounts, listed below — pick one, or share the property with that "
+            f"account in Google and refresh the connection in Reporting Ninja."
+        ),
     )

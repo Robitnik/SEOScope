@@ -19,10 +19,10 @@ import {
   redirectsExportXlsxUrl,
   runRedirectTarget,
   traceRedirect,
-} from "./api.js?v=20260803-connect1";
-import { buildToolsHash, replaceToolsHash } from "./router.js?v=20260803-connect1";
-import { panelSkeleton } from "./skeleton.js?v=20260803-connect1";
-import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260803-connect1";
+} from "./api.js?v=20260803-connect2";
+import { buildToolsHash, replaceToolsHash } from "./router.js?v=20260803-connect2";
+import { panelSkeleton } from "./skeleton.js?v=20260803-connect2";
+import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260803-connect2";
 
 const PAGE_SIZE = 50;
 const TOOL_KEY = "redirects";

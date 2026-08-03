@@ -1,13 +1,13 @@
-import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, isAbortError, isFixtureMode } from "./api.js?v=20260803-connect1";
-import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260803-connect1";
-import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260803-connect1";
-import { buildAhrefsHash, buildBlogsHash, replaceClientHash } from "./router.js?v=20260803-connect1";
-import { escapeHtml, formatTimestamp, icon, initials, isTerminal, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260803-connect1";
-import { createAnalyticsTab } from "./analytics-tabs.js?v=20260803-connect1";
-import { renderAlertsBlock } from "./alerts-block.js?v=20260803-connect1";
-import { renderChart, destroyChart } from "./charts.js?v=20260803-connect1";
-import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260803-connect1";
-import { watchJob } from "./sse.js?v=20260803-connect1";
+import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, isAbortError, isFixtureMode } from "./api.js?v=20260803-connect2";
+import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260803-connect2";
+import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260803-connect2";
+import { buildAhrefsHash, buildBlogsHash, replaceClientHash } from "./router.js?v=20260803-connect2";
+import { escapeHtml, formatTimestamp, icon, initials, isTerminal, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260803-connect2";
+import { createAnalyticsTab } from "./analytics-tabs.js?v=20260803-connect2";
+import { renderAlertsBlock } from "./alerts-block.js?v=20260803-connect2";
+import { renderChart, destroyChart } from "./charts.js?v=20260803-connect2";
+import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260803-connect2";
+import { watchJob } from "./sse.js?v=20260803-connect2";
 
 const PERIODS = [
   { key: "week", label: "Week" },

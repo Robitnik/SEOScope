@@ -1,11 +1,11 @@
-import { discoverIntegration, getDashboard, updateIntegration } from "./api.js?v=20260803-connect1";
-import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260803-connect1";
-import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260803-connect1";
-import { createDetailDrawer } from "./detail-drawer.js?v=20260803-connect1";
-import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260803-connect1";
-import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260803-connect1";
-import { getState, setState } from "./store.js?v=20260803-connect1";
-import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260803-connect1";
+import { discoverIntegration, getDashboard, updateIntegration } from "./api.js?v=20260803-connect2";
+import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260803-connect2";
+import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260803-connect2";
+import { createDetailDrawer } from "./detail-drawer.js?v=20260803-connect2";
+import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260803-connect2";
+import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260803-connect2";
+import { getState, setState } from "./store.js?v=20260803-connect2";
+import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260803-connect2";
 
 const grid = document.querySelector("#client-grid");
 const dashboardState = document.querySelector("#dashboard-state");
@@ -266,9 +266,13 @@ function renderDiscoveryDetail(rows) {
 }
 
 function renderCandidates(candidates) {
+  // Preselect only a candidate we actually believe in. When nothing matched,
+  // the list is just the connection's inventory — checking its first row would
+  // invite a one-click connection to an unrelated property.
+  const preselect = candidates[0] && candidates[0].confidence !== "weak" ? 0 : -1;
   discoveryChoiceList.innerHTML = candidates.map((candidate, index) => `
     <label class="choice">
-      <input type="radio" name="integration-candidate" value="${index}"${index === 0 ? " checked" : ""}>
+      <input type="radio" name="integration-candidate" value="${index}"${index === preselect ? " checked" : ""}>
       <span class="choice__body">
         <strong>${escapeHtml(candidate.label)}</strong>
         <small>${escapeHtml(candidate.detail)} · ${escapeHtml(candidate.reason)}</small>
