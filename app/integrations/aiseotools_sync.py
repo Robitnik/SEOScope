@@ -7,29 +7,21 @@ domains, Reporting Ninja connection/account IDs, and browser profile names.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.repositories.clients import ClientRepository
-from app.importers.client_mapping import normalize_domain
+from app.integrations.discovery import (
+    GA4_ACCOUNT_ALIASES,
+    GA4_INTEGRATION_ID,
+    GSC_INTEGRATION_ID,
+    accounts_by_domain,
+    accounts_by_name,
+    best_ga4_account,
+)
 from app.schemas.enums import Provider, SourceMode
-
-_GA4_ACCOUNT_NAMES: dict[str, str] = {
-    "19cleveland.com": "19 Cleveland - GA4",
-    "exxxoticaexpo.com": "EXXXOTICA Expo - Homepage - GA4",
-    "effyscafe.com": "Effys Cafe",
-    "grillpointnyc.com": "Grill Point NYC",
-    "hearwellservices.com": "Hear Well Services",
-    "nychearing.com": "NYC Hearing Associate",
-    "nysapphire.com": "http://www.nysapphire.com - GA4",
-    "pjclarkes.com": "PJ Clarke's - GA4",
-    "shawarma-mia.com": "Shawarma-Mia",
-    "shorelinedentalstudio.com": "Shoreline Dental Studio GA4",
-    "smashhouseburgers.com": "Smash House Burgers",
-}
 
 
 @dataclass
@@ -38,55 +30,21 @@ class IntegrationSyncReport:
     warnings: list[str] = field(default_factory=list)
 
 
-def _accounts_by_domain(connections: list[dict[str, Any]]) -> dict[str, tuple[str, str]]:
-    found: dict[str, tuple[str, str]] = {}
-    priorities: dict[str, int] = {}
-    for connection in connections:
-        connection_key = str(connection.get("connection_key") or "")
-        for account in connection.get("accounts") or []:
-            account_id = str(account.get("account_id") or "")
-            domain = normalize_domain(account_id)
-            if connection_key and account_id and domain:
-                # A domain property covers every protocol/subdomain variant;
-                # a URL-prefix property does not. Reporting Ninja may return
-                # both in either order, so list order must not decide totals.
-                priority = 1 if account_id.casefold().startswith("sc-domain:") else 0
-                if domain not in found or priority > priorities[domain]:
-                    found[domain] = (connection_key, account_id)
-                    priorities[domain] = priority
-    return found
-
-
-def _accounts_by_name(connections: list[dict[str, Any]]) -> dict[str, tuple[str, str]]:
-    found: dict[str, tuple[str, str]] = {}
-    for connection in connections:
-        connection_key = str(connection.get("connection_key") or "")
-        for account in connection.get("accounts") or []:
-            account_id = str(account.get("account_id") or "")
-            account_name = str(account.get("account_name") or "").strip().casefold()
-            if connection_key and account_id and account_name:
-                found.setdefault(account_name, (connection_key, account_id))
-                # Reporting Ninja currently appends the numeric property id
-                # to the human account name, e.g. ``Client GA4 (123456)``.
-                # Match the stable name while still retaining the exact ID.
-                stable_name = re.sub(r"\s+\(\d+\)$", "", account_name)
-                found.setdefault(stable_name, (connection_key, account_id))
-    return found
-
-
 def sync_ai_seo_tools_integrations(
     *, session_factory: sessionmaker[Session], allowed_domains: set[str]
 ) -> IntegrationSyncReport:
     report = IntegrationSyncReport()
     gsc_accounts: dict[str, tuple[str, str]] = {}
     ga4_accounts: dict[str, tuple[str, str]] = {}
+    ga4_connections: list[dict[str, Any]] = []
 
     try:
         from seo_audit.clientreport.api_client import ReportingNinjaClient
 
         with ReportingNinjaClient() as client:
-            gsc_accounts = _accounts_by_domain(client.list_connections("google_search_console"))
-            ga4_accounts = _accounts_by_name(client.list_connections("ga4"))
+            gsc_accounts = accounts_by_domain(client.list_connections(GSC_INTEGRATION_ID))
+            ga4_connections = list(client.list_connections(GA4_INTEGRATION_ID))
+            ga4_accounts = accounts_by_name(ga4_connections)
     except Exception as exc:  # optional discovery must not block history/Ahrefs/Semrush
         report.warnings.append(f"Reporting Ninja discovery unavailable: {type(exc).__name__}")
 
@@ -134,8 +92,16 @@ def sync_ai_seo_tools_integrations(
                 )
                 report.configured += 1
 
-            ga4_name = _GA4_ACCOUNT_NAMES.get(client.domain)
+            # Аліас — точний override; якщо його немає (а для кожного нового
+            # клієнта його немає), падаємо на той самий матчер за назвою, що й
+            # автопідключення з UI. Саме через відсутність fallback'у раніше
+            # ALPHA/LAXTON/GOREPORT лишалися без GA4 (task-33 §1.3).
+            ga4_name = GA4_ACCOUNT_ALIASES.get(client.domain)
             ga4_ref = ga4_accounts.get(ga4_name.casefold()) if ga4_name else None
+            if ga4_ref is None and ga4_connections:
+                ga4_ref = best_ga4_account(
+                    ga4_connections, domain=client.domain, client_name=client.name
+                )
             if ga4_ref:
                 connection_key, account_id = ga4_ref
                 clients.upsert_integration(

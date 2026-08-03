@@ -17,7 +17,7 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.adapter import DateRange
+from app.schemas.adapter import DateRange, PreflightResult
 from app.schemas.enums import (
     BetterDirection,
     CellStatus,
@@ -276,6 +276,47 @@ class IntegrationUpsertRequest(BaseModel):
     enabled: bool = True
     source_mode: SourceMode = SourceMode.auto
     integration_config: dict[str, Any] = {}
+
+
+class IntegrationDiscoverRequest(BaseModel):
+    """Auto-connect one `(client, provider)` pair (task-33)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # `False` turns the call into a dry run: candidates are returned, nothing
+    # is written. Useful for re-opening the picker without re-connecting.
+    apply: bool = True
+
+
+class IntegrationCandidateDTO(BaseModel):
+    """One possible account for a client, ready to be persisted as-is.
+
+    `integration_config` carries only the non-secret external identifiers that
+    `IntegrationDTO.integration_config` accepts, so the UI can hand it straight
+    back to `PUT /clients/{id}/integrations/{provider}` when the operator picks
+    a candidate — no second server round-trip to resolve an opaque id.
+    """
+
+    label: str
+    detail: str
+    confidence: Literal["exact", "strong", "weak"]
+    reason: str
+    source_mode: SourceMode
+    integration_config: dict[str, Any] = {}
+
+
+class IntegrationDiscoveryDTO(BaseModel):
+    client_id: str
+    provider: Provider
+    status: Literal[
+        "connected", "needs_choice", "not_found", "unavailable", "already_configured"
+    ]
+    message: str
+    applied: IntegrationDTO | None = None
+    candidates: list[IntegrationCandidateDTO] = []
+    # Result of probing the integration right after writing it, so the report
+    # can distinguish "saved" from "saved and verified".
+    preflight: PreflightResult | None = None
 
 
 class AISeoToolsImportRequest(BaseModel):

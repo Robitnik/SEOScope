@@ -2278,6 +2278,50 @@
         "title": "HealthPointDTO",
         "type": "object"
       },
+      "IntegrationCandidateDTO": {
+        "description": "One possible account for a client, ready to be persisted as-is.\n\n`integration_config` carries only the non-secret external identifiers that\n`IntegrationDTO.integration_config` accepts, so the UI can hand it straight\nback to `PUT /clients/{id}/integrations/{provider}` when the operator picks\na candidate \u2014 no second server round-trip to resolve an opaque id.",
+        "properties": {
+          "confidence": {
+            "enum": [
+              "exact",
+              "strong",
+              "weak"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "integration_config": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Integration Config",
+            "type": "object"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "source_mode": {
+            "$ref": "#/components/schemas/SourceMode"
+          }
+        },
+        "required": [
+          "label",
+          "detail",
+          "confidence",
+          "reason",
+          "source_mode"
+        ],
+        "title": "IntegrationCandidateDTO",
+        "type": "object"
+      },
       "IntegrationDTO": {
         "properties": {
           "client_id": {
@@ -2337,6 +2381,81 @@
           "source_mode"
         ],
         "title": "IntegrationDTO",
+        "type": "object"
+      },
+      "IntegrationDiscoverRequest": {
+        "additionalProperties": false,
+        "description": "Auto-connect one `(client, provider)` pair (task-33).",
+        "properties": {
+          "apply": {
+            "default": true,
+            "title": "Apply",
+            "type": "boolean"
+          }
+        },
+        "title": "IntegrationDiscoverRequest",
+        "type": "object"
+      },
+      "IntegrationDiscoveryDTO": {
+        "properties": {
+          "applied": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntegrationDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IntegrationCandidateDTO"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "preflight": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PreflightResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "status": {
+            "enum": [
+              "connected",
+              "needs_choice",
+              "not_found",
+              "unavailable",
+              "already_configured"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "provider",
+          "status",
+          "message"
+        ],
+        "title": "IntegrationDiscoveryDTO",
         "type": "object"
       },
       "IntegrationUpsertRequest": {
@@ -7290,6 +7409,86 @@
           }
         },
         "summary": "Upsert Integration",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/integrations/{provider}/discover": {
+      "post": {
+        "operationId": "discover_integration_api_v1_clients__client_id__integrations__provider__discover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationDiscoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationDiscoveryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Integration",
         "tags": [
           "clients"
         ]
