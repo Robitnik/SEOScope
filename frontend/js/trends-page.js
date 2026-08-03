@@ -46,7 +46,13 @@ const BUCKETS = [
   { key: "week", label: "Week" },
   { key: "month", label: "Month" },
 ];
-const RANGES = [30, 90, 180, 365];
+const RANGES = [7, 30, 90, 180, 365];
+// Below this, a weekly or monthly bucket collapses the whole range into one or
+// two points. Picking 7d gets nudged to a daily bucket once, so the first click
+// shows a readable series — but the operator can switch back to Week afterwards
+// and that choice sticks (a coarse bucket over a short range is coarse, not
+// wrong: `build_buckets` clips `days_expected` to the real span).
+const DAILY_BUCKET_BELOW_DAYS = 14;
 const VIEWS = [
   { key: "compare", label: "Compare" },
   { key: "all", label: "All clients" },
@@ -152,11 +158,21 @@ function shell() {
     </section>`;
 }
 
+const SEGMENT_GROUPS = [
+  ["tr-metric", "metric"], ["tr-bucket", "bucket"], ["tr-days", "days"],
+  ["tr-group", "group"], ["tr-view", "view"],
+];
+
+function syncSegments() {
+  SEGMENT_GROUPS.forEach(([id, key]) => {
+    root.querySelectorAll(`#${id} button`).forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset[key] === String(current[key])));
+    });
+  });
+}
+
 function bindControls() {
-  const groups = [
-    ["tr-metric", "metric"], ["tr-bucket", "bucket"], ["tr-days", "days"],
-    ["tr-group", "group"], ["tr-view", "view"],
-  ];
+  const groups = SEGMENT_GROUPS;
   groups.forEach(([id, key]) => {
     root.querySelector(`#${id}`).addEventListener("click", (event) => {
       const button = event.target.closest("button");
@@ -165,8 +181,12 @@ function bindControls() {
       const parsed = key === "days" ? Number(value) : value;
       if (parsed === current[key]) return;
       current[key] = parsed;
+      if (key === "days" && parsed < DAILY_BUCKET_BELOW_DAYS) current.bucket = "day";
       persist();
-      root.querySelectorAll(`#${id} button`).forEach((btn) => btn.setAttribute("aria-pressed", String(btn.dataset[key] === value)));
+      // Both groups are re-synced, not just the clicked one: the range switch
+      // above can move the bucket, and a segment whose `aria-pressed` disagrees
+      // with the state that was actually loaded is a lie to every user.
+      syncSegments();
       void load();
     });
   });
