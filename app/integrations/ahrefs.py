@@ -25,6 +25,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from app.integrations.progress import PhaseTracker
 from app.integrations.registry import register_adapter
 from app.jobs.fake_adapter import CancelledByAdapter
 from app.schemas.adapter import (
@@ -149,33 +150,46 @@ def collect_site_audit_detail_browser(
     from seo_audit.browser.session import BrowserSession
     from seo_audit.framework.ahrefs_parser import _read_csv
 
-    emit(
-        ProgressEvent(
-            provider=Provider.ahrefs,
-            stage="export_issues",
-            message=f"Exporting all Ahrefs Site Audit issues for {domain}",
-        )
-    )
+    # Раніше на весь цей ланцюг (сесія → проєкт → експорт ZIP → розпакування →
+    # парс кожного issue) припадало ДВІ події за кілька хвилин роботи, тож UI
+    # виглядав як зависання. Тепер кожен крок видно окремо (task-32), а кроки,
+    # тривалість яких виміряти неможливо — насамперед очікування, поки Ahrefs
+    # збере експорт — марковані як індетермінантні, а не показані повзучим
+    # фейковим відсотком (frontend/AGENTS.md §9).
+    tracker = PhaseTracker(Provider.ahrefs, emit, "datasets")
+    tracker.begin("open_session", message="Attaching to the Ahrefs browser session")
     downloads = download_capture_dir()
     downloads.mkdir(parents=True, exist_ok=True)
     with BrowserSession("ahrefs", slot=slot) as session:
         audit = AhrefsSiteAudit(session)
+        tracker.indeterminate(
+            "resolve_project", message=f"Looking up the Site Audit project for {domain}"
+        )
         project_id = audit.resolve_project(domain)
         if not project_id:
             raise LookupError(f"Ahrefs Site Audit project not found for {domain}")
+        tracker.indeterminate(
+            "export_issues",
+            message=f"Ahrefs is building the full issue export for {domain}",
+        )
         zip_path = audit.export_all_issues_zip(project_id, downloads=downloads)
+        tracker.indeterminate("unpack_export", message="Unpacking the Ahrefs export")
         unpacked = audit.unpack(zip_path, downloads)
 
-    emit(
-        ProgressEvent(
-            provider=Provider.ahrefs,
-            stage="parse_issues",
-            message="Parsing Ahrefs issues and affected URLs",
-        )
-    )
+    tracker.indeterminate("parse_issues", message="Reading the exported issue list")
     parsed = parse_directory(downloads, domain=domain)
+    issues = parsed.sorted_issues()
+    issue_total = len(issues)
     issue_payloads: list[dict[str, object]] = []
-    for issue in parsed.sorted_issues():
+    for issue_index, issue in enumerate(issues, start=1):
+        # Кількість issue відома після розпакування — з цього місця й до кінця
+        # фази відсоток вимірюваний.
+        tracker.step(
+            "parse_affected",
+            completed=issue_index,
+            total=issue_total,
+            message=f"Ahrefs issues · {issue_index} / {issue_total} · {issue.name}",
+        )
         affected_rows: list[dict[str, object]] = []
         affected_path = downloads / f"affected_{issue.slug}.csv"
         if affected_path.is_file():
@@ -274,7 +288,13 @@ class AhrefsAdapter:
         csv_dir = context.integration_config.get("csv_dir")
         market = str(context.integration_config.get("market", ""))
         client_label = str(context.integration_config.get("ahrefs_client_label", ""))
-        on_event = _bridge_emit(emit)
+        # Події AISeoTools несуть корисний текст стадії, але не `percent`
+        # (пакет пінований, змінам не підлягає). Порожній список стадій означає
+        # «пропускай як індетермінантні»: текст зберігається, відсоток фази не
+        # смикається, а межі фази ставить наш власний seam нижче (task-32).
+        tracker = PhaseTracker(self.provider, emit, "kpi")
+        tracker.begin("open_session", message=f"Reading Ahrefs Site Audit for {domain}")
+        on_event = tracker.bridge(())
 
         result: DashboardResult | None = None
         fallback_used = False
@@ -334,6 +354,7 @@ class AhrefsAdapter:
                 provenance={"requested_source_mode": context.source_mode.value},
             )
 
+        tracker.done("kpi_complete", message="Ahrefs Site Audit snapshot ready")
         return self._to_collection_result(result, context, fallback_used=fallback_used)
 
     def collect_datasets(
@@ -426,15 +447,12 @@ class AhrefsAdapter:
 
         warnings = detail.get("warnings")
         quality = Quality.complete if issues else Quality.partial
-        emit(
-            ProgressEvent(
-                provider=Provider.ahrefs,
-                stage="parse_issues",
-                completed=len(issues),
-                total=len(issues),
-                percent=100,
-                message=f"Parsed {len(issues)} issue types and {affected_rank} affected rows",
-            )
+        # Кінець фази датасетів — це НЕ кінець клітинки: попереду ще persist.
+        # Раніше тут стояло `percent=100`, через що смуга доходила до кінця
+        # раніше за саму роботу (task-32).
+        PhaseTracker(self.provider, emit, "datasets").done(
+            "datasets_complete",
+            message=f"Parsed {len(issues)} issue types and {affected_rank} affected rows",
         )
         return AnalyticsDatasetCollectionResult(
             provider=self.provider,

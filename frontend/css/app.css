@@ -497,10 +497,45 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
 
 .progress-overview { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; margin-bottom: 20px; }
 .progress-number { font-family: var(--font-display); font-size: 44px; font-variant-numeric: tabular-nums; }
-.progress-track { display: block; width: 100%; height: 8px; border: 0; background: var(--line); overflow: hidden; appearance: none; }
-.progress-track::-webkit-progress-bar { background: var(--line); }
-.progress-track::-webkit-progress-value { background: var(--accent); transition: width 240ms ease; }
-.progress-track::-moz-progress-bar { background: var(--accent); }
+/* task-32: `<progress>` was replaced by a two-element bar. Two reasons the
+ * native element could not do this job: its value change does not animate in
+ * Firefox at all (and only via a vendor pseudo-element in Chrome), so every
+ * update teleported; and it has no honest way to say "running, duration
+ * unknown" — `.is-indeterminate` below carries that state without inventing a
+ * percentage (frontend/AGENTS.md §9). */
+.bar { position: relative; display: block; width: 100%; overflow: hidden; background: var(--line); }
+.bar__fill { position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0); background: var(--accent); transition: transform 450ms cubic-bezier(.22, .61, .36, 1); }
+/* The fill width is driven by a `data-p` attribute, NOT an inline style: this
+ * app ships `Content-Security-Policy: default-src 'self'` (app/core/security.py)
+ * with no `style-src 'unsafe-inline'`, so both a `style=""` attribute and a
+ * `el.style.transform = ...` assignment are blocked outright — the bar would
+ * render permanently empty. One static rule per whole percent keeps the value
+ * in the stylesheet where the policy allows it, and `transform` still animates. */
+.bar[data-p="0"] .bar__fill { transform: scaleX(0); } .bar[data-p="1"] .bar__fill { transform: scaleX(0.01); } .bar[data-p="2"] .bar__fill { transform: scaleX(0.02); } .bar[data-p="3"] .bar__fill { transform: scaleX(0.03); } .bar[data-p="4"] .bar__fill { transform: scaleX(0.04); }
+.bar[data-p="5"] .bar__fill { transform: scaleX(0.05); } .bar[data-p="6"] .bar__fill { transform: scaleX(0.06); } .bar[data-p="7"] .bar__fill { transform: scaleX(0.07); } .bar[data-p="8"] .bar__fill { transform: scaleX(0.08); } .bar[data-p="9"] .bar__fill { transform: scaleX(0.09); }
+.bar[data-p="10"] .bar__fill { transform: scaleX(0.1); } .bar[data-p="11"] .bar__fill { transform: scaleX(0.11); } .bar[data-p="12"] .bar__fill { transform: scaleX(0.12); } .bar[data-p="13"] .bar__fill { transform: scaleX(0.13); } .bar[data-p="14"] .bar__fill { transform: scaleX(0.14); }
+.bar[data-p="15"] .bar__fill { transform: scaleX(0.15); } .bar[data-p="16"] .bar__fill { transform: scaleX(0.16); } .bar[data-p="17"] .bar__fill { transform: scaleX(0.17); } .bar[data-p="18"] .bar__fill { transform: scaleX(0.18); } .bar[data-p="19"] .bar__fill { transform: scaleX(0.19); }
+.bar[data-p="20"] .bar__fill { transform: scaleX(0.2); } .bar[data-p="21"] .bar__fill { transform: scaleX(0.21); } .bar[data-p="22"] .bar__fill { transform: scaleX(0.22); } .bar[data-p="23"] .bar__fill { transform: scaleX(0.23); } .bar[data-p="24"] .bar__fill { transform: scaleX(0.24); }
+.bar[data-p="25"] .bar__fill { transform: scaleX(0.25); } .bar[data-p="26"] .bar__fill { transform: scaleX(0.26); } .bar[data-p="27"] .bar__fill { transform: scaleX(0.27); } .bar[data-p="28"] .bar__fill { transform: scaleX(0.28); } .bar[data-p="29"] .bar__fill { transform: scaleX(0.29); }
+.bar[data-p="30"] .bar__fill { transform: scaleX(0.3); } .bar[data-p="31"] .bar__fill { transform: scaleX(0.31); } .bar[data-p="32"] .bar__fill { transform: scaleX(0.32); } .bar[data-p="33"] .bar__fill { transform: scaleX(0.33); } .bar[data-p="34"] .bar__fill { transform: scaleX(0.34); }
+.bar[data-p="35"] .bar__fill { transform: scaleX(0.35); } .bar[data-p="36"] .bar__fill { transform: scaleX(0.36); } .bar[data-p="37"] .bar__fill { transform: scaleX(0.37); } .bar[data-p="38"] .bar__fill { transform: scaleX(0.38); } .bar[data-p="39"] .bar__fill { transform: scaleX(0.39); }
+.bar[data-p="40"] .bar__fill { transform: scaleX(0.4); } .bar[data-p="41"] .bar__fill { transform: scaleX(0.41); } .bar[data-p="42"] .bar__fill { transform: scaleX(0.42); } .bar[data-p="43"] .bar__fill { transform: scaleX(0.43); } .bar[data-p="44"] .bar__fill { transform: scaleX(0.44); }
+.bar[data-p="45"] .bar__fill { transform: scaleX(0.45); } .bar[data-p="46"] .bar__fill { transform: scaleX(0.46); } .bar[data-p="47"] .bar__fill { transform: scaleX(0.47); } .bar[data-p="48"] .bar__fill { transform: scaleX(0.48); } .bar[data-p="49"] .bar__fill { transform: scaleX(0.49); }
+.bar[data-p="50"] .bar__fill { transform: scaleX(0.5); } .bar[data-p="51"] .bar__fill { transform: scaleX(0.51); } .bar[data-p="52"] .bar__fill { transform: scaleX(0.52); } .bar[data-p="53"] .bar__fill { transform: scaleX(0.53); } .bar[data-p="54"] .bar__fill { transform: scaleX(0.54); }
+.bar[data-p="55"] .bar__fill { transform: scaleX(0.55); } .bar[data-p="56"] .bar__fill { transform: scaleX(0.56); } .bar[data-p="57"] .bar__fill { transform: scaleX(0.57); } .bar[data-p="58"] .bar__fill { transform: scaleX(0.58); } .bar[data-p="59"] .bar__fill { transform: scaleX(0.59); }
+.bar[data-p="60"] .bar__fill { transform: scaleX(0.6); } .bar[data-p="61"] .bar__fill { transform: scaleX(0.61); } .bar[data-p="62"] .bar__fill { transform: scaleX(0.62); } .bar[data-p="63"] .bar__fill { transform: scaleX(0.63); } .bar[data-p="64"] .bar__fill { transform: scaleX(0.64); }
+.bar[data-p="65"] .bar__fill { transform: scaleX(0.65); } .bar[data-p="66"] .bar__fill { transform: scaleX(0.66); } .bar[data-p="67"] .bar__fill { transform: scaleX(0.67); } .bar[data-p="68"] .bar__fill { transform: scaleX(0.68); } .bar[data-p="69"] .bar__fill { transform: scaleX(0.69); }
+.bar[data-p="70"] .bar__fill { transform: scaleX(0.7); } .bar[data-p="71"] .bar__fill { transform: scaleX(0.71); } .bar[data-p="72"] .bar__fill { transform: scaleX(0.72); } .bar[data-p="73"] .bar__fill { transform: scaleX(0.73); } .bar[data-p="74"] .bar__fill { transform: scaleX(0.74); }
+.bar[data-p="75"] .bar__fill { transform: scaleX(0.75); } .bar[data-p="76"] .bar__fill { transform: scaleX(0.76); } .bar[data-p="77"] .bar__fill { transform: scaleX(0.77); } .bar[data-p="78"] .bar__fill { transform: scaleX(0.78); } .bar[data-p="79"] .bar__fill { transform: scaleX(0.79); }
+.bar[data-p="80"] .bar__fill { transform: scaleX(0.8); } .bar[data-p="81"] .bar__fill { transform: scaleX(0.81); } .bar[data-p="82"] .bar__fill { transform: scaleX(0.82); } .bar[data-p="83"] .bar__fill { transform: scaleX(0.83); } .bar[data-p="84"] .bar__fill { transform: scaleX(0.84); }
+.bar[data-p="85"] .bar__fill { transform: scaleX(0.85); } .bar[data-p="86"] .bar__fill { transform: scaleX(0.86); } .bar[data-p="87"] .bar__fill { transform: scaleX(0.87); } .bar[data-p="88"] .bar__fill { transform: scaleX(0.88); } .bar[data-p="89"] .bar__fill { transform: scaleX(0.89); }
+.bar[data-p="90"] .bar__fill { transform: scaleX(0.9); } .bar[data-p="91"] .bar__fill { transform: scaleX(0.91); } .bar[data-p="92"] .bar__fill { transform: scaleX(0.92); } .bar[data-p="93"] .bar__fill { transform: scaleX(0.93); } .bar[data-p="94"] .bar__fill { transform: scaleX(0.94); }
+.bar[data-p="95"] .bar__fill { transform: scaleX(0.95); } .bar[data-p="96"] .bar__fill { transform: scaleX(0.96); } .bar[data-p="97"] .bar__fill { transform: scaleX(0.97); } .bar[data-p="98"] .bar__fill { transform: scaleX(0.98); } .bar[data-p="99"] .bar__fill { transform: scaleX(0.99); }
+.bar[data-p="100"] .bar__fill { transform: scaleX(1); }
+.bar.is-indeterminate .bar__fill { transform: scaleX(.3); animation: bar-sweep 1500ms cubic-bezier(.65, .05, .36, 1) infinite; }
+@keyframes bar-sweep { from { translate: -110%; } to { translate: 340%; } }
+.progress-track { height: 8px; }
+.progress-track .bar__fill { background: var(--accent); }
 .progress-copy { margin-top: 7px; color: var(--ink-muted); }
 .matrix-wrap { overflow: auto; border: 1px solid var(--line); }
 .progress-matrix { width: 100%; min-width: 760px; border-collapse: collapse; }
@@ -511,10 +546,12 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
 .matrix-cell { min-width: 130px; }
 .matrix-cell strong { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--state-color, var(--ink)); }
 .matrix-cell small { color: var(--ink-muted); display: block; margin-top: 4px; }
-.mini-progress { display: block; width: 100%; height: 3px; border: 0; background: var(--line); margin-top: 8px; appearance: none; }
-.mini-progress::-webkit-progress-bar { background: var(--line); }
-.mini-progress::-webkit-progress-value { background: var(--state-color, var(--accent)); transition: width 200ms ease; }
-.mini-progress::-moz-progress-bar { background: var(--state-color, var(--accent)); }
+.mini-progress { height: 3px; margin-top: 8px; }
+.mini-progress .bar__fill { background: var(--state-color, var(--accent)); }
+/* task-32: elapsed time on a running cell. The one honest signal during an
+ * indeterminate step — it proves the lane is alive without guessing a percent. */
+.matrix-cell__meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; color: var(--ink-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.matrix-cell__meta:empty { display: none; }
 /* task-30: measured time-to-go under the overall bar. Never a countdown the
  * UI invented — `etaCopy` says "estimating" until it has a real sample. */
 .progress-eta { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 0; color: var(--ink-dim); font-size: 11px; }
@@ -532,6 +569,18 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
 .lane-row__body strong { font-size: 13px; color: var(--state-color, var(--ink)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lane-row__body small { color: var(--ink-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lane-row__value { color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+/* task-32: raw stream narration. Secondary to the matrix and collapsed by
+ * default (AGENTS.md §9) — it answers "what exactly is happening right now",
+ * which the structured grid deliberately summarises away. */
+.activity-log { margin-top: 20px; border: 1px solid var(--line); background: var(--surface); }
+.activity-log > summary { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; color: var(--ink-muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+.activity-log > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.activity-log__count { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.activity-log__list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; border-top: 1px solid var(--line); }
+.activity-log__list li { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 7px 14px; font-size: 11px; color: var(--ink-muted); border-bottom: 1px solid var(--line-soft); }
+.activity-log__list li > span:first-child { color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-log__list li.state-warning > span:last-child { color: var(--warning); }
+.activity-log__list li.state-error > span:last-child { color: var(--danger); }
 
 .job-alert { padding: 11px 13px; margin-bottom: 16px; border-left: 3px solid var(--warning); background: rgb(255 196 94 / 8%); color: var(--ink-muted); }
 .job-alert strong { color: var(--ink); }
@@ -584,6 +633,36 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
 .integration-lead, .field-help { color: var(--ink-muted); }
 .field-help { font-size: 12px; }
 .form-error { color: var(--danger); min-height: 20px; }
+
+/* task-33: outcome of an auto-connect lookup. `--state-color` is set from the
+ * status class, so the same block serves "connected", "pick one" and "nothing
+ * found" without a second layout. */
+.discovery { margin-bottom: 18px; }
+.discovery.is-searching { --state-color: var(--accent); }
+.discovery.is-connected { --state-color: var(--success); }
+.discovery.is-choice { --state-color: var(--accent); }
+.discovery.is-empty { --state-color: var(--ink-dim); }
+.discovery.is-error { --state-color: var(--danger); }
+.discovery__status { margin: 0; padding-left: 12px; border-left: 3px solid var(--state-color, var(--ink-dim)); font-weight: 700; }
+.discovery__detail { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 14px 0 0; font-size: 12px; }
+.discovery__detail dt { color: var(--ink-muted); }
+.discovery__detail dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.discovery__choices { margin: 18px 0 0; padding: 0; border: 0; }
+.discovery__choices legend { padding: 0; margin-bottom: 8px; color: var(--ink-muted); font-size: 12px; }
+.choice { display: flex; align-items: flex-start; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); cursor: pointer; }
+.choice + .choice { border-top: 0; }
+.choice:hover { background: var(--canvas-raised); }
+.choice:has(:checked) { border-color: var(--accent); background: var(--canvas-raised); }
+.choice:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.choice input { margin-top: 3px; accent-color: var(--accent); }
+.choice__body { flex: 1; min-width: 0; }
+.choice__body strong { display: block; overflow-wrap: anywhere; }
+.choice__body small { display: block; margin-top: 3px; color: var(--ink-muted); font-size: 11px; overflow-wrap: anywhere; }
+/* Confidence is spelled out, never colour alone (AGENTS §7). */
+.choice__badge { flex: 0 0 auto; padding: 2px 7px; border: 1px solid var(--state-color, var(--line)); color: var(--state-color, var(--ink-muted)); text-transform: uppercase; letter-spacing: .06em; font-size: 9px; font-weight: 700; }
+.confidence-exact { --state-color: var(--success); }
+.confidence-strong { --state-color: var(--accent); }
+.confidence-weak { --state-color: var(--ink-dim); }
 .toast-region { position: fixed; z-index: 100; right: 22px; top: 92px; display: grid; gap: 8px; }
 .toast-message { width: min(380px, calc(100vw - 32px)); padding: 13px 15px; background: var(--ink); color: var(--canvas); border-left: 4px solid var(--accent); box-shadow: 0 8px 30px rgb(0 0 0 / 35%); }
 
@@ -666,6 +745,10 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  /* task-32: without this the killed sweep animation would leave the
+   * indeterminate fill parked off-screen at its end position, i.e. an active
+   * step would render as an empty bar. Show a steady dimmed fill instead. */
+  .bar.is-indeterminate .bar__fill { animation: none !important; transform: scaleX(1); translate: 0; opacity: .45; }
 }
 
 @media print {

@@ -12,7 +12,7 @@
 //     auto-resumes and emits normal cell progress once it sees the session
 //     alive) — polling there is a purely cosmetic head start, never the
 //     source of truth.
-import { getProviderSession, startProviderLogin } from "./api.js?v=20260731-refresh1";
+import { getProviderSession, startProviderLogin } from "./api.js?v=20260803-progress2";
 
 export async function triggerLogin(provider) {
   try {

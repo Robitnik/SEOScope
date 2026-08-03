@@ -90,7 +90,45 @@ export const STAGE_LABELS = {
   validate: "Validating data",
   persist: "Saving to database",
   complete: "Done",
+  // task-32: phase boundaries and browser steps the adapters now report. Before
+  // these existed the matrix fell through to "Waiting for status" on cells that
+  // were visibly running — the UI contradicting what it already knew.
+  connect: "Connecting to the service",
+  discover: "Discovering available fields",
+  open_session: "Opening the browser session",
+  resolve_project: "Locating the project",
+  unpack_export: "Unpacking the export",
+  parse_affected: "Reading affected URLs",
+  site_audit: "Reading the Site Audit overview",
+  verify: "Verifying the collected numbers",
+  kpi_complete: "Snapshot ready",
+  datasets: "Collecting detail datasets",
+  datasets_complete: "Detail datasets collected",
+  dimensions_complete: "Pages and queries collected",
 };
+
+// Stage names are free-form by contract (`app/schemas/adapter.py`), and the
+// per-dataset ones are built at runtime (`fetch_current_ga4_landing_pages`), so
+// an exhaustive table is impossible by construction. This turns any unknown
+// stage into readable English rather than letting it fall through to a fallback
+// that would misreport a running cell as idle.
+const STAGE_ROLE_PREFIXES = [
+  ["fetch_current_", "current"],
+  ["fetch_previous_", "previous"],
+];
+
+export function humanizeStage(stage) {
+  if (!stage) return "";
+  if (STAGE_LABELS[stage]) return STAGE_LABELS[stage];
+  for (const [prefix, role] of STAGE_ROLE_PREFIXES) {
+    if (stage.startsWith(prefix)) {
+      const subject = stage.slice(prefix.length).replace(/^(ga4|gbp|gsc)_/, "").replaceAll("_", " ");
+      return subject ? `Fetching ${subject} (${role})` : `Fetching ${role} period`;
+    }
+  }
+  const words = String(stage).replaceAll("_", " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "";
+}
 
 export const SOURCE_LABELS = {
   api: "API",

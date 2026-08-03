@@ -38,6 +38,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from app.db.models import DIMENSION_OTHER_VALUE
+from app.integrations.progress import PhaseTracker
 from app.integrations.registry import register_adapter
 from app.metrics.catalog import CATALOG
 from app.schemas.adapter import (
@@ -178,7 +179,12 @@ class GscAdapter:
         cfg = context.integration_config
         current = SeoDateRange(start=context.current.start, end=context.current.end)
         previous = SeoDateRange(start=context.previous.start, end=context.previous.end)
-        on_event = _bridge_emit(emit)
+        # Стадії, які `seo_audit.dashboard.gsc.collect_gsc_aggregate` емітить у
+        # цій фазі, у порядку виконання — позиція стадії дає вимірюваний крок
+        # (task-32; пінований пакет `percent` не шле).
+        tracker = PhaseTracker(self.provider, emit, "kpi")
+        tracker.begin("connect", message="Connecting to Search Console")
+        on_event = tracker.bridge(("discover", "fetch_current", "fetch_previous"))
 
         with ReportingNinjaClient() as client:
             aggregate = collect_gsc_aggregate(
@@ -194,6 +200,7 @@ class GscAdapter:
                 on_event=on_event,
             )
         self._remember_fields(aggregate.provenance.get("gsc_fields"))
+        tracker.done("kpi_complete", message="Search Console totals ready")
 
         metrics = _map_aggregate(aggregate, context.current, context.previous)
         warnings = list(aggregate.warnings)
@@ -267,6 +274,8 @@ class GscAdapter:
         completed = 0
         truncated_any = False
 
+        tracker = PhaseTracker(self.provider, emit, "datasets")
+        tracker.begin("datasets", message="Collecting Search Console daily trend")
         with ReportingNinjaClient() as client:
             fields = self._cached_fields() or discover_gsc_fields(client)
             self._remember_fields(fields)
@@ -274,25 +283,25 @@ class GscAdapter:
             for optional in ("ctr", "avg_position"):
                 if fields.get(optional):
                     query_fields.append(fields[optional])
+            # Раніше тут була власна наскрізна шкала «крок 7..9 з 9», яка
+            # рахувала відсоток УСІЄЇ клітинки з середини фази датасетів і тому
+            # доводила смугу до 100 % ще до persist. Тепер крок вимірюється в
+            # межах своєї фази, спільним для всіх провайдерів способом (task-32).
             for progress_completed, (role, date_range) in enumerate(
                 (
                     (PeriodRole.current, context.current),
                     (PeriodRole.previous, context.previous),
                 ),
-                start=7,
+                start=1,
             ):
-                emit(
-                    ProgressEvent(
-                        provider=self.provider,
-                        stage=f"fetch_{role.value}_daily",
-                        completed=progress_completed,
-                        total=9,
-                        percent=round(progress_completed / 9 * 100, 2),
-                        message=(
-                            f"GSC daily trend {role.value}: "
-                            f"{date_range.start} → {date_range.end}"
-                        ),
-                    )
+                tracker.step(
+                    f"fetch_{role.value}_daily",
+                    completed=progress_completed,
+                    total=2,
+                    message=(
+                        f"GSC daily trend · {role.value} · "
+                        f"{date_range.start} → {date_range.end}"
+                    ),
                 )
                 try:
                     result = client.query_all(
@@ -345,6 +354,8 @@ class GscAdapter:
                     )
                 completed += 1
 
+        tracker.done("datasets_complete", message="Search Console daily trend collected")
+
         if completed == 0:
             quality = Quality.unavailable
         elif completed < 2:
@@ -388,7 +399,16 @@ class GscAdapter:
 
         current = SeoDateRange(start=context.current.start, end=context.current.end)
         previous = SeoDateRange(start=context.previous.start, end=context.previous.end)
-        on_event = _bridge_emit(emit)
+        tracker = PhaseTracker(self.provider, emit, "dimensions")
+        tracker.begin("fetch_current_pages", message="Fetching Search Console pages and queries")
+        on_event = tracker.bridge(
+            (
+                "fetch_current_pages",
+                "fetch_current_queries",
+                "fetch_previous_pages",
+                "fetch_previous_queries",
+            )
+        )
 
         with ReportingNinjaClient() as client:
             result = collect_gsc_dimensions_api(
@@ -406,6 +426,7 @@ class GscAdapter:
             )
 
         self._remember_fields(result.provenance.get("gsc_fields"))
+        tracker.done("dimensions_complete", message="Pages and queries collected")
 
         rows = [
             *_map_dimension_periods("page", result.pages),

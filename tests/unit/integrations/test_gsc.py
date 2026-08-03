@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import pytest
 from seo_audit.dashboard.events import ProgressEvent as DashboardProgressEvent
 from seo_audit.dashboard.models import DashboardMetricValue
 from seo_audit.dashboard.models import DashboardResult as DashResult
@@ -310,8 +311,21 @@ def test_collect_datasets_fetches_real_daily_gsc_rows(monkeypatch):
     assert result.rows[0].metrics["ctr"] == Decimal("0.1")
     assert result.rows[2].period_role == PeriodRole.previous
     assert FakeClient.bypass_cache_values == [True, True]
-    assert [event.completed for event in events] == [7, 8]
-    assert [event.percent for event in events] == [77.78, 88.89]
+    # task-32: кроки вимірюються В МЕЖАХ фази датасетів, а не за наскрізною
+    # шкалою «7..9 з 9», яка доводила клітинку до 100 % ще до persist.
+    # Послідовність: межа фази → два періоди → закриття фази.
+    assert [event.stage for event in events] == [
+        "datasets",
+        "fetch_current_daily",
+        "fetch_previous_daily",
+        "datasets_complete",
+    ]
+    assert [event.completed for event in events] == [None, 1, 2, None]
+    # GSC: kpi 30 + dimensions 40 → фаза датасетів займає 70..95 %.
+    percents = [event.percent for event in events]
+    assert percents[0] == pytest.approx(70.0)
+    assert percents[-1] == pytest.approx(95.0)
+    assert percents == sorted(percents)
 
 
 # ── event bridging ───────────────────────────────────────────────────────────

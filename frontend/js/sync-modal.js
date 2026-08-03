@@ -1,8 +1,8 @@
-import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob, startTechAuditBatch } from "./api.js?v=20260731-refresh1";
-import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260731-refresh1";
-import { triggerLogin } from "./session-status.js?v=20260731-refresh1";
-import { loadActiveJob, saveActiveJob } from "./store.js?v=20260731-refresh1";
-import { watchJob } from "./sse.js?v=20260731-refresh1";
+import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob, startTechAuditBatch } from "./api.js?v=20260803-progress2";
+import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, humanizeStage, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260803-progress2";
+import { triggerLogin } from "./session-status.js?v=20260803-progress2";
+import { loadActiveJob, saveActiveJob } from "./store.js?v=20260803-progress2";
+import { watchJob } from "./sse.js?v=20260803-progress2";
 
 // task-22 follow-up: providers backed by a warm-Chrome browser session (mirrors
 // `BROWSER_PROVIDERS` in `app/integrations/browser_session.py`). `reporting_ninja`
@@ -166,6 +166,94 @@ const TERMINAL_CELL_STATUSES = new Set([
   "not_configured", "cancelled", "skipped",
 ]);
 
+// task-32: stages an adapter reports through `PhaseTracker.indeterminate()` —
+// steps whose duration genuinely cannot be measured (waiting for Ahrefs to
+// build an export, attaching to the warm Chrome). Mirrored here the same way
+// `BROWSER_SESSION_PROVIDERS` above mirrors its backend list, because the cell
+// DTO carries `current_stage` but not the event's `details`. Getting this list
+// slightly wrong is harmless: the bar then shows its last real percent instead
+// of the sweep — it never invents a number either way (AGENTS.md §9).
+const INDETERMINATE_STAGES = new Set([
+  "open_session", "resolve_project", "export_issues", "unpack_export",
+  "parse_issues", "site_audit", "verify",
+]);
+
+function cellIsIndeterminate(cell) {
+  return cell.status === "running" && INDETERMINATE_STAGES.has(cell.current_stage);
+}
+
+// --- Bars (task-32) --------------------------------------------------------
+//
+// See the `.bar` rules in `app.css` for why the native `<progress>` had to go.
+// Markup and patching live together here so the two can never drift: the fill
+// is driven by `transform: scaleX()` (compositor-only, so a 250ms update burst
+// costs nothing), and the indeterminate variant deliberately carries NO
+// `aria-valuenow` — an unknown value must read as unknown to a screen reader
+// too, not as zero.
+
+// The value travels as a `data-p` attribute matched by a static rule ladder in
+// `app.css`, never as an inline style: the app sends
+// `Content-Security-Policy: default-src 'self'` (`app/core/security.py`) with no
+// `style-src 'unsafe-inline'`, which blocks both a `style=""` attribute and an
+// `el.style.transform = ...` assignment. A bar built the obvious way renders
+// permanently empty in production while looking fine in any CSP-less test page.
+function barMarkup(className, { value = 0, indeterminate = false, label = "", hook = "" }) {
+  const attrs = [
+    `class="bar ${className}${indeterminate ? " is-indeterminate" : ""}"`,
+    `data-p="${indeterminate ? 0 : value}"`,
+    hook || "",
+    `role="progressbar"`,
+    `aria-valuemin="0"`,
+    `aria-valuemax="100"`,
+    indeterminate ? "" : `aria-valuenow="${value}"`,
+    `aria-label="${escapeHtml(label)}"`,
+  ].filter(Boolean).join(" ");
+  return `<div ${attrs}><span class="bar__fill"></span></div>`;
+}
+
+function patchBar(node, { value = 0, indeterminate = false, label = "" }) {
+  if (!node) return;
+  if (node.classList.contains("is-indeterminate") !== indeterminate) {
+    node.classList.toggle("is-indeterminate", indeterminate);
+  }
+  const nextValue = String(indeterminate ? 0 : value);
+  if (node.dataset.p !== nextValue) node.dataset.p = nextValue;
+  if (indeterminate) {
+    // Unknown must read as unknown to a screen reader too, not as zero.
+    if (node.hasAttribute("aria-valuenow")) node.removeAttribute("aria-valuenow");
+  } else if (node.getAttribute("aria-valuenow") !== String(value)) {
+    node.setAttribute("aria-valuenow", String(value));
+  }
+  if (node.getAttribute("aria-label") !== label) node.setAttribute("aria-label", label);
+}
+
+// The overall number used to jump between whole percents on every tick. Easing
+// it makes the same truthful value readable as motion instead of flicker.
+let percentTween = null;
+
+function tweenPercent(node, to) {
+  if (!node) return;
+  const from = Number(node.dataset.value ?? to);
+  if (from === to) {
+    node.textContent = `${to}%`;
+    return;
+  }
+  node.dataset.value = String(to);
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    node.textContent = `${to}%`;
+    return;
+  }
+  if (percentTween) cancelAnimationFrame(percentTween);
+  const startedAt = performance.now();
+  const frame = (now) => {
+    const t = Math.min(1, (now - startedAt) / 400);
+    const eased = 1 - (1 - t) ** 3;
+    node.textContent = `${Math.round(from + (to - from) * eased)}%`;
+    percentTween = t < 1 ? requestAnimationFrame(frame) : null;
+  };
+  percentTween = requestAnimationFrame(frame);
+}
+
 function cellDisplayState(cell) {
   if (["succeeded", "partial"].includes(cell.status) && cell.quality && cell.quality !== "complete") {
     return cell.quality;
@@ -175,7 +263,15 @@ function cellDisplayState(cell) {
 
 function cellDetail(cell, displayState) {
   if (!TERMINAL_CELL_STATUSES.has(cell.status)) {
-    return cell.error_code || STAGE_LABELS[cell.current_stage] || "Waiting for status";
+    // task-32: this used to read `STAGE_LABELS[stage] || "Waiting for status"`,
+    // and the per-dataset stages are built at runtime, so a cell that was
+    // visibly running got labelled as if nothing had happened yet. The
+    // adapter's own message is the richest truth available ("GA4 landing pages
+    // · current · 7 / 14"); the humanized stage is the floor below it.
+    return cell.error_code
+      || cell.progress_message
+      || humanizeStage(cell.current_stage)
+      || "Waiting for status";
   }
   if (cell.status === "not_configured") return "Integration not connected";
   if (cell.status === "failed" || cell.status === "failed_interrupted") {
@@ -438,6 +534,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
   async function beginAuditCollection(clientIds) {
     try {
       const dashboard = getDashboard();
+      activity.length = 0;
       resetProgressView();
       title.textContent = "Preparing crawl queue";
       subtitle.textContent = "Validating selected clients and reserving the crawler lane.";
@@ -527,6 +624,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
 
   async function beginRefresh({ clientIds, providers, start, end }) {
     sessionOverlays.clear();
+    activity.length = 0;
     resetProgressView();
     try {
       const dashboard = getDashboard();
@@ -555,6 +653,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
 
   async function beginCollection({ clientIds, providers, forceRefresh }) {
     sessionOverlays.clear();
+    activity.length = 0;
     resetProgressView();
     try {
       const dashboard = getDashboard();
@@ -616,6 +715,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
         if (dialog.open) renderProgress(job);
         active = null;
       },
+      onEvent(payload) { pushActivity(payload); },
       onError(error) { onToast(`Progress temporarily unavailable: ${error.message}`); },
     });
   }
@@ -662,7 +762,11 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
         <span class="audit-run-row__identity"><strong>${escapeHtml(client?.name || cell.client_id)}</strong><small>${escapeHtml(client?.domain || "Client site")}</small></span>
         <span class="audit-run-row__stage"><strong>${icon(meta.icon, `icon${spinning}`)}${escapeHtml(meta.label)}</strong><small>${escapeHtml(auditResultDetail(cell, dashboard))}</small></span>
         <span class="audit-run-row__value">${value}%</span>
-        <progress class="mini-progress" max="100" value="${value}" aria-label="${escapeHtml(client?.name || cell.client_id)}: ${value}%"></progress>
+        ${barMarkup("mini-progress", {
+          value,
+          indeterminate: cellIsIndeterminate(cell),
+          label: `${client?.name || cell.client_id}: ${value}%`,
+        })}
       </li>`;
   }
 
@@ -688,7 +792,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
         <div class="audit-progress-hero__number"><strong>${progressValue}<small>%</small></strong><span>overall</span></div>
         <div class="audit-progress-hero__track">
           <div class="audit-progress-hero__labels"><strong>${done} / ${cells.length || "—"} sites complete</strong><span>${terminal ? "Batch finished" : "Crawler lane active"}</span></div>
-          <progress class="progress-track" max="100" value="${progressValue}" aria-label="Overall technical audit progress: ${progressValue}%"></progress>
+          ${barMarkup("progress-track", { value: progressValue, label: `Overall technical audit progress: ${progressValue}%` })}
           <p>Closing this popup will not stop the audits. Progress restores automatically.</p>
         </div>
       </section>
@@ -797,7 +901,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       return {
         state: "running",
         label: `${name} · ${provider}`,
-        detail: cell.progress_message || STAGE_LABELS[cell.current_stage] || "Collecting…",
+        detail: cell.progress_message || humanizeStage(cell.current_stage) || "Collecting…",
       };
     }
     const meta = STATE_META[cellDisplayState(cell)] || STATE_META.running;
@@ -841,9 +945,81 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       const detail = row.querySelector("[data-lane-detail]");
       if (detail.textContent !== copy.detail) detail.textContent = copy.detail;
       const value = row.querySelector("[data-lane-value]");
-      const text = cell && cell.status === "running" ? `${percent(cell.progress_percent)}%` : "—";
+      // task-32: a lane on an unmeasurable step used to read «0%», which looks
+      // like "stuck at zero" rather than "working, duration unknown".
+      const text = cell && cell.status === "running" && !cellIsIndeterminate(cell)
+        ? `${percent(cell.progress_percent)}%`
+        : "—";
       if (value.textContent !== text) value.textContent = text;
     });
+  }
+
+  // --- Activity log (task-32) -----------------------------------------------
+  //
+  // Narration of the raw SSE frames. Deliberately run-level, not per-cell: a
+  // `job_events` row carries `provider` but no `client_id`, and since task-31 a
+  // provider runs several clients at once — attributing a line to one cell would
+  // be a guess. Collapsed by default per AGENTS.md §9 ("a streaming log is
+  // secondary"): the matrix stays the primary, structured view.
+  const ACTIVITY_LIMIT = 40;
+  const activity = [];
+
+  // A cell-status row (`append_cell_status_event`) carries the internal string
+  // `cell not_configured` as its message — fine while nothing rendered it,
+  // wrong now that the log is on screen. The structured `details.cell_status`
+  // is the same fact in a form the UI already has copy for.
+  function activityText(payload) {
+    const status = payload.details?.cell_status;
+    if (status) return (STATE_META[status] || { label: status }).label;
+    return payload.message || humanizeStage(payload.stage);
+  }
+
+  function pushActivity(payload) {
+    if (!payload?.stage) return;
+    const text = activityText(payload);
+    const previous = activity[0];
+    // The worker re-reports the same stage while a long step runs; repeating
+    // an identical line adds noise, not information.
+    if (previous && previous.text === text && previous.provider === payload.provider) return;
+    activity.unshift({
+      provider: payload.provider,
+      stage: payload.stage,
+      level: payload.level || "info",
+      text,
+      timestamp: payload.timestamp,
+    });
+    if (activity.length > ACTIVITY_LIMIT) activity.length = ACTIVITY_LIMIT;
+    if (dialog.open) patchActivity();
+  }
+
+  function activityRows() {
+    return activity.map((entry) => {
+      const provider = (PROVIDERS[entry.provider] || { label: entry.provider || "Run" }).label;
+      return `<li class="${stateClass(entry.level)}"><span>${escapeHtml(provider)}</span><span>${escapeHtml(entry.text)}</span></li>`;
+    }).join("");
+  }
+
+  // Rendered even when empty, then hidden: the structure is only rebuilt when
+  // `structureKey` changes, so a panel that appeared with the first event would
+  // need a full rebuild — and that is exactly the rebuild task-30 removed.
+  function renderActivityPanel() {
+    return `
+      <details class="activity-log" data-activity-panel hidden>
+        <summary>Activity log<span class="activity-log__count" data-activity-count>0</span></summary>
+        <ol class="activity-log__list" data-activity></ol>
+      </details>`;
+  }
+
+  function patchActivity() {
+    const panel = body.querySelector("[data-activity-panel]");
+    if (!panel) return;
+    if (panel.hidden === (activity.length > 0)) panel.hidden = activity.length === 0;
+    const list = panel.querySelector("[data-activity]");
+    const html = activityRows();
+    if (list.dataset.render === html) return;
+    list.dataset.render = html;
+    list.innerHTML = html;
+    panel.querySelector("[data-activity-count]").textContent = String(activity.length);
   }
 
   function cellKey(cell) {
@@ -871,19 +1047,50 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
   // animate a fake percentage). The sample deliberately ignores `skipped` /
   // `not_configured` cells: those finish in milliseconds and would drag the
   // median down until the estimate reads as minutes when it is really an hour.
+  const MEASURED_STATUSES = ["succeeded", "partial", "failed", "failed_interrupted"];
+
+  function medianOf(values) {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+
+  function cellDurations(cells) {
+    // `skipped`/`not_configured` finish in milliseconds and would drag any
+    // estimate down to minutes when the run is really an hour, so only cells
+    // that actually collected count as a sample.
+    const byProvider = new Map();
+    cells
+      .filter((cell) => MEASURED_STATUSES.includes(cell.status))
+      .forEach((cell) => {
+        const seconds = (Date.parse(cell.finished_at) - Date.parse(cell.started_at)) / 1000;
+        if (!Number.isFinite(seconds) || seconds < 0) return;
+        byProvider.set(cell.provider, [...(byProvider.get(cell.provider) || []), seconds]);
+      });
+    return byProvider;
+  }
+
+  // task-32: the estimate used to pool every provider into one median and to
+  // divide by "however many cells happen to be running". Both were wrong in the
+  // same direction: an Ahrefs cell takes minutes and a GSC cell seconds, and the
+  // running count dips to 1 between clients, briefly tripling the forecast.
   function etaCopy(cells) {
-    const collected = cells.filter((cell) => ["succeeded", "partial", "failed", "failed_interrupted"].includes(cell.status));
-    const remaining = cells.filter((cell) => !TERMINAL_CELL_STATUSES.has(cell.status)).length;
-    if (!remaining) return "";
-    const durations = collected
-      .map((cell) => (Date.parse(cell.finished_at) - Date.parse(cell.started_at)) / 1000)
-      .filter((value) => Number.isFinite(value) && value >= 0)
-      .sort((a, b) => a - b);
-    const running = cells.filter((cell) => cell.status === "running").length;
-    const lanes = Math.max(1, running);
-    if (durations.length < 3) return `${remaining} ${remaining === 1 ? "cell" : "cells"} left · estimating time…`;
-    const median = durations[Math.floor(durations.length / 2)];
-    return `${remaining} ${remaining === 1 ? "cell" : "cells"} left · about ${formatDuration((median * remaining) / lanes)} to go`;
+    const pending = cells.filter((cell) => !TERMINAL_CELL_STATUSES.has(cell.status));
+    if (!pending.length) return "";
+    const label = `${pending.length} ${pending.length === 1 ? "cell" : "cells"} left`;
+    const durations = cellDurations(cells);
+    const overall = medianOf([...durations.values()].flat());
+    if (overall === null || [...durations.values()].flat().length < 3) {
+      return `${label} · estimating time…`;
+    }
+    // Per-provider median where we have one, the overall median as the floor for
+    // a provider that has not finished a single cell yet.
+    const work = pending.reduce((total, cell) => {
+      const sample = durations.get(cell.provider);
+      return total + (sample?.length ? medianOf(sample) : overall);
+    }, 0);
+    const lanes = Math.max(1, laneCount(cells), cells.filter((cell) => cell.status === "running").length);
+    return `${label} · about ${formatDuration(work / lanes)} to go`;
   }
 
   function ensureClockTicking(getCells) {
@@ -897,6 +1104,9 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
         return;
       }
       node.textContent = formatClock(Date.now() - started);
+      // Same tick drives every running cell's elapsed label (task-32) — one
+      // timer for the whole dialog, not one per cell.
+      tickCellClocks();
     }, 1000);
   }
 
@@ -932,14 +1142,15 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       <div class="progress-overview">
         <span class="progress-number" data-progress-number>0%</span>
         <div>
-          <progress class="progress-track" data-progress-track max="100" value="0" aria-label="Overall progress: 0%"></progress>
+          ${barMarkup("progress-track", { value: 0, label: "Overall progress: 0%", hook: "data-progress-track" })}
           <div class="progress-copy" data-progress-copy></div>
           <p class="progress-eta"><span data-progress-eta></span><span class="progress-eta__clock" data-run-clock-wrap hidden> · running <span data-run-clock>00:00</span></span></p>
         </div>
       </div>
       ${clientIds.length
         ? `<div class="matrix-wrap"><table class="progress-matrix"><thead><tr><th scope="col">Client</th>${providers.map((provider) => `<th scope="col">${PROVIDERS[provider].label}</th>`).join("")}</tr></thead><tbody>${clientIds.map((clientId) => `<tr><td>${escapeHtml(clients.get(clientId) || clientId)}</td>${providers.map((provider) => matrixCell(cells.find((cell) => String(cell.client_id) === clientId && cell.provider === provider), clientId, provider)).join("")}</tr>`).join("")}</tbody></table></div>`
-        : `<div class="state-panel"><p><strong>Building the queue.</strong><br>The table will appear once the server responds.</p></div>`}`;
+        : `<div class="state-panel"><p><strong>Building the queue.</strong><br>The table will appear once the server responds.</p></div>`}
+      ${renderActivityPanel()}`;
     bindSessionButtons();
   }
 
@@ -969,7 +1180,7 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     if (!node) return;
     const displayState = cellDisplayState(cell);
     const meta = STATE_META[displayState] || STATE_META.running;
-    const value = TERMINAL_CELL_STATUSES.has(cell.status) ? 100 : percent(cell.progress_percent);
+    const value = cellValue(cell);
     node.className = `matrix-cell ${stateClass(displayState)}`;
     const label = node.querySelector("[data-cell-label]");
     const nextLabel = `${icon(meta.icon, cell.status === "running" ? "icon icon--spin" : "icon")}${meta.label}`;
@@ -980,10 +1191,16 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     const detail = node.querySelector("[data-cell-detail]");
     const nextDetail = cellDetail(cell, displayState);
     if (detail.textContent !== nextDetail) detail.textContent = nextDetail;
-    const bar = node.querySelector("[data-cell-progress]");
-    if (Number(bar.value) !== value) {
-      bar.value = value;
-      bar.setAttribute("aria-label", `${meta.label}: ${value}%`);
+    patchBar(node.querySelector("[data-cell-progress]"), {
+      value,
+      indeterminate: cellIsIndeterminate(cell),
+      label: `${meta.label}: ${value}%`,
+    });
+    const metaNode = node.querySelector("[data-cell-meta]");
+    const nextMeta = cellMetaMarkup(cell);
+    if (metaNode && metaNode.dataset.render !== nextMeta) {
+      metaNode.innerHTML = nextMeta;
+      metaNode.dataset.render = nextMeta;
     }
   }
 
@@ -1010,13 +1227,11 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     }
 
     const progressValue = percent(job.progress_percent);
-    const number = body.querySelector("[data-progress-number]");
-    if (number) number.textContent = `${progressValue}%`;
-    const track = body.querySelector("[data-progress-track]");
-    if (track && Number(track.value) !== progressValue) {
-      track.value = progressValue;
-      track.setAttribute("aria-label", `Overall progress: ${progressValue}%`);
-    }
+    tweenPercent(body.querySelector("[data-progress-number]"), progressValue);
+    patchBar(body.querySelector("[data-progress-track]"), {
+      value: progressValue,
+      label: `Overall progress: ${progressValue}%`,
+    });
     patchLanePanel(cells, clients);
     const copy = body.querySelector("[data-progress-copy]");
     if (copy) copy.textContent = progressSummary(cells);
@@ -1035,6 +1250,8 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
       }
     }
     cells.forEach(patchCell);
+    tickCellClocks();
+    patchActivity();
 
     const nextFooter = footerActions(job);
     if (nextFooter !== footerHtml) {
@@ -1066,10 +1283,47 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     if (!cell) return `<td><span class="matrix-cell state-not_configured"><strong>— Not selected</strong></span></td>`;
     const displayState = cellDisplayState(cell);
     const meta = STATE_META[displayState] || STATE_META.running;
-    const value = TERMINAL_CELL_STATUSES.has(cell.status) ? 100 : percent(cell.progress_percent);
+    const value = cellValue(cell);
     const iconMarkup = icon(meta.icon, cell.status === "running" ? "icon icon--spin" : "icon");
     const key = escapeHtml(`${clientId ?? cell.client_id}|${provider ?? cell.provider}`);
-    return `<td><div class="matrix-cell ${stateClass(displayState)}" data-cell="${key}"><strong data-cell-label>${iconMarkup}${meta.label}</strong><small data-cell-detail>${escapeHtml(cellDetail(cell, displayState))}</small><progress class="mini-progress" data-cell-progress max="100" value="${value}" aria-label="${meta.label}: ${value}%"></progress></div></td>`;
+    const bar = barMarkup("mini-progress", {
+      value,
+      indeterminate: cellIsIndeterminate(cell),
+      label: `${meta.label}: ${value}%`,
+      hook: "data-cell-progress",
+    });
+    return `<td><div class="matrix-cell ${stateClass(displayState)}" data-cell="${key}"><strong data-cell-label>${iconMarkup}${meta.label}</strong><small data-cell-detail>${escapeHtml(cellDetail(cell, displayState))}</small>${bar}<span class="matrix-cell__meta" data-cell-meta>${cellMetaMarkup(cell)}</span></div></td>`;
+  }
+
+  function cellValue(cell) {
+    return TERMINAL_CELL_STATUSES.has(cell.status) ? 100 : percent(cell.progress_percent);
+  }
+
+  // Elapsed time on a running cell, plus the measured step when the adapter
+  // reports one. During an indeterminate step the clock is the only honest
+  // "this is alive" signal there is — so it must never be omitted there.
+  function cellMetaMarkup(cell) {
+    if (cell.status !== "running") return "";
+    const started = Date.parse(cell.started_at);
+    if (!Number.isFinite(started)) return "";
+    const scale = cellIsIndeterminate(cell)
+      ? "duration unknown"
+      : `${percent(cell.progress_percent)}%`;
+    // The clock text is deliberately NOT part of this string: it doubles as the
+    // diff key in `patchCell`, and a value that changes every second would
+    // rebuild the cell on every tick — exactly the flicker task-30 removed.
+    // `tickCellClocks` fills it in instead.
+    return `<span>${escapeHtml(scale)}</span><span data-cell-elapsed data-started="${started}"></span>`;
+  }
+
+  function tickCellClocks() {
+    const now = Date.now();
+    body.querySelectorAll("[data-cell-elapsed]").forEach((node) => {
+      const started = Number(node.dataset.started);
+      if (!Number.isFinite(started)) return;
+      const text = formatClock(now - started);
+      if (node.textContent !== text) node.textContent = text;
+    });
   }
 
   function progressSummary(cells) {

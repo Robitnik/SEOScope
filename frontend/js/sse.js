@@ -1,5 +1,5 @@
-import { getSyncJob, isFixtureMode } from "./api.js?v=20260731-refresh1";
-import { isTerminal } from "./formatters.js?v=20260731-refresh1";
+import { getSyncJob, isFixtureMode } from "./api.js?v=20260803-progress2";
+import { isTerminal } from "./formatters.js?v=20260803-progress2";
 
 // One job snapshot poll per this many ms at most (task-30). Every SSE event
 // used to trigger its own `getSyncJob`, and `request()` aborts the previous
@@ -13,7 +13,7 @@ const REFRESH_INTERVAL_MS = 250;
 // comments do not fire `onmessage`, so this cannot come from the stream.
 const HEARTBEAT_MS = 10_000;
 
-export function watchJob({ id, eventsUrl, lastEventId = "", onProgress, onConnection, onTerminal, onError }) {
+export function watchJob({ id, eventsUrl, lastEventId = "", onProgress, onConnection, onTerminal, onError, onEvent }) {
   let stopped = false;
   let source = null;
   let timer = null;
@@ -67,14 +67,25 @@ export function watchJob({ id, eventsUrl, lastEventId = "", onProgress, onConnec
     if (currentEventId) url.searchParams.set("last_event_id", currentEventId);
     source = new EventSource(url);
     source.onopen = () => onConnection("connected");
-    source.onmessage = (event) => {
+    // task-32: the stream already carries the richest description of what the
+    // worker is doing right now — `{provider, stage, percent, message}` — and
+    // this used to throw all of it away, using the event purely as a
+    // "something changed" ping. The snapshot poll stays the source of truth for
+    // state; `onEvent` is the narration layer on top of it.
+    const handle = (event) => {
       currentEventId = event.lastEventId || currentEventId;
+      if (onEvent) {
+        try {
+          onEvent(JSON.parse(event.data));
+        } catch {
+          // A malformed or non-JSON frame must not break the refresh below —
+          // progress narration is diagnostic, never load-bearing.
+        }
+      }
       scheduleRefresh();
     };
-    source.addEventListener("progress", (event) => {
-      currentEventId = event.lastEventId || currentEventId;
-      scheduleRefresh();
-    });
+    source.onmessage = handle;
+    source.addEventListener("progress", handle);
     source.onerror = () => {
       onConnection("offline");
       scheduleRefresh();

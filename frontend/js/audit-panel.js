@@ -1,6 +1,6 @@
-import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260731-refresh1";
-import { panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260731-refresh1";
-import { formatUaNumber } from "./client-page.js?v=20260731-refresh1";
+import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260803-progress2";
+import { panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260803-progress2";
+import { formatUaNumber } from "./client-page.js?v=20260803-progress2";
 
 const RECHECK_META = {
   fixed: { label: "Fixed", tone: "complete", icon: "circle-check" },

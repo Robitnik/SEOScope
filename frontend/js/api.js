@@ -336,6 +336,31 @@ function writeMockLogins(logins) { localStorage.setItem(MOCK_LOGINS_KEY, JSON.st
 // so the shape has to match what the real run looks like.
 const FIXTURE_LANES = 3;
 
+// task-32: fixture mode has to reproduce the SHAPE of the real telemetry, or
+// visual QA silently stops covering it. Each provider now walks its own stage
+// ladder — including the steps that are genuinely unmeasurable (`export_issues`
+// while Ahrefs builds the ZIP), which is what exercises the indeterminate bar.
+const FIXTURE_STAGES = {
+  ahrefs: ["open_session", "resolve_project", "export_issues", "unpack_export", "parse_affected", "persist"],
+  reporting_ninja: ["connect", "discover", "fetch_previous", "datasets", "fetch_current_ga4_landing_pages", "persist"],
+  gsc: ["connect", "discover", "fetch_current_pages", "fetch_current_queries", "fetch_current_daily", "persist"],
+  semrush: ["preflight", "authenticate", "fetch_current", "fetch_previous", "normalize", "persist"],
+};
+
+const FIXTURE_MESSAGES = {
+  parse_affected: (step) => `Ahrefs issues · ${step} / 68 · Page has no outgoing links`,
+  fetch_current_ga4_landing_pages: (step) => `GA4 landing pages · current · ${step} / 14`,
+  export_issues: () => "Ahrefs is building the full issue export",
+};
+
+function mockStage(provider, progress) {
+  const ladder = FIXTURE_STAGES[provider] || FIXTURE_STAGES.semrush;
+  const index = Math.min(ladder.length - 1, Math.floor((progress / 100) * ladder.length));
+  const stage = ladder[index];
+  const message = FIXTURE_MESSAGES[stage]?.(Math.max(1, Math.round(progress / 100 * 14))) || null;
+  return { current_stage: stage, progress_message: message };
+}
+
 function mockCellStatus(cell, elapsed) {
   if (cell.status === "not_configured" || cell.status === "cancelled") return cell;
   if (cell.provider === "tech_audit") {
@@ -360,14 +385,18 @@ function mockCellStatus(cell, elapsed) {
   // Slot appears at claim time, exactly like the worker sets it: a queued cell
   // has not been handed to a lane yet.
   if (progress <= 0) return { ...cell, slot: null, status: "queued", progress_percent: 0, current_stage: "queued" };
-  const cellWithSlot = { ...cell, slot: cell.lane };
-  const stages = ["preflight", "authenticate", "fetch_current", "fetch_previous", "normalize", "validate", "persist"];
-  const stage = stages[Math.min(stages.length - 1, Math.floor(progress / 15))];
+  // Real cells carry `started_at`; without it the elapsed clock (task-32) would
+  // be invisible in fixture mode, i.e. untested by visual QA.
+  const cellWithSlot = {
+    ...cell,
+    slot: cell.lane,
+    started_at: new Date(Date.now() - Math.max(0, elapsed - offset)).toISOString(),
+  };
   if (progress >= 100) {
     const demoFailure = cell.provider === "semrush" && cell.client_index === 1 && !cell.retried;
-    return { ...cellWithSlot, status: demoFailure ? "failed" : "succeeded", progress_percent: 100, current_stage: "complete", error_code: demoFailure ? "RATE_LIMITED" : null };
+    return { ...cellWithSlot, status: demoFailure ? "failed" : "succeeded", progress_percent: 100, current_stage: "complete", progress_message: null, error_code: demoFailure ? "RATE_LIMITED" : null };
   }
-  return { ...cellWithSlot, status: "running", progress_percent: progress, current_stage: stage };
+  return { ...cellWithSlot, status: "running", progress_percent: progress, ...mockStage(cell.provider, progress) };
 }
 
 function mockAuthDemoCellStatus(cell, elapsed, offset) {
@@ -504,9 +533,39 @@ export async function retrySyncJob(id) {
   return { batch_id: retryId, job_id: retryId, status_url: `/api/v1/sync-jobs/${retryId}`, events_url: `/api/v1/sync-jobs/${retryId}/events` };
 }
 
-export function updateIntegration(clientId, provider, payload) {
+export function updateIntegration(clientId, provider, payload, { sourceMode = "auto" } = {}) {
   if (FIXTURE_MODE) return wait(450).then(() => ({ client_id: clientId, provider, enabled: true, config: payload }));
-  return request(`/clients/${clientId}/integrations/${provider}`, { method: "PUT", body: JSON.stringify({ enabled: true, source_mode: "auto", integration_config: payload }) });
+  return request(`/clients/${clientId}/integrations/${provider}`, { method: "PUT", body: JSON.stringify({ enabled: true, source_mode: sourceMode, integration_config: payload }) });
+}
+
+// task-33: ask the server to find this client's account at the provider instead
+// of making the operator look the id up and type it in. `apply: false` keeps it
+// a dry run — candidates come back, nothing is written.
+export function discoverIntegration(clientId, provider, { apply = true } = {}) {
+  if (FIXTURE_MODE) return wait(600).then(() => fixtureDiscovery(clientId, provider));
+  return request(`/clients/${clientId}/integrations/${provider}/discover`, { method: "POST", body: JSON.stringify({ apply }) }, `discover:${clientId}:${provider}`);
+}
+
+function fixtureDiscovery(clientId, provider) {
+  if (FIXTURE_MODE === "error") throw new Error("Fixture connection error");
+  if (provider === "reporting_ninja") {
+    return {
+      client_id: clientId, provider, status: "needs_choice",
+      message: "Several GA4 accounts could match this domain. Pick the right one.",
+      applied: null, preflight: null,
+      candidates: [
+        { label: "Acme Corp - GA4", detail: "properties/111", confidence: "strong", reason: "name similarity 0.94", source_mode: "auto", integration_config: { connection_key: "seo@example.com", account_id: "properties/111" } },
+        { label: "Acme Corp (old)", detail: "properties/222", confidence: "weak", reason: "name similarity 0.71", source_mode: "auto", integration_config: { connection_key: "seo@example.com", account_id: "properties/222" } },
+      ],
+    };
+  }
+  return {
+    client_id: clientId, provider, status: "connected",
+    message: "Matched Search Console account sc-domain:example.com.",
+    applied: { integration_config: { connection_key: "seo@example.com", account_id: "sc-domain:example.com" } },
+    preflight: { provider, ok: true, reason_code: null, message: "" },
+    candidates: [],
+  };
 }
 
 // --- Technical SEO Audit (machine-only findings) ---------------------------

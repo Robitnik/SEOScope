@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
+from app.integrations.progress import PhaseTracker
 from app.integrations.registry import register_adapter
 from app.metrics.catalog import CATALOG
 from app.schemas.adapter import (
@@ -126,6 +127,11 @@ _GBP_PERFORMANCE_METRICS = {
     "bookings": "business_bookings",
 }
 
+# Стадії, які `seo_audit.dashboard.reporting_ninja.collect_ga4` емітить під час
+# KPI-фази, у порядку виконання. Пакет пінований і `percent` не шле — позиція
+# стадії в цьому списку і є вимірюваним кроком фази (task-32).
+_KPI_STAGES = ("discover", "fetch_current", "fetch_previous")
+
 _GBP_DATASET_KEYS = (
     "gbp_daily",
     "gbp_locations",
@@ -141,6 +147,11 @@ def _decimal(value: Any) -> Decimal | None:
         return Decimal(str(value).replace(",", "").strip())
     except (InvalidOperation, ValueError, TypeError):
         return None
+
+
+def _dataset_label(dataset_key: str) -> str:
+    """`ga4_landing_pages` → `landing pages` — для UI-повідомлення прогресу."""
+    return dataset_key.removeprefix("ga4_").removeprefix("gbp_").replace("_", " ")
 
 
 def _normalize_dimension(field: str, value: Any) -> str:
@@ -210,6 +221,8 @@ class ReportingNinjaAdapter:
         current = SeoDateRange(start=context.current.start, end=context.current.end)
         previous = SeoDateRange(start=context.previous.start, end=context.previous.end)
 
+        tracker = PhaseTracker(self.provider, emit, "kpi")
+        tracker.begin("connect", message="Connecting to Reporting Ninja")
         with ReportingNinjaClient() as client:
             result = collect_ga4(
                 client,
@@ -219,8 +232,9 @@ class ReportingNinjaAdapter:
                 },
                 current=current,
                 previous=previous,
-                on_event=_bridge_emit(emit),
+                on_event=tracker.bridge(_KPI_STAGES),
             )
+        tracker.done("kpi_complete", message="GA4 KPI snapshot ready")
 
         metrics = _map_metrics(result, context.current, context.previous)
         return CollectionResult(
@@ -268,6 +282,19 @@ class ReportingNinjaAdapter:
         completed = 0
         truncated_any = False
 
+        # Скільки мережевих проходів попереду — відомо ДО циклу, тому відсоток
+        # цієї фази вимірюваний, а не вигаданий (task-32): кожен GA4-датасет на
+        # два періоди, плюс два періоди GBP і один прохід по відгуках.
+        gbp_planned = bool(cfg.get("gbp_locations"))
+        dataset_steps = len(_GA4_DATASETS) * 2 + (3 if gbp_planned else 0)
+        step = 0
+        tracker = PhaseTracker(self.provider, emit, "datasets")
+        tracker.begin(
+            "datasets",
+            message=f"Collecting {dataset_steps} GA4 datasets",
+            details={"planned_steps": dataset_steps},
+        )
+
         def append_dataset(
             *,
             dataset_key: str,
@@ -312,6 +339,9 @@ class ReportingNinjaAdapter:
                 (PeriodRole.previous, context.previous),
             ):
                 for dataset_key, definition in _GA4_DATASETS.items():
+                    step += 1
+                    stage = f"fetch_{role.value}_{dataset_key}"
+                    label = _dataset_label(dataset_key)
                     dimension = definition["dimension"]
                     metric_fields = {
                         key: field
@@ -320,13 +350,24 @@ class ReportingNinjaAdapter:
                     }
                     if dimension not in available or not metric_fields:
                         warnings.append(f"{dataset_key}: required GA4 fields unavailable")
-                        continue
-                    emit(
-                        ProgressEvent(
-                            provider=self.provider,
-                            stage=f"fetch_{role.value}_{dataset_key}",
-                            message=f"GA4 {dataset_key} {period.start} → {period.end}",
+                        # Крок усе одно зараховано: інакше шкала фази ніколи не
+                        # дійшла б до кінця на акаунті з неповним набором полів.
+                        tracker.step(
+                            stage,
+                            completed=step,
+                            total=dataset_steps,
+                            level="warning",
+                            message=f"{label} ({role.value}): fields unavailable",
                         )
+                        continue
+                    tracker.step(
+                        stage,
+                        completed=step,
+                        total=dataset_steps,
+                        message=(
+                            f"GA4 {label} · {role.value} · "
+                            f"{period.start} → {period.end}"
+                        ),
                     )
                     try:
                         page = client.query_all(
@@ -375,15 +416,15 @@ class ReportingNinjaAdapter:
                     (PeriodRole.current, context.current),
                     (PeriodRole.previous, context.previous),
                 ):
-                    emit(
-                        ProgressEvent(
-                            provider=self.provider,
-                            stage=f"fetch_{role.value}_gbp",
-                            message=(
-                                f"Business Profile {role.value}: "
-                                f"{len(gbp_locations)} locations"
-                            ),
-                        )
+                    step += 1
+                    tracker.step(
+                        f"fetch_{role.value}_gbp",
+                        completed=step,
+                        total=dataset_steps,
+                        message=(
+                            f"Business Profile · {role.value} · "
+                            f"{len(gbp_locations)} locations"
+                        ),
                     )
                     daily: dict[str, dict[str, Decimal]] = {}
                     location_rows: list[tuple[str, dict[str, Decimal | None]]] = []
@@ -489,15 +530,15 @@ class ReportingNinjaAdapter:
                         )
 
                 reviews: list[tuple[str, dict[str, Decimal | None]]] = []
-                emit(
-                    ProgressEvent(
-                        provider=self.provider,
-                        stage="fetch_gbp_reviews",
-                        message=(
-                            "Business Profile lifetime reviews: "
-                            f"{len(gbp_locations)} locations"
-                        ),
-                    )
+                step += 1
+                tracker.step(
+                    "fetch_gbp_reviews",
+                    completed=step,
+                    total=dataset_steps,
+                    message=(
+                        "Business Profile lifetime reviews · "
+                        f"{len(gbp_locations)} locations"
+                    ),
                 )
                 for location in gbp_locations:
                     name = str(location.get("name") or location["account_id"])
@@ -536,6 +577,8 @@ class ReportingNinjaAdapter:
                         sort_key="reviews",
                         limit=100,
                     )
+
+        tracker.done("datasets_complete", message=f"Collected {completed} GA4 datasets")
 
         expected = len(_GA4_DATASETS) * 2
         if cfg.get("gbp_locations"):

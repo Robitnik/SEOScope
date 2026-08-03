@@ -30,6 +30,7 @@ from app.db.repositories.jobs import JobRepository
 from app.db.repositories.metrics import MetricRepository
 from app.db.repositories.snapshots import SnapshotRepository
 from app.integrations.browser_session import BROWSER_PROVIDERS, SessionState
+from app.integrations.progress import PhaseTracker
 from app.integrations.registry import get_adapter
 from app.jobs.events import append_cell_status_event, make_emitter
 from app.metrics import CATALOG, normalize_result, resolve_periods
@@ -498,6 +499,13 @@ def _run_cell_unguarded(
         CellStatus.awaiting_auth
         if result.error_code == "auth_required"
         else _map_cell_status(snapshot_quality)
+    )
+
+    # Остання фаза клітинки (task-32). Запис снапшота з усіма рядками вимірів і
+    # датасетів — не миттєвий, а до цього моменту адаптер уже замовк: без цієї
+    # події смуга завмирала на межі фази датасетів і виглядала як зависання.
+    PhaseTracker(handle.provider, emit, "persist").begin(
+        "persist", message="Saving collected data"
     )
 
     with session_scope() as session:

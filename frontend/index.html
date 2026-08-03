@@ -9,14 +9,14 @@
     <link rel="icon" href="/assets/brand/logo.svg" type="image/svg+xml">
     <link rel="preload" href="/assets/fonts/league-spartan-black.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/assets/brand/ribbon.webp" as="image" type="image/webp">
-    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260731-refresh1">
-    <link rel="stylesheet" href="/css/tokens.css?v=20260731-refresh1">
-    <link rel="stylesheet" href="/css/app.css?v=20260731-refresh1">
-    <link rel="stylesheet" href="/css/client-page.css?v=20260731-refresh1">
-    <link rel="stylesheet" href="/css/tools.css?v=20260731-refresh1">
-    <link rel="stylesheet" href="/css/trends.css?v=20260731-refresh1">
+    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260803-progress2">
+    <link rel="stylesheet" href="/css/tokens.css?v=20260803-progress2">
+    <link rel="stylesheet" href="/css/app.css?v=20260803-progress2">
+    <link rel="stylesheet" href="/css/client-page.css?v=20260803-progress2">
+    <link rel="stylesheet" href="/css/tools.css?v=20260803-progress2">
+    <link rel="stylesheet" href="/css/trends.css?v=20260803-progress2">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260731-refresh1"></script>
+    <script type="module" src="/js/router.js?v=20260803-progress2"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -189,13 +189,31 @@
         </header>
         <div class="dialog-body">
           <p class="integration-lead" id="integration-lead"></p>
-          <label class="form-field" data-domain-field>Domain<input name="domain" autocomplete="url" placeholder="example.com"></label>
-          <label class="form-field" data-account-field>Connection key<input name="connection_key" autocomplete="off" placeholder="Reporting Ninja connection name"></label>
-          <label class="form-field" data-account-field>Account / resource ID<input name="account_id" autocomplete="off" placeholder="e.g. sc-domain:example.com"></label>
-          <p class="field-help">Do not enter secrets here. Provide a reference to a saved connection.</p>
+          <!-- task-33: the search result. Manual entry below stays reachable in
+               every outcome, so a failed lookup is never a dead end (AGENTS §6). -->
+          <div class="discovery" id="integration-discovery" hidden>
+            <p class="discovery__status" id="integration-status" role="status"></p>
+            <dl class="discovery__detail" id="integration-detail" hidden></dl>
+            <fieldset class="discovery__choices" id="integration-choices" hidden>
+              <legend>Pick the matching account</legend>
+              <div id="integration-choice-list"></div>
+            </fieldset>
+          </div>
+          <div id="integration-manual" hidden>
+            <label class="form-field" data-domain-field>Domain<input name="domain" autocomplete="url" placeholder="example.com"></label>
+            <label class="form-field" data-account-field>Connection key<input name="connection_key" autocomplete="off" placeholder="Reporting Ninja connection name"></label>
+            <label class="form-field" data-account-field>Account / resource ID<input name="account_id" autocomplete="off" placeholder="e.g. sc-domain:example.com"></label>
+            <p class="field-help">Do not enter secrets here. Provide a reference to a saved connection.</p>
+          </div>
           <p class="form-error" id="integration-error" role="alert"></p>
         </div>
-        <footer class="dialog-footer"><button class="button button--quiet" type="button" data-close>Cancel</button><button class="button button--primary" type="submit">Save integration</button></footer>
+        <footer class="dialog-footer">
+          <button class="button button--quiet" type="button" data-close>Cancel</button>
+          <button class="button button--quiet" type="button" id="integration-manual-toggle" hidden>Enter manually</button>
+          <button class="button button--primary" type="button" id="integration-connect" hidden>Connect</button>
+          <button class="button button--primary" type="button" id="integration-collect" hidden>Collect data now</button>
+          <button class="button button--primary" type="submit" id="integration-save" hidden>Save integration</button>
+        </footer>
       </form>
     </dialog>
 

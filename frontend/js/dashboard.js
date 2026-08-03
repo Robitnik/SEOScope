@@ -1,11 +1,11 @@
-import { getDashboard, updateIntegration } from "./api.js?v=20260731-refresh1";
-import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260731-refresh1";
-import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260731-refresh1";
-import { createDetailDrawer } from "./detail-drawer.js?v=20260731-refresh1";
-import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260731-refresh1";
-import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260731-refresh1";
-import { getState, setState } from "./store.js?v=20260731-refresh1";
-import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260731-refresh1";
+import { discoverIntegration, getDashboard, updateIntegration } from "./api.js?v=20260803-progress2";
+import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260803-progress2";
+import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260803-progress2";
+import { createDetailDrawer } from "./detail-drawer.js?v=20260803-progress2";
+import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260803-progress2";
+import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260803-progress2";
+import { getState, setState } from "./store.js?v=20260803-progress2";
+import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260803-progress2";
 
 const grid = document.querySelector("#client-grid");
 const dashboardState = document.querySelector("#dashboard-state");
@@ -233,20 +233,163 @@ const integrationDialog = document.querySelector("#integration-dialog");
 const integrationForm = document.querySelector("#integration-form");
 let integrationContext = null;
 
-function openIntegration(client, provider, trigger) {
-  integrationContext = { client, provider, trigger };
-  document.querySelector("#integration-title").textContent = `Connect ${PROVIDERS[provider]?.label || provider}`;
-  document.querySelector("#integration-lead").textContent = `${client.name}: provide a reference to a server-side connection. Tokens and passwords are never stored in the browser.`;
+const discoveryBlock = document.querySelector("#integration-discovery");
+const discoveryStatus = document.querySelector("#integration-status");
+const discoveryDetail = document.querySelector("#integration-detail");
+const discoveryChoices = document.querySelector("#integration-choices");
+const discoveryChoiceList = document.querySelector("#integration-choice-list");
+const manualBlock = document.querySelector("#integration-manual");
+const manualToggle = document.querySelector("#integration-manual-toggle");
+const connectButton = document.querySelector("#integration-connect");
+const collectButton = document.querySelector("#integration-collect");
+const saveButton = document.querySelector("#integration-save");
+
+// Spelled out rather than left to colour alone (AGENTS §7).
+const CONFIDENCE_LABEL = { exact: "Exact", strong: "Likely", weak: "Possible" };
+
+function setDiscoveryState(stateClass, message) {
+  discoveryBlock.hidden = false;
+  discoveryBlock.className = `discovery ${stateClass}`;
+  discoveryStatus.textContent = message;
+}
+
+function setIntegrationFooter({ manual = false, connect = false, collect = false, save = false } = {}) {
+  manualToggle.hidden = !manual;
+  connectButton.hidden = !connect;
+  collectButton.hidden = !collect;
+  saveButton.hidden = !save;
+}
+
+function renderDiscoveryDetail(rows) {
+  discoveryDetail.innerHTML = rows.map(([term, value]) => `<dt>${escapeHtml(term)}</dt><dd>${escapeHtml(value)}</dd>`).join("");
+  discoveryDetail.hidden = !rows.length;
+}
+
+function renderCandidates(candidates) {
+  discoveryChoiceList.innerHTML = candidates.map((candidate, index) => `
+    <label class="choice">
+      <input type="radio" name="integration-candidate" value="${index}"${index === 0 ? " checked" : ""}>
+      <span class="choice__body">
+        <strong>${escapeHtml(candidate.label)}</strong>
+        <small>${escapeHtml(candidate.detail)} · ${escapeHtml(candidate.reason)}</small>
+      </span>
+      <span class="choice__badge confidence-${candidate.confidence}">${escapeHtml(CONFIDENCE_LABEL[candidate.confidence] || candidate.confidence)}</span>
+    </label>`).join("");
+  discoveryChoices.hidden = false;
+}
+
+// The account reference we just stored, plus whether probing it actually
+// worked — "saved" and "verified" are different claims and the report must not
+// blur them (a reference can be well-formed and still point at nothing).
+function connectedDetail(result) {
+  const config = result.applied?.integration_config || {};
+  const rows = Object.entries(config).map(([key, value]) => [key.replace(/_/g, " "), String(value)]);
+  if (result.preflight) {
+    rows.push(["verification", result.preflight.ok ? "passed" : (result.preflight.reason_code || "failed")]);
+  }
+  return rows;
+}
+
+function showConnected(result) {
+  setDiscoveryState("is-connected", result.message);
+  renderDiscoveryDetail(connectedDetail(result));
+  discoveryChoices.hidden = true;
+  manualBlock.hidden = true;
+  setIntegrationFooter({ collect: true });
+}
+
+function renderDiscovery(result) {
+  integrationContext.candidates = result.candidates || [];
+  if (result.status === "connected" || result.status === "already_configured") {
+    integrationContext.changed = result.status === "connected";
+    showConnected(result);
+    return;
+  }
+  renderDiscoveryDetail([]);
+  if (result.status === "needs_choice") {
+    setDiscoveryState("is-choice", result.message);
+    renderCandidates(integrationContext.candidates);
+    setIntegrationFooter({ manual: true, connect: true });
+    return;
+  }
+  // not_found / unavailable — every outcome still offers a way forward.
+  discoveryChoices.hidden = true;
+  setDiscoveryState(result.status === "unavailable" ? "is-error" : "is-empty", result.message);
+  setIntegrationFooter({ manual: true });
+}
+
+function showManualEntry() {
+  discoveryBlock.hidden = true;
+  discoveryChoices.hidden = true;
+  manualBlock.hidden = false;
+  setIntegrationFooter({ save: true });
+  // The `hidden` attribute sits on the `.form-field` label, not the input, so
+  // picking the first `input` would silently focus an invisible one and drop
+  // the keyboard user out of the dialog entirely.
+  const field = [...integrationForm.querySelectorAll(".form-field")].find((item) => !item.hidden);
+  field?.querySelector("input")?.focus();
+}
+
+// task-33: the operator asks for a connection, not for a form. Look the account
+// up first and only fall back to manual entry when the lookup cannot answer.
+async function openIntegration(client, provider, trigger) {
+  integrationContext = { client, provider, trigger, candidates: [] };
+  const providerLabel = PROVIDERS[provider]?.label || provider;
+  document.querySelector("#integration-title").textContent = `Connect ${providerLabel}`;
+  document.querySelector("#integration-lead").textContent = `${client.name} — ${client.domain}. Tokens and passwords are never stored in the browser.`;
   document.querySelector("#integration-error").textContent = "";
   integrationForm.reset();
   integrationForm.elements.domain.value = client.domain;
   const usesDomain = ["ahrefs", "semrush"].includes(provider);
   integrationForm.querySelector("[data-domain-field]").hidden = !usesDomain;
   integrationForm.querySelectorAll("[data-account-field]").forEach((field) => { field.hidden = usesDomain; });
+
+  manualBlock.hidden = true;
+  discoveryChoices.hidden = true;
+  renderDiscoveryDetail([]);
+  setDiscoveryState("is-searching", `Searching ${providerLabel} for ${client.domain}…`);
+  setIntegrationFooter();
   integrationDialog.showModal();
+
+  try {
+    renderDiscovery(await discoverIntegration(client.client_id, provider));
+  } catch (error) {
+    setDiscoveryState("is-error", `Could not reach the server: ${error.message}`);
+    setIntegrationFooter({ manual: true });
+  }
 }
+
+manualToggle.addEventListener("click", showManualEntry);
+
+connectButton.addEventListener("click", async () => {
+  const selected = discoveryChoiceList.querySelector("input:checked");
+  const candidate = integrationContext.candidates[Number(selected?.value)];
+  if (!candidate) {
+    document.querySelector("#integration-error").textContent = "Pick an account first.";
+    return;
+  }
+  connectButton.disabled = true;
+  try {
+    await updateIntegration(integrationContext.client.client_id, integrationContext.provider, candidate.integration_config, { sourceMode: candidate.source_mode });
+    integrationContext.changed = true;
+    showConnected({ message: `Connected to ${candidate.label}.`, applied: { integration_config: candidate.integration_config } });
+  } catch (error) {
+    document.querySelector("#integration-error").textContent = error.message;
+  } finally { connectButton.disabled = false; }
+});
+
+collectButton.addEventListener("click", () => {
+  const { client, provider, trigger } = integrationContext;
+  integrationDialog.close();
+  syncModal.openSelection({ clientId: client.client_id, provider, trigger });
+});
 integrationDialog.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => integrationDialog.close()));
-integrationDialog.addEventListener("close", () => integrationContext?.trigger?.focus());
+integrationDialog.addEventListener("close", () => {
+  // Focus goes home first: refreshing the grid replaces the very button we
+  // have to return focus to, so the reload waits until the dialog is gone.
+  integrationContext?.trigger?.focus();
+  if (integrationContext?.changed) loadDashboard({ quiet: true });
+});
 integrationForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const submit = integrationForm.querySelector('[type="submit"]');
@@ -261,7 +404,8 @@ integrationForm.addEventListener("submit", async (event) => {
   submit.disabled = true;
   try {
     await updateIntegration(integrationContext.client.client_id, integrationContext.provider, payload);
-    integrationDialog.close(); toast("Integration saved."); await loadDashboard({ quiet: true });
+    integrationContext.changed = true;
+    integrationDialog.close(); toast("Integration saved.");
   } catch (error) { document.querySelector("#integration-error").textContent = error.message; }
   finally { submit.disabled = false; }
 });

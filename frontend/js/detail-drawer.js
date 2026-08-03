@@ -1,6 +1,6 @@
-import { getClientHistory } from "./api.js?v=20260731-refresh1";
-import { panelSkeleton } from "./skeleton.js?v=20260731-refresh1";
-import { PROVIDERS, formatDate, formatRange, formatValue, metricLabel } from "./formatters.js?v=20260731-refresh1";
+import { getClientHistory } from "./api.js?v=20260803-progress2";
+import { panelSkeleton } from "./skeleton.js?v=20260803-progress2";
+import { PROVIDERS, formatDate, formatRange, formatValue, metricLabel } from "./formatters.js?v=20260803-progress2";
 
 export function createDetailDrawer({ onError }) {
   const dialog = document.querySelector("#detail-dialog");
