@@ -286,6 +286,66 @@ def test_list_pages_status_filter(client, db):
     assert [p["url"] for p in broken_only["pages"]] == [broken_page.url]
 
 
+def test_list_pages_indexable_and_in_sitemap_filters(client, db):
+    # task-36: `indexable`/`in_sitemap` were already supported by
+    # `list_pages_page` (repository) but never threaded through this endpoint.
+    client_id = _create_client(db)
+    repo = MonitorRepository(db)
+    indexed_in_sitemap = repo.get_or_create_page(client_id, "https://acme.com/indexed/")
+    repo.upsert_page_state(
+        indexed_in_sitemap,
+        status=200,
+        final_url=indexed_in_sitemap.url,
+        hop_count=0,
+        indexable=True,
+        meta_robots=None,
+        x_robots_tag=None,
+        canonical=None,
+        title=None,
+        description=None,
+        h1=None,
+        word_count=1,
+        analytics_ids=[],
+        signals_sha256="s3",
+        text_sha256="t3",
+        raw_sha256="r3",
+        in_sitemap=True,
+        now=datetime.now(UTC),
+    )
+    noindex_not_in_sitemap = repo.get_or_create_page(client_id, "https://acme.com/noindex/")
+    repo.upsert_page_state(
+        noindex_not_in_sitemap,
+        status=200,
+        final_url=noindex_not_in_sitemap.url,
+        hop_count=0,
+        indexable=False,
+        meta_robots="noindex",
+        x_robots_tag=None,
+        canonical=None,
+        title=None,
+        description=None,
+        h1=None,
+        word_count=1,
+        analytics_ids=[],
+        signals_sha256="s4",
+        text_sha256="t4",
+        raw_sha256="r4",
+        in_sitemap=False,
+        now=datetime.now(UTC),
+    )
+    db.commit()
+
+    not_indexable_only = client.get(
+        f"/api/v1/clients/{client_id}/monitor/pages?indexable=false"
+    ).json()
+    assert [p["url"] for p in not_indexable_only["pages"]] == [noindex_not_in_sitemap.url]
+
+    in_sitemap_only = client.get(
+        f"/api/v1/clients/{client_id}/monitor/pages?in_sitemap=true"
+    ).json()
+    assert [p["url"] for p in in_sitemap_only["pages"]] == [indexed_in_sitemap.url]
+
+
 def test_page_versions_404_for_unknown_page(client, db):
     client_id = _create_client(db)
     response = client.get(f"/api/v1/clients/{client_id}/monitor/pages/nope/versions")

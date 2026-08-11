@@ -9,14 +9,15 @@
     <link rel="icon" href="/assets/brand/logo.svg" type="image/svg+xml">
     <link rel="preload" href="/assets/fonts/league-spartan-black.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/assets/brand/ribbon.webp" as="image" type="image/webp">
-    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260805-status1">
-    <link rel="stylesheet" href="/css/tokens.css?v=20260805-status1">
-    <link rel="stylesheet" href="/css/app.css?v=20260805-status1">
-    <link rel="stylesheet" href="/css/client-page.css?v=20260805-status1">
-    <link rel="stylesheet" href="/css/tools.css?v=20260805-status1">
-    <link rel="stylesheet" href="/css/trends.css?v=20260805-status1">
+    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260811-monitor1">
+    <link rel="stylesheet" href="/css/tokens.css?v=20260811-monitor1">
+    <link rel="stylesheet" href="/css/app.css?v=20260811-monitor1">
+    <link rel="stylesheet" href="/css/client-page.css?v=20260811-monitor1">
+    <link rel="stylesheet" href="/css/tools.css?v=20260811-monitor1">
+    <link rel="stylesheet" href="/css/trends.css?v=20260811-monitor1">
+    <link rel="stylesheet" href="/css/monitor.css?v=20260811-monitor1">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260805-status1"></script>
+    <script type="module" src="/js/router.js?v=20260811-monitor1"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -41,6 +42,10 @@
           <a href="#/trends" data-nav="trends">
             <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-chart-line"></use></svg>
             <span>Trends</span>
+          </a>
+          <a href="#/monitor" data-nav="monitor">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-radar-2"></use></svg>
+            <span>Monitor</span>
           </a>
         </nav>
         <div class="header-actions" id="dashboard-header-actions" hidden>
@@ -145,6 +150,10 @@
     <main class="app-main" id="tools-page-root" hidden></main>
 
     <main class="app-main" id="trends-page-root" hidden></main>
+
+    <main class="app-main" id="monitor-page-root" hidden></main>
+
+    <main class="app-main" id="monitor-client-page-root" hidden></main>
     </div>
 
     <div class="job-dock" id="job-dock" hidden>
@@ -185,6 +194,25 @@
           </button>
         </header>
         <div class="drawer-body" id="detail-body"></div>
+      </form>
+    </dialog>
+
+    <!-- task-36: one shared diff/version viewer for the four Site Monitor
+         object kinds (page / robots / sitemap / dns) — `monitor-diff.js` binds
+         to it once, same pattern as `detail-drawer.js` binds to `#detail-dialog`. -->
+    <dialog class="detail-dialog monitor-diff-dialog" id="monitor-diff-dialog" aria-labelledby="monitor-diff-title">
+      <form method="dialog" class="drawer-shell">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow" id="monitor-diff-eyebrow">Site Monitor</p>
+            <h2 id="monitor-diff-title">Version history</h2>
+            <p id="monitor-diff-subtitle"></p>
+          </div>
+          <button class="icon-button" value="close" aria-label="Close panel">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-x"></use></svg>
+          </button>
+        </header>
+        <div class="drawer-body" id="monitor-diff-body"></div>
       </form>
     </dialog>
 

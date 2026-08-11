@@ -1,14 +1,14 @@
-import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, isAbortError, isFixtureMode } from "./api.js?v=20260805-status1";
-import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260805-status1";
-import { clientStatusBadge, clientStatusNote, isPaused, openClientStatusDialog } from "./client-status.js?v=20260805-status1";
-import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260805-status1";
-import { buildAhrefsHash, buildBlogsHash, replaceClientHash } from "./router.js?v=20260805-status1";
-import { escapeHtml, formatTimestamp, icon, initials, isTerminal, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260805-status1";
-import { createAnalyticsTab } from "./analytics-tabs.js?v=20260805-status1";
-import { renderAlertsBlock } from "./alerts-block.js?v=20260805-status1";
-import { renderChart, destroyChart } from "./charts.js?v=20260805-status1";
-import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260805-status1";
-import { watchJob } from "./sse.js?v=20260805-status1";
+import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, getMonitorSummary, isAbortError, isFixtureMode } from "./api.js?v=20260811-monitor1";
+import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260811-monitor1";
+import { clientStatusBadge, clientStatusNote, isPaused, openClientStatusDialog } from "./client-status.js?v=20260811-monitor1";
+import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260811-monitor1";
+import { buildAhrefsHash, buildBlogsHash, buildMonitorClientHash, replaceClientHash } from "./router.js?v=20260811-monitor1";
+import { escapeHtml, formatTimestamp, icon, initials, isTerminal, MONITOR_SEVERITY_META, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260811-monitor1";
+import { createAnalyticsTab } from "./analytics-tabs.js?v=20260811-monitor1";
+import { renderAlertsBlock } from "./alerts-block.js?v=20260811-monitor1";
+import { renderChart, destroyChart } from "./charts.js?v=20260811-monitor1";
+import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260811-monitor1";
+import { watchJob } from "./sse.js?v=20260811-monitor1";
 
 const PERIODS = [
   { key: "week", label: "Week" },
@@ -85,6 +85,9 @@ const pendingRecheck = new Set();
 // Client Blogs (task-26). Independent of the selected period: an inventory is
 // a point-in-time crawl, so it loads once per client, not per period change.
 let blogsSummary = null;
+// Site Monitor (task-36). Same reasoning: a continuous background check, not
+// tied to the selected reporting period.
+let monitorSummary = null;
 const AUDIT_PAGE_SIZE = 25;
 const GA4_DATASETS = ["ga4_channels", "ga4_landing_pages", "ga4_events", "ga4_devices", "ga4_countries"];
 
@@ -137,6 +140,7 @@ export async function initClientPage(clientId, query) {
   auditBusy = false;
   pendingRecheck.clear();
   blogsSummary = null;
+  monitorSummary = null;
   destroyChart();
   destroyReportingNinjaChart();
   current = { clientId, ...paramsFromQuery(query) };
@@ -209,6 +213,9 @@ function shell() {
     </section>
     <div id="cp-gate" class="state-panel" hidden></div>
     <div id="cp-content">
+      <section class="monitor-section" id="cp-monitor" aria-label="Site monitor" aria-live="polite" aria-busy="true">
+        ${sectionSkeleton({ label: "site monitor", kpis: 1 })}
+      </section>
       <section class="blogs-section" id="cp-blogs" aria-label="Client blogs" aria-live="polite" aria-busy="true">
         ${sectionSkeleton({ label: "blogs", kpis: 1 })}
       </section>
@@ -308,6 +315,7 @@ async function loadClient({ allowAutoLive = true } = {}) {
     // Period-independent: kicked off here, never re-run by a period change.
     loadTechAudit();
     loadBlogsSummary();
+    loadMonitorSummary();
     current.reportingNinjaConfigured = Boolean(reportingNinja && reportingNinja.state !== "not_configured");
     current.reportingNinjaSummary = reportingNinja || null;
     if (!gsc || gsc.state === "not_configured") {
@@ -668,6 +676,40 @@ function renderAhrefsSummaryCard() {
 }
 
 // --- Client Blogs (task-26) -------------------------------------------------
+
+async function loadMonitorSummary() {
+  try {
+    monitorSummary = await getMonitorSummary(current.clientId);
+  } catch {
+    monitorSummary = null; // renders as "never checked" — never a crash on this card
+  }
+  renderMonitorSummaryCard();
+}
+
+function renderMonitorSummaryCard() {
+  const container = document.querySelector("#cp-monitor");
+  if (!container) return;
+  const link = `<a class="button button--quiet" href="${buildMonitorClientHash(current.clientId)}">${icon("arrow-right")}Open monitor</a>`;
+  const neverChecked = !monitorSummary?.last_light_run && !monitorSummary?.last_full_run;
+  if (neverChecked) {
+    container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Site Monitor</p><h2>Robots, sitemap, pages &amp; DNS</h2></div></div><div class="state-panel state-not_configured">${icon("radar-2")}<p><strong>Never checked.</strong><br>Open the monitor and run "Check now" to start tracking this site.</p>${link}</div>`;
+    settle("#cp-monitor");
+    return;
+  }
+  const lastChecked = monitorSummary.last_light_run?.finished_at || monitorSummary.last_full_run?.finished_at;
+  const openCritical = monitorSummary.open_critical || 0;
+  const openWarning = monitorSummary.open_warning || 0;
+  const tone = openCritical ? MONITOR_SEVERITY_META.critical : openWarning ? MONITOR_SEVERITY_META.warning : null;
+  const sitemapHealth = monitorSummary.sitemap_health;
+  container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Site Monitor</p><h2>Robots, sitemap, pages &amp; DNS</h2><p class="ahrefs-collected">Last check: ${formatTimestamp(lastChecked, "not finished yet")}</p></div>${tone ? `<span class="status-label monitor-summary-badge monitor-summary-badge--${openCritical ? "critical" : "warning"}">${icon(tone.icon)}${openCritical ? `${formatUaNumber(openCritical)} critical` : `${formatUaNumber(openWarning)} warning`}</span>` : ""}</div>
+    <div class="ahrefs-kpis">
+      <article class="ahrefs-kpi"><span>Open critical</span><strong>${formatUaNumber(openCritical)}</strong></article>
+      <article class="ahrefs-kpi"><span>Open warning</span><strong>${formatUaNumber(openWarning)}</strong></article>
+      <article class="ahrefs-kpi"><span>Sitemap health</span><strong>${sitemapHealth?.total ? `${formatUaNumber(sitemapHealth.ok)}/${formatUaNumber(sitemapHealth.total)} ok` : "—"}</strong></article>
+    </div>
+    <div class="ahrefs-summary-actions">${link}</div>`;
+  settle("#cp-monitor");
+}
 
 async function loadBlogsSummary() {
   try {

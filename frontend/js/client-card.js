@@ -1,7 +1,7 @@
-import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260805-status1";
-import { buildClientHash } from "./router.js?v=20260805-status1";
-import { clientStatusBadge, clientStatusNote, isPaused } from "./client-status.js?v=20260805-status1";
-import { cardSkeletons } from "./skeleton.js?v=20260805-status1";
+import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260811-monitor1";
+import { buildClientHash, buildMonitorClientHash } from "./router.js?v=20260811-monitor1";
+import { clientStatusBadge, clientStatusNote, isPaused } from "./client-status.js?v=20260811-monitor1";
+import { cardSkeletons } from "./skeleton.js?v=20260811-monitor1";
 
 function providerIcon(provider) {
   const meta = PROVIDERS[provider];
@@ -256,6 +256,21 @@ function sparklinePoints(values, width, height, pad) {
   }).join(" ");
 }
 
+// task-36: відкриті critical зі Site Monitor. Дані з ОДНОГО портфельного
+// запиту, зробленого dashboard.js при завантаженні (`dashboard.monitor_critical_by_client`,
+// `client_id -> count`) — не окремий fetch на кожну картку. Порожній стан =
+// нічого, як `clientStatusBadge`/`techAuditStrip` вище: функція завжди
+// викликається безумовно, сама вирішує повернути розмітку чи `""`.
+function monitorBadge(client, dashboard) {
+  const count = dashboard?.monitor_critical_by_client?.get(client.client_id) || 0;
+  if (!count) return "";
+  const label = `${count} critical site monitor ${count === 1 ? "change" : "changes"} — open monitor`;
+  return `
+    <a class="monitor-badge" href="${buildMonitorClientHash(client.client_id)}" aria-label="${escapeHtml(label)}">
+      ${icon("alert-triangle", "icon icon--tiny")}<span>${count} critical</span>
+    </a>`;
+}
+
 function techAuditStrip(client) {
   const audit = client.tech_audit || { state: "no_run" };
   const hasCount = audit.open_errors !== null && audit.open_errors !== undefined;
@@ -363,6 +378,7 @@ export function renderClientCard(client, dashboard) {
       <div class="client-card__meta">
         <span class="status-label ${stateClass(client.overall_status)}">${icon(state.icon)}${state.label}</span>
         ${clientStatusBadge(client)}
+        ${monitorBadge(client, dashboard)}
         <span>Last collection: ${formatTimestamp(client.last_synced_at)}</span>
       </div>
       ${clientStatusNote(client)}

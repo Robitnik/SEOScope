@@ -46,6 +46,16 @@ export const STATE_META = {
   skipped: { label: "Skipped", icon: "player-skip-forward", tone: "var(--ink-dim)" },
 };
 
+// task-36: Site Monitor change severity — never color-only (AGENTS §7), every
+// tone pairs with an icon and a word. Run status (queued/running/succeeded/
+// failed/failed_interrupted) reuses `STATE_META` above rather than a second
+// dictionary — same vocabulary as every other job-shaped status in the app.
+export const MONITOR_SEVERITY_META = {
+  critical: { label: "Critical", icon: "alert-triangle", tone: "var(--danger)" },
+  warning: { label: "Warning", icon: "alert-circle", tone: "var(--warning)" },
+  info: { label: "Info", icon: "info-circle", tone: "var(--info)" },
+};
+
 const METRIC_LABELS = {
   health_score: "Health score",
   errors: "Errors",
@@ -128,6 +138,67 @@ export function humanizeStage(stage) {
   }
   const words = String(stage).replaceAll("_", " ").trim();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : "";
+}
+
+// task-36: `change_type` is an open string by contract (`app/monitor/severity.py`
+// `STATIC_SEVERITY`, plus dynamically-built tls_*/sitemap_url_* types) — this
+// table covers the known catalog; anything new falls through to the same
+// snake_case-to-sentence humanizer as `humanizeStage` above, so a future
+// backend addition never renders as a raw identifier.
+const CHANGE_TYPE_LABELS = {
+  page_noindex_appeared: "Noindex appeared",
+  robots_blocks_site: "robots.txt blocks the site",
+  robots_unavailable: "robots.txt unavailable",
+  gsc_verification_lost: "Search Console verification lost",
+  analytics_tag_lost: "Analytics tag lost",
+  site_down: "Site down",
+  dns_ns_changed: "DNS nameservers changed",
+  dns_apex_a_changed: "DNS apex A record changed",
+  canonical_offsite: "Canonical points off-site",
+  sitemap_lost: "Sitemap lost",
+  canonical_changed: "Canonical changed",
+  title_changed: "Title changed",
+  description_changed: "Description changed",
+  h1_changed: "H1 changed",
+  page_status_error: "Page returned an error status",
+  page_redirect_appeared: "Page started redirecting",
+  page_gone: "Page is gone",
+  sitemap_urls_removed: "URLs removed from sitemap",
+  robots_rules_changed: "robots.txt rules changed",
+  dns_txt_changed: "DNS TXT record changed",
+  dns_mx_changed: "DNS MX record changed",
+  monitor_blocked: "Blocked by site protection",
+  dns_unavailable: "DNS could not be checked",
+  page_new: "New page found",
+  content_changed: "Page content changed",
+  sitemap_lastmod_changed: "Sitemap lastmod changed",
+  analytics_tag_added: "Analytics tag added",
+  robots_missing: "robots.txt missing",
+  page_body_changed: "Page body changed (no visible content change)",
+  tls_expired: "TLS certificate expired",
+  tls_expiring_3d: "TLS certificate expiring in 3 days",
+  tls_expiring_14d: "TLS certificate expiring in 14 days",
+  sitemap_url_redirects: "Sitemap URL redirects",
+  sitemap_url_broken: "Sitemap URL is broken",
+  sitemap_url_unavailable: "Sitemap URL unavailable",
+  sitemap_broken_urls: "Sitemap has broken URLs",
+};
+
+function humanizeChangeType(value) {
+  const words = String(value).replaceAll("_", " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "";
+}
+
+// Self-healing events (task-35 §3.4) are the same catalog with a `_resolved`
+// suffix, at `info` severity — labelled relative to the original event rather
+// than duplicated one-by-one in the table above.
+export function changeTypeLabel(changeType) {
+  if (!changeType) return "";
+  if (changeType.endsWith("_resolved")) {
+    const base = changeType.slice(0, -"_resolved".length);
+    return `Resolved: ${CHANGE_TYPE_LABELS[base] || humanizeChangeType(base)}`;
+  }
+  return CHANGE_TYPE_LABELS[changeType] || humanizeChangeType(changeType);
 }
 
 export const SOURCE_LABELS = {

@@ -1091,3 +1091,331 @@ export async function getPortfolioSeries({ metric, bucket = "week", days = 90, c
   (clientIds || []).forEach((id) => params.append("client_ids", id));
   return request(`/analytics/portfolio-series?${params}`, {}, `portfolio-series-${metric}`);
 }
+
+// --- Site Monitor (task-36) -------------------------------------------------
+//
+// Fixture dispatch follows the established per-subsystem convention (compare
+// `audit-empty`/`blogs-empty` above): most `?fixture=...` values are unrelated
+// to the monitor and fall through to the default "populated" bundle, exactly
+// like `getTechAuditLatest` ignores `clientId` and returns the same fixture
+// regardless of which client page loaded it. A handful of `monitor-*` values
+// select one dedicated single-state bundle instead, for states that cannot
+// coexist with the populated bundle (never checked, mid-run, baseline, ...).
+
+// "Paused" is deliberately not a scenario flag here: `client-nyc-hearing` is
+// already paused in `dashboard-all-states.json`, and `getMonitorSummary` above
+// already resolves a real per-client entry from the portfolio bundle — so
+// visiting `#/client/client-nyc-hearing/monitor` under the default fixture
+// exercises that state without a dedicated bundle.
+const MONITOR_SCENARIO_FIXTURES = new Set([
+  "monitor-never-checked", "monitor-running", "monitor-baseline",
+  "monitor-blocked", "monitor-truncated", "monitor-dns-unavailable",
+]);
+
+function monitorClientFixtureName() {
+  return MONITOR_SCENARIO_FIXTURES.has(FIXTURE_MODE)
+    ? FIXTURE_MODE.replace("monitor-", "monitor-client-")
+    : "monitor-client-dense";
+}
+
+let monitorClientFixtureCache = null;
+let monitorClientFixtureCacheName = null;
+async function loadMonitorClientFixture() {
+  const name = monitorClientFixtureName();
+  if (!monitorClientFixtureCache || monitorClientFixtureCacheName !== name) {
+    monitorClientFixtureCacheName = name;
+    monitorClientFixtureCache = fixture(name);
+  }
+  return monitorClientFixtureCache;
+}
+
+function loadMonitorPortfolioFixture() {
+  return fixture(FIXTURE_MODE === "monitor-empty" ? "monitor-portfolio-empty" : "monitor-portfolio-normal");
+}
+
+// "Check now" fixture progression: a `running` row for `MONITOR_FIXTURE_RUN_MS`,
+// then `succeeded` — the same shape `getSyncJob`'s elapsed-time simulation uses
+// above, scoped to sessionStorage so a refresh doesn't restart it mid-demo.
+const MONITOR_FIXTURE_RUN_KEY = "yovth:monitor-fixture-run";
+const MONITOR_FIXTURE_RUN_MS = 3200;
+
+function readMonitorFixtureRun(clientId) {
+  let stored;
+  try { stored = JSON.parse(sessionStorage.getItem(MONITOR_FIXTURE_RUN_KEY) || "null"); }
+  catch { return null; }
+  if (!stored || stored.clientId !== clientId) return null;
+  const elapsed = Date.now() - stored.startedAt;
+  if (elapsed > MONITOR_FIXTURE_RUN_MS * 2) return null; // stale demo run, ignore
+  const running = elapsed < MONITOR_FIXTURE_RUN_MS;
+  return {
+    id: stored.id, client_id: clientId, kind: stored.kind, trigger: "manual",
+    status: running ? "running" : "succeeded",
+    started_at: new Date(stored.startedAt).toISOString(),
+    finished_at: running ? null : new Date(stored.startedAt + MONITOR_FIXTURE_RUN_MS).toISOString(),
+    urls_checked: running ? Math.round((elapsed / MONITOR_FIXTURE_RUN_MS) * 42) : 42,
+    urls_changed: 0, urls_new: 0, urls_gone: 0, requests_made: running ? Math.round(elapsed / 40) : 210,
+    bytes_downloaded: running ? elapsed * 900 : 2_600_000,
+    changes_critical: 0, changes_warning: 0, changes_info: 0,
+    truncated: false, remaining_count: null, error_code: null, error_message: null,
+  };
+}
+
+const MONITOR_NEVER_CHECKED_SUMMARY = {
+  client_id: "", enabled: true, last_light_run: null, last_full_run: null,
+  open_critical: 0, open_warning: 0, open_info: 0,
+  sitemap_health: { total: 0, ok: 0, redirects: 0, broken: 0, unavailable: 0 },
+  robots_status: null, next_light_due_at: null, next_full_due_at: null,
+};
+
+export async function getMonitorSummary(clientId) {
+  if (FIXTURE_MODE) {
+    if (FIXTURE_MODE === "error") { await wait(400); throw new Error("Fixture connection error"); }
+    await wait(160);
+    const activeRun = readMonitorFixtureRun(clientId);
+    let base;
+    // A `monitor-*` scenario flag always wins, regardless of which real
+    // client id is in the URL — that is the whole point of the flag (visit
+    // any client's monitor page and see the "never checked"/"running"/...
+    // scenario). Without this check first, a real id that happens to exist
+    // in `monitor-portfolio-normal.json` (e.g. `client-cleveland`) would
+    // silently shadow the scenario and always render the dense/populated data.
+    if (MONITOR_SCENARIO_FIXTURES.has(FIXTURE_MODE)) {
+      const detail = await loadMonitorClientFixture();
+      base = { ...(detail.summary || MONITOR_NEVER_CHECKED_SUMMARY), client_id: clientId };
+    } else {
+      const bundle = await loadMonitorPortfolioFixture();
+      base = bundle.summaries?.[clientId]
+        || { ...((await loadMonitorClientFixture()).summary || MONITOR_NEVER_CHECKED_SUMMARY), client_id: clientId };
+    }
+    if (!activeRun) return base;
+    const key = activeRun.kind === "full" ? "last_full_run" : "last_light_run";
+    return { ...base, [key]: activeRun };
+  }
+  return request(`/clients/${clientId}/monitor`, {}, `monitor-summary-${clientId}`);
+}
+
+export async function listMonitorRuns(clientId, { kind, limit = 50 } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    const bundle = await loadMonitorClientFixture();
+    const activeRun = readMonitorFixtureRun(clientId);
+    let runs = activeRun ? [activeRun, ...(bundle.runs || [])] : (bundle.runs || []);
+    if (kind) runs = runs.filter((run) => run.kind === kind);
+    return runs.slice(0, limit);
+  }
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (kind) params.set("kind", kind);
+  return request(`/clients/${clientId}/monitor/runs?${params}`, {}, `monitor-runs-${clientId}`);
+}
+
+export async function startMonitorRun(clientId, kind = "light") {
+  if (FIXTURE_MODE) {
+    await wait(300);
+    const id = `fixture-monitor-run-${Date.now()}`;
+    sessionStorage.setItem(MONITOR_FIXTURE_RUN_KEY, JSON.stringify({ id, clientId, kind, startedAt: Date.now() }));
+    return { run_id: id, status_url: `/api/v1/clients/${clientId}/monitor/runs` };
+  }
+  return request(
+    `/clients/${clientId}/monitor/runs?kind=${kind}`,
+    { method: "POST", body: "{}" },
+    `monitor-run-start-${clientId}`,
+  );
+}
+
+export async function listClientMonitorChanges(clientId, { severity, state = "open", requestKey } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    const bundle = await loadMonitorClientFixture();
+    let changes = bundle.changes || [];
+    if (state === "open") changes = changes.filter((change) => !change.resolved_at);
+    if (severity) changes = changes.filter((change) => change.severity === severity);
+    return changes;
+  }
+  const params = new URLSearchParams({ state });
+  if (severity) params.set("severity", severity);
+  // Keyed by the caller's declared purpose when given, else by shape+clientId:
+  // `monitor-page.js`/`monitor-client.js` legitimately fire more than one
+  // differently-filtered call for the same client concurrently (e.g. the open
+  // feed and a separate `severity=critical`/`warning` pull merged into it) —
+  // a shape-only key breaks the instant two call sites happen to want the
+  // same severity+state (reproduced live for the portfolio equivalent of this
+  // function, see `listPortfolioMonitorChanges` — same fix applied here
+  // pre-emptively rather than waiting to hit it again).
+  return request(`/clients/${clientId}/monitor/changes?${params}`, {}, requestKey || `monitor-client-changes-${clientId}-${severity || "all"}-${state}`);
+}
+
+// `type`/`client` are client-side-only filters — `GET /monitor/changes` only
+// accepts `severity`/`state`/`limit` (verified against `app/api/monitor.py`).
+// Callers filter the returned array further by `change_type`/`client_id`.
+export async function listPortfolioMonitorChanges({ severity, state = "open", limit = 200, requestKey } = {}) {
+  if (FIXTURE_MODE) {
+    if (FIXTURE_MODE === "error") { await wait(400); throw new Error("Fixture connection error"); }
+    await wait(180);
+    const bundle = await loadMonitorPortfolioFixture();
+    let changes = bundle.changes || [];
+    if (state === "open") changes = changes.filter((change) => !change.resolved_at);
+    if (severity) changes = changes.filter((change) => change.severity === severity);
+    return changes.slice(0, limit);
+  }
+  const params = new URLSearchParams({ state, limit: String(limit) });
+  if (severity) params.set("severity", severity);
+  // Keyed by the CALLER's declared purpose, not auto-derived from severity/state
+  // alone: the portfolio page fires several concurrent calls for different
+  // reasons (open critical strip, blocked-state detection, the filterable feed)
+  // that can legitimately share identical severity+state (e.g. both the
+  // blocked-detection pull and the default feed view are `state=open` with no
+  // severity, differing only in `limit`, which two same-shape-but-different-
+  // purpose calls firing via `Promise.all` would otherwise abort each other
+  // over — reproduced live: the portfolio page hung on its loading skeleton
+  // because the feed request was aborted by the blocked-detection request).
+  // A caller that omits `requestKey` falls back to the old shape-derived key,
+  // which still correctly supersedes its own stale predecessor.
+  return request(`/monitor/changes?${params}`, {}, requestKey || `monitor-portfolio-changes-${severity || "all"}-${state}`);
+}
+
+export async function ackMonitorChange(changeId, note) {
+  if (FIXTURE_MODE) {
+    await wait(220);
+    return { id: changeId, acknowledged_at: new Date().toISOString(), acknowledged_note: note || null };
+  }
+  return request(`/monitor/changes/${changeId}/ack`, {
+    method: "POST",
+    body: JSON.stringify({ note: note || null }),
+  }, `monitor-ack-${changeId}`);
+}
+
+export async function getMonitorPages(clientId, {
+  status, indexable, inSitemap, q, sort = "last_checked_at", limit = 100, offset = 0,
+} = {}) {
+  if (FIXTURE_MODE) {
+    await wait(180);
+    const bundle = await loadMonitorClientFixture();
+    let rows = bundle.pages?.pages || [];
+    if (status === "ok") rows = rows.filter((page) => page.status >= 200 && page.status < 300);
+    if (status === "broken") rows = rows.filter((page) => page.status == null || page.status >= 300);
+    if (indexable !== undefined) rows = rows.filter((page) => page.indexable === indexable);
+    if (inSitemap !== undefined) rows = rows.filter((page) => page.in_sitemap === inSitemap);
+    if (q) {
+      const needle = q.trim().toLocaleLowerCase("en-US");
+      rows = rows.filter((page) => page.url.toLocaleLowerCase("en-US").includes(needle));
+    }
+    return { pages: rows.slice(offset, offset + limit), total: rows.length, limit, offset };
+  }
+  const params = new URLSearchParams({ sort, limit: String(limit), offset: String(offset) });
+  if (status) params.set("status", status);
+  if (indexable !== undefined) params.set("indexable", String(indexable));
+  if (inSitemap !== undefined) params.set("in_sitemap", String(inSitemap));
+  if (q) params.set("q", q);
+  return request(`/clients/${clientId}/monitor/pages?${params}`, {}, `monitor-pages-${clientId}`);
+}
+
+export async function getMonitorPageVersions(clientId, pageId) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    const bundle = await loadMonitorClientFixture();
+    return bundle.pageVersions?.[pageId] || [];
+  }
+  return request(`/clients/${clientId}/monitor/pages/${pageId}/versions`, {}, "monitor-diff");
+}
+
+export async function getMonitorPageDiff(clientId, pageId, { fromVersionId, toVersionId } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    const bundle = await loadMonitorClientFixture();
+    return bundle.pageDiff?.[pageId] || null;
+  }
+  const params = new URLSearchParams();
+  if (fromVersionId) params.set("from_version_id", fromVersionId);
+  if (toVersionId) params.set("to_version_id", toVersionId);
+  const qs = params.toString();
+  return request(`/clients/${clientId}/monitor/pages/${pageId}/diff${qs ? `?${qs}` : ""}`, {}, "monitor-diff");
+}
+
+export async function getMonitorResourceVersions(clientId, kind, { url } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    const bundle = await loadMonitorClientFixture();
+    return bundle.resourceVersions?.[kind] || [];
+  }
+  const params = new URLSearchParams();
+  if (url) params.set("url", url);
+  const qs = params.toString();
+  return request(`/clients/${clientId}/monitor/resources/${kind}/versions${qs ? `?${qs}` : ""}`, {}, "monitor-diff");
+}
+
+export async function getMonitorResourceDiff(clientId, kind, { url, fromVersionId, toVersionId } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    const bundle = await loadMonitorClientFixture();
+    return bundle.resourceDiff?.[kind] || null;
+  }
+  const params = new URLSearchParams();
+  if (url) params.set("url", url);
+  if (fromVersionId) params.set("from_version_id", fromVersionId);
+  if (toVersionId) params.set("to_version_id", toVersionId);
+  const qs = params.toString();
+  return request(`/clients/${clientId}/monitor/resources/${kind}/diff${qs ? `?${qs}` : ""}`, {}, "monitor-diff");
+}
+
+export async function getMonitorDnsRecords(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    const bundle = await loadMonitorClientFixture();
+    return bundle.dns || [];
+  }
+  return request(`/clients/${clientId}/monitor/dns`, {}, `monitor-dns-${clientId}`);
+}
+
+// `name`+`recordType` are both required by the real endpoint (no "list every
+// record's history" shortcut) — verified against `app/api/monitor.py`.
+export async function getMonitorDnsVersions(clientId, { name, recordType }) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    const bundle = await loadMonitorClientFixture();
+    return bundle.dnsVersions?.[`${name}|${recordType}`] || [];
+  }
+  const params = new URLSearchParams({ name, record_type: recordType });
+  return request(`/clients/${clientId}/monitor/dns/versions?${params}`, {}, "monitor-diff");
+}
+
+// Raw stored document (robots.txt / page body), not a JSON response — the UI
+// links straight to it, same convention as `techAuditExportUrl` below.
+export function getMonitorDocumentUrl(sha256) {
+  return `${API_ROOT}/monitor/documents/${encodeURIComponent(sha256)}`;
+}
+
+export async function getMonitorSettings(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    const bundle = await loadMonitorClientFixture();
+    return bundle.settings || {
+      client_id: clientId, enabled: true, base_url_override: null,
+      light_interval_hours: null, full_interval_hours: null, max_urls: null,
+      monitor_when_paused: false, ignore_patterns: [], muted_change_types: [],
+      updated_at: new Date().toISOString(),
+    };
+  }
+  return request(`/clients/${clientId}/monitor/settings`, {}, `monitor-settings-${clientId}`);
+}
+
+export async function patchMonitorSettings(clientId, patch) {
+  if (FIXTURE_MODE) {
+    await wait(260);
+    const current = await getMonitorSettings(clientId);
+    return { ...current, ...patch, updated_at: new Date().toISOString() };
+  }
+  return request(`/clients/${clientId}/monitor/settings`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  }, `monitor-settings-patch-${clientId}`);
+}
+
+// Binary downloads: deliberately NOT routed through `request()`, which sets
+// `Accept: application/json` and parses the body. The UI links straight to them.
+export function monitorExportCsvUrl(clientId) {
+  return `${API_ROOT}/clients/${clientId}/monitor/export.csv`;
+}
+
+export function monitorExportXlsxUrl(clientId) {
+  return `${API_ROOT}/clients/${clientId}/monitor/export.xlsx`;
+}

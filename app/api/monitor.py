@@ -404,6 +404,8 @@ def _list_pages(
     client_id: str,
     *,
     status: str | None,
+    indexable: bool | None,
+    in_sitemap: bool | None,
     q: str | None,
     sort: str,
     limit: int,
@@ -413,7 +415,14 @@ def _list_pages(
         if ClientRepository(session).get(client_id) is None:
             return None
         pages, total = MonitorRepository(session).list_pages_page(
-            client_id, status=status, q=q, sort=sort, limit=limit, offset=offset
+            client_id,
+            status=status,
+            indexable=indexable,
+            in_sitemap=in_sitemap,
+            q=q,
+            sort=sort,
+            limit=limit,
+            offset=offset,
         )
         return [_page_dto(p) for p in pages], total
 
@@ -427,6 +436,11 @@ async def list_monitor_pages(
     client_id: str,
     pagination: PaginationDep,
     status: Literal["ok", "broken"] | None = None,
+    # task-36: not_indexable / in_sitemap_not200 UI filters — `indexable`/`in_sitemap`
+    # were already supported by `list_pages_page` (repository-level) but never
+    # threaded through this endpoint. Additive, optional, default-None.
+    indexable: bool | None = None,
+    in_sitemap: bool | None = None,
     q: str | None = None,
     sort: Literal["last_checked_at", "status", "url"] = "last_checked_at",
 ) -> MonitorPagesPageDTO:
@@ -434,6 +448,8 @@ async def list_monitor_pages(
         _list_pages,
         client_id,
         status=status,
+        indexable=indexable,
+        in_sitemap=in_sitemap,
         q=q,
         sort=sort,
         limit=pagination.limit,

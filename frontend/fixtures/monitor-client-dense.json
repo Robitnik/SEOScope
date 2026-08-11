@@ -1,0 +1,351 @@
+{
+  "summary": {
+    "client_id": "client-cleveland",
+    "enabled": true,
+    "last_light_run": {
+      "id": "run-cleveland-12", "client_id": "client-cleveland", "kind": "light", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T09:40:00Z", "finished_at": "2026-08-11T09:40:14Z",
+      "urls_checked": 11, "urls_changed": 1, "urls_new": 0, "urls_gone": 0,
+      "requests_made": 11, "bytes_downloaded": 612000,
+      "changes_critical": 1, "changes_warning": 0, "changes_info": 0,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    },
+    "last_full_run": {
+      "id": "run-cleveland-11", "client_id": "client-cleveland", "kind": "full", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T06:05:00Z", "finished_at": "2026-08-11T06:11:32Z",
+      "urls_checked": 41, "urls_changed": 4, "urls_new": 1, "urls_gone": 0,
+      "requests_made": 45, "bytes_downloaded": 18400000,
+      "changes_critical": 0, "changes_warning": 1, "changes_info": 3,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    },
+    "open_critical": 1, "open_warning": 2, "open_info": 3,
+    "sitemap_health": { "total": 41, "ok": 38, "redirects": 1, "broken": 2, "unavailable": 0 },
+    "robots_status": 200,
+    "next_light_due_at": "2026-08-11T10:40:00Z",
+    "next_full_due_at": "2026-08-11T09:05:00Z"
+  },
+  "runs": [
+    {
+      "id": "run-cleveland-12", "client_id": "client-cleveland", "kind": "light", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T09:40:00Z", "finished_at": "2026-08-11T09:40:14Z",
+      "urls_checked": 11, "urls_changed": 1, "urls_new": 0, "urls_gone": 0,
+      "requests_made": 11, "bytes_downloaded": 612000,
+      "changes_critical": 1, "changes_warning": 0, "changes_info": 0,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    },
+    {
+      "id": "run-cleveland-11", "client_id": "client-cleveland", "kind": "full", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T06:05:00Z", "finished_at": "2026-08-11T06:11:32Z",
+      "urls_checked": 41, "urls_changed": 4, "urls_new": 1, "urls_gone": 0,
+      "requests_made": 45, "bytes_downloaded": 18400000,
+      "changes_critical": 0, "changes_warning": 1, "changes_info": 3,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    },
+    {
+      "id": "run-cleveland-10", "client_id": "client-cleveland", "kind": "light", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T03:05:00Z", "finished_at": "2026-08-11T03:05:12Z",
+      "urls_checked": 11, "urls_changed": 0, "urls_new": 0, "urls_gone": 0,
+      "requests_made": 11, "bytes_downloaded": 598000,
+      "changes_critical": 0, "changes_warning": 0, "changes_info": 0,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    },
+    {
+      "id": "run-cleveland-5", "client_id": "client-cleveland", "kind": "light", "trigger": "scheduled",
+      "status": "failed_interrupted", "started_at": "2026-07-25T14:00:00Z", "finished_at": null,
+      "urls_checked": 4, "urls_changed": 0, "urls_new": 0, "urls_gone": 0,
+      "requests_made": 4, "bytes_downloaded": 210000,
+      "changes_critical": 0, "changes_warning": 0, "changes_info": 0,
+      "truncated": false, "remaining_count": null,
+      "error_code": "interrupted_by_restart", "error_message": "Worker restarted while this run was in progress."
+    },
+    {
+      "id": "run-cleveland-1", "client_id": "client-cleveland", "kind": "full", "trigger": "manual",
+      "status": "succeeded", "started_at": "2026-07-20T10:00:00Z", "finished_at": "2026-07-20T10:07:40Z",
+      "urls_checked": 39, "urls_changed": 39, "urls_new": 39, "urls_gone": 0,
+      "requests_made": 41, "bytes_downloaded": 17900000,
+      "changes_critical": 0, "changes_warning": 1, "changes_info": 0,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    }
+  ],
+  "changes": [
+    {
+      "id": "chg-1", "client_id": "client-cleveland", "run_id": "run-cleveland-12",
+      "severity": "critical", "change_type": "page_noindex_appeared", "scope": "page",
+      "subject": "https://19cleveland.com/", "old_value": "index, follow", "new_value": "noindex, follow",
+      "details": {}, "detected_at": "2026-08-11T09:40:14Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-2", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "warning", "change_type": "sitemap_broken_urls", "scope": "sitemap",
+      "subject": "https://19cleveland.com/sitemap.xml", "old_value": null, "new_value": "3 of 41 URLs (7%)",
+      "details": {
+        "broken": 2, "redirects": 1, "unavailable": 0,
+        "examples": ["https://19cleveland.com/old-promo/", "https://19cleveland.com/staff/dr-smith/"]
+      },
+      "detected_at": "2026-08-11T06:11:32Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-3", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "warning", "change_type": "title_changed", "scope": "page",
+      "subject": "https://19cleveland.com/services/",
+      "old_value": "Cleveland Dental Services", "new_value": "Dental Services | 19 Cleveland",
+      "details": {}, "detected_at": "2026-08-11T06:10:00Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-4", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/invisalign-guide/",
+      "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:40Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-5", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "page_new", "scope": "page",
+      "subject": "https://19cleveland.com/promotions/back-to-school/",
+      "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:08:10Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-6", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "robots_comment_changed", "scope": "robots",
+      "subject": "robots.txt", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-10T09:00:00Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-10", "client_id": "client-cleveland", "run_id": "run-cleveland-9",
+      "severity": "warning", "change_type": "canonical_changed", "scope": "page",
+      "subject": "https://19cleveland.com/reviews/",
+      "old_value": "https://19cleveland.com/reviews", "new_value": "https://19cleveland.com/reviews/",
+      "details": {}, "detected_at": "2026-08-05T09:00:00Z",
+      "acknowledged_at": "2026-08-05T11:00:00Z", "acknowledged_note": "Expected — canonical cleanup.",
+      "resolved_at": "2026-08-06T09:00:00Z"
+    }
+  ],
+  "pages": {
+    "pages": [
+      {
+        "id": "page-1", "url": "https://19cleveland.com/", "is_key_page": true, "in_sitemap": true,
+        "status": 200, "final_url": "https://19cleveland.com/", "indexable": false,
+        "title": "19 Cleveland — Home", "canonical": "https://19cleveland.com/",
+        "version_seq": 2, "gone_since": null, "consecutive_failures": 0,
+        "last_checked_at": "2026-08-11T09:40:05Z"
+      },
+      {
+        "id": "page-2", "url": "https://19cleveland.com/services/", "is_key_page": true, "in_sitemap": true,
+        "status": 200, "final_url": "https://19cleveland.com/services/", "indexable": true,
+        "title": "Dental Services | 19 Cleveland", "canonical": "https://19cleveland.com/services/",
+        "version_seq": 2, "gone_since": null, "consecutive_failures": 0,
+        "last_checked_at": "2026-08-11T06:06:10Z"
+      },
+      {
+        "id": "page-3", "url": "https://19cleveland.com/old-promo/", "is_key_page": false, "in_sitemap": true,
+        "status": 404, "final_url": "https://19cleveland.com/old-promo/", "indexable": false,
+        "title": null, "canonical": null,
+        "version_seq": 1, "gone_since": "2026-08-01T00:00:00Z", "consecutive_failures": 3,
+        "last_checked_at": "2026-08-11T06:07:00Z"
+      },
+      {
+        "id": "page-4", "url": "https://19cleveland.com/staff/dr-smith/", "is_key_page": false, "in_sitemap": true,
+        "status": 301, "final_url": "https://19cleveland.com/staff/", "indexable": null,
+        "title": null, "canonical": null,
+        "version_seq": 1, "gone_since": null, "consecutive_failures": 0,
+        "last_checked_at": "2026-08-11T06:07:05Z"
+      },
+      {
+        "id": "page-5", "url": "https://19cleveland.com/blog/invisalign-guide/", "is_key_page": false, "in_sitemap": true,
+        "status": 200, "final_url": "https://19cleveland.com/blog/invisalign-guide/", "indexable": true,
+        "title": "The Invisalign Guide", "canonical": "https://19cleveland.com/blog/invisalign-guide/",
+        "version_seq": 3, "gone_since": null, "consecutive_failures": 0,
+        "last_checked_at": "2026-08-11T06:07:40Z"
+      },
+      {
+        "id": "page-6", "url": "https://19cleveland.com/promotions/back-to-school/", "is_key_page": false, "in_sitemap": true,
+        "status": 200, "final_url": "https://19cleveland.com/promotions/back-to-school/", "indexable": true,
+        "title": "Back to School Smiles", "canonical": "https://19cleveland.com/promotions/back-to-school/",
+        "version_seq": 1, "gone_since": null, "consecutive_failures": 0,
+        "last_checked_at": "2026-08-11T06:08:10Z"
+      },
+      {
+        "id": "page-7", "url": "https://19cleveland.com/thank-you/", "is_key_page": false, "in_sitemap": false,
+        "status": 200, "final_url": "https://19cleveland.com/thank-you/", "indexable": false,
+        "title": "Thank You", "canonical": "https://19cleveland.com/thank-you/",
+        "version_seq": 1, "gone_since": null, "consecutive_failures": 0,
+        "last_checked_at": "2026-08-11T06:08:40Z"
+      },
+      {
+        "id": "page-8", "url": "https://19cleveland.com/contact/", "is_key_page": true, "in_sitemap": true,
+        "status": 200, "final_url": "https://19cleveland.com/contact/", "indexable": true,
+        "title": "Contact 19 Cleveland", "canonical": "https://19cleveland.com/contact/",
+        "version_seq": 1, "gone_since": null, "consecutive_failures": 0,
+        "last_checked_at": "2026-08-11T06:09:00Z"
+      },
+      {
+        "id": "page-9", "url": "https://19cleveland.com/about/", "is_key_page": false, "in_sitemap": true,
+        "status": 200, "final_url": "https://19cleveland.com/about/", "indexable": true,
+        "title": "About Us", "canonical": "https://19cleveland.com/about/",
+        "version_seq": 1, "gone_since": null, "consecutive_failures": 0,
+        "last_checked_at": "2026-08-11T06:09:20Z"
+      },
+      {
+        "id": "page-10", "url": "https://19cleveland.com/reviews/", "is_key_page": false, "in_sitemap": true,
+        "status": 200, "final_url": "https://19cleveland.com/reviews/", "indexable": true,
+        "title": "Patient Reviews", "canonical": "https://19cleveland.com/reviews/",
+        "version_seq": 1, "gone_since": null, "consecutive_failures": 0,
+        "last_checked_at": "2026-08-11T06:09:45Z"
+      }
+    ]
+  },
+  "pageVersions": {
+    "page-1": [
+      {
+        "id": "pv-1-b", "observed_at": "2026-08-11T09:40:05Z", "http_status": 200,
+        "signals_sha256": "sig-home-b", "text_sha256": "text-home-a", "raw_sha256": "raw-home-b",
+        "body_blob_sha256": "blob-home-b", "changed_fields": ["meta_robots"], "prev_version_id": "pv-1-a"
+      },
+      {
+        "id": "pv-1-a", "observed_at": "2026-07-20T10:00:05Z", "http_status": 200,
+        "signals_sha256": "sig-home-a", "text_sha256": "text-home-a", "raw_sha256": "raw-home-a",
+        "body_blob_sha256": "blob-home-a", "changed_fields": [], "prev_version_id": null
+      }
+    ],
+    "page-5": [
+      {
+        "id": "pv-5-b", "observed_at": "2026-08-11T06:07:40Z", "http_status": 200,
+        "signals_sha256": "sig-blog-b", "text_sha256": "text-blog-b", "raw_sha256": "raw-blog-b",
+        "body_blob_sha256": "blob-blog-b", "changed_fields": ["text_sha256"], "prev_version_id": "pv-5-a"
+      },
+      {
+        "id": "pv-5-a", "observed_at": "2026-07-28T06:00:00Z", "http_status": 200,
+        "signals_sha256": "sig-blog-a", "text_sha256": "text-blog-a", "raw_sha256": "raw-blog-a",
+        "body_blob_sha256": "blob-blog-a", "changed_fields": [], "prev_version_id": null
+      }
+    ]
+  },
+  "pageDiff": {
+    "page-1": {
+      "from_version_id": "pv-1-a", "to_version_id": "pv-1-b",
+      "changed_fields": ["meta_robots"],
+      "from_signals": {
+        "title": "19 Cleveland — Home", "meta_robots": "index, follow", "x_robots_tag": null,
+        "canonical": "https://19cleveland.com/", "description": "Trusted family dentistry in Cleveland.",
+        "h1": "Welcome to 19 Cleveland", "analytics_ids": ["G-ABC123DEF"]
+      },
+      "to_signals": {
+        "title": "19 Cleveland — Home", "meta_robots": "noindex, follow", "x_robots_tag": null,
+        "canonical": "https://19cleveland.com/", "description": "Trusted family dentistry in Cleveland.",
+        "h1": "Welcome to 19 Cleveland", "analytics_ids": ["G-ABC123DEF"]
+      },
+      "text_diff": []
+    },
+    "page-5": {
+      "from_version_id": "pv-5-a", "to_version_id": "pv-5-b",
+      "changed_fields": ["text_sha256"],
+      "from_signals": {
+        "title": "The Invisalign Guide", "meta_robots": null, "x_robots_tag": null,
+        "canonical": "https://19cleveland.com/blog/invisalign-guide/", "description": "How Invisalign works.",
+        "h1": "The Invisalign Guide", "analytics_ids": ["G-ABC123DEF"]
+      },
+      "to_signals": {
+        "title": "The Invisalign Guide", "meta_robots": null, "x_robots_tag": null,
+        "canonical": "https://19cleveland.com/blog/invisalign-guide/", "description": "How Invisalign works.",
+        "h1": "The Invisalign Guide", "analytics_ids": ["G-ABC123DEF"]
+      },
+      "text_diff": [
+        "--- ",
+        "+++ ",
+        "@@ -1,3 +1,3 @@",
+        " Invisalign straightens teeth using clear, removable aligners.",
+        "-Treatment typically takes 6 to 12 months depending on your case.",
+        "+Treatment typically takes 6 to 18 months depending on your case complexity.",
+        " Most patients see visible progress within the first few weeks."
+      ]
+    }
+  },
+  "dns": [
+    {
+      "id": "dns-1", "name": "19cleveland.com", "record_type": "A", "values": ["104.21.44.12"],
+      "ttl": 300, "resolver": "dns.google", "version_seq": 1, "last_checked_at": "2026-08-11T06:10:00Z"
+    },
+    {
+      "id": "dns-2", "name": "19cleveland.com", "record_type": "NS",
+      "values": ["ns1.cloudflare.com", "ns2.cloudflare.com"],
+      "ttl": 86400, "resolver": "dns.google", "version_seq": 2, "last_checked_at": "2026-08-11T06:10:00Z"
+    },
+    {
+      "id": "dns-3", "name": "19cleveland.com", "record_type": "TXT",
+      "values": ["google-site-verification=abc123XYZ"],
+      "ttl": 3600, "resolver": "cloudflare-dns.com", "version_seq": 1, "last_checked_at": "2026-08-11T06:10:00Z"
+    },
+    {
+      "id": "dns-4", "name": "19cleveland.com", "record_type": "MX", "values": ["10 mail.19cleveland.com"],
+      "ttl": 3600, "resolver": "dns.google", "version_seq": 1, "last_checked_at": "2026-08-11T06:10:00Z"
+    }
+  ],
+  "dnsVersions": {
+    "19cleveland.com|NS": [
+      {
+        "id": "dv-2-b", "observed_at": "2026-08-05T00:00:00Z",
+        "values": ["ns1.cloudflare.com", "ns2.cloudflare.com"], "ttl": 86400,
+        "resolver": "dns.google", "prev_version_id": "dv-2-a"
+      },
+      {
+        "id": "dv-2-a", "observed_at": "2026-07-20T10:00:00Z",
+        "values": ["ns1.oldhost.com", "ns2.oldhost.com"], "ttl": 86400,
+        "resolver": "dns.google", "prev_version_id": null
+      }
+    ]
+  },
+  "resourceVersions": {
+    "robots": [
+      {
+        "id": "rv-1-b", "observed_at": "2026-08-10T09:00:00Z", "http_status": 200,
+        "content_sha256": "robots-b", "changed_fields": ["group:*", "sitemaps"], "prev_version_id": "rv-1-a"
+      },
+      {
+        "id": "rv-1-a", "observed_at": "2026-07-20T10:00:03Z", "http_status": 200,
+        "content_sha256": "robots-a", "changed_fields": [], "prev_version_id": null
+      }
+    ],
+    "sitemap": []
+  },
+  "resourceDiff": {
+    "robots": {
+      "from_version_id": "rv-1-a", "to_version_id": "rv-1-b",
+      "changed_fields": ["group:*", "sitemaps"],
+      "from_structure": {
+        "kind": "robots",
+        "groups": [
+          { "user_agents": ["*"], "rules": [{ "directive": "Disallow", "path": "/wp-admin/" }] },
+          { "user_agents": ["googlebot-image"], "rules": [{ "directive": "Allow", "path": "/" }] }
+        ],
+        "sitemaps": ["https://19cleveland.com/sitemap.xml"]
+      },
+      "to_structure": {
+        "kind": "robots",
+        "groups": [
+          {
+            "user_agents": ["*"],
+            "rules": [
+              { "directive": "Disallow", "path": "/wp-admin/" },
+              { "directive": "Disallow", "path": "/staging/" }
+            ]
+          },
+          { "user_agents": ["googlebot-image"], "rules": [{ "directive": "Allow", "path": "/" }] }
+        ],
+        "sitemaps": ["https://19cleveland.com/sitemap.xml", "https://19cleveland.com/sitemap-images.xml"]
+      }
+    }
+  },
+  "settings": {
+    "client_id": "client-cleveland", "enabled": true, "base_url_override": null,
+    "light_interval_hours": 1, "full_interval_hours": 3, "max_urls": 25000,
+    "monitor_when_paused": false, "ignore_patterns": [], "muted_change_types": [],
+    "updated_at": "2026-07-15T00:00:00Z"
+  }
+}

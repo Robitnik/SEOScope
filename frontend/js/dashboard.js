@@ -1,12 +1,12 @@
-import { discoverIntegration, getDashboard, updateIntegration } from "./api.js?v=20260805-status1";
-import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260805-status1";
-import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260805-status1";
-import { isPaused, openClientStatusDialog } from "./client-status.js?v=20260805-status1";
-import { createDetailDrawer } from "./detail-drawer.js?v=20260805-status1";
-import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260805-status1";
-import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260805-status1";
-import { getState, setState } from "./store.js?v=20260805-status1";
-import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260805-status1";
+import { discoverIntegration, getDashboard, listPortfolioMonitorChanges, updateIntegration } from "./api.js?v=20260811-monitor1";
+import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260811-monitor1";
+import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260811-monitor1";
+import { isPaused, openClientStatusDialog } from "./client-status.js?v=20260811-monitor1";
+import { createDetailDrawer } from "./detail-drawer.js?v=20260811-monitor1";
+import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260811-monitor1";
+import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260811-monitor1";
+import { getState, setState } from "./store.js?v=20260811-monitor1";
+import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260811-monitor1";
 
 const grid = document.querySelector("#client-grid");
 const dashboardState = document.querySelector("#dashboard-state");
@@ -63,10 +63,20 @@ async function loadDashboard({ quiet = false } = {}) {
     grid.innerHTML = renderSkeletons(innerWidth > 1279 ? 4 : innerWidth > 720 ? 2 : 1);
   }
   try {
-    const response = await getDashboard({ period: state.period, query: state.query, status: state.status, provider: state.provider, sort: state.sort });
+    // task-36: один портфельний запит критичних відкритих змін монітора,
+    // паралельно з `getDashboard` — не по картці (task-36 §3.4). Збій цього
+    // запиту не має валити дашборд: бейджі просто не з'являться.
+    const [response, criticalChanges] = await Promise.all([
+      getDashboard({ period: state.period, query: state.query, status: state.status, provider: state.provider, sort: state.sort }),
+      listPortfolioMonitorChanges({ severity: "critical", state: "open", limit: 500 }).catch(() => []),
+    ]);
     if (token !== requestToken) return;
     updateGroupCounts(response.clients || []);
     updateClientStatusCounts(response.clients || []);
+    const monitorCriticalByClient = new Map();
+    criticalChanges.forEach((change) => {
+      monitorCriticalByClient.set(change.client_id, (monitorCriticalByClient.get(change.client_id) || 0) + 1);
+    });
     // Статус фільтрується тут, а не через `client_status` в запиті (той
     // параметр існує для API/глибоких посилань): інакше відповідь уже не
     // містила б паузованих, і лічильник «Paused» показував би 0 — тобто
@@ -79,6 +89,7 @@ async function loadDashboard({ quiet = false } = {}) {
       // Скільки клієнтів сховав саме статус-фільтр — щоб рядок результатів
       // сказав це вголос, а не лишив оператора гадати, куди подівся клієнт.
       hidden_paused_count: state.clientStatus === "active" ? (response.clients || []).filter(isPaused).length : 0,
+      monitor_critical_by_client: monitorCriticalByClient,
     };
     setState({ dashboard, loading: false, error: null });
     setConnection("online");

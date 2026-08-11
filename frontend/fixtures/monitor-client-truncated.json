@@ -1,0 +1,58 @@
+{
+  "summary": {
+    "client_id": "", "enabled": true,
+    "last_light_run": {
+      "id": "run-trunc-2", "client_id": "", "kind": "light", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T10:00:00Z", "finished_at": "2026-08-11T10:00:40Z",
+      "urls_checked": 11, "urls_changed": 0, "urls_new": 0, "urls_gone": 0,
+      "requests_made": 11, "bytes_downloaded": 700000,
+      "changes_critical": 0, "changes_warning": 0, "changes_info": 0,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    },
+    "last_full_run": {
+      "id": "run-trunc-1", "client_id": "", "kind": "full", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T08:00:00Z", "finished_at": "2026-08-11T09:30:00Z",
+      "urls_checked": 25000, "urls_changed": 12, "urls_new": 8, "urls_gone": 0,
+      "requests_made": 25000, "bytes_downloaded": 9800000000,
+      "changes_critical": 0, "changes_warning": 0, "changes_info": 8,
+      "truncated": true, "remaining_count": 6120, "error_code": null, "error_message": null
+    },
+    "open_critical": 0, "open_warning": 0, "open_info": 8,
+    "sitemap_health": { "total": 31120, "ok": 24980, "redirects": 15, "broken": 5, "unavailable": 0 },
+    "robots_status": 200,
+    "next_light_due_at": "2026-08-11T11:00:00Z",
+    "next_full_due_at": "2026-08-11T11:00:00Z"
+  },
+  "runs": [
+    {
+      "id": "run-trunc-2", "client_id": "", "kind": "light", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T10:00:00Z", "finished_at": "2026-08-11T10:00:40Z",
+      "urls_checked": 11, "urls_changed": 0, "urls_new": 0, "urls_gone": 0,
+      "requests_made": 11, "bytes_downloaded": 700000,
+      "changes_critical": 0, "changes_warning": 0, "changes_info": 0,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    },
+    {
+      "id": "run-trunc-1", "client_id": "", "kind": "full", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T08:00:00Z", "finished_at": "2026-08-11T09:30:00Z",
+      "urls_checked": 25000, "urls_changed": 12, "urls_new": 8, "urls_gone": 0,
+      "requests_made": 25000, "bytes_downloaded": 9800000000,
+      "changes_critical": 0, "changes_warning": 0, "changes_info": 8,
+      "truncated": true, "remaining_count": 6120, "error_code": null, "error_message": null
+    }
+  ],
+  "changes": [],
+  "pages": { "pages": [] },
+  "pageVersions": {},
+  "pageDiff": {},
+  "dns": [],
+  "dnsVersions": {},
+  "resourceVersions": { "robots": [], "sitemap": [] },
+  "resourceDiff": {},
+  "settings": {
+    "client_id": "", "enabled": true, "base_url_override": null,
+    "light_interval_hours": 1, "full_interval_hours": 3, "max_urls": 25000,
+    "monitor_when_paused": false, "ignore_patterns": [], "muted_change_types": [],
+    "updated_at": "2026-07-01T00:00:00Z"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "summaries": {
+    "client-cleveland": {
+      "client_id": "client-cleveland", "enabled": true,
+      "last_light_run": null, "last_full_run": null,
+      "open_critical": 0, "open_warning": 0, "open_info": 0,
+      "sitemap_health": { "total": 0, "ok": 0, "redirects": 0, "broken": 0, "unavailable": 0 },
+      "robots_status": null, "next_light_due_at": null, "next_full_due_at": null
+    },
+    "client-nyc-hearing": {
+      "client_id": "client-nyc-hearing", "enabled": true,
+      "last_light_run": null, "last_full_run": null,
+      "open_critical": 0, "open_warning": 0, "open_info": 0,
+      "sitemap_health": { "total": 0, "ok": 0, "redirects": 0, "broken": 0, "unavailable": 0 },
+      "robots_status": null, "next_light_due_at": null, "next_full_due_at": null
+    },
+    "client-long-name": {
+      "client_id": "client-long-name", "enabled": true,
+      "last_light_run": null, "last_full_run": null,
+      "open_critical": 0, "open_warning": 0, "open_info": 0,
+      "sitemap_health": { "total": 0, "ok": 0, "redirects": 0, "broken": 0, "unavailable": 0 },
+      "robots_status": null, "next_light_due_at": null, "next_full_due_at": null
+    },
+    "client-onboarding": {
+      "client_id": "client-onboarding", "enabled": true,
+      "last_light_run": null, "last_full_run": null,
+      "open_critical": 0, "open_warning": 0, "open_info": 0,
+      "sitemap_health": { "total": 0, "ok": 0, "redirects": 0, "broken": 0, "unavailable": 0 },
+      "robots_status": null, "next_light_due_at": null, "next_full_due_at": null
+    }
+  },
+  "changes": []
+}

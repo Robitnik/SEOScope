@@ -1,0 +1,479 @@
+/* Site Monitor (task-36) — portfolio page, client section, shared diff viewer.
+ *
+ * Reuses the existing vocabulary rather than reinventing it: `.state-panel`
+ * (app.css) for every empty/error/gate state, `.table-scroll`/`.analytics-table`
+ * (client-page.css) for every table, `.section-heading`/`.eyebrow` (client-page.css)
+ * for section headers, `.chip-button` (trends.css) for segmented toggles,
+ * `.search-field`/`.analytics-toolbar` (client-page.css) for filter bars,
+ * `.live-collection` (client-page.css) for the "Check now" progress banner,
+ * `.pagination`, `.button`/`.button--primary`/`.button--quiet`/`.icon-button`,
+ * `.skeleton*`, `.visually-hidden`, `.back-link`, `.client-page__*` (client
+ * header), `.status-label`/`.state-*` (severity/status tone tokens). Only the
+ * `.monitor-*` classes below are new.
+ *
+ * "alerts"/.alert-* is task-17's GSC declining/rising block — a different
+ * feature (task-36 §1.2). Nothing here reuses that name or class prefix. */
+
+/* client-page.js's `#cp-monitor` summary card badge (§3.4-adjacent — the
+ * point-in-time card, not the dashboard-wide critical badge). Tone via a
+ * modifier class, never inline `style` (CSP, see file header). */
+.monitor-summary-badge--critical { --state-color: var(--danger); }
+.monitor-summary-badge--warning { --state-color: var(--warning); }
+
+#monitor-page-root,
+#monitor-client-page-root {
+  display: grid;
+  gap: 22px;
+  padding-top: 26px;
+  padding-bottom: 40px;
+  min-width: 0;
+  overflow-x: hidden; /* task-26 lesson: a flex/grid page column can report the
+    full intrinsic width of a deeply-nested `.table-scroll` table even though
+    that table visibly clips within its own scroll container. */
+}
+#monitor-page-root > *,
+#monitor-client-page-root > * { min-width: 0; }
+
+.monitor-header h1 { font-size: clamp(26px, 3.4vw, 40px); }
+.monitor-lead { margin-top: 6px; max-width: 62ch; color: var(--ink-muted); }
+
+.monitor-content { display: grid; gap: 22px; min-width: 0; }
+
+.monitor-section {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  min-width: 0;
+}
+.monitor-section > .section-heading { padding-bottom: 14px; }
+
+/* ---------------------------------------------------------------------- */
+/* Portfolio strip                                                        */
+/* ---------------------------------------------------------------------- */
+
+.monitor-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.monitor-strip__stat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 22px;
+  border-right: 1px solid var(--line);
+  flex: 1 1 220px;
+}
+.monitor-strip__stat > .icon { width: 26px; height: 26px; flex: 0 0 auto; color: var(--ink-dim); }
+.monitor-strip__stat--critical > .icon { color: var(--danger); }
+.monitor-strip__stat--warning > .icon { color: var(--warning); }
+.monitor-strip__value {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(24px, 2.6vw, 34px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.monitor-strip__stat--critical .monitor-strip__value { color: var(--danger); }
+.monitor-strip__stat--warning .monitor-strip__value { color: var(--warning); }
+.monitor-strip__label { display: block; margin-top: 3px; color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.monitor-strip__action { margin-left: auto; margin-inline: 22px; flex: 0 0 auto; }
+
+/* ---------------------------------------------------------------------- */
+/* Change rows — portfolio feed flavor (client column, dense single row)  */
+/* ---------------------------------------------------------------------- */
+
+.monitor-change-list,
+.monitor-critical-list { list-style: none; padding: 0; margin: 0; }
+
+.monitor-change-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line-soft);
+  border-left: 3px solid var(--ink-dim);
+}
+.monitor-change-list li:first-child,
+.monitor-critical-list li:first-child { border-top: 0; }
+.monitor-change-row--critical { border-left-color: var(--danger); }
+.monitor-change-row--warning { border-left-color: var(--warning); }
+.monitor-change-row--info { border-left-color: var(--info); }
+.monitor-change-row__icon { width: 18px; height: 18px; flex: 0 0 auto; }
+.monitor-change-row--critical .monitor-change-row__icon { color: var(--danger); }
+.monitor-change-row--warning .monitor-change-row__icon { color: var(--warning); }
+.monitor-change-row--info .monitor-change-row__icon { color: var(--info); }
+.monitor-change-row__severity { flex: 0 0 auto; min-width: 62px; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-muted); }
+.monitor-change-row__client { flex: 0 0 auto; min-width: 130px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.monitor-change-row__type { flex: 1 1 200px; min-width: 0; }
+.monitor-change-row__subject { flex: 2 1 260px; min-width: 0; overflow-wrap: anywhere; color: var(--ink-muted); font-size: 12px; }
+.monitor-change-row__time { flex: 0 0 auto; color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+.monitor-change-row__ack { flex: 0 0 auto; margin-left: auto; }
+.monitor-change-row__status { flex: 0 0 auto; margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--ink-muted); font-size: 12px; }
+.monitor-change-row__status .icon { width: 14px; height: 14px; color: var(--success); }
+
+@media (max-width: 720px) {
+  .monitor-change-row { flex-direction: column; align-items: start; gap: 4px; }
+  /* `flex-basis` (set in px above, e.g. `flex: 1 1 200px`) applies along the
+   * main axis — once that axis turns vertical here, an unreset basis becomes
+   * a literal min-height instead of a width, leaving a tall empty gap. Reset
+   * every child to a content-sized box instead. */
+  .monitor-change-row > * { flex: 0 0 auto; width: 100%; max-width: 100%; }
+  .monitor-change-row__ack,
+  .monitor-change-row__status { margin-left: 0; width: auto; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Client table (portfolio page)                                          */
+/* ---------------------------------------------------------------------- */
+
+.monitor-client-table { min-width: 900px; }
+.monitor-table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+.monitor-table-sort:hover { color: var(--ink); }
+.monitor-table-sort .icon { width: 12px; height: 12px; }
+
+.monitor-count { text-align: right; font-variant-numeric: tabular-nums; }
+.monitor-count--critical { color: var(--danger); }
+.monitor-count--warning { color: var(--warning); }
+.monitor-count--info { color: var(--info); }
+
+.monitor-client-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-muted);
+}
+.monitor-client-state .icon { width: 14px; height: 14px; }
+.monitor-client-state--blocked { color: var(--warning); }
+.monitor-client-state--never_checked { color: var(--ink-dim); }
+.monitor-client-state--paused { color: var(--ink-dim); }
+.monitor-client-state--ok { color: var(--success); }
+.monitor-client-state--unavailable { color: var(--danger); }
+.monitor-client-row--paused { opacity: .6; }
+.monitor-client-row--paused td { border-color: var(--line-soft); }
+
+/* ---------------------------------------------------------------------- */
+/* Feed filters (portfolio page)                                          */
+/* ---------------------------------------------------------------------- */
+
+.monitor-feed__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px 0;
+}
+.monitor-feed__filter select,
+.monitor-feed__filter input[type="search"] {
+  min-height: 40px;
+  padding: 8px 10px;
+  background: var(--canvas);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.monitor-feed__info-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 12px; color: var(--ink-muted); }
+.monitor-feed__count { padding: 12px 20px 0; margin: 0; color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+
+/* ---------------------------------------------------------------------- */
+/* Client page: actions / paused / never-checked                          */
+/* ---------------------------------------------------------------------- */
+
+.monitor-actions-section .state-panel { border: 0; }
+.monitor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 18px 20px; }
+.monitor-next-due { flex-basis: 100%; margin: 8px 0 0; color: var(--ink-dim); font-size: 11px; }
+.monitor-live-status { margin: 0 20px 18px; }
+.monitor-live-status[hidden] { display: none; }
+
+.monitor-paused-gate,
+.monitor-never-checked { border-left-width: 3px; }
+.monitor-never-checked__body .monitor-actions { padding: 14px 0 0; }
+
+/* ---------------------------------------------------------------------- */
+/* Robots / Sitemap / DNS block grid                                      */
+/* ---------------------------------------------------------------------- */
+
+.monitor-blocks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start; /* the DNS block usually runs longer than Robots/Sitemap —
+    default grid stretch would leave a slab of empty space in the shorter two. */
+  gap: 16px;
+}
+.monitor-block {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding-bottom: 4px;
+}
+.monitor-block .section-heading { padding: 16px 18px 10px; }
+
+.monitor-conclusion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.monitor-conclusion .icon { width: 18px; height: 18px; flex: 0 0 auto; }
+/* Tone via a modifier class, never an inline `style` — the app's CSP
+ * (`default-src 'self'`, no `style-src 'unsafe-inline'`) blocks those outright. */
+.monitor-conclusion--unknown { color: var(--ink-dim); }
+.monitor-conclusion--warning { color: var(--warning); }
+.monitor-conclusion--critical { color: var(--danger); }
+.monitor-conclusion--ok { color: var(--success); }
+.monitor-changed-at { margin: 10px 0 0; padding: 0 18px 16px; color: var(--ink-dim); font-size: 11px; }
+
+.monitor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 18px 0;
+  padding: 4px 9px;
+  border: 1px solid var(--line-accent);
+  background: rgb(255 74 23 / 8%);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: default;
+}
+.monitor-chip .icon { width: 13px; height: 13px; color: var(--accent); }
+
+.monitor-sitemap-health {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  margin: 12px 18px 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+.monitor-sitemap-health > div { padding: 10px; background: var(--canvas-raised); text-align: center; }
+.monitor-sitemap-health dt { color: var(--ink-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.monitor-sitemap-health dd { margin: 4px 0 0; font-family: var(--font-display); font-size: 18px; font-variant-numeric: tabular-nums; }
+.monitor-health-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.monitor-health-link:hover { color: var(--accent-hover); }
+
+.monitor-dns-banner { margin: 12px 18px 0; }
+.monitor-dns-verify {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  margin: 10px 18px 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.monitor-dns-verify .icon { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; }
+.monitor-dns-verify code { overflow-wrap: anywhere; }
+.monitor-dns-analytics { color: var(--ink-dim); }
+.monitor-dns-analytics .icon { color: var(--info); }
+.monitor-block .table-scroll { margin: 14px 0 4px; }
+.monitor-dns-table { min-width: 560px; }
+
+@media (max-width: 1023px) {
+  .monitor-blocks { grid-template-columns: 1fr; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Pages block                                                            */
+/* ---------------------------------------------------------------------- */
+
+.monitor-pages-toolbar { align-items: center; }
+.monitor-checkbox { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
+.monitor-checkbox input { width: 18px; height: 18px; accent-color: var(--accent); }
+.monitor-changed-note {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 20px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+.monitor-changed-note .icon { width: 15px; height: 15px; flex: 0 0 auto; color: var(--info); }
+.monitor-export-actions { display: flex; gap: 8px; }
+
+.monitor-pages-table { min-width: 1080px; }
+.monitor-row-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ink);
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.monitor-row-open:hover { text-decoration-color: var(--accent); color: var(--accent); }
+.monitor-row-open .icon { width: 14px; height: 14px; flex: 0 0 auto; color: var(--ink-dim); }
+.monitor-key-badge { display: inline-flex; margin-left: 6px; color: var(--accent); }
+.monitor-key-badge .icon { width: 13px; height: 13px; }
+
+/* Numeric columns shared by every monitor table (dns/runs/pages) — same
+ * convention as `.tool-table td.num` (tools.css), scoped per-table since
+ * `.num` alone is not a global utility class in this codebase. */
+.monitor-dns-table td.num,
+.monitor-runs-table td.num,
+.monitor-pages-table td.num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Check history (runs)                                                   */
+/* ---------------------------------------------------------------------- */
+
+.monitor-runs-table { min-width: 780px; }
+.monitor-run-error { color: var(--danger); }
+.monitor-runs-baseline .icon { color: var(--success); }
+
+/* ---------------------------------------------------------------------- */
+/* Change feed — client-scoped card flavor                                */
+/* ---------------------------------------------------------------------- */
+
+.monitor-feed-toggle { display: flex; gap: 6px; padding: 14px 20px 0; }
+
+.monitor-changes { list-style: none; padding: 0; margin: 0; }
+.monitor-change {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line-soft);
+}
+.monitor-changes li:first-child { border-top: 0; }
+.monitor-severity { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 1px; color: var(--ink-dim); }
+.monitor-severity--critical { color: var(--danger); }
+.monitor-severity--warning { color: var(--warning); }
+.monitor-severity--info { color: var(--info); }
+.monitor-change__body { flex: 1 1 auto; min-width: 0; }
+.monitor-change__headline { margin: 0; }
+.monitor-change__subject { color: var(--ink-muted); font-weight: 400; overflow-wrap: anywhere; }
+.monitor-change__diff { margin: 6px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.monitor-change__old { color: var(--ink-dim); text-decoration: line-through; }
+.monitor-change__new { color: var(--ink); font-weight: 700; }
+.monitor-change__meta { margin: 6px 0 0; color: var(--ink-dim); font-size: 11px; }
+.monitor-change-status { flex: 0 0 auto; margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--ink-muted); font-size: 12px; text-align: right; }
+.monitor-change-status .icon { width: 14px; height: 14px; }
+.monitor-change-status--resolved .icon { color: var(--success); }
+.monitor-ack-button { flex: 0 0 auto; margin-left: auto; }
+
+.monitor-ack-form {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.monitor-ack-form input {
+  min-height: 36px;
+  min-width: 180px;
+  padding: 6px 8px;
+  background: var(--canvas);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .monitor-change { flex-wrap: wrap; }
+  .monitor-change-status,
+  .monitor-ack-button,
+  .monitor-ack-form { margin-left: 0; flex-basis: 100%; justify-content: start; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Shared diff/version viewer dialog (monitor-diff.js)                    */
+/* ---------------------------------------------------------------------- */
+
+.monitor-diff-dialog { width: min(920px, 100vw); }
+
+.monitor-diff-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.monitor-diff-select-group { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; font-size: 11px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .05em; }
+.monitor-diff-select-group select { min-height: 40px; padding: 8px 10px; background: var(--canvas); color: var(--ink); border: 1px solid var(--line); text-transform: none; letter-spacing: normal; font-size: 13px; }
+
+.monitor-diff-doc-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.monitor-diff-doc-link .icon { width: 15px; height: 15px; }
+
+.monitor-diff-meta { margin: 14px 0 0; color: var(--ink-muted); font-size: 12px; }
+.monitor-diff-meta p { margin: 0 0 4px; }
+.monitor-diff-note { color: var(--ink-dim); }
+
+.monitor-diff-table { margin-top: 12px; }
+.monitor-diff-table th[scope="row"] { text-align: left; font-weight: 400; color: var(--ink-muted); white-space: normal; }
+.monitor-diff-row--changed { background: rgb(255 74 23 / 6%); }
+.monitor-diff-row--changed th[scope="row"] { color: var(--ink); font-weight: 700; }
+.monitor-diff-changed-icon { width: 13px; height: 13px; margin-right: 6px; color: var(--accent); vertical-align: -2px; }
+.monitor-diff-value { overflow-wrap: anywhere; white-space: normal; text-align: left; }
+.monitor-diff-value--empty { color: var(--ink-dim); font-style: italic; }
+.monitor-diff-list,
+.monitor-diff-rules { margin: 0; padding-left: 18px; }
+.monitor-diff-list li,
+.monitor-diff-rules li { margin-bottom: 2px; }
+
+.monitor-diff-unchanged { margin-top: 14px; }
+.monitor-diff-unchanged summary { cursor: pointer; color: var(--ink-muted); font-size: 12px; }
+.monitor-diff-unchanged summary:hover { color: var(--ink); }
+
+.monitor-diff-subheading { margin: 20px 0 8px; font-size: 14px; }
+.monitor-diff-text-wrap { overflow-x: auto; border: 1px solid var(--line); background: var(--canvas-raised); }
+.monitor-diff-text { white-space: pre; font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 12px; line-height: 1.6; }
+.monitor-diff-line { display: flex; gap: 8px; padding: 0 12px; }
+.monitor-diff-line--add { background: rgb(101 214 154 / 12%); }
+.monitor-diff-line--del { background: rgb(255 116 116 / 12%); }
+.monitor-diff-line--add ins,
+.monitor-diff-line--del del { text-decoration: none; }
+.monitor-diff-line--add ins { color: var(--success); }
+.monitor-diff-line--del del { color: var(--danger); }
+.monitor-diff-marker { flex: 0 0 14px; color: var(--ink-dim); user-select: none; }
+.monitor-diff-hunk { margin-top: 8px; padding: 4px 12px; background: var(--surface-strong); color: var(--ink-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.monitor-diff-hunk:first-child { margin-top: 0; }
+
+@media (max-width: 720px) {
+  .monitor-diff-dialog { width: 100vw; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Reduced motion — nothing here animates beyond what `.icon--spin` and     */
+/* `.live-collection` already handle globally (app.css/client-page.css).   */
+/* ---------------------------------------------------------------------- */

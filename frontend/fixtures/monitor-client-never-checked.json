@@ -1,0 +1,24 @@
+{
+  "summary": {
+    "client_id": "", "enabled": true,
+    "last_light_run": null, "last_full_run": null,
+    "open_critical": 0, "open_warning": 0, "open_info": 0,
+    "sitemap_health": { "total": 0, "ok": 0, "redirects": 0, "broken": 0, "unavailable": 0 },
+    "robots_status": null, "next_light_due_at": null, "next_full_due_at": null
+  },
+  "runs": [],
+  "changes": [],
+  "pages": { "pages": [] },
+  "pageVersions": {},
+  "pageDiff": {},
+  "dns": [],
+  "dnsVersions": {},
+  "resourceVersions": { "robots": [], "sitemap": [] },
+  "resourceDiff": {},
+  "settings": {
+    "client_id": "", "enabled": true, "base_url_override": null,
+    "light_interval_hours": null, "full_interval_hours": null, "max_urls": null,
+    "monitor_when_paused": false, "ignore_patterns": [], "muted_change_types": [],
+    "updated_at": "2026-08-11T00:00:00Z"
+  }
+}

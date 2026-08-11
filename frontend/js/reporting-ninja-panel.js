@@ -1,5 +1,5 @@
-import { escapeHtml, icon } from "./formatters.js?v=20260805-status1";
-import { formatUaNumber } from "./client-page.js?v=20260805-status1";
+import { escapeHtml, icon } from "./formatters.js?v=20260811-monitor1";
+import { formatUaNumber } from "./client-page.js?v=20260811-monitor1";
 
 const DATASETS = {
   ga4_channels: { label: "Channels", dimension: "Channel", primary: "sessions" },

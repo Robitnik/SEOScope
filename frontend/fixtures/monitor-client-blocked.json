@@ -1,0 +1,88 @@
+{
+  "summary": {
+    "client_id": "", "enabled": true,
+    "last_light_run": {
+      "id": "run-blocked-2", "client_id": "", "kind": "light", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T10:00:00Z", "finished_at": "2026-08-11T10:00:22Z",
+      "urls_checked": 11, "urls_changed": 1, "urls_new": 0, "urls_gone": 0,
+      "requests_made": 11, "bytes_downloaded": 42000,
+      "changes_critical": 0, "changes_warning": 1, "changes_info": 0,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    },
+    "last_full_run": {
+      "id": "run-blocked-1", "client_id": "", "kind": "full", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T06:00:00Z", "finished_at": "2026-08-11T06:04:10Z",
+      "urls_checked": 30, "urls_changed": 1, "urls_new": 0, "urls_gone": 0,
+      "requests_made": 30, "bytes_downloaded": 110000,
+      "changes_critical": 0, "changes_warning": 1, "changes_info": 0,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    },
+    "open_critical": 0, "open_warning": 1, "open_info": 0,
+    "sitemap_health": { "total": 30, "ok": 0, "redirects": 0, "broken": 0, "unavailable": 30 },
+    "robots_status": 403,
+    "next_light_due_at": "2026-08-11T11:00:00Z",
+    "next_full_due_at": "2026-08-11T09:00:00Z"
+  },
+  "runs": [
+    {
+      "id": "run-blocked-2", "client_id": "", "kind": "light", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T10:00:00Z", "finished_at": "2026-08-11T10:00:22Z",
+      "urls_checked": 11, "urls_changed": 1, "urls_new": 0, "urls_gone": 0,
+      "requests_made": 11, "bytes_downloaded": 42000,
+      "changes_critical": 0, "changes_warning": 1, "changes_info": 0,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    },
+    {
+      "id": "run-blocked-1", "client_id": "", "kind": "full", "trigger": "scheduled",
+      "status": "succeeded", "started_at": "2026-08-11T06:00:00Z", "finished_at": "2026-08-11T06:04:10Z",
+      "urls_checked": 30, "urls_changed": 1, "urls_new": 0, "urls_gone": 0,
+      "requests_made": 30, "bytes_downloaded": 110000,
+      "changes_critical": 0, "changes_warning": 1, "changes_info": 0,
+      "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
+    }
+  ],
+  "changes": [
+    {
+      "id": "chg-blocked-1", "client_id": "", "run_id": "run-blocked-1",
+      "severity": "warning", "change_type": "monitor_blocked", "scope": "site",
+      "subject": "https://example.com/", "old_value": "200", "new_value": "403 (challenge page)",
+      "details": { "provider": "cloudflare" }, "detected_at": "2026-08-11T06:04:10Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    }
+  ],
+  "pages": {
+    "pages": [
+      {
+        "id": "page-blk1", "url": "https://example.com/", "is_key_page": true, "in_sitemap": true,
+        "status": 403, "final_url": "https://example.com/", "indexable": null,
+        "title": null, "canonical": null,
+        "version_seq": 1, "gone_since": null, "consecutive_failures": 2,
+        "last_checked_at": "2026-08-11T10:00:05Z"
+      },
+      {
+        "id": "page-blk2", "url": "https://example.com/services/", "is_key_page": true, "in_sitemap": true,
+        "status": 403, "final_url": "https://example.com/services/", "indexable": null,
+        "title": null, "canonical": null,
+        "version_seq": 1, "gone_since": null, "consecutive_failures": 2,
+        "last_checked_at": "2026-08-11T10:00:12Z"
+      }
+    ]
+  },
+  "pageVersions": {},
+  "pageDiff": {},
+  "dns": [
+    {
+      "id": "dns-blk1", "name": "example.com", "record_type": "A", "values": ["198.51.100.7"],
+      "ttl": 300, "resolver": "dns.google", "version_seq": 1, "last_checked_at": "2026-08-11T06:03:00Z"
+    }
+  ],
+  "dnsVersions": {},
+  "resourceVersions": { "robots": [], "sitemap": [] },
+  "resourceDiff": {},
+  "settings": {
+    "client_id": "", "enabled": true, "base_url_override": null,
+    "light_interval_hours": 1, "full_interval_hours": 3, "max_urls": 25000,
+    "monitor_when_paused": false, "ignore_patterns": [], "muted_change_types": [],
+    "updated_at": "2026-07-01T00:00:00Z"
+  }
+}

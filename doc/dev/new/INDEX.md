@@ -302,7 +302,15 @@ Clicks/Impressions і GA4 Sessions/Users по днях/тижнях/місяця
 | # | Файл | Пакет | Depends on | Головні owned paths |
 |---|---|---|---|---|
 | 35 | ✅ [task-35-site-monitor-engine.md](../done/task-35-site-monitor-engine.md) | Двигун монітора: fetch/parse/diff/severity, «стан + ланцюг незмінних версій», content-addressed сховище документів, планувальник у worker-процесі, REST API, CLI | **34** | `app/monitor/**`, `app/db/repositories/monitor.py`, `app/api/monitor.py`, `app/schemas/monitor.py`, `migrations/versions/<rev>_site_monitor.py` (+ адитивні дотики `db/models.py`/`core/config.py`/`jobs/worker.py`/`cli.py`) |
-| 36 | [task-36-site-monitor-ui.md](task-36-site-monitor-ui.md) | UI монітора: сторінка `#/monitor`, розділ `#/client/{id}/monitor`, переглядач версій і дифів, червоний бейдж на картці | **35** | `frontend/js/{monitor-page,monitor-client,monitor-diff}.js`, `frontend/css/monitor.css` (+ адитивні дотики `router.js`/`api.js`/`index.html`/`client-page.js`/`client-card.js`) |
+| 36 | ✅ [task-36-site-monitor-ui.md](../done/task-36-site-monitor-ui.md) | UI монітора: сторінка `#/monitor`, розділ `#/client/{id}/monitor`, переглядач версій і дифів, червоний бейдж на картці | **35** | `frontend/js/{monitor-page,monitor-client,monitor-diff}.js`, `frontend/css/monitor.css` (+ адитивні дотики `router.js`/`api.js`/`index.html`/`client-page.js`/`client-card.js`/`dashboard.js`/`tools.css`, `app/api/monitor.py`/`app/db/repositories/monitor.py`) |
+| 37 | [task-37-site-monitor-fixes.md](task-37-site-monitor-fixes.md) | Фікси після живої перевірки: 422 на `/monitor/pages` (контракт `sort`), прогрес прогону (зведення ховає `running`), `[object Object]` у помилках, лічильники змін на прогін, повноширинний блок DNS, пагінація стрічки + **живий прохід у e2e** | **35**, **36** | `app/api/monitor.py`, `app/db/repositories/monitor.py`, `app/monitor/runner.py`, `migrations/versions/<rev>_monitor_run_totals.py`, `frontend/js/monitor-client.js`, `frontend/css/monitor.css`, `tests/e2e/frontend/monitor-smoke.cjs` |
+
+> **Знайдено живою перевіркою 2026-08-11 (після здачі task-36):** блок Pages падав з 422 **у кожного клієнта з
+> першого відкриття** (фронт шле `sort=-last_checked_at`, API приймає лише беспрефіксні значення, а репозиторій і
+> зовсім завжди сортує `desc`), а прогрес прогону не з'являвся ніколи, бо зведення віддає лише **завершені**
+> прогони — поллер бачив попередній `succeeded` і глушив себе за 2 секунди. Причина, чому це пройшло приймання
+> зеленим: `monitor-smoke.cjs` ганяє **тільки фікстури**, де мережевого запиту немає взагалі, тож розбіжність
+> контракту фронт↔API там фізично не проявляється. Деталі й порядок робіт — task-37.
 
 > **Рішення (2026-08-11), підкріплені живим виміром по 14 клієнтах із бази:**
 >

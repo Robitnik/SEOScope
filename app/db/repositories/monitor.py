@@ -538,6 +538,7 @@ class MonitorRepository:
         *,
         status: str | None = None,
         indexable: bool | None = None,
+        in_sitemap: bool | None = None,
         q: str | None = None,
         sort: str = "last_checked_at",
         limit: int = 100,
@@ -550,6 +551,8 @@ class MonitorRepository:
             stmt = stmt.where(and_(MonitorPage.status >= 200, MonitorPage.status < 300))
         if indexable is not None:
             stmt = stmt.where(MonitorPage.indexable == indexable)
+        if in_sitemap is not None:
+            stmt = stmt.where(MonitorPage.in_sitemap == in_sitemap)
         if q:
             needle = f"%{q.lower()}%"
             stmt = stmt.where(func.lower(MonitorPage.url).like(needle))
