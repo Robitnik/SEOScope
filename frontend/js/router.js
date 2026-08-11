@@ -113,41 +113,41 @@ async function activate() {
     allRoots.filter((el) => el !== toolsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     toolsRoot?.removeAttribute("hidden");
-    const { initToolsRoute } = await import("./tools-page.js?v=20260803-connect4");
+    const { initToolsRoute } = await import("./tools-page.js?v=20260805-status1");
     await initToolsRoute(route);
   } else if (route.name === "trends") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== trendsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     trendsRoot?.removeAttribute("hidden");
-    const { initTrendsPage } = await import("./trends-page.js?v=20260803-connect4");
+    const { initTrendsPage } = await import("./trends-page.js?v=20260805-status1");
     await initTrendsPage(route.query);
   } else if (route.name === "ahrefs") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== ahrefsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     ahrefsRoot?.removeAttribute("hidden");
-    const { initAhrefsPage } = await import("./ahrefs-page.js?v=20260803-connect4");
+    const { initAhrefsPage } = await import("./ahrefs-page.js?v=20260805-status1");
     initAhrefsPage(route.clientId, route.query);
   } else if (route.name === "blogs") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== blogsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     blogsRoot?.removeAttribute("hidden");
-    const { initBlogsPage } = await import("./blogs-page.js?v=20260803-connect4");
+    const { initBlogsPage } = await import("./blogs-page.js?v=20260805-status1");
     initBlogsPage(route.clientId, route.query);
   } else if (route.name === "client") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== clientRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     clientRoot?.removeAttribute("hidden");
-    const { initClientPage } = await import("./client-page.js?v=20260803-connect4");
+    const { initClientPage } = await import("./client-page.js?v=20260805-status1");
     initClientPage(route.clientId, route.query);
   } else {
     allRoots.forEach((el) => el?.setAttribute("hidden", ""));
     dashboardView?.removeAttribute("hidden");
     dashboardChrome.forEach((el) => el?.removeAttribute("hidden"));
-    await import("./dashboard.js?v=20260803-connect4");
+    await import("./dashboard.js?v=20260805-status1");
   }
 }
 

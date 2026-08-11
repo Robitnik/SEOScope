@@ -9,14 +9,14 @@
     <link rel="icon" href="/assets/brand/logo.svg" type="image/svg+xml">
     <link rel="preload" href="/assets/fonts/league-spartan-black.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/assets/brand/ribbon.webp" as="image" type="image/webp">
-    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260803-connect4">
-    <link rel="stylesheet" href="/css/tokens.css?v=20260803-connect4">
-    <link rel="stylesheet" href="/css/app.css?v=20260803-connect4">
-    <link rel="stylesheet" href="/css/client-page.css?v=20260803-connect4">
-    <link rel="stylesheet" href="/css/tools.css?v=20260803-connect4">
-    <link rel="stylesheet" href="/css/trends.css?v=20260803-connect4">
+    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260805-status1">
+    <link rel="stylesheet" href="/css/tokens.css?v=20260805-status1">
+    <link rel="stylesheet" href="/css/app.css?v=20260805-status1">
+    <link rel="stylesheet" href="/css/client-page.css?v=20260805-status1">
+    <link rel="stylesheet" href="/css/tools.css?v=20260805-status1">
+    <link rel="stylesheet" href="/css/trends.css?v=20260805-status1">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260803-connect4"></script>
+    <script type="module" src="/js/router.js?v=20260805-status1"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -92,6 +92,13 @@
           <button type="button" data-group="all" aria-pressed="true"><span>All</span><small id="group-count-all">—</small></button>
           <button type="button" data-group="vision" aria-pressed="false"><span>Vision</span><small id="group-count-vision">—</small></button>
           <button type="button" data-group="vertex" aria-pressed="false"><span>Vertex</span><small id="group-count-vertex">—</small></button>
+        </div>
+        <!-- task-34: комерційний статус. Дефолт «All» — паузований клієнт має
+             лишатись на очах; фільтр тут для явного «показати лише активних». -->
+        <div class="group-filter__control" role="group" aria-label="Filter by client status">
+          <button type="button" data-client-status="all" aria-pressed="true"><span>All</span><small id="client-status-count-all">—</small></button>
+          <button type="button" data-client-status="active" aria-pressed="false"><span>Active</span><small id="client-status-count-active">—</small></button>
+          <button type="button" data-client-status="paused" aria-pressed="false"><span>Paused</span><small id="client-status-count-paused">—</small></button>
         </div>
       </section>
 
@@ -222,6 +229,38 @@
           <button class="button button--primary" type="button" id="integration-connect" hidden>Connect</button>
           <button class="button button--primary" type="button" id="integration-collect" hidden>Collect data now</button>
           <button class="button button--primary" type="submit" id="integration-save" hidden>Save integration</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <!-- task-34: один діалог статусу на весь застосунок — його відкривають і
+         з картки дашборду, і з шапки сторінки клієнта (`client-status.js`). -->
+    <dialog class="status-dialog" id="client-status-dialog" aria-labelledby="client-status-title">
+      <form class="dialog-shell dialog-shell--compact" id="client-status-form">
+        <header class="dialog-header">
+          <div><p class="eyebrow">Client</p><h2 id="client-status-title">Client status</h2></div>
+          <button class="icon-button" type="button" data-close aria-label="Close dialog"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-x"></use></svg></button>
+        </header>
+        <div class="dialog-body">
+          <p class="integration-lead" id="client-status-lead"></p>
+          <fieldset class="status-choices">
+            <legend>Status</legend>
+            <label class="choice">
+              <input type="radio" name="client-status" value="active">
+              <span class="choice__body"><strong>Active</strong><small>Included when you refresh data or run audits for all clients.</small></span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="client-status" value="paused">
+              <span class="choice__body"><strong>Paused</strong><small>Payment stopped. Bulk collections skip this client; its history stays untouched and you can still collect it by selecting it explicitly.</small></span>
+            </label>
+          </fieldset>
+          <label class="form-field">Note (optional)<input name="note" maxlength="300" autocomplete="off" placeholder="e.g. payment stopped 01.07"></label>
+          <p class="field-help">The note is shown on the client card, so a paused client always says why.</p>
+          <p class="form-error" id="client-status-error" role="alert"></p>
+        </div>
+        <footer class="dialog-footer">
+          <button class="button button--quiet" type="button" data-close>Cancel</button>
+          <button class="button button--primary" type="submit" id="client-status-save">Save</button>
         </footer>
       </form>
     </dialog>

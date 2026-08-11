@@ -21,6 +21,7 @@ from app.schemas.adapter import DateRange, PreflightResult
 from app.schemas.enums import (
     BetterDirection,
     CellStatus,
+    ClientStatus,
     ComparisonMode,
     JobStatus,
     MetricUnit,
@@ -197,6 +198,12 @@ class ClientCardDTO(BaseModel):
     logo_path: str | None = None
     market: str | None = None
     timezone: str
+    # Комерційний статус (task-34) їде разом із карткою, щоб бейдж «Paused ·
+    # since 12 Jul» рендерився з тієї самої відповіді, без другого запиту.
+    # Не плутати з `overall_status` нижче — той про стан ДАНИХ.
+    status: ClientStatus = ClientStatus.active
+    status_changed_at: datetime | None = None
+    status_note: str | None = None
     overall_status: Literal["ok", "attention", "stale", "failed_all"]
     providers: list[ProviderSummaryDTO]
     last_synced_at: datetime | None = None
@@ -232,6 +239,9 @@ class ClientDTO(BaseModel):
     market: str | None = None
     timezone: str
     enabled: bool = True
+    status: ClientStatus = ClientStatus.active
+    status_changed_at: datetime | None = None
+    status_note: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -245,6 +255,7 @@ class ClientCreateRequest(BaseModel):
     market: str | None = None
     timezone: str
     enabled: bool = True
+    status: ClientStatus = ClientStatus.active
 
 
 class ClientUpdateRequest(BaseModel):
@@ -255,6 +266,19 @@ class ClientUpdateRequest(BaseModel):
     market: str | None = None
     timezone: str | None = None
     enabled: bool | None = None
+    # `status` тут навмисно відсутній: його міняє лише
+    # `POST /clients/{id}/status`, і саме там ставиться `status_changed_at`.
+    # Другий шлях запису означав би два місця, де народжується ця дата.
+
+
+class ClientStatusRequest(BaseModel):
+    """Тіло `POST /clients/{id}/status` (task-34)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: ClientStatus
+    # Чому пауза («payment stopped 01.07»). Порожній рядок = стерти нотатку.
+    note: str | None = Field(default=None, max_length=300)
 
 
 class IntegrationDTO(BaseModel):
@@ -380,6 +404,10 @@ class SyncJobAcceptedDTO(BaseModel):
     batch_id: str | None = None
     status_url: str
     events_url: str
+    # Кого відкинуло розгортання `client_ids="all"` через паузу (task-34).
+    # Порожній список за замовчуванням; фронт показує це явно, щоб пропуск
+    # ніколи не виглядав як тихе зникнення клієнта зі збору.
+    skipped_paused_client_ids: list[str] = Field(default_factory=list)
 
 
 class CellProgressDTO(BaseModel):
@@ -836,6 +864,7 @@ class TechAuditBatchAcceptedDTO(BaseModel):
     events_url: str
     queued_count: int
     skipped_active_client_ids: list[str] = Field(default_factory=list)
+    skipped_paused_client_ids: list[str] = Field(default_factory=list)
 
 
 # --- Client Blogs (task-26) --------------------------------------------------

@@ -318,11 +318,22 @@ async def start_tech_audit(client_id: str) -> TechAuditRunAcceptedDTO:
 
 def _create_audit_batch(
     body: TechAuditBatchRunRequest,
-) -> tuple[list[SyncJob], list[str], list[str]]:
+) -> tuple[list[SyncJob], list[str], list[str], list[str]]:
+    """→ (jobs, skipped_active, missing, skipped_paused)."""
     with worker_session_scope() as session:
         clients = ClientRepository(session)
+        skipped_paused: list[str] = []
         if body.client_ids == "all":
-            requested = [str(client.id) for client in clients.list_active()]
+            # «Всі» не означає «і ті, хто на паузі» (task-34): краулити сайт
+            # клієнта, який припинив оплату, — рівно та зайва робота, яку
+            # статус і має відсікати. Явний вибір оператора не блокуємо.
+            requested = [str(client.id) for client in clients.list_collectable()]
+            collectable_ids = set(requested)
+            skipped_paused = [
+                str(client.id)
+                for client in clients.list_active()
+                if str(client.id) not in collectable_ids
+            ]
             missing: list[str] = []
         else:
             requested = list(dict.fromkeys(body.client_ids))
@@ -336,7 +347,7 @@ def _create_audit_batch(
                     enabled.append(client_id)
             requested = enabled
         if missing:
-            return [], [], missing
+            return [], [], missing, skipped_paused
 
         attempts = TechAuditReadRepository(session).latest_crawl_attempts(requested)
         active_statuses = {
@@ -352,7 +363,7 @@ def _create_audit_batch(
         ]
         queued = [client_id for client_id in requested if client_id not in skipped]
         if not queued:
-            return [], skipped, []
+            return [], skipped, [], skipped_paused
 
         params = {"max_pages": body.max_pages} if body.max_pages is not None else None
         jobs = JobRepository(session).create_run(
@@ -365,7 +376,7 @@ def _create_audit_batch(
             params=params,
             idempotency_key=body.idempotency_key,
         )
-        return jobs, skipped, []
+        return jobs, skipped, [], skipped_paused
 
 
 @router.post(
@@ -378,7 +389,7 @@ async def start_tech_audit_batch(
     body: TechAuditBatchRunRequest,
 ) -> TechAuditBatchAcceptedDTO:
     """Queue one crawl per selected active client in a shared batch."""
-    jobs, skipped, missing = await run_in_threadpool(_create_audit_batch, body)
+    jobs, skipped, missing, skipped_paused = await run_in_threadpool(_create_audit_batch, body)
     if missing:
         raise HTTPException(
             status_code=404,
@@ -389,16 +400,30 @@ async def start_tech_audit_batch(
             ).model_dump(),
         )
     if not jobs:
+        # Три різні причини порожньої черги — три різні коди, бо оператор має
+        # зрозуміти, що робити далі: чекати, зняти паузу чи завести клієнта.
+        if skipped:
+            error_code, message, ids = (
+                "audits_already_running",
+                "Technical audits are already queued or running for every selected client",
+                skipped,
+            )
+        elif skipped_paused:
+            error_code, message, ids = (
+                "all_clients_paused",
+                "every client is paused; resume one or select it explicitly",
+                skipped_paused,
+            )
+        else:
+            error_code, message, ids = (
+                "no_clients",
+                "No active clients matched this request",
+                [],
+            )
         raise HTTPException(
             status_code=409,
             detail=ErrorDTO(
-                error_code="audits_already_running" if skipped else "no_clients",
-                message=(
-                    "Technical audits are already queued or running for every selected client"
-                    if skipped
-                    else "No active clients matched this request"
-                ),
-                details={"client_ids": skipped},
+                error_code=error_code, message=message, details={"client_ids": ids}
             ).model_dump(),
         )
 
@@ -411,6 +436,7 @@ async def start_tech_audit_batch(
         batch_id=batch_id,
         status_url=status_url,
         events_url=f"{status_url}/events",
+        skipped_paused_client_ids=skipped_paused,
         queued_count=len(jobs),
         skipped_active_client_ids=skipped,
     )

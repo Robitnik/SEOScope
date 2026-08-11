@@ -1,13 +1,14 @@
-import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, isAbortError, isFixtureMode } from "./api.js?v=20260803-connect4";
-import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260803-connect4";
-import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260803-connect4";
-import { buildAhrefsHash, buildBlogsHash, replaceClientHash } from "./router.js?v=20260803-connect4";
-import { escapeHtml, formatTimestamp, icon, initials, isTerminal, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260803-connect4";
-import { createAnalyticsTab } from "./analytics-tabs.js?v=20260803-connect4";
-import { renderAlertsBlock } from "./alerts-block.js?v=20260803-connect4";
-import { renderChart, destroyChart } from "./charts.js?v=20260803-connect4";
-import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260803-connect4";
-import { watchJob } from "./sse.js?v=20260803-connect4";
+import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, isAbortError, isFixtureMode } from "./api.js?v=20260805-status1";
+import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260805-status1";
+import { clientStatusBadge, clientStatusNote, isPaused, openClientStatusDialog } from "./client-status.js?v=20260805-status1";
+import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260805-status1";
+import { buildAhrefsHash, buildBlogsHash, replaceClientHash } from "./router.js?v=20260805-status1";
+import { escapeHtml, formatTimestamp, icon, initials, isTerminal, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260805-status1";
+import { createAnalyticsTab } from "./analytics-tabs.js?v=20260805-status1";
+import { renderAlertsBlock } from "./alerts-block.js?v=20260805-status1";
+import { renderChart, destroyChart } from "./charts.js?v=20260805-status1";
+import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260805-status1";
+import { watchJob } from "./sse.js?v=20260805-status1";
 
 const PERIODS = [
   { key: "week", label: "Week" },
@@ -373,7 +374,8 @@ function renderHeader(client) {
   const logo = client.logo_path
     ? `<img class="client-logo" src="${escapeHtml(client.logo_path)}" width="52" height="52" alt="Logo of ${escapeHtml(client.name)}" loading="lazy">`
     : `<span class="client-logo" aria-hidden="true">${escapeHtml(initials(client.name))}</span>`;
-  document.querySelector("#cp-header").innerHTML = `
+  const header = document.querySelector("#cp-header");
+  header.innerHTML = `
     <div class="client-page__identity">
       ${logo}
       <div>
@@ -384,12 +386,24 @@ function renderHeader(client) {
     </div>
     <div class="client-page__status">
       <span class="status-label ${stateClass(client.overall_status)}">${icon(state.icon)}${state.label}</span>
+      ${clientStatusBadge(client)}
       <span class="client-page__sync">Last collection: ${formatTimestamp(client.last_synced_at, "not yet")}</span>
+      ${isPaused(client) ? `<p class="client-status-note">${icon("info-circle", "icon icon--tiny")}<span>Bulk collections skip this client. Its history is untouched.</span></p>` : ""}
+      ${clientStatusNote(client)}
     </div>
     <div class="client-page__health" title="Health % is calculated only from complete-quality services">
       <strong>${healthText}</strong>
       <small>Health${health ? ` · ${health.coverage_contributing}/${health.coverage_configured} services` : ""}</small>
     </div>`;
+  // Той самий діалог, що й на дашборді — пауза ставиться там, де оператор
+  // саме зараз дивиться на клієнта, а не тільки в одному «правильному» місці.
+  header.querySelector('[data-action="client-status"]')?.addEventListener("click", (event) => {
+    openClientStatusDialog({
+      client,
+      trigger: event.currentTarget,
+      onSaved: () => loadClient(),
+    });
+  });
   settle("#cp-header");
 }
 

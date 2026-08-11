@@ -87,6 +87,94 @@ def test_patch_client_partial_update(client, db):
     assert response.json()["name"] == "Acme"
 
 
+# --- client lifecycle status (task-34) --------------------------------------
+
+
+def test_new_client_is_active_with_no_status_date(client):
+    response = client.post(
+        "/api/v1/clients",
+        json={
+            "name": "Acme",
+            "slug": "acme",
+            "domain": "acme.com",
+            "timezone": "America/New_York",
+        },
+    )
+
+    body = response.json()
+    assert body["status"] == "active"
+    assert body["status_changed_at"] is None
+    assert body["status_note"] is None
+
+
+def test_pause_and_resume_client(client, db):
+    client_id = _create_client(db)
+
+    paused = client.post(
+        f"/api/v1/clients/{client_id}/status",
+        json={"status": "paused", "note": "payment stopped 01.07"},
+    )
+    assert paused.status_code == 200
+    assert paused.json()["status"] == "paused"
+    assert paused.json()["status_changed_at"] is not None
+    assert paused.json()["status_note"] == "payment stopped 01.07"
+
+    resumed = client.post(f"/api/v1/clients/{client_id}/status", json={"status": "active"})
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "active"
+    # Нотатка знімається разом із паузою, якщо її не передали.
+    assert resumed.json()["status_note"] is None
+
+
+def test_status_change_survives_a_read_back(client, db):
+    client_id = _create_client(db)
+    client.post(f"/api/v1/clients/{client_id}/status", json={"status": "paused"})
+
+    body = client.get(f"/api/v1/clients/{client_id}").json()
+
+    assert body["status"] == "paused"
+
+
+def test_status_on_missing_client_is_404(client):
+    response = client.post("/api/v1/clients/nope/status", json={"status": "paused"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "client_not_found"
+
+
+def test_status_rejects_unknown_value_and_overlong_note(client, db):
+    client_id = _create_client(db)
+
+    assert (
+        client.post(f"/api/v1/clients/{client_id}/status", json={"status": "churned"}).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            f"/api/v1/clients/{client_id}/status",
+            json={"status": "paused", "note": "x" * 301},
+        ).status_code
+        == 422
+    )
+    # `extra="forbid"` — щоб «status» не можна було протягнути під іншим ім'ям.
+    assert (
+        client.post(
+            f"/api/v1/clients/{client_id}/status",
+            json={"status": "paused", "enabled": False},
+        ).status_code
+        == 422
+    )
+
+
+def test_patch_client_cannot_change_status(client, db):
+    """`status` міняє тільки свій ендпоінт — інакше було б два джерела дати."""
+    client_id = _create_client(db)
+
+    response = client.patch(f"/api/v1/clients/{client_id}", json={"status": "paused"})
+
+    assert response.status_code == 422
+
+
 def test_upsert_integration_and_read_back(client, db):
     client_id = _create_client(db)
     response = client.put(

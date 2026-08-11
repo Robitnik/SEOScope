@@ -3,6 +3,7 @@ from app.schemas.enums import (
     STAGE_ORDER,
     BetterDirection,
     CellStatus,
+    ClientStatus,
     ComparisonMode,
     JobStatus,
     MetricUnit,
@@ -117,6 +118,14 @@ def test_cell_status_values_distinguish_not_configured_from_failure_states():
     # not_configured must never collapse into failed — the whole point of the
     # state (PLAN §9.2).
     assert CellStatus.not_configured != CellStatus.failed
+
+
+def test_client_status_values_are_exactly_active_and_paused():
+    """Пауза — комерційний стан, а не ще один технічний статус збору
+    (task-34). Третього значення тут свідомо немає: «архів» — це
+    `Client.enabled`, а не новий член цього enum.
+    """
+    assert {s.value for s in ClientStatus} == {"active", "paused"}
 
 
 def test_metric_unit_values():

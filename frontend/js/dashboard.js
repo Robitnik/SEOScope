@@ -1,11 +1,12 @@
-import { discoverIntegration, getDashboard, updateIntegration } from "./api.js?v=20260803-connect4";
-import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260803-connect4";
-import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260803-connect4";
-import { createDetailDrawer } from "./detail-drawer.js?v=20260803-connect4";
-import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260803-connect4";
-import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260803-connect4";
-import { getState, setState } from "./store.js?v=20260803-connect4";
-import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260803-connect4";
+import { discoverIntegration, getDashboard, updateIntegration } from "./api.js?v=20260805-status1";
+import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260805-status1";
+import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260805-status1";
+import { isPaused, openClientStatusDialog } from "./client-status.js?v=20260805-status1";
+import { createDetailDrawer } from "./detail-drawer.js?v=20260805-status1";
+import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260805-status1";
+import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260805-status1";
+import { getState, setState } from "./store.js?v=20260805-status1";
+import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260805-status1";
 
 const grid = document.querySelector("#client-grid");
 const dashboardState = document.querySelector("#dashboard-state");
@@ -65,7 +66,20 @@ async function loadDashboard({ quiet = false } = {}) {
     const response = await getDashboard({ period: state.period, query: state.query, status: state.status, provider: state.provider, sort: state.sort });
     if (token !== requestToken) return;
     updateGroupCounts(response.clients || []);
-    const dashboard = { ...response, clients: filterByClientGroup(response.clients || [], state.group) };
+    updateClientStatusCounts(response.clients || []);
+    // Статус фільтрується тут, а не через `client_status` в запиті (той
+    // параметр існує для API/глибоких посилань): інакше відповідь уже не
+    // містила б паузованих, і лічильник «Paused» показував би 0 — тобто
+    // фільтр брехав би про те, що сам ховає. Той самий підхід, що й у
+    // портфельних групах вище.
+    const visible = filterByClientStatus(response.clients || [], state.clientStatus);
+    const dashboard = {
+      ...response,
+      clients: filterByClientGroup(visible, state.group),
+      // Скільки клієнтів сховав саме статус-фільтр — щоб рядок результатів
+      // сказав це вголос, а не лишив оператора гадати, куди подівся клієнт.
+      hidden_paused_count: state.clientStatus === "active" ? (response.clients || []).filter(isPaused).length : 0,
+    };
     setState({ dashboard, loading: false, error: null });
     setConnection("online");
     render(dashboard);
@@ -90,7 +104,10 @@ function render(dashboard) {
     return Number.isFinite(timestamp) && timestamp > latest ? timestamp : latest;
   }, 0);
   document.querySelector("#summary-updated").textContent = formatTimestamp(latestDataAt ? new Date(latestDataAt).toISOString() : null, "—");
-  document.querySelector("#result-count").textContent = `${clients.length} ${clientWord(clients.length)}`;
+  const hiddenPaused = dashboard.hidden_paused_count || 0;
+  document.querySelector("#result-count").textContent = hiddenPaused
+    ? `${clients.length} ${clientWord(clients.length)} · ${hiddenPaused} paused hidden`
+    : `${clients.length} ${clientWord(clients.length)}`;
   dashboardState.innerHTML = "";
   if (!clients.length) {
     grid.innerHTML = "";
@@ -99,6 +116,18 @@ function render(dashboard) {
     return;
   }
   grid.innerHTML = clients.map((client) => renderClientCard(client, dashboard)).join("");
+}
+
+function filterByClientStatus(clients, wanted) {
+  if (!wanted || wanted === "all") return clients;
+  return clients.filter((client) => (isPaused(client) ? "paused" : "active") === wanted);
+}
+
+function updateClientStatusCounts(clients) {
+  const paused = clients.filter(isPaused).length;
+  document.querySelector("#client-status-count-all").textContent = clients.length;
+  document.querySelector("#client-status-count-active").textContent = clients.length - paused;
+  document.querySelector("#client-status-count-paused").textContent = paused;
 }
 
 function updateGroupCounts(clients) {
@@ -171,8 +200,17 @@ grid.addEventListener("click", (event) => {
   const card = button.closest("[data-client-id]");
   const client = getState().dashboard?.clients.find((item) => String(item.client_id) === card.dataset.clientId);
   if (!client) return;
+  if (button.dataset.action === "client-status") {
+    openClientStatusDialog({ client, trigger: button, onSaved: onClientStatusSaved });
+    return;
+  }
   if (button.dataset.action === "detail") detailDrawer.open(client, getState().period, button);
-  if (button.dataset.action === "sync") syncModal.openSelection({ clientId: client.client_id, trigger: button });
+  // Збір для паузованого клієнта не заборонений — але й не стається «просто
+  // так»: одне підтвердження відділяє свідомий намір від автопілоту.
+  if (button.dataset.action === "sync") {
+    if (isPaused(client) && !confirm(`${client.name} is paused. Collect data for it anyway?`)) return;
+    syncModal.openSelection({ clientId: client.client_id, trigger: button });
+  }
   if (button.dataset.action === "sync-provider") syncModal.openSelection({ clientId: client.client_id, provider: button.dataset.provider, trigger: button });
   if (button.dataset.action === "integrate") openIntegration(client, button.dataset.provider, button);
 });
@@ -213,6 +251,19 @@ document.querySelector("#clear-filters").addEventListener("click", clearFilters)
 document.querySelectorAll("[data-period]").forEach((button) => button.addEventListener("click", () => {
   document.querySelectorAll("[data-period]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
   setState({ period: button.dataset.period }, { persist: true });
+  loadDashboard();
+}));
+function onClientStatusSaved(updated) {
+  const paused = updated?.status === "paused";
+  toast(paused
+    ? `${updated.name} is paused. Bulk collections will skip it.`
+    : `${updated?.name || "Client"} is active again and back in bulk collections.`);
+  loadDashboard({ quiet: true });
+}
+
+document.querySelectorAll("[data-client-status]").forEach((button) => button.addEventListener("click", () => {
+  document.querySelectorAll("[data-client-status]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+  setState({ clientStatus: button.dataset.clientStatus }, { persist: true });
   loadDashboard();
 }));
 document.querySelectorAll("[data-group]").forEach((button) => button.addEventListener("click", () => {
@@ -474,5 +525,6 @@ const initial = getState();
 search.value = initial.query; statusFilter.value = initial.status; providerFilter.value = initial.provider; sortSelect.value = initial.sort;
 document.querySelectorAll("[data-period]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.period === initial.period)));
 document.querySelectorAll("[data-group]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.group === initial.group)));
+document.querySelectorAll("[data-client-status]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.clientStatus === initial.clientStatus)));
 document.querySelector("#group-filter-copy").textContent = initial.group === "all" ? "All client accounts" : `${initial.group === "vision" ? "Vision" : "Vertex"} accounts`;
 loadDashboard();

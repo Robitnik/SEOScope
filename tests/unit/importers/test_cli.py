@@ -55,3 +55,41 @@ def test_real_run_reports_conflicts_before_artifacts_section(cli_env, capsys):
     artifacts_idx = captured.out.index("=== artifacts ===")
     assert conflicts_idx < artifacts_idx
     assert "acme.com" in captured.out
+
+
+# --- backfill-daily-history: пауза клієнта (task-34) ------------------------
+
+
+def _seed_status_clients(cli_env):
+    from app.db.repositories.clients import ClientRepository
+    from app.db.session import get_sync_sessionmaker
+    from app.schemas.enums import ClientStatus
+
+    with get_sync_sessionmaker()() as session:
+        repo = ClientRepository(session)
+        repo.create(name="Active Co", slug="active-co", domain="active-co.com")
+        paused = repo.create(name="Paused Co", slug="paused-co", domain="paused-co.com")
+        repo.set_status(paused.id, ClientStatus.paused, note="payment stopped")
+        session.commit()
+
+
+def test_backfill_daily_history_skips_paused_clients_by_default(cli_env, capsys):
+    _seed_status_clients(cli_env)
+
+    exit_code = main(["backfill-daily-history", "--days", "7", "--dry-run"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "skipping 1 paused client(s)" in out
+    assert "clients: 1" in out
+
+
+def test_backfill_daily_history_include_paused_collects_everyone(cli_env, capsys):
+    _seed_status_clients(cli_env)
+
+    exit_code = main(["backfill-daily-history", "--days", "7", "--dry-run", "--include-paused"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "skipping" not in out
+    assert "clients: 2" in out

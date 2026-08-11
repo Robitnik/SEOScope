@@ -4,10 +4,17 @@ function initialState() {
   const params = new URLSearchParams(location.search);
   const group = ["vision", "vertex"].includes(params.get("group")) ? params.get("group") : "all";
   const sortModes = ["quality", "health", "name", "last_sync", "biggest_drop"];
+  // Комерційний статус (task-34). Дефолт `all`: паузований клієнт має бути
+  // видимим — інакше про нього легко забути, а це рівно та проблема, яку
+  // статус і вирішує.
+  const clientStatus = ["active", "paused"].includes(params.get("client_status"))
+    ? params.get("client_status")
+    : "all";
   return {
     period: params.get("period") === "month" ? "month" : "week",
     query: params.get("q") || "",
     status: params.get("status") || "",
+    clientStatus,
     provider: params.get("provider") || "",
     sort: sortModes.includes(params.get("sort")) ? params.get("sort") : "quality",
     group,
@@ -35,9 +42,9 @@ export function subscribe(listener) {
 
 function persistUrl() {
   const params = new URLSearchParams(location.search);
-  for (const key of ["period", "q", "status", "provider", "sort", "group"]) {
-    const value = key === "q" ? state.query : state[key];
-    if (value && !(key === "period" && value === "week") && !(key === "sort" && value === "quality") && !(key === "group" && value === "all")) params.set(key, value);
+  for (const key of ["period", "q", "status", "provider", "sort", "group", "client_status"]) {
+    const value = key === "q" ? state.query : key === "client_status" ? state.clientStatus : state[key];
+    if (value && !(key === "period" && value === "week") && !(key === "sort" && value === "quality") && !(key === "group" && value === "all") && !(key === "client_status" && value === "all")) params.set(key, value);
     else params.delete(key);
   }
   history.replaceState(null, "", `${location.pathname}${params.size ? `?${params}` : ""}${location.hash}`);

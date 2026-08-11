@@ -28,6 +28,7 @@ from app.schemas.adapter import CollectionContext, PreflightResult
 from app.schemas.api import (
     ClientCreateRequest,
     ClientDTO,
+    ClientStatusRequest,
     ClientUpdateRequest,
     ErrorDTO,
     IntegrationDTO,
@@ -119,6 +120,9 @@ def _to_client_dto(client: Client) -> ClientDTO:
         market=client.market,
         timezone=client.timezone,
         enabled=client.enabled,
+        status=client.status,
+        status_changed_at=client.status_changed_at,
+        status_note=client.status_note,
         created_at=client.created_at,
         updated_at=client.updated_at,
     )
@@ -156,6 +160,7 @@ async def create_client(body: ClientCreateRequest, session: SessionDep) -> Clien
             market=body.market,
             timezone=body.timezone,
             enabled=body.enabled,
+            status=body.status,
         )
 
     try:
@@ -208,6 +213,35 @@ async def update_client(
                 error_code="client_conflict", message="domain already in use"
             ).model_dump(),
         ) from exc
+    return _to_client_dto(client)
+
+
+@router.post(
+    "/clients/{client_id}/status",
+    response_model=ClientDTO,
+    responses={404: {"model": ErrorDTO}},
+)
+async def set_client_status(
+    client_id: str, body: ClientStatusRequest, session: SessionDep
+) -> ClientDTO:
+    """Поставити/зняти паузу співпраці (task-34).
+
+    Окрема дія, а не поле в `PATCH /clients/{id}`: тут — і тільки тут —
+    ставиться `status_changed_at`, тож «paused since …» має рівно одне
+    джерело. Пауза не чіпає жодних зібраних даних: вона виключає клієнта з
+    масових операцій, і не більше.
+    """
+
+    def _run(s: Session) -> Client | None:
+        repo = ClientRepository(s)
+        if repo.get(client_id) is None:
+            return None
+        return repo.set_status(client_id, body.status, note=body.note)
+
+    client = await session.run_sync(_run)
+    if client is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    await session.commit()
     return _to_client_dto(client)
 
 

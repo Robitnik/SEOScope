@@ -35,6 +35,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import GUID, Base, DecimalString, UTCDateTime, new_uuid, utcnow
 from app.schemas.enums import (
     CellStatus,
+    ClientStatus,
     ComparisonMode,
     JobStatus,
     MetricUnit,
@@ -63,7 +64,22 @@ class Client(Base):
     logo_path: Mapped[str | None] = mapped_column(String(500), default=None)
     market: Mapped[str | None] = mapped_column(String(100), default=None)
     timezone: Mapped[str] = mapped_column(String(64), default="America/New_York")
+    # `enabled` — технічна видимість рядка: `False` ховає клієнта з дашборду
+    # (`ClientRepository.list_active`). Це НЕ «пауза».
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # `status` (task-34) — комерційний стан співпраці: `paused` = оплата
+    # припинена. Клієнт лишається видимим і зберігає історію, але випадає з
+    # масових операцій (`list_collectable`). Індексу немає навмисно: у таблиці
+    # десятки рядків, і кожен запит однаково читає її повністю.
+    status: Mapped[ClientStatus] = mapped_column(
+        _str_enum(ClientStatus, 16), default=ClientStatus.active
+    )
+    # NULL = статус ніколи не міняли. Дату створення сюди не підставляємо:
+    # «Paused since …» має спиратись на реальну подію, а не на здогад.
+    status_changed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # Вільна нотатка оператора («payment stopped 01.07»). Не секрет — PLAN §13
+    # стосується ключів/паролів/куків, а не комерційного контексту.
+    status_note: Mapped[str | None] = mapped_column(String(300), default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 

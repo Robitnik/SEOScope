@@ -1,6 +1,6 @@
-import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260803-connect4";
-import { panelSkeleton } from "./skeleton.js?v=20260803-connect4";
-import { formatUaNumber } from "./client-page.js?v=20260803-connect4";
+import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260805-status1";
+import { panelSkeleton } from "./skeleton.js?v=20260805-status1";
+import { formatUaNumber } from "./client-page.js?v=20260805-status1";
 
 function metricValue(summary, key) {
   const metric = (summary?.metrics || []).find((item) => item.metric_key === key);

@@ -19,6 +19,7 @@ from app.schemas import (
     ClientCardDTO,
     ClientCreateRequest,
     ClientDTO,
+    ClientStatusRequest,
     ClientUpdateRequest,
     CollectionContext,
     CollectionResult,
@@ -43,6 +44,7 @@ from app.schemas.enums import (
     STAGE_ORDER,
     BetterDirection,
     CellStatus,
+    ClientStatus,
     ComparisonMode,
     JobStatus,
     MetricUnit,
@@ -70,6 +72,7 @@ _MODELS = {
     "ClientDTO": ClientDTO,
     "ClientCreateRequest": ClientCreateRequest,
     "ClientUpdateRequest": ClientUpdateRequest,
+    "ClientStatusRequest": ClientStatusRequest,
     "IntegrationDTO": IntegrationDTO,
     "IntegrationUpsertRequest": IntegrationUpsertRequest,
     "SyncJobRequest": SyncJobRequest,
@@ -94,6 +97,7 @@ _ENUMS = {
     "JobStatus": JobStatus,
     "StageStatus": StageStatus,
     "CellStatus": CellStatus,
+    "ClientStatus": ClientStatus,
     "MetricUnit": MetricUnit,
 }
 

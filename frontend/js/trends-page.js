@@ -8,12 +8,12 @@
 // operator HOW STALE that history is and letting them start the rolling-window
 // collection that fixes it, without leaving the page for a CLI.
 
-import { getPortfolioSeries, isAbortError } from "./api.js?v=20260803-connect4";
-import { buildTrendsHash, replaceTrendsHash } from "./router.js?v=20260803-connect4";
-import { STATE_META, escapeHtml, icon, stateClass } from "./formatters.js?v=20260803-connect4";
-import { sectionSkeleton } from "./skeleton.js?v=20260803-connect4";
-import { filterByClientGroup } from "./client-groups.js?v=20260803-connect4";
-import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260803-connect4";
+import { getPortfolioSeries, isAbortError } from "./api.js?v=20260805-status1";
+import { buildTrendsHash, replaceTrendsHash } from "./router.js?v=20260805-status1";
+import { STATE_META, escapeHtml, icon, stateClass } from "./formatters.js?v=20260805-status1";
+import { sectionSkeleton } from "./skeleton.js?v=20260805-status1";
+import { filterByClientGroup } from "./client-groups.js?v=20260805-status1";
+import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260805-status1";
 import {
   MAX_SERIES,
   buildSummary,
@@ -22,7 +22,7 @@ import {
   destroyTrendsChart,
   renderLineChart,
   renderSparklineGrid,
-} from "./trends-chart.js?v=20260803-connect4";
+} from "./trends-chart.js?v=20260805-status1";
 
 // Both daily datasets behind this page's four metrics (`gsc_daily`,
 // `ga4_daily`) are refreshed together: the operator asks "make this page

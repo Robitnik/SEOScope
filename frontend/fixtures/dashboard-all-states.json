@@ -19,22 +19,66 @@
       "logo_path": null,
       "market": "US",
       "timezone": "America/New_York",
+      "status": "active",
+      "status_changed_at": null,
+      "status_note": null,
       "overall_status": "attention",
       "last_synced_at": "2026-07-22T08:38:00Z",
-      "health": { "value": "78.4", "coverage_contributing": 2, "coverage_configured": 3 },
-      "tech_audit": { "state": "complete", "run_id": "audit-cleveland", "observed_at": "2026-07-23T15:20:00Z", "pages_crawled": 96, "pages_discovered": 96, "max_pages": 1000, "open_errors": 7, "error_urls": 6, "open_warnings": 42, "open_notices": 11, "fixed_findings": 3, "unreachable_findings": 0, "total_findings": 63, "quality": "complete", "active_job_id": null },
+      "health": {
+        "value": "78.4",
+        "coverage_contributing": 2,
+        "coverage_configured": 3
+      },
+      "tech_audit": {
+        "state": "complete",
+        "run_id": "audit-cleveland",
+        "observed_at": "2026-07-23T15:20:00Z",
+        "pages_crawled": 96,
+        "pages_discovered": 96,
+        "max_pages": 1000,
+        "open_errors": 7,
+        "error_urls": 6,
+        "open_warnings": 42,
+        "open_notices": 11,
+        "fixed_findings": 3,
+        "unreachable_findings": 0,
+        "total_findings": 63,
+        "quality": "complete",
+        "active_job_id": null
+      },
       "gsc_clicks_trend": {
         "value": "874",
         "value_previous": "790",
         "delta_pct": "10.6",
         "history": [
-          { "day": "2026-07-13", "value": "108" },
-          { "day": "2026-07-14", "value": "112" },
-          { "day": "2026-07-15", "value": "119" },
-          { "day": "2026-07-16", "value": "121" },
-          { "day": "2026-07-17", "value": "130" },
-          { "day": "2026-07-18", "value": "141" },
-          { "day": "2026-07-19", "value": "143" }
+          {
+            "day": "2026-07-13",
+            "value": "108"
+          },
+          {
+            "day": "2026-07-14",
+            "value": "112"
+          },
+          {
+            "day": "2026-07-15",
+            "value": "119"
+          },
+          {
+            "day": "2026-07-16",
+            "value": "121"
+          },
+          {
+            "day": "2026-07-17",
+            "value": "130"
+          },
+          {
+            "day": "2026-07-18",
+            "value": "141"
+          },
+          {
+            "day": "2026-07-19",
+            "value": "143"
+          }
         ]
       },
       "providers": [
@@ -246,8 +290,14 @@
               "quality": "complete",
               "source_mode": "api",
               "observed_at": "2026-07-22T08:37:00Z",
-              "current_range": { "start": "2026-07-13", "end": "2026-07-19" },
-              "previous_range": { "start": "2026-07-06", "end": "2026-07-12" }
+              "current_range": {
+                "start": "2026-07-13",
+                "end": "2026-07-19"
+              },
+              "previous_range": {
+                "start": "2026-07-06",
+                "end": "2026-07-12"
+              }
             },
             {
               "metric_key": "impressions",
@@ -328,22 +378,66 @@
       "logo_path": null,
       "market": "US",
       "timezone": "America/New_York",
+      "status": "paused",
+      "status_changed_at": "2026-07-12T09:30:00+00:00",
+      "status_note": "Payment stopped 01.07 — pause until they renew.",
       "overall_status": "stale",
       "last_synced_at": "2026-07-14T17:10:00Z",
-      "health": { "value": "54.1", "coverage_contributing": 1, "coverage_configured": 4 },
-      "tech_audit": { "state": "truncated", "run_id": "audit-nyc", "observed_at": "2026-07-20T09:40:00Z", "pages_crawled": 1000, "pages_discovered": 1834, "max_pages": 1000, "open_errors": 12, "error_urls": 9, "open_warnings": 75, "open_notices": 18, "fixed_findings": 0, "unreachable_findings": 2, "total_findings": 105, "quality": "truncated", "active_job_id": null },
+      "health": {
+        "value": "54.1",
+        "coverage_contributing": 1,
+        "coverage_configured": 4
+      },
+      "tech_audit": {
+        "state": "truncated",
+        "run_id": "audit-nyc",
+        "observed_at": "2026-07-20T09:40:00Z",
+        "pages_crawled": 1000,
+        "pages_discovered": 1834,
+        "max_pages": 1000,
+        "open_errors": 12,
+        "error_urls": 9,
+        "open_warnings": 75,
+        "open_notices": 18,
+        "fixed_findings": 0,
+        "unreachable_findings": 2,
+        "total_findings": 105,
+        "quality": "truncated",
+        "active_job_id": null
+      },
       "gbp_clicks_trend": {
         "value": "142",
         "value_previous": "134",
         "delta_pct": "6.1",
         "history": [
-          { "day": "2026-07-13", "value": "18" },
-          { "day": "2026-07-14", "value": "16" },
-          { "day": "2026-07-15", "value": "19" },
-          { "day": "2026-07-16", "value": "21" },
-          { "day": "2026-07-17", "value": "20" },
-          { "day": "2026-07-18", "value": "23" },
-          { "day": "2026-07-19", "value": "25" }
+          {
+            "day": "2026-07-13",
+            "value": "18"
+          },
+          {
+            "day": "2026-07-14",
+            "value": "16"
+          },
+          {
+            "day": "2026-07-15",
+            "value": "19"
+          },
+          {
+            "day": "2026-07-16",
+            "value": "21"
+          },
+          {
+            "day": "2026-07-17",
+            "value": "20"
+          },
+          {
+            "day": "2026-07-18",
+            "value": "23"
+          },
+          {
+            "day": "2026-07-19",
+            "value": "25"
+          }
         ]
       },
       "providers": [
@@ -438,8 +532,14 @@
               "quality": "complete",
               "source_mode": "browser",
               "observed_at": "2026-07-22T08:42:00Z",
-              "current_range": { "start": "2026-07-13", "end": "2026-07-19" },
-              "previous_range": { "start": "2026-07-06", "end": "2026-07-12" }
+              "current_range": {
+                "start": "2026-07-13",
+                "end": "2026-07-19"
+              },
+              "previous_range": {
+                "start": "2026-07-06",
+                "end": "2026-07-12"
+              }
             },
             {
               "metric_key": "organic_users",
@@ -513,10 +613,33 @@
       "logo_path": null,
       "market": "US",
       "timezone": "America/New_York",
+      "status": "active",
+      "status_changed_at": null,
+      "status_note": null,
       "overall_status": "failed_all",
       "last_synced_at": null,
-      "health": { "value": null, "coverage_contributing": 0, "coverage_configured": 2 },
-      "tech_audit": { "state": "failed", "run_id": null, "observed_at": null, "pages_crawled": null, "pages_discovered": null, "max_pages": null, "open_errors": null, "error_urls": null, "open_warnings": null, "open_notices": null, "fixed_findings": 0, "unreachable_findings": 0, "total_findings": null, "quality": null, "active_job_id": null },
+      "health": {
+        "value": null,
+        "coverage_contributing": 0,
+        "coverage_configured": 2
+      },
+      "tech_audit": {
+        "state": "failed",
+        "run_id": null,
+        "observed_at": null,
+        "pages_crawled": null,
+        "pages_discovered": null,
+        "max_pages": null,
+        "open_errors": null,
+        "error_urls": null,
+        "open_warnings": null,
+        "open_notices": null,
+        "fixed_findings": 0,
+        "unreachable_findings": 0,
+        "total_findings": null,
+        "quality": null,
+        "active_job_id": null
+      },
       "providers": [
         {
           "provider": "ahrefs",
@@ -558,8 +681,14 @@
               "quality": "partial",
               "source_mode": "api",
               "observed_at": "2026-07-22T08:42:00Z",
-              "current_range": { "start": "2026-07-13", "end": "2026-07-19" },
-              "previous_range": { "start": "2026-07-06", "end": "2026-07-12" }
+              "current_range": {
+                "start": "2026-07-13",
+                "end": "2026-07-19"
+              },
+              "previous_range": {
+                "start": "2026-07-06",
+                "end": "2026-07-12"
+              }
             },
             {
               "metric_key": "impressions",
@@ -600,15 +729,62 @@
       "logo_path": null,
       "market": "US",
       "timezone": "America/New_York",
+      "status": "active",
+      "status_changed_at": null,
+      "status_note": null,
       "overall_status": "attention",
       "last_synced_at": null,
-      "health": { "value": null, "coverage_contributing": 0, "coverage_configured": 0 },
-      "tech_audit": { "state": "no_run", "run_id": null, "observed_at": null, "pages_crawled": null, "pages_discovered": null, "max_pages": null, "open_errors": null, "error_urls": null, "open_warnings": null, "open_notices": null, "fixed_findings": 0, "unreachable_findings": 0, "total_findings": null, "quality": null, "active_job_id": null },
+      "health": {
+        "value": null,
+        "coverage_contributing": 0,
+        "coverage_configured": 0
+      },
+      "tech_audit": {
+        "state": "no_run",
+        "run_id": null,
+        "observed_at": null,
+        "pages_crawled": null,
+        "pages_discovered": null,
+        "max_pages": null,
+        "open_errors": null,
+        "error_urls": null,
+        "open_warnings": null,
+        "open_notices": null,
+        "fixed_findings": 0,
+        "unreachable_findings": 0,
+        "total_findings": null,
+        "quality": null,
+        "active_job_id": null
+      },
       "providers": [
-        { "provider": "ahrefs", "state": "not_configured", "quality": null, "source_mode": null, "metrics": [] },
-        { "provider": "semrush", "state": "not_configured", "quality": null, "source_mode": null, "metrics": [] },
-        { "provider": "gsc", "state": "not_configured", "quality": null, "source_mode": null, "metrics": [] },
-        { "provider": "reporting_ninja", "state": "not_configured", "quality": null, "source_mode": null, "metrics": [] }
+        {
+          "provider": "ahrefs",
+          "state": "not_configured",
+          "quality": null,
+          "source_mode": null,
+          "metrics": []
+        },
+        {
+          "provider": "semrush",
+          "state": "not_configured",
+          "quality": null,
+          "source_mode": null,
+          "metrics": []
+        },
+        {
+          "provider": "gsc",
+          "state": "not_configured",
+          "quality": null,
+          "source_mode": null,
+          "metrics": []
+        },
+        {
+          "provider": "reporting_ninja",
+          "state": "not_configured",
+          "quality": null,
+          "source_mode": null,
+          "metrics": []
+        }
       ]
     }
   ]

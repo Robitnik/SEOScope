@@ -184,6 +184,41 @@ input::placeholder { color: var(--ink-dim); }
 .status-label { gap: 7px; color: var(--state-color, var(--ink-muted)); font-weight: 700; }
 .status-label .icon { width: 16px; height: 16px; }
 
+/* task-34 — комерційний статус клієнта. Бейдж є кнопкою: він і показує стан,
+   і відкриває діалог зміни. Іконка + слово, а не самий колір (AGENTS §7). */
+.client-status {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 24px;
+  padding: 3px 8px; border: 1px solid var(--line); background: transparent;
+  color: var(--ink-muted); font: inherit; font-size: 11px; font-weight: 700;
+  border-radius: var(--radius-sm); cursor: pointer; justify-self: start;
+}
+.client-status:hover { border-color: var(--accent); color: var(--ink); }
+.client-status .icon { flex: 0 0 auto; }
+.client-status__since { color: var(--ink-dim); font-weight: 400; }
+.client-status--paused { border-color: var(--warning); color: var(--warning); }
+.client-status--paused .client-status__since { color: var(--warning); opacity: .8; }
+.client-status-note {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  padding: 7px 16px; border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-muted); font-size: 11px;
+}
+.client-status-note .icon { flex: 0 0 auto; color: var(--warning); }
+
+/* Паузована картка приглушується хромом — рамка, фон, лого, іконки — але не
+   цифрами: дані клієнта, що припинив оплату, лишаються читабельними. */
+.client-card[data-client-status="paused"] { border-color: var(--line-soft); background: color-mix(in srgb, var(--surface) 88%, transparent); }
+.client-card[data-client-status="paused"] .client-logo,
+.client-card[data-client-status="paused"] .provider-icon,
+.client-card[data-client-status="paused"] .health-gauge { opacity: .62; }
+
+/* Тег «Paused» у списках вибору sync-модалки. */
+.check-row__tag, .audit-client-row .check-row__tag {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
+  padding: 2px 7px; border: 1px solid var(--warning); color: var(--warning);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+}
+.check-list__note { margin: 8px 2px 0; color: var(--ink-muted); font-size: 11px; }
+
 /* Technical audit is an independent operational signal, not another KPI
    provider and not an input into the composite health score. */
 .tech-audit-strip {
@@ -404,6 +439,10 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
 .sync-dialog { width: min(1180px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
 .detail-dialog { width: min(720px, 100vw); max-width: none; height: 100dvh; max-height: none; margin: 0 0 0 auto; border-width: 0 0 0 1px; }
 .integration-dialog { width: min(570px, calc(100vw - 32px)); }
+/* task-34: діалог статусу — той самий компактний шаблон, що й інтеграційний. */
+.status-dialog { width: min(520px, calc(100vw - 32px)); }
+.status-choices { margin: 0 0 16px; padding: 0; border: 0; }
+.status-choices legend { padding: 0 0 8px; font-weight: 700; }
 .dialog-shell, .drawer-shell { min-height: 0; margin: 0; display: flex; flex-direction: column; max-height: inherit; }
 .drawer-shell { height: 100%; }
 .dialog-header { flex: 0 0 auto; padding: 22px 24px 19px; border-bottom: 1px solid var(--line); display: flex; align-items: start; justify-content: space-between; gap: 24px; }

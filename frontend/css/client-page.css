@@ -28,6 +28,10 @@
 .client-page__identity a { color: var(--ink-muted); display: inline-block; margin-top: 3px; }
 .client-page__status { display: grid; gap: 6px; justify-items: end; text-align: right; padding-inline: 18px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 .client-page__sync { color: var(--ink-muted); font-size: 11px; }
+/* Бейдж статусу (task-34) успадковує вигляд із app.css; тут лише вирівнювання
+   під праву колонку шапки і зняття рамки з пояснювального рядка. */
+.client-page__status .client-status { justify-self: end; }
+.client-page__status .client-status-note { padding: 0; border: 0; text-align: left; max-width: 320px; }
 .client-page__health { text-align: right; }
 .client-page__health strong { display: block; font-family: var(--font-display); font-size: 30px; font-variant-numeric: tabular-nums; }
 .client-page__health small { color: var(--ink-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }

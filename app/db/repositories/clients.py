@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import utcnow
 from app.db.models import Client, ClientIntegration
-from app.schemas.enums import Provider, SourceMode
+from app.schemas.enums import ClientStatus, Provider, SourceMode
 
 
 class ClientRepository:
@@ -17,7 +18,31 @@ class ClientRepository:
         self._session = session
 
     def list_active(self) -> list[Client]:
+        """Клієнти, видимі на дашборді — фільтр саме за `enabled`.
+
+        «Active» тут історично означає «не прихований», а **не** «не на
+        паузі»: паузований клієнт (task-34) навмисно лишається у видачі, бо
+        весь сенс статусу — бути помітним. Кому потрібні клієнти для
+        реального збору — беріть `list_collectable()`.
+        """
         stmt = select(Client).where(Client.enabled.is_(True)).order_by(Client.name)
+        return list(self._session.scalars(stmt))
+
+    # --- Added by task-34 (client lifecycle status).
+
+    def list_collectable(self) -> list[Client]:
+        """Клієнти, яких можна брати в масовий збір: видимі **і** не на паузі.
+
+        Це список, у який розгортається `client_ids="all"` (sync-джоби,
+        batch-аудит, CLI-беkфіл) і на якому будуються портфельні агрегати.
+        Явно названий оператором паузований клієнт збирається як звичайно —
+        блокування живе тільки на «all», не на явному виборі.
+        """
+        stmt = (
+            select(Client)
+            .where(Client.enabled.is_(True), Client.status == ClientStatus.active)
+            .order_by(Client.name)
+        )
         return list(self._session.scalars(stmt))
 
     # --- Added by task-06 (REST API): `GET /clients` is a management list
@@ -52,6 +77,7 @@ class ClientRepository:
         market: str | None = None,
         timezone: str = "America/New_York",
         enabled: bool = True,
+        status: ClientStatus = ClientStatus.active,
     ) -> Client:
         client = Client(
             name=name,
@@ -60,6 +86,8 @@ class ClientRepository:
             market=market,
             timezone=timezone,
             enabled=enabled,
+            # `status_changed_at` лишається NULL: створення — не зміна статусу.
+            status=status,
         )
         self._session.add(client)
         self._session.flush()
@@ -77,6 +105,33 @@ class ClientRepository:
 
     def set_logo(self, client_id: str, logo_path: str | None) -> Client:
         return self.update(client_id, logo_path=logo_path)
+
+    # --- Added by task-34: єдина точка запису статусу. `update()` навмисно
+    # лишається «тупим» сеттером полів, а дату зміни ставить тільки цей
+    # метод — інакше `status_changed_at` зсувався б з двох різних місць.
+
+    def set_status(
+        self,
+        client_id: str,
+        status: ClientStatus,
+        *,
+        note: str | None = None,
+        now: datetime | None = None,
+    ) -> Client:
+        client = self._session.get(Client, client_id)
+        if client is None:
+            raise LookupError(f"client not found: {client_id}")
+        # Дату зсуваємо лише за фактичної зміни: повторне «Paused → Paused»
+        # (наприклад, оператор просто виправив нотатку) не має переписувати
+        # «paused since», бо клієнт на паузі з першого разу.
+        if client.status != status:
+            client.status = status
+            client.status_changed_at = now or utcnow()
+        cleaned = (note or "").strip()
+        client.status_note = cleaned or None
+        client.updated_at = utcnow()
+        self._session.flush()
+        return client
 
     def upsert_integration(
         self,

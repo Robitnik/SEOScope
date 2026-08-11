@@ -1,6 +1,7 @@
-import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260803-connect4";
-import { buildClientHash } from "./router.js?v=20260803-connect4";
-import { cardSkeletons } from "./skeleton.js?v=20260803-connect4";
+import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260805-status1";
+import { buildClientHash } from "./router.js?v=20260805-status1";
+import { clientStatusBadge, clientStatusNote, isPaused } from "./client-status.js?v=20260805-status1";
+import { cardSkeletons } from "./skeleton.js?v=20260805-status1";
 
 function providerIcon(provider) {
   const meta = PROVIDERS[provider];
@@ -333,8 +334,13 @@ export function renderClientCard(client, dashboard) {
   // має aria-label і живе поруч із назвою та URL. Копіює повний site URL;
   // клік обробляє dashboard.js і на мить міняє іконку на «галочку».
   const siteUrl = `https://${client.domain}`;
+  // Паузований клієнт (task-34) лишається повноцінною карткою: приглушується
+  // хром (рамка, фон, іконки — див. `[data-client-status="paused"]` в
+  // app.css), але цифри читаються так само. Ховати дані клієнта, який
+  // припинив оплату, — не те саме, що не витрачати на нього роботу.
+  const paused = isPaused(client);
   return `
-    <article class="client-card ${stateClass(client.overall_status)}" data-client-id="${client.client_id}">
+    <article class="client-card ${stateClass(client.overall_status)}" data-client-id="${client.client_id}" data-client-status="${paused ? "paused" : "active"}">
       <header class="client-card__header">
         <a class="client-logo-link" href="${pageHref}" tabindex="-1" aria-hidden="true">${logo}</a>
         <div class="client-title">
@@ -351,13 +357,15 @@ export function renderClientCard(client, dashboard) {
         ${healthGauge(client.health)}
         <div class="card-actions">
           <button class="button button--quiet" type="button" data-action="detail">History</button>
-          <button class="button button--primary" type="button" data-action="sync">Refresh</button>
+          <button class="button ${paused ? "button--quiet" : "button--primary"}" type="button" data-action="sync">Refresh</button>
         </div>
       </header>
       <div class="client-card__meta">
         <span class="status-label ${stateClass(client.overall_status)}">${icon(state.icon)}${state.label}</span>
+        ${clientStatusBadge(client)}
         <span>Last collection: ${formatTimestamp(client.last_synced_at)}</span>
       </div>
+      ${clientStatusNote(client)}
       ${techAuditStrip(client)}
       <div class="client-card__providers">
         ${withMetrics.map((summary) => `${summary.provider === "ahrefs" ? healthTrendBlocks(client.health) : ""}${summary.provider === "gsc" ? gscClicksTrendBlocks(client.gsc_clicks_trend) : ""}${summary.provider === "reporting_ninja" ? gbpClicksTrendBlocks(client.gbp_clicks_trend) : ""}${providerBlock(summary, { current: dashboard.current_range, previous: dashboard.previous_range })}`).join("")}

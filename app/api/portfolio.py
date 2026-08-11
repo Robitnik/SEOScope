@@ -120,7 +120,11 @@ async def get_portfolio_series(
             if missing:
                 raise _ClientsNotFoundError(missing)
         else:
-            clients = clients_repo.list_active()
+            # Дефолт портфеля — активні клієнти (task-34): лінія клієнта, що
+            # припинив оплату, більше не збирається, і тримати її в загальному
+            # зрізі означає малювати спад, якого насправді не було. Явні
+            # `client_ids` (зокрема паузований) віддаються як і раніше.
+            clients = clients_repo.list_collectable()
 
         integrations = {
             client.id: clients_repo.get_integration(client.id, spec.provider)

@@ -73,7 +73,12 @@ def _build_parser() -> argparse.ArgumentParser:
     daily_backfill_cmd.add_argument(
         "--client-ids",
         default=None,
-        help="Comma-separated client IDs (default: every enabled client)",
+        help="Comma-separated client IDs (default: every enabled, non-paused client)",
+    )
+    daily_backfill_cmd.add_argument(
+        "--include-paused",
+        action="store_true",
+        help="Also collect clients whose status is paused (default: skip them)",
     )
     daily_backfill_cmd.add_argument(
         "--dry-run",
@@ -155,7 +160,19 @@ def main(argv: list[str] | None = None) -> int:
                     return 2
                 clients = [client for client in found if client is not None]
             else:
-                clients = clients_repo.list_active()
+                # Без явного --client-ids збираємо лише активних (task-34);
+                # --include-paused повертає стару поведінку одним прапорцем.
+                visible = clients_repo.list_active()
+                clients = (
+                    visible if args.include_paused else clients_repo.list_collectable()
+                )
+                skipped_paused = len(visible) - len(clients)
+                if skipped_paused:
+                    # Мовчазний пропуск виглядав би як «клієнт зник» — кажемо прямо.
+                    print(
+                        f"skipping {skipped_paused} paused client(s); "
+                        "pass --include-paused to collect them too"
+                    )
 
             if not clients:
                 print("error: no clients to collect (empty client list)", file=sys.stderr)

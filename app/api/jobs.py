@@ -193,11 +193,19 @@ def _exists_as(id_: str) -> tuple[str, str] | None:
         return None
 
 
-def _create_jobs(body: SyncJobRequest) -> list[SyncJob]:
+def _create_jobs(body: SyncJobRequest) -> tuple[list[SyncJob], list[str]]:
+    """Створити джоби; повертає ще й тих, кого «all» відкинуло через паузу."""
     with worker_session_scope() as session:
         clients = ClientRepository(session)
+        skipped_paused: list[str] = []
         if body.client_ids == "all":
-            client_ids = [c.id for c in clients.list_active()]
+            # «Всі» = ті, кого справді збираємо: паузований клієнт (task-34)
+            # сюди не потрапляє. Явно названий — потрапляє (гілка нижче), бо
+            # свідомий вибір оператора важливіший за наш запобіжник.
+            collectable = clients.list_collectable()
+            client_ids = [c.id for c in collectable]
+            collectable_ids = set(client_ids)
+            skipped_paused = [c.id for c in clients.list_active() if c.id not in collectable_ids]
         else:
             client_ids = list(body.client_ids)
             missing = [cid for cid in client_ids if clients.get(cid) is None]
@@ -211,7 +219,7 @@ def _create_jobs(body: SyncJobRequest) -> list[SyncJob]:
         providers = list(METRIC_PROVIDERS) if body.providers == "all" else list(body.providers)
         anchor_date = body.anchor or datetime.now(UTC).date()
 
-        return JobRepository(session).create_run(
+        jobs = JobRepository(session).create_run(
             client_ids=client_ids,
             providers=providers,
             period_kind=body.period_kind,
@@ -222,12 +230,13 @@ def _create_jobs(body: SyncJobRequest) -> list[SyncJob]:
             mode=body.mode,
             idempotency_key=body.idempotency_key,
         )
+        return jobs, skipped_paused
 
 
 @router.post("/sync-jobs", status_code=202, response_model=SyncJobAcceptedDTO)
 async def create_sync_job(body: SyncJobRequest) -> SyncJobAcceptedDTO:
     try:
-        jobs = await run_in_threadpool(_create_jobs, body)
+        jobs, skipped_paused = await run_in_threadpool(_create_jobs, body)
     except ClientsNotFoundError as exc:
         raise HTTPException(
             status_code=404,
@@ -239,6 +248,17 @@ async def create_sync_job(body: SyncJobRequest) -> SyncJobAcceptedDTO:
         ) from exc
 
     if not jobs:
+        # Окремий код, коли список порожній саме через паузу (task-34):
+        # «no clients matched» тут звучало б як «клієнтів немає взагалі».
+        if skipped_paused:
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorDTO(
+                    error_code="all_clients_paused",
+                    message="every client is paused; resume one or select it explicitly",
+                    details={"client_ids": skipped_paused},
+                ).model_dump(),
+            )
         raise HTTPException(
             status_code=400,
             detail=ErrorDTO(
@@ -254,6 +274,7 @@ async def create_sync_job(body: SyncJobRequest) -> SyncJobAcceptedDTO:
         batch_id=batch_id,
         status_url=status_url,
         events_url=f"{status_url}/events",
+        skipped_paused_client_ids=skipped_paused,
     )
 
 

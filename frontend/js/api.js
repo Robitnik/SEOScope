@@ -72,7 +72,7 @@ function sortFixtureClients(clients, sort) {
 // second call aborted the first, and the shell rendered "Failed to load
 // client. signal is aborted without reason" over a page that was loading fine.
 // Distinct keys keep each caller cancelling only its own previous request.
-export async function getDashboard({ period, query, status, provider, sort = "quality", anchor, requestKey = "dashboard" }) {
+export async function getDashboard({ period, query, status, provider, sort = "quality", anchor, clientStatus = "all", requestKey = "dashboard" }) {
   if (FIXTURE_MODE) {
     if (FIXTURE_MODE === "error") { await wait(500); throw new Error("Fixture connection error"); }
     if (FIXTURE_MODE === "loading") await wait(2400);
@@ -82,16 +82,33 @@ export async function getDashboard({ period, query, status, provider, sort = "qu
       const matchesQuery = !normalizedQuery || `${client.name} ${client.domain}`.toLocaleLowerCase("en-US").includes(normalizedQuery);
       const matchesStatus = !status || client.overall_status === status;
       const matchesProvider = !provider || client.providers.some((item) => item.provider === provider);
-      return matchesQuery && matchesStatus && matchesProvider;
+      const matchesClientStatus = clientStatus === "all" || (client.status || "active") === clientStatus;
+      return matchesQuery && matchesStatus && matchesProvider && matchesClientStatus;
     }), sort);
-    return { ...payload, clients, period_kind: period };
+    // Паузовані внизу — те саме, що робить бекенд після `sort_clients`.
+    const ordered = [...clients].sort((a, b) => Number(a.status === "paused") - Number(b.status === "paused"));
+    return { ...payload, clients: ordered, period_kind: period };
   }
   const params = new URLSearchParams({ period, sort });
   if (query) params.set("q", query);
   if (status) params.set("status", status);
   if (provider) params.set("provider", provider);
   if (anchor) params.set("anchor", anchor);
+  if (clientStatus && clientStatus !== "all") params.set("client_status", clientStatus);
   return request(`/dashboard?${params}`, {}, requestKey);
+}
+
+// task-34: пауза/поновлення співпраці. Окремий ендпоінт, а не PATCH клієнта —
+// саме він проставляє «paused since».
+export async function setClientStatus(clientId, status, note) {
+  if (FIXTURE_MODE) {
+    await wait(300);
+    return { id: clientId, status, status_note: note || null, status_changed_at: new Date().toISOString() };
+  }
+  return request(`/clients/${clientId}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status, note: note || null }),
+  });
 }
 
 export async function getClientHistory(clientId, period = "week") {

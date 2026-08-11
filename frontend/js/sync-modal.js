@@ -1,8 +1,9 @@
-import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob, startTechAuditBatch } from "./api.js?v=20260803-connect4";
-import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, humanizeStage, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260803-connect4";
-import { triggerLogin } from "./session-status.js?v=20260803-connect4";
-import { loadActiveJob, saveActiveJob } from "./store.js?v=20260803-connect4";
-import { watchJob } from "./sse.js?v=20260803-connect4";
+import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob, startTechAuditBatch } from "./api.js?v=20260805-status1";
+import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, humanizeStage, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260805-status1";
+import { isPaused } from "./client-status.js?v=20260805-status1";
+import { triggerLogin } from "./session-status.js?v=20260805-status1";
+import { loadActiveJob, saveActiveJob } from "./store.js?v=20260805-status1";
+import { watchJob } from "./sse.js?v=20260805-status1";
 
 // task-22 follow-up: providers backed by a warm-Chrome browser session (mirrors
 // `BROWSER_PROVIDERS` in `app/integrations/browser_session.py`). `reporting_ninja`
@@ -316,13 +317,19 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
     resetProgressView();
     title.textContent = clientId ? "Update client" : "Update metrics";
     subtitle.textContent = "Collection runs in the background. Closing this window won't stop it.";
-    const selectedClients = clientId ? [clientId] : dashboard.clients.map((client) => client.client_id);
+    // task-34: «всі клієнти» тут означає «всі активні». Паузований лишається в
+    // списку з тегом і знятою галочкою — його видно, його можна відмітити
+    // вручну, але одним «Start collection» він не збереться.
+    const selectedClients = clientId
+      ? [clientId]
+      : dashboard.clients.filter((client) => !isPaused(client)).map((client) => client.client_id);
+    const pausedCount = dashboard.clients.filter(isPaused).length;
     const selectedProviders = provider ? [provider] : PROVIDER_ORDER;
     body.innerHTML = `
       <div class="selection-grid">
         <fieldset class="selection-group"><legend>Clients</legend><div class="check-list">
-          ${dashboard.clients.map((client) => `<label class="check-row"><input type="checkbox" name="sync-client" value="${client.client_id}" ${selectedClients.includes(client.client_id) ? "checked" : ""}><span>${client.name}<small>${client.domain}</small></span></label>`).join("")}
-        </div></fieldset>
+          ${dashboard.clients.map((client) => `<label class="check-row"><input type="checkbox" name="sync-client" value="${client.client_id}" ${selectedClients.includes(client.client_id) ? "checked" : ""}><span>${client.name}<small>${client.domain}</small></span>${isPaused(client) ? `<span class="check-row__tag">${icon("player-pause", "icon icon--tiny")}Paused</span>` : ""}</label>`).join("")}
+        </div>${pausedCount ? `<p class="check-list__note">${pausedCount} paused ${pausedCount === 1 ? "client is" : "clients are"} not selected. Tick one to collect it anyway.</p>` : ""}</fieldset>
         <fieldset class="selection-group"><legend>Sources</legend><div class="check-list">
           ${PROVIDER_ORDER.map((key) => `<label class="check-row"><input type="checkbox" name="sync-provider" value="${key}" ${selectedProviders.includes(key) ? "checked" : ""}><span>${PROVIDERS[key].label}</span></label>`).join("")}
         </div></fieldset>
@@ -357,7 +364,10 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
   }
 
   function auditPresetIds(preset, dashboard) {
-    const clients = dashboard.clients || [];
+    // Жоден пресет не додає паузованого клієнта (task-34): краул сайту — це
+    // рівно та зайва робота, яку пауза й має відсікати. Ручна галочка поруч
+    // із ним лишається робочою.
+    const clients = (dashboard.clients || []).filter((client) => !isPaused(client));
     if (preset === "never") return clients.filter((client) => client.tech_audit?.state === "no_run").map((client) => client.client_id);
     if (preset === "refresh") {
       return clients
@@ -415,10 +425,11 @@ export function createSyncModal({ getDashboard, onFinished, onToast }) {
         <legend class="visually-hidden">Clients to audit</legend>
         <div class="audit-client-list">
           ${(dashboard.clients || []).map((client) => `
-            <label class="audit-client-row">
-              <input type="checkbox" name="audit-client" value="${escapeHtml(client.client_id)}" checked>
+            <label class="audit-client-row"${isPaused(client) ? ' data-client-status="paused"' : ""}>
+              <input type="checkbox" name="audit-client" value="${escapeHtml(client.client_id)}"${isPaused(client) ? "" : " checked"}>
               <span class="audit-client-row__index" aria-hidden="true">${String((dashboard.clients || []).indexOf(client) + 1).padStart(2, "0")}</span>
               <span class="audit-client-row__identity"><strong>${escapeHtml(client.name)}</strong><small>${escapeHtml(client.domain)}</small></span>
+              ${isPaused(client) ? `<span class="check-row__tag">${icon("player-pause", "icon icon--tiny")}Paused</span>` : ""}
               <span class="audit-client-row__current ${auditSelectionTone(client.tech_audit)}">${escapeHtml(auditSelectionCopy(client.tech_audit))}</span>
             </label>`).join("")}
         </div>

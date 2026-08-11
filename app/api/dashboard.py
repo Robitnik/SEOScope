@@ -59,6 +59,7 @@ from app.schemas.api import (
 from app.schemas.enums import (
     METRIC_PROVIDERS,
     CellStatus,
+    ClientStatus,
     ComparisonMode,
     PeriodKind,
     PeriodRole,
@@ -610,7 +611,10 @@ def backfill_health_history(session: Session, *, days: int, now: datetime) -> in
     Days whose score is `None` (nothing contributing yet) are skipped, never
     written as `0`. Idempotent — re-running rewrites the same days.
     """
-    clients = ClientRepository(session).list_active()
+    # Паузованим нових точок не пишемо (task-34): це вимірювання стану збору,
+    # якого для них навмисно не відбувається. Уже записані дні лишаються — їх
+    # ніхто не стирає, історія паузованого клієнта ціла (PLAN §12).
+    clients = ClientRepository(session).list_collectable()
     repo = HealthHistoryRepository(session)
     written = 0
 
@@ -699,6 +703,9 @@ def _build_client_card(
         logo_path=f"/api/v1/clients/{client.id}/logo" if client.logo_path else None,
         market=client.market,
         timezone=client.timezone,
+        status=client.status,
+        status_changed_at=client.status_changed_at,
+        status_note=client.status_note,
         overall_status=overall_status,
         providers=summaries,
         last_synced_at=max(successes) if successes else None,
@@ -805,6 +812,7 @@ async def get_dashboard(
     provider: Provider | None = None,
     q: str | None = None,
     sort: DashboardSortMode = "quality",
+    client_status: Literal["active", "paused", "all"] = "all",
 ) -> DashboardResponse:
     now = datetime.now(UTC)
     anchor_dt = _anchor_datetime(anchor)
@@ -814,6 +822,12 @@ async def get_dashboard(
 
     def _run(s: Session) -> list[ClientCardDTO]:
         clients = ClientRepository(s).list_active()
+        # Комерційний статус (task-34). Дефолт `all`: паузований клієнт має
+        # бути видимим — у цьому весь сенс статусу; фільтр існує для явного
+        # «показати лише активних» і для глибоких посилань.
+        if client_status != "all":
+            wanted = ClientStatus(client_status)
+            clients = [c for c in clients if c.status == wanted]
         if q:
             needle = q.strip().lower()
             clients = [
@@ -838,7 +852,13 @@ async def get_dashboard(
         ]
         if status is not None:
             cards = [c for c in cards if c.overall_status == status]
-        return sort_clients(cards, sort)
+        ordered = sort_clients(cards, sort)
+        # Паузовані завжди внизу, у будь-якому режимі сортування (task-34).
+        # Окремим стабільним проходом, а не всередині `sort_clients`: сорт у
+        # Python стабільний, тож порядок усередині кожної групи лишається
+        # рівно таким, як його побудував обраний режим — і зона task-15
+        # (`app/metrics/health.py`) не змінюється.
+        return sorted(ordered, key=lambda c: c.status == ClientStatus.paused)
 
     cards = await session.run_sync(_run)
     header_periods = resolve_periods(period, anchor_dt, tz=_HEADER_REFERENCE_TZ)
