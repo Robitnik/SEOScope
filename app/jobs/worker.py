@@ -20,6 +20,7 @@ from app.db.session import worker_session_scope
 from app.integrations.browser_session import check_session
 from app.jobs.dispatcher import Dispatcher
 from app.jobs.recovery import run_startup_recovery
+from app.monitor.scheduler import MonitorScheduler
 from app.schemas.enums import Provider
 
 logger = get_logger(__name__)
@@ -74,9 +75,18 @@ def main() -> None:
         lane_start_stagger_seconds=settings.lane_start_stagger_seconds,
     )
 
+    # task-35: Site Monitor's own scheduler loop, independent of the job
+    # dispatcher above (PLAN §14 "scheduler loop inside the single worker" —
+    # a second process would be a second SQLite writer, which PLAN §5.1
+    # forbids). One point-of-contact touch to `app/jobs/worker.py` (task-05
+    # zone), documented in the task-35 Completion report.
+    monitor_scheduler = MonitorScheduler(session_scope=worker_session_scope, settings=settings)
+    monitor_scheduler.start()
+
     def _handle_signal(signum: int, _frame: types.FrameType | None) -> None:
         logger.info("worker_shutdown_signal signum=%s", signum)
         dispatcher.stop()
+        monitor_scheduler.stop()
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)

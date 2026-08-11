@@ -662,6 +662,322 @@ class RedirectCheckTarget(Base):
     checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
 
+# --- Added by task-35 (Site Monitor, PLAN §16 "Етап 8") ---------------------
+#
+# "Current state + immutable version chain" (task-35 §3.2): a mutable row per
+# object carries `last_checked_at` and today's values; a version row is
+# appended ONLY when the fingerprint actually changed, so storage grows with
+# real change, not with run count. `kind`/`status`/`severity`/`scope`/
+# `change_type` are plain `String`, not `sa.Enum` — the same choice already
+# made for `redirect_checks`/`alt_text_items`: these are tool-level states
+# defined in `app/monitor/severity.py`, and adding one must not require DDL.
+
+
+class MonitorSettings(Base):
+    """Per-client monitor configuration. Lazily created on first touch —
+    `MonitorRepository.get_or_create_settings` — so a client with no row yet
+    still reads as "monitoring enabled with the global defaults" rather than
+    needing a migration-time backfill for every existing client.
+    """
+
+    __tablename__ = "monitor_settings"
+    __table_args__ = (UniqueConstraint("client_id", name="uq_monitor_settings_client_id"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    base_url_override: Mapped[str | None] = mapped_column(String(500), default=None)
+    # NULL = use the global `monitor_*_interval_hours` setting.
+    light_interval_hours: Mapped[float | None] = mapped_column(Float, default=None)
+    full_interval_hours: Mapped[float | None] = mapped_column(Float, default=None)
+    max_urls: Mapped[int | None] = mapped_column(Integer, default=None)
+    # A paused client (task-34) drops out of the schedule by default; this is
+    # the per-client toggle that opts a specific paused client back in
+    # (confirmed with the user 2026-08-11).
+    monitor_when_paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    ignore_patterns_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    muted_change_types_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class MonitorRun(Base):
+    """One scheduler tick's (or manual "Check now") pass over one client.
+
+    Mutable while `status == "running"` (counters are updated as the run
+    progresses so a poller can show live progress — same pattern as
+    `SyncJob.progress_percent`), then left alone once finished.
+    """
+
+    __tablename__ = "monitor_runs"
+    __table_args__ = (Index("ix_monitor_runs_client_started", "client_id", "started_at"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))  # "light" | "full"
+    trigger: Mapped[str] = mapped_column(String(16), default="scheduled")  # "scheduled" | "manual"
+    status: Mapped[str] = mapped_column(String(24), default="running", index=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    urls_checked: Mapped[int] = mapped_column(Integer, default=0)
+    urls_changed: Mapped[int] = mapped_column(Integer, default=0)
+    urls_new: Mapped[int] = mapped_column(Integer, default=0)
+    urls_gone: Mapped[int] = mapped_column(Integer, default=0)
+    requests_made: Mapped[int] = mapped_column(Integer, default=0)
+    bytes_downloaded: Mapped[int] = mapped_column(Integer, default=0)
+    changes_critical: Mapped[int] = mapped_column(Integer, default=0)
+    changes_warning: Mapped[int] = mapped_column(Integer, default=0)
+    changes_info: Mapped[int] = mapped_column(Integer, default=0)
+    # Honest "checked N of M" instead of silently starting over next time
+    # (task-35 §3.3 ring traversal) — `remaining_count` is what is left.
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    remaining_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    error_code: Mapped[str | None] = mapped_column(String(100), default=None)
+    error_message: Mapped[str | None] = mapped_column(String(1000), default=None)
+    # e.g. `{"baseline": true}` — read by the severity engine to suppress
+    # alerts on a client's very first run (task-35 §3.4 "перший прогін...").
+    notes_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class MonitorBlob(Base):
+    """Content-addressed store for fetched documents (robots.txt/sitemap/page
+    bodies). `sha256` is the primary key — identical bytes from any client on
+    any run are stored exactly once (task-35 §3.2.1).
+    """
+
+    __tablename__ = "monitor_blobs"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    gzip_size_bytes: Mapped[int] = mapped_column(Integer)
+    mime: Mapped[str | None] = mapped_column(String(100), default=None)
+    # Relative to the artifacts root, never absolute (mirrors `Artifact.path`).
+    path: Mapped[str] = mapped_column(String(500))
+    first_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class MonitorResource(Base):
+    """Current state of robots.txt or one sitemap file (root or a child of a
+    sitemap index) — one row per FILE, not per URL entry inside it.
+    """
+
+    __tablename__ = "monitor_resources"
+    __table_args__ = (
+        UniqueConstraint("client_id", "url", name="uq_monitor_resources_client_id_url"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))  # "robots" | "sitemap"
+    url: Mapped[str] = mapped_column(String(2048))
+    status: Mapped[int | None] = mapped_column(Integer, default=None)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    # Parsed structure: robots' UA-group -> rules, or a sitemap file's
+    # url_count + child sitemap URLs (index files) — never the full per-URL
+    # list of a urlset, which lives via `MonitorPage.in_sitemap` instead.
+    structure_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    version_seq: Mapped[int] = mapped_column(Integer, default=0)
+    missing_since: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class MonitorResourceVersion(Base):
+    """Immutable after commit — see the `before_update` guard below."""
+
+    __tablename__ = "monitor_resource_versions"
+    __table_args__ = (
+        Index("ix_monitor_resource_versions_resource_observed", "resource_id", "observed_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    resource_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("monitor_resources.id", ondelete="CASCADE"), index=True
+    )
+    client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
+    observed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    http_status: Mapped[int | None] = mapped_column(Integer, default=None)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    structure_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    changed_fields_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    prev_version_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("monitor_resource_versions.id", ondelete="SET NULL"), default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class MonitorPage(Base):
+    """Current state of one URL (task-35 §3.3)."""
+
+    __tablename__ = "monitor_pages"
+    __table_args__ = (
+        UniqueConstraint("client_id", "url", name="uq_monitor_pages_client_id_url"),
+        Index("ix_monitor_pages_client_last_checked", "client_id", "last_checked_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    url: Mapped[str] = mapped_column(String(2048))
+    is_key_page: Mapped[bool] = mapped_column(Boolean, default=False)
+    in_sitemap: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[int | None] = mapped_column(Integer, default=None)
+    final_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+    hop_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    # `None` = not checked yet — NOT the same as "not indexable" (PLAN §12).
+    indexable: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    meta_robots: Mapped[str | None] = mapped_column(String(200), default=None)
+    x_robots_tag: Mapped[str | None] = mapped_column(String(200), default=None)
+    canonical: Mapped[str | None] = mapped_column(String(2048), default=None)
+    title: Mapped[str | None] = mapped_column(String(500), default=None)
+    description: Mapped[str | None] = mapped_column(String(1000), default=None)
+    h1: Mapped[str | None] = mapped_column(String(500), default=None)
+    word_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    analytics_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    signals_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    text_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    raw_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    version_seq: Mapped[int] = mapped_column(Integer, default=0)
+    # Set the run a URL first drops out of the sitemap; cleared if it
+    # reappears. Still checked for `monitor_gone_retention_days` after this is
+    # set, so a real removal is still caught as `page_gone` (task-35 §3.3).
+    gone_since: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class MonitorPageVersion(Base):
+    """Immutable after commit — see the `before_update` guard below.
+
+    `body_blob_sha256` is `None` whenever this version's fingerprint did not
+    change from the previous one (task-35 §3.2.1): the raw bytes may still
+    have differed (e.g. a per-request Cloudflare nonce), but nothing a human
+    would call "the page changed" did, so no new body copy is kept — the
+    version still records `raw_sha256` as proof that the bytes differed.
+    """
+
+    __tablename__ = "monitor_page_versions"
+    __table_args__ = (
+        Index("ix_monitor_page_versions_page_observed", "page_id", "observed_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    page_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("monitor_pages.id", ondelete="CASCADE"), index=True
+    )
+    client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
+    observed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    http_status: Mapped[int | None] = mapped_column(Integer, default=None)
+    signals_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    signals_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    text_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    raw_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    body_blob_sha256: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("monitor_blobs.sha256", ondelete="SET NULL"), default=None
+    )
+    changed_fields_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    prev_version_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("monitor_page_versions.id", ondelete="SET NULL"), default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class MonitorDnsRecord(Base):
+    """Current state of one `(client, name, type)` DNS record set."""
+
+    __tablename__ = "monitor_dns_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "client_id", "name", "record_type", name="uq_monitor_dns_records_client_name_type"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    record_type: Mapped[str] = mapped_column(String(16))  # A/AAAA/CNAME/NS/MX/TXT/CAA
+    values_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    ttl: Mapped[int | None] = mapped_column(Integer, default=None)
+    resolver: Mapped[str | None] = mapped_column(String(100), default=None)
+    version_seq: Mapped[int] = mapped_column(Integer, default=0)
+    last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class MonitorDnsVersion(Base):
+    """Immutable after commit — see the `before_update` guard below."""
+
+    __tablename__ = "monitor_dns_versions"
+    __table_args__ = (Index("ix_monitor_dns_versions_record_observed", "record_id", "observed_at"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    record_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("monitor_dns_records.id", ondelete="CASCADE"), index=True
+    )
+    client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
+    observed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    values_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    ttl: Mapped[int | None] = mapped_column(Integer, default=None)
+    resolver: Mapped[str | None] = mapped_column(String(100), default=None)
+    prev_version_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("monitor_dns_versions.id", ondelete="SET NULL"), default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class MonitorChange(Base):
+    """The change/alert feed (task-35 §3.4). Mutable only for ack/resolve.
+
+    Deliberately does NOT use the word "alerts" anywhere (name or field) —
+    `/clients/{id}/alerts` already means GSC traffic-drop alerts (task-17);
+    reusing the word for a different concept would break "one name, one
+    thing everywhere" (CLAUDE.md). `related_id` is a plain, non-FK pointer
+    resolved via `scope` (page/resource/dns id) — a change can originate from
+    any one of three different tables, and a single polymorphic FK is not
+    worth the complexity for a field that is purely a "show me more" link.
+    """
+
+    __tablename__ = "monitor_changes"
+    __table_args__ = (
+        Index("ix_monitor_changes_client_severity_state", "client_id", "severity", "resolved_at"),
+        Index("ix_monitor_changes_client_detected", "client_id", "detected_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    run_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("monitor_runs.id", ondelete="SET NULL"), default=None
+    )
+    severity: Mapped[str] = mapped_column(String(16))  # "critical" | "warning" | "info"
+    change_type: Mapped[str] = mapped_column(String(64))  # stable key, see app/monitor/severity.py
+    scope: Mapped[str] = mapped_column(String(16))  # "site" | "page" | "dns" | "robots" | "sitemap"
+    subject: Mapped[str] = mapped_column(String(2048))  # URL, DNS record name, or "robots.txt"
+    related_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    old_value: Mapped[str | None] = mapped_column(String(2000), default=None)
+    new_value: Mapped[str | None] = mapped_column(String(2000), default=None)
+    # Aggregates (e.g. `sitemap_broken_urls`) carry their breakdown + example
+    # URLs here instead of one row per broken URL (task-35 §3.4.1).
+    details_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    detected_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    acknowledged_note: Mapped[str | None] = mapped_column(String(500), default=None)
+    # Set when the underlying condition self-heals (task-35 §3.4 "Самозагасання").
+    resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
+
 def _reject_update(mapper: Any, connection: Any, target: Base) -> None:
     raise ValueError(f"{type(target).__name__} rows are immutable after commit")
 
@@ -669,3 +985,6 @@ def _reject_update(mapper: Any, connection: Any, target: Base) -> None:
 event.listen(ProviderSnapshot, "before_update", _reject_update)
 event.listen(MetricValue, "before_update", _reject_update)
 event.listen(GscDimensionMetric, "before_update", _reject_update)
+event.listen(MonitorResourceVersion, "before_update", _reject_update)
+event.listen(MonitorPageVersion, "before_update", _reject_update)
+event.listen(MonitorDnsVersion, "before_update", _reject_update)

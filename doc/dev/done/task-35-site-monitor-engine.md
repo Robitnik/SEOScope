@@ -419,3 +419,78 @@ tests/integration/test_monitor_end_to_end.py    (новий)
 | URL у sitemap зі статусом ≠ 200 | **Окремий алерт** — три різні типи (`3xx`/`4xx`/`5xx`), зведення `critical` на пороговій частці, живий лічильник `sitemap_health`, видно вже на baseline | §3.4.1 |
 | Канали доставки алертів | **Поза обсягом v1** — тільки UI. Модель даних готова, найдешевший майбутній вхід — generic webhook поверх `monitor_changes` | §2 |
 | Паузовані клієнти (task-34) | З розкладу випадають; тумблер `monitor_when_paused` на клієнта | §3.6 |
+
+---
+
+## ✅ Completion report
+
+- **Дата:** 2026-08-11
+- **Гілка / комміт:** `task-34-client-lifecycle-status` (на момент закриття — незакомічені зміни поверх `b6726d9`)
+- **Статус:** done
+
+### Що зроблено
+
+Повний backend Site Monitor: 10 нових таблиць + міграція, репозиторій, 11 модулів рушія (`app/monitor/*`), оркестратор прогону, планувальник у worker-процесі, 16 REST-ендпоінтів, 3 CLI-підкоманди. Легка перевірка (щогодини) і повна (що 3 години) працюють на реальному портфелі 14 клієнтів; перевірено живими прогонами, не тільки тестами.
+
+Робочі можливості:
+- robots.txt — group-aware семантичний парсинг (не raw-diff), `Crawl-delay` поважається.
+- sitemap-індекс + вкладені файли, **усі** URL без продуктової межі (аварійний клапан `monitor_max_urls_per_client=25000` + часовий ліміт `monitor_run_max_minutes=90`), кільцевий обхід при truncation.
+- Кожна сторінка: статус, `meta robots`/`X-Robots-Tag`, canonical, title/description/h1, аналітика (GA4/GTM), Google-верифікація, редіректи. Триярусний фінгерпринт (`signals`/`text`/`raw` sha256) з маскуванням відомого шуму (Cloudflare `__CF$cv$params` нонс).
+- Повне тіло сторінки зберігається в content-addressed gzip-блобах (дедуп за sha256): baseline — кожна сторінка; далі — тільки на реальну зміну.
+- DNS (`A`/`AAAA`/`CNAME`/`NS`/`MX`/`TXT`/`CAA`) через два DoH-резолвери (`dns.google`, `cloudflare-dns.com`) — без нової залежності (`dnspython` немає в образі, §1.6).
+- TLS: термін дії сертифіката (stdlib `ssl`).
+- Таблиця серйозності §3.4 повністю, включно з self-healing (`<type>_resolved`) і escalation (severity зростає — старий запис резолвиться, новий відкривається на новому рівні).
+- §3.4.1 (sitemap-URL ≠ 200): три типи (`3xx`/`4xx`/`5xx`), зведення з порогами, видно вже на baseline, живий лічильник `sitemap_health` в `GET /clients/{id}/monitor`.
+- Планувальник (`ThreadPoolExecutor(max_workers=4)`, тік що 60с, джитер за `sha1(client_id) % 20` хв, пауза-aware через `list_collectable()` + `monitor_when_paused`) переживає рестарт контейнера — живо перевірено (нижче).
+
+### Як зроблено (ключові рішення)
+
+- **SQLite lock-must-span-commit (найважливіша знахідка сесії).** Під реальним 4-паралельним записом (`monitor_client_workers=4`) виникало «database is locked», хоча кожен запис був обгорнутий локом. Причина: SQLite звільняє файловий лок лише на `COMMIT`, а не на кожен `flush()`; лок, що закривається до фактичного коміту, залишає вікно, де інший тред стартує запис у ще не закоммічену транзакцію. Виправлення: `_COMMIT_LOCK` (`threading.Lock()`, модульний рівень) тримається від першого запису до **самого** `commit()` як одна безперервна критична секція — без жодного окремого пізнішого коміту поза цим блоком. Перевірено вживу: повний портфель, 12 клієнтів, паралелізм 4, ~2850 URL, 0 помилок, 1156.8с (19.3 хв).
+- **`is_baseline_run` — на рівні клієнта, а не підсистеми (2 реальні баги, обидва знайдені живими прогонами, не тестами).**
+  1. DNS перевіряється лише на `full`-прогоні. Клієнт, чий перший прогін був `light` (реальний випадок — легкі прогони йдуть щогодини й trigger раніше за перший `full`), доходив до першого DNS-спостереження вже на прогоні, де `is_baseline_run=False` — і бачив це як зміну «з нічого», що запалювало фальшивий `dns_apex_a_changed` critical. Виправлено додаванням `record_is_new = record is None` в `_process_dns`, ORed у `is_baseline_run`. Живо знайдено на `exxxoticaexpo.com` (2 фальшивих critical), підтверджено ще на 9 інших клієнтах (по 2 записи кожен — увесь портфель, окрім тих двох, чий перший прогін одразу був `full`). Усі 22 фальшиві записи видалено з БД після фіксу.
+  2. **Light-прогін замітав увесь портфель замість «ключові + критичні».** `_key_pages`/`open_alert_urls`-запит фільтрував лише `scope == "page"`, без `severity` — а `list_changes` без severity повертає й `info`-маркери (`page_new` тощо), які **ніколи** не резолвляться (це факти історії, не стан, що загасає). Після першого не-baseline `full`-прогону практично кожна сторінка мала відкритий `page_new` — і `light` замість «домашня + до 10 GSC-сторінок + сторінки з відкритим critical» (§3.3, ціль ≤2 хв на весь портфель) тягнув майже все, до дефолтного `limit=100` у `list_changes`. Живо виміряно: 96–101 URL на клієнта замість ~1, 175.7с (2.9 хв) на весь портфель — уже над цілю. Виправлено додаванням `severity="critical"` (і явним `limit=1000`, бо відкритих critical може бути реалістично більше 100 на зламаному сайті) до фільтра. Після фіксу: light-прогін усього портфеля — **19.8с**.
+- **Чому не буквальний `http.server`-інтеграційний тест.** `app.tools.http_safety.assert_public_http_url` (той самий SSRF-гард, який `app/monitor/fetcher.py` переюзує) відмовляє loopback/приватним адресам за задумом (PLAN §13) — реальний локальний listener його не пройде. Замість цього — dependency injection на межі fetch (`monkeypatch.setattr(runner_mod, "fetch", ...)`), той самий підхід, що вже є в `app.tools.redirects.trace.trace_redirects(fetcher=...)`.
+- **Дедуплікація версій/блобів через фінгерпринт**, не через порівняння сирих байтів — інакше Cloudflare-нонс (`__CF$cv$params`) створював би нову версію щоразу.
+
+### Контрактні зміни (Contract changes)
+
+Лише адитивні. OpenAPI-снепшот (`tests/unit/api/data/openapi_snapshot.json`) перевірено діффом: +16 шляхів, +16 схем, 0 видалених, 0 змінених наявних. Схема БД (`migrations/versions/6d9419c9493c_site_monitor.py`) — 10 нових таблиць, нічого наявного не торкнуто; `alembic check` — без дрейфу. Нові публічні DTO — в `app/schemas/monitor.py`, реекспортовані з `app/schemas/__init__.py`.
+
+**Відхилення від таблиці «Адитивні дотики поза власною зоною»:** `app/main.py` **не** редагувався — файл явно документує «Do not edit this file to wire up a new router»: роутери самореєструються через `register_router()` при імпорті модуля (`app/api/monitor.py` вже так робить), `app/main.py` лише авто-виявляє їх. Пункт у таблиці був застарілим станом конвенції.
+
+### Як перевірити (verification)
+
+```bash
+docker compose exec api poetry run alembic upgrade head    # і downgrade -1, і знову upgrade head — без дрейфу
+docker compose exec api poetry run pytest -q                # 1273 passed, 1 skipped, 1 pre-existing unrelated fail
+docker compose exec api poetry run ruff check .              # чисто
+docker compose exec api poetry run mypy app                  # чисто, 120 файлів
+docker compose exec api poetry run yovth-report monitor-status   # exit 0, якщо жодного відкритого critical; 1 — інакше (перевірено обидва)
+```
+
+Живі перевірки на реальному портфелі (14 клієнтів, 12 collectable):
+- Full-прогін усього портфеля, паралелізм 4: **1156.8с (19.3 хв)** — під ціль ≤20 хв.
+- Light-прогін усього портфеля, паралелізм 4 (після фіксу §«ключові рішення»): **19.8с** — далеко під ціль ≤2 хв.
+- `truncated=false` на всіх 12 клієнтах повного прогону; найбільший — 609 URL (exxxoticaexpo.com).
+- `GET /clients/{id}/monitor` для клієнта без жодного прогону (`pjc`) — чесний порожній стан (нулі/`null`), не помилка.
+- `GET /clients/{id}/monitor/pages/{id}/diff` — людський unified diff (перевірено на реальній зміні на `exxxoticaexpo.com`: адреса заходу справді змінилась між прогонами).
+- `GET /clients/{id}/monitor/resources/robots/diff` — структурний діф (`changed_fields` + before/after structure), навмисно не raw-text (робіть group-aware, §1.2) — перевірено юніт-тестом `test_resource_diff_reads_changed_fields`, живих 2+ версій robots.txt на портфелі зараз немає (жоден клієнт не міняв robots.txt за сесію).
+- Рестарт `worker`-контейнера: вручну вставлений «застряглий» `running`-рядок (started_at −90 хв) → після рестарту `monitor_scheduler_recovered_stale_runs count=1` у логах, рядок у БД → `failed_interrupted`/`interrupted_by_restart`; планувальник продовжив тікати штатно.
+- Логи `api`/`worker` — 0 збігів на `https?://…\?…` (query-string) і взагалі 0 повних URL у monitor-пов'язаних рядках, лише хости.
+- **Два «живі гачки» з дослідження плану (§1.2, §3.4.1) самі розв'язались у реальному світі за час сесії:** `laxton.se`'s `noindex` вже прибрано, `exxxoticaexpo.com`'s 301-URL у sitemap теж (2/40 на дату дослідження → 0 зараз). Це не дефект реалізації — механіка обох перевірена окремо контрольованими даними в `test_four_phase_lifecycle` (fake `noindex`) і `test_sitemap_health.py` (fake 301).
+- Розмір сховища: `app_data/artifacts/monitor` — **205 MB**, 3273 блоби, 2692 сторінки в портфелі (після baseline **і** повторних живих прогонів цієї сесії — не чисте одноразове число, але узгоджується з оцінкою плану «Baseline ≈250 MB одноразово», §6).
+
+### Тести
+
+- **Unit (124 → залишились ті самі 124, `tests/unit/monitor/`):** robots (group-aware, живий регрес `meta-externalagent` ≠ `robots_blocks_site`), sitemaps (index→children, кільцевий обхід), sitemap_health (§3.4.1 повністю, включно з escalation-без-дублю), page (noindex/canonical/аналітика), fingerprint (живий регрес Cloudflare-нонс), dns (DoH-парсинг, множинні verification-TXT), severity (таблиця §3.4), scheduler (due/джитер/дедуп/пауза), storage (дедуп/gzip/path-escape).
+- **API (33, `tests/unit/api/test_monitor_api.py`):** усі 16 ендпоінтів §3.8, включно з 404 і чесним порожнім станом.
+- **Integration (4, `tests/integration/test_monitor_end_to_end.py`):** `test_four_phase_lifecycle` (baseline → noindex+verification-lost+url-gone → 30% sitemap ламається → усе відновлюється, resolved_at скрізь), `test_second_run_of_an_unchanged_site_creates_no_new_versions_or_blobs`, і **два регресійних тести, додані цією сесією** для живо знайдених багів: `test_light_run_then_first_full_run_does_not_flag_dns_as_changed`, `test_light_run_checks_key_pages_plus_open_criticals_but_not_every_info_marker` (обидва вручну підтверджені: falsifiable — при відкоченому фіксі падають з саме тим симптомом, що спостерігався живо).
+- Разом нових тестів: **161** (124 + 33 + 4, з них 2 нових цієї сесії понад базові 159). Повна сюїта проєкту: **1273 passed, 1 skipped, 1 pre-existing unrelated fail** (`tests/contract/test_aiseotools_signatures.py` — дрейф зовнішнього пінованого пакета `AISeoTools` поза цією таскою, файл не редагувався).
+
+### Follow-ups / борг
+
+- `normalization_only` (ознака для суто нормалізаційних 3xx-редіректів `http→https`/`www`/слеш, §3.4.1) — **не реалізовано**. Усі 3xx у sitemap зараз йдуть як рівноцінний `sitemap_url_redirects`, без відрізнення «спокійніших» нормалізаційних від змістовних. `TODO(task-35-followup)`.
+- `MonitorResource.content_sha256`/`MonitorResourceVersion.content_sha256` (robots.txt справді зберігається як блоб) не мають FK на `monitor_blobs.sha256` з `ondelete="SET NULL"`, на відміну від `MonitorPageVersion.body_blob_sha256`. Сам запит на pruning (`blobs_referenced_only_by_versions_older_than`) коректно враховує обидва типи версій — тож функціонального бага нема, але немає й БД-рівня страховки від висячого посилання, якщо колись з'явиться ручне видалення блобів поза `monitor-prune`.
+- Точки входу (`http://apex`, `https://apex`, `http://www`, `https://www`, §3.3 п.7) — трейсяться спрощено всередині `_process_page`, не через прямий виклик `app.tools.redirects.trace.trace_redirects` (той модуль писаний для іншого UI-контракту task-29). Поведінково рівнозначно (hop-count, final_url), але код не переюзаний буквально.
+- `--bodies-older-than` pruning (`monitor-prune`) реалізовано й вкрито тестом, але не увімкнено за жодним розкладом — за задумом плану (§6: «за замовчуванням не вмикається»).
+- task-36 (Site Monitor UI) — не почато, поза обсягом цієї таски.

@@ -86,6 +86,50 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Print the plan (range, clients, estimated requests) without creating a job",
     )
 
+    monitor_run_cmd = subparsers.add_parser(
+        "monitor-run",
+        help="Run a Site Monitor check now, without waiting for the schedule (task-35)",
+    )
+    monitor_run_cmd.add_argument("--client-id", default=None, help="One client to check")
+    monitor_run_cmd.add_argument(
+        "--all", action="store_true", help="Check every collectable (non-paused) client"
+    )
+    monitor_run_cmd.add_argument(
+        "--kind", choices=["light", "full"], default="light", help="Check depth (default: light)"
+    )
+
+    monitor_status_cmd = subparsers.add_parser(
+        "monitor-status",
+        help="Portfolio-wide Site Monitor state; non-zero exit if any client has an open critical",
+    )
+    monitor_status_cmd.add_argument(
+        "--severity",
+        choices=["critical", "warning", "info"],
+        default=None,
+        help="Only list open changes at this severity",
+    )
+
+    monitor_prune_cmd = subparsers.add_parser(
+        "monitor-prune",
+        help=(
+            "Remove Site Monitor blobs no version references any more. "
+            "History itself is never touched unless --bodies-older-than is given"
+        ),
+    )
+    monitor_prune_cmd.add_argument(
+        "--dry-run", action="store_true", help="Report what would be removed without deleting"
+    )
+    monitor_prune_cmd.add_argument(
+        "--bodies-older-than",
+        type=int,
+        default=None,
+        metavar="DAYS",
+        help=(
+            "ALSO drop stored bodies for versions older than DAYS whose blob backs no "
+            "recent version either (default: keep every body forever, task-35 §3.2.1)"
+        ),
+    )
+
     return parser
 
 
@@ -116,9 +160,7 @@ def main(argv: list[str] | None = None) -> int:
 
         session_factory = get_sync_sessionmaker()
         with session_factory() as session:
-            written = backfill_health_history(
-                session, days=args.days, now=datetime.now(UTC)
-            )
+            written = backfill_health_history(session, days=args.days, now=datetime.now(UTC))
             session.commit()
         print(f"recorded {written} daily health point(s) across the last {args.days} day(s)")
         return 0
@@ -154,18 +196,14 @@ def main(argv: list[str] | None = None) -> int:
                 pairs = zip(requested, found, strict=True)
                 missing = [cid for cid, client in pairs if client is None]
                 if missing:
-                    print(
-                        f"error: unknown --client-ids: {', '.join(missing)}", file=sys.stderr
-                    )
+                    print(f"error: unknown --client-ids: {', '.join(missing)}", file=sys.stderr)
                     return 2
                 clients = [client for client in found if client is not None]
             else:
                 # Без явного --client-ids збираємо лише активних (task-34);
                 # --include-paused повертає стару поведінку одним прапорцем.
                 visible = clients_repo.list_active()
-                clients = (
-                    visible if args.include_paused else clients_repo.list_collectable()
-                )
+                clients = visible if args.include_paused else clients_repo.list_collectable()
                 skipped_paused = len(visible) - len(clients)
                 if skipped_paused:
                     # Мовчазний пропуск виглядав би як «клієнт зник» — кажемо прямо.
@@ -183,9 +221,7 @@ def main(argv: list[str] | None = None) -> int:
             cell_count = len(clients) * len(providers)
 
             print(f"range: {window_start} .. {window_end} ({args.days} day(s))")
-            print(
-                f"clients: {len(clients)}  providers: {', '.join(p.value for p in providers)}"
-            )
+            print(f"clients: {len(clients)}  providers: {', '.join(p.value for p in providers)}")
             print(f"cells to queue: {cell_count}")
             print(
                 "note: each cell issues multiple provider requests (GSC ~2 queries, "
@@ -212,6 +248,114 @@ def main(argv: list[str] | None = None) -> int:
             )
             session.commit()
         print(f"queued {len(jobs)} job(s); the running worker will collect them")
+        return 0
+
+    if args.command == "monitor-run":
+        # Imported here, not at module scope: pulls in the monitor engine
+        # (fetch/parse/diff), which the other commands have no reason to load.
+        from app.core.config import get_settings
+        from app.db.repositories.clients import ClientRepository
+        from app.monitor.runner import run_client_monitor
+
+        if bool(args.client_id) == bool(args.all):
+            print("error: pass exactly one of --client-id or --all", file=sys.stderr)
+            return 2
+
+        settings = get_settings()
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            clients_repo = ClientRepository(session)
+            if args.client_id:
+                client = clients_repo.get(args.client_id)
+                if client is None:
+                    print(f"error: unknown --client-id: {args.client_id}", file=sys.stderr)
+                    return 2
+                clients = [client]
+            else:
+                clients = clients_repo.list_collectable()
+
+            if not clients:
+                print("error: no clients to check (empty client list)", file=sys.stderr)
+                return 2
+
+            exit_code = 0
+            for client in clients:
+                outcome = run_client_monitor(
+                    session,
+                    client,
+                    kind=args.kind,
+                    settings=settings,
+                    artifacts_dir=settings.artifacts_dir,
+                    trigger="manual",
+                )
+                print(
+                    f"{client.name}: {outcome.status} — checked {outcome.urls_checked} url(s)"
+                    f"{' (truncated)' if outcome.truncated else ''}"
+                )
+                if outcome.status != "succeeded":
+                    exit_code = 1
+        return exit_code
+
+    if args.command == "monitor-status":
+        from app.db.repositories.clients import ClientRepository
+        from app.db.repositories.monitor import MonitorRepository
+
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            clients_repo = ClientRepository(session)
+            monitor_repo = MonitorRepository(session)
+            client_map = {c.id: c for c in clients_repo.list_active()}
+            counts = monitor_repo.portfolio_open_severity_counts(list(client_map))
+
+            any_critical = False
+            for client_id, client in sorted(client_map.items(), key=lambda item: item[1].name):
+                client_counts = counts.get(client_id, {"critical": 0, "warning": 0, "info": 0})
+                if args.severity and client_counts.get(args.severity, 0) == 0:
+                    continue
+                if client_counts["critical"]:
+                    any_critical = True
+                last_full = monitor_repo.latest_finished_run(client_id, kind="full")
+                last_seen = last_full.started_at.isoformat() if last_full else "never"
+                print(
+                    f"{client.name:30s}  critical={client_counts['critical']:<3d} "
+                    f"warning={client_counts['warning']:<3d} info={client_counts['info']:<3d} "
+                    f"last_full={last_seen}"
+                )
+        return 1 if any_critical else 0
+
+    if args.command == "monitor-prune":
+        from app.core.config import get_settings
+        from app.db.repositories.monitor import MonitorRepository
+        from app.monitor.storage import delete_blob_file
+
+        settings = get_settings()
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            repo = MonitorRepository(session)
+
+            targets = {b.sha256 for b in repo.unreferenced_blobs()}
+            if args.bodies_older_than is not None:
+                cutoff = datetime.now(UTC) - timedelta(days=args.bodies_older_than)
+                aging_out = repo.blobs_referenced_only_by_versions_older_than(cutoff)
+                print(
+                    f"{len(aging_out)} version(s)' bodies are older than "
+                    f"{args.bodies_older_than} day(s)"
+                )
+                targets |= set(aging_out)
+
+            if not targets:
+                print("nothing to prune")
+                return 0
+
+            print(f"{'would remove' if args.dry_run else 'removing'} {len(targets)} blob(s)")
+            if args.dry_run:
+                return 0
+
+            for sha256 in sorted(targets):
+                delete_blob_file(settings.artifacts_dir, sha256)
+                repo.delete_blob(sha256)
+            session.commit()
+        print(f"pruned {len(targets)} blob(s)")
         return 0
 
     parser.error(f"unknown command: {args.command}")

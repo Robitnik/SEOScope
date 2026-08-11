@@ -89,6 +89,44 @@ class Settings(BaseSettings):
     alert_min_base_clicks: int = 10
     alert_top_n_per_group: int = 20
 
+    # Site Monitor (task-35, PLAN §16 "Етап 8"). Values are measurements, not
+    # taste — see task-35 §1.4/§3.3/§3.7 for the live portfolio numbers behind
+    # each default.
+    monitor_enabled: bool = True
+    monitor_light_interval_hours: float = 1.0
+    monitor_full_interval_hours: float = 3.0
+    monitor_client_workers: int = 4
+    # Safety valve, NOT a product limit (§3.3): the largest client today is 608
+    # URLs. This exists only so a runaway/looping sitemap cannot hang the
+    # engine forever.
+    monitor_max_urls_per_client: int = 25_000
+    monitor_run_max_minutes: float = 90.0
+    monitor_max_body_bytes: int = 3 * 1024 * 1024
+    monitor_request_timeout_seconds: float = 20.0
+    monitor_host_min_interval_seconds: float = 0.25
+    monitor_key_pages_limit: int = 10
+    # Confirmed with the user 2026-08-11: a URL gone from the sitemap stays
+    # watched for 30 days before it drops off entirely, so a silent removal
+    # is still caught as `page_gone` instead of vanishing unnoticed.
+    monitor_gone_retention_days: int = 30
+    # Confirmed with the user 2026-08-11: full page bodies are kept forever by
+    # default (§3.2.1) — retention is an explicit opt-in via `monitor-prune
+    # --bodies-older-than`, never a silent default.
+    monitor_store_page_bodies: bool = True
+    monitor_body_retention_days: int = 0
+    # We deliberately do NOT honor the client's own robots.txt (§3.3): the
+    # moment robots.txt closes the site is exactly the incident we exist to
+    # catch, and obeying the ban we are supposed to be watching for is a
+    # logical trap. `Crawl-delay` is still respected.
+    monitor_respect_robots: bool = False
+    monitor_run_stale_minutes: float = 60.0
+    monitor_doh_resolvers: list[str] = ["dns.google", "cloudflare-dns.com"]
+    monitor_sitemap_drop_alert_pct: Decimal = Decimal("10")
+    monitor_sitemap_broken_warn_pct: Decimal = Decimal("2")
+    monitor_sitemap_broken_warn_count: int = 10
+    monitor_sitemap_broken_alert_pct: Decimal = Decimal("10")
+    monitor_sitemap_broken_alert_count: int = 50
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -3225,6 +3225,1115 @@
         "title": "MetricUnit",
         "type": "string"
       },
+      "MonitorChangeAckRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "MonitorChangeAckRequest",
+        "type": "object"
+      },
+      "MonitorChangeDTO": {
+        "properties": {
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
+          "acknowledged_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged Note"
+          },
+          "change_type": {
+            "title": "Change Type",
+            "type": "string"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Details",
+            "type": "object"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "new_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Value"
+          },
+          "old_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Value"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "enum": [
+              "site",
+              "page",
+              "dns",
+              "robots",
+              "sitemap"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "warning",
+              "info"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "severity",
+          "change_type",
+          "scope",
+          "subject",
+          "detected_at"
+        ],
+        "title": "MonitorChangeDTO",
+        "type": "object"
+      },
+      "MonitorDnsRecordDTO": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "record_type": {
+            "title": "Record Type",
+            "type": "string"
+          },
+          "resolver": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolver"
+          },
+          "ttl": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl"
+          },
+          "values": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Values",
+            "type": "array"
+          },
+          "version_seq": {
+            "title": "Version Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "record_type",
+          "values",
+          "version_seq"
+        ],
+        "title": "MonitorDnsRecordDTO",
+        "type": "object"
+      },
+      "MonitorDnsVersionDTO": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "prev_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Version Id"
+          },
+          "resolver": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolver"
+          },
+          "ttl": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttl"
+          },
+          "values": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "observed_at",
+          "values"
+        ],
+        "title": "MonitorDnsVersionDTO",
+        "type": "object"
+      },
+      "MonitorPageDTO": {
+        "properties": {
+          "canonical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical"
+          },
+          "consecutive_failures": {
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "gone_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gone Since"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "in_sitemap": {
+            "title": "In Sitemap",
+            "type": "boolean"
+          },
+          "indexable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexable"
+          },
+          "is_key_page": {
+            "title": "Is Key Page",
+            "type": "boolean"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "version_seq": {
+            "title": "Version Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "is_key_page",
+          "in_sitemap",
+          "version_seq",
+          "consecutive_failures"
+        ],
+        "title": "MonitorPageDTO",
+        "type": "object"
+      },
+      "MonitorPageDiffDTO": {
+        "properties": {
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Fields",
+            "type": "array"
+          },
+          "from_signals": {
+            "additionalProperties": true,
+            "title": "From Signals",
+            "type": "object"
+          },
+          "from_version_id": {
+            "title": "From Version Id",
+            "type": "string"
+          },
+          "text_diff": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Text Diff",
+            "type": "array"
+          },
+          "to_signals": {
+            "additionalProperties": true,
+            "title": "To Signals",
+            "type": "object"
+          },
+          "to_version_id": {
+            "title": "To Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_version_id",
+          "to_version_id",
+          "changed_fields",
+          "from_signals",
+          "to_signals"
+        ],
+        "title": "MonitorPageDiffDTO",
+        "type": "object"
+      },
+      "MonitorPageVersionDTO": {
+        "properties": {
+          "body_blob_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Blob Sha256"
+          },
+          "changed_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Fields",
+            "type": "array"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "prev_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Version Id"
+          },
+          "raw_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Sha256"
+          },
+          "signals_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signals Sha256"
+          },
+          "text_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Sha256"
+          }
+        },
+        "required": [
+          "id",
+          "observed_at"
+        ],
+        "title": "MonitorPageVersionDTO",
+        "type": "object"
+      },
+      "MonitorPagesPageDTO": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/MonitorPageDTO"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pages",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "MonitorPagesPageDTO",
+        "type": "object"
+      },
+      "MonitorResourceDiffDTO": {
+        "properties": {
+          "changed_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Fields",
+            "type": "array"
+          },
+          "from_structure": {
+            "additionalProperties": true,
+            "title": "From Structure",
+            "type": "object"
+          },
+          "from_version_id": {
+            "title": "From Version Id",
+            "type": "string"
+          },
+          "to_structure": {
+            "additionalProperties": true,
+            "title": "To Structure",
+            "type": "object"
+          },
+          "to_version_id": {
+            "title": "To Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_version_id",
+          "to_version_id",
+          "changed_fields",
+          "from_structure",
+          "to_structure"
+        ],
+        "title": "MonitorResourceDiffDTO",
+        "type": "object"
+      },
+      "MonitorResourceVersionDTO": {
+        "properties": {
+          "changed_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Fields",
+            "type": "array"
+          },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "prev_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Version Id"
+          }
+        },
+        "required": [
+          "id",
+          "observed_at"
+        ],
+        "title": "MonitorResourceVersionDTO",
+        "type": "object"
+      },
+      "MonitorRunAcceptedDTO": {
+        "description": "`POST /clients/{id}/monitor/runs` \u2014 202, progress reads via polling\n`GET /clients/{id}/monitor/runs` (mirrors the tech-audit \"Check now\"\npattern, task-29).",
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status_url"
+        ],
+        "title": "MonitorRunAcceptedDTO",
+        "type": "object"
+      },
+      "MonitorRunDTO": {
+        "properties": {
+          "bytes_downloaded": {
+            "title": "Bytes Downloaded",
+            "type": "integer"
+          },
+          "changes_critical": {
+            "title": "Changes Critical",
+            "type": "integer"
+          },
+          "changes_info": {
+            "title": "Changes Info",
+            "type": "integer"
+          },
+          "changes_warning": {
+            "title": "Changes Warning",
+            "type": "integer"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "light",
+              "full"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "remaining_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Count"
+          },
+          "requests_made": {
+            "title": "Requests Made",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "scheduled",
+              "manual"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "urls_changed": {
+            "title": "Urls Changed",
+            "type": "integer"
+          },
+          "urls_checked": {
+            "title": "Urls Checked",
+            "type": "integer"
+          },
+          "urls_gone": {
+            "title": "Urls Gone",
+            "type": "integer"
+          },
+          "urls_new": {
+            "title": "Urls New",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "kind",
+          "trigger",
+          "status",
+          "started_at",
+          "urls_checked",
+          "urls_changed",
+          "urls_new",
+          "urls_gone",
+          "requests_made",
+          "bytes_downloaded",
+          "changes_critical",
+          "changes_warning",
+          "changes_info",
+          "truncated"
+        ],
+        "title": "MonitorRunDTO",
+        "type": "object"
+      },
+      "MonitorSettingsDTO": {
+        "properties": {
+          "base_url_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url Override"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "full_interval_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Interval Hours"
+          },
+          "ignore_patterns": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Ignore Patterns",
+            "type": "array"
+          },
+          "light_interval_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Light Interval Hours"
+          },
+          "max_urls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Urls"
+          },
+          "monitor_when_paused": {
+            "title": "Monitor When Paused",
+            "type": "boolean"
+          },
+          "muted_change_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Muted Change Types",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "enabled",
+          "monitor_when_paused",
+          "updated_at"
+        ],
+        "title": "MonitorSettingsDTO",
+        "type": "object"
+      },
+      "MonitorSettingsUpdateRequest": {
+        "additionalProperties": false,
+        "description": "`PATCH /clients/{id}/monitor/settings` \u2014 every field optional, only\nwhat's sent is changed (mirrors `ClientUpdateRequest`).",
+        "properties": {
+          "base_url_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url Override"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "full_interval_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Interval Hours"
+          },
+          "ignore_patterns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ignore Patterns"
+          },
+          "light_interval_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Light Interval Hours"
+          },
+          "max_urls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Urls"
+          },
+          "monitor_when_paused": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monitor When Paused"
+          },
+          "muted_change_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Muted Change Types"
+          }
+        },
+        "title": "MonitorSettingsUpdateRequest",
+        "type": "object"
+      },
+      "MonitorSummaryDTO": {
+        "description": "`GET /clients/{id}/monitor` \u2014 always returns a meaningful shape, even\nfor a client with zero runs yet (task-35 DoD): counts are all `0`,\n`last_light_run`/`last_full_run` are `None`, never a 404/500.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "last_full_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitorRunDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_light_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitorRunDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_full_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Full Due At"
+          },
+          "next_light_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Light Due At"
+          },
+          "open_critical": {
+            "title": "Open Critical",
+            "type": "integer"
+          },
+          "open_info": {
+            "title": "Open Info",
+            "type": "integer"
+          },
+          "open_warning": {
+            "title": "Open Warning",
+            "type": "integer"
+          },
+          "robots_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robots Status"
+          },
+          "sitemap_health": {
+            "$ref": "#/components/schemas/SitemapHealthDTO"
+          }
+        },
+        "required": [
+          "client_id",
+          "enabled",
+          "open_critical",
+          "open_warning",
+          "open_info",
+          "sitemap_health"
+        ],
+        "title": "MonitorSummaryDTO",
+        "type": "object"
+      },
       "PeriodKind": {
         "description": "Comparison period (PLAN \u00a73.1, \u00a721.1).\n\n`week`/`month` are the dashboard's base periods. `quarter`/`year`/`custom`\nwere added by task-14 and are computed **by aggregating already-stored\nhistory** (zero new collection), so they are only available where the UI\nhonestly shows coverage \u2014 on the client page (\u00a721.1/\u00a721.6), not on the\nmain dashboard.",
         "enum": [
@@ -4677,6 +5786,39 @@
           "suggested_column_map"
         ],
         "title": "SheetPreviewDTO",
+        "type": "object"
+      },
+      "SitemapHealthDTO": {
+        "properties": {
+          "broken": {
+            "title": "Broken",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "integer"
+          },
+          "redirects": {
+            "title": "Redirects",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unavailable": {
+            "title": "Unavailable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "ok",
+          "redirects",
+          "broken",
+          "unavailable"
+        ],
+        "title": "SitemapHealthDTO",
         "type": "object"
       },
       "SourceMode": {
@@ -7840,6 +8982,1140 @@
         ]
       }
     },
+    "/api/v1/clients/{client_id}/monitor": {
+      "get": {
+        "operationId": "get_monitor_summary_api_v1_clients__client_id__monitor_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorSummaryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Monitor Summary",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/changes": {
+      "get": {
+        "operationId": "list_client_monitor_changes_api_v1_clients__client_id__monitor_changes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "critical",
+                    "warning",
+                    "info"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "change_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Change Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "open",
+              "enum": [
+                "open",
+                "all"
+              ],
+              "title": "State",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorChangeDTO"
+                  },
+                  "title": "Response List Client Monitor Changes Api V1 Clients  Client Id  Monitor Changes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Client Monitor Changes",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/dns": {
+      "get": {
+        "operationId": "list_monitor_dns_api_v1_clients__client_id__monitor_dns_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorDnsRecordDTO"
+                  },
+                  "title": "Response List Monitor Dns Api V1 Clients  Client Id  Monitor Dns Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Monitor Dns",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/dns/versions": {
+      "get": {
+        "operationId": "list_monitor_dns_versions_api_v1_clients__client_id__monitor_dns_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "record_type",
+            "required": true,
+            "schema": {
+              "title": "Record Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorDnsVersionDTO"
+                  },
+                  "title": "Response List Monitor Dns Versions Api V1 Clients  Client Id  Monitor Dns Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Monitor Dns Versions",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/export.csv": {
+      "get": {
+        "operationId": "export_monitor_csv_api_v1_clients__client_id__monitor_export_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Monitor Csv",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/export.xlsx": {
+      "get": {
+        "operationId": "export_monitor_xlsx_api_v1_clients__client_id__monitor_export_xlsx_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Monitor Xlsx",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/pages": {
+      "get": {
+        "operationId": "list_monitor_pages_api_v1_clients__client_id__monitor_pages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ok",
+                    "broken"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "last_checked_at",
+              "enum": [
+                "last_checked_at",
+                "status",
+                "url"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorPagesPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Monitor Pages",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/pages/{page_id}/diff": {
+      "get": {
+        "operationId": "get_monitor_page_diff_api_v1_clients__client_id__monitor_pages__page_id__diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Version Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorPageDiffDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Monitor Page Diff",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/pages/{page_id}/versions": {
+      "get": {
+        "operationId": "list_monitor_page_versions_api_v1_clients__client_id__monitor_pages__page_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorPageVersionDTO"
+                  },
+                  "title": "Response List Monitor Page Versions Api V1 Clients  Client Id  Monitor Pages  Page Id  Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Monitor Page Versions",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/resources/{kind}/diff": {
+      "get": {
+        "operationId": "get_monitor_resource_diff_api_v1_clients__client_id__monitor_resources__kind__diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "robots",
+                "sitemap"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "url",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Url"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Version Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorResourceDiffDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Monitor Resource Diff",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/resources/{kind}/versions": {
+      "get": {
+        "operationId": "list_monitor_resource_versions_api_v1_clients__client_id__monitor_resources__kind__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "robots",
+                "sitemap"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "url",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorResourceVersionDTO"
+                  },
+                  "title": "Response List Monitor Resource Versions Api V1 Clients  Client Id  Monitor Resources  Kind  Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Monitor Resource Versions",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/runs": {
+      "get": {
+        "operationId": "list_monitor_runs_api_v1_clients__client_id__monitor_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "light",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorRunDTO"
+                  },
+                  "title": "Response List Monitor Runs Api V1 Clients  Client Id  Monitor Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Monitor Runs",
+        "tags": [
+          "monitor"
+        ]
+      },
+      "post": {
+        "description": "\"Check now\" \u2014 enqueues a run for the worker's scheduler to claim on\nits next tick (\u226460s later); progress reads via polling `GET .../runs`.",
+        "operationId": "start_monitor_run_api_v1_clients__client_id__monitor_runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "light",
+              "enum": [
+                "light",
+                "full"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorRunAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Monitor Run",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/settings": {
+      "get": {
+        "operationId": "get_monitor_settings_api_v1_clients__client_id__monitor_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorSettingsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Monitor Settings",
+        "tags": [
+          "monitor"
+        ]
+      },
+      "patch": {
+        "operationId": "update_monitor_settings_api_v1_clients__client_id__monitor_settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitorSettingsUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorSettingsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Monitor Settings",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
     "/api/v1/clients/{client_id}/status": {
       "post": {
         "description": "\u041f\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u0438/\u0437\u043d\u044f\u0442\u0438 \u043f\u0430\u0443\u0437\u0443 \u0441\u043f\u0456\u0432\u043f\u0440\u0430\u0446\u0456 (task-34).\n\n\u041e\u043a\u0440\u0435\u043c\u0430 \u0434\u0456\u044f, \u0430 \u043d\u0435 \u043f\u043e\u043b\u0435 \u0432 `PATCH /clients/{id}`: \u0442\u0443\u0442 \u2014 \u0456 \u0442\u0456\u043b\u044c\u043a\u0438 \u0442\u0443\u0442 \u2014\n\u0441\u0442\u0430\u0432\u0438\u0442\u044c\u0441\u044f `status_changed_at`, \u0442\u043e\u0436 \u00abpaused since \u2026\u00bb \u043c\u0430\u0454 \u0440\u0456\u0432\u043d\u043e \u043e\u0434\u043d\u0435\n\u0434\u0436\u0435\u0440\u0435\u043b\u043e. \u041f\u0430\u0443\u0437\u0430 \u043d\u0435 \u0447\u0456\u043f\u0430\u0454 \u0436\u043e\u0434\u043d\u0438\u0445 \u0437\u0456\u0431\u0440\u0430\u043d\u0438\u0445 \u0434\u0430\u043d\u0438\u0445: \u0432\u043e\u043d\u0430 \u0432\u0438\u043a\u043b\u044e\u0447\u0430\u0454 \u043a\u043b\u0456\u0454\u043d\u0442\u0430 \u0437\n\u043c\u0430\u0441\u043e\u0432\u0438\u0445 \u043e\u043f\u0435\u0440\u0430\u0446\u0456\u0439, \u0456 \u043d\u0435 \u0431\u0456\u043b\u044c\u0448\u0435.",
@@ -8454,6 +10730,200 @@
         "summary": "Import Ai Seo Tools",
         "tags": [
           "imports"
+        ]
+      }
+    },
+    "/api/v1/monitor/changes": {
+      "get": {
+        "operationId": "list_portfolio_monitor_changes_api_v1_monitor_changes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "critical",
+                    "warning",
+                    "info"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "open",
+              "enum": [
+                "open",
+                "all"
+              ],
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorChangeDTO"
+                  },
+                  "title": "Response List Portfolio Monitor Changes Api V1 Monitor Changes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Portfolio Monitor Changes",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/monitor/changes/{change_id}/ack": {
+      "post": {
+        "operationId": "ack_monitor_change_api_v1_monitor_changes__change_id__ack_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitorChangeAckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorChangeDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ack Monitor Change",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/monitor/documents/{sha256}": {
+      "get": {
+        "operationId": "get_monitor_document_api_v1_monitor_documents__sha256__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "title": "Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Monitor Document",
+        "tags": [
+          "monitor"
         ]
       }
     },
