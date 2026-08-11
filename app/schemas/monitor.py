@@ -57,6 +57,9 @@ class MonitorRunDTO(BaseModel):
     status: str
     started_at: datetime
     finished_at: datetime | None = None
+    # `None` for runs started before this field existed — never `0`, so the
+    # UI can tell "no total known yet" apart from "target list was empty".
+    urls_total: int | None = None
     urls_checked: int
     urls_changed: int
     urls_new: int

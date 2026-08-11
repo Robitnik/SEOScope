@@ -286,6 +286,41 @@ def test_list_pages_status_filter(client, db):
     assert [p["url"] for p in broken_only["pages"]] == [broken_page.url]
 
 
+def test_pages_accepts_frontend_default_sort(client, db):
+    """task-37 F1: `sort=-last_checked_at` is the frontend's literal default
+    query param — the old `Literal["last_checked_at", "status", "url"]` (no
+    direction prefix) 422'd on this exact request, on every client, from the
+    very first page load."""
+    client_id = _create_client(db)
+    response = client.get(f"/api/v1/clients/{client_id}/monitor/pages?sort=-last_checked_at")
+    assert response.status_code == 200
+
+
+def test_pages_sort_direction_changes_row_order(client, db):
+    client_id = _create_client(db)
+    repo = MonitorRepository(db)
+    older = repo.get_or_create_page(client_id, "https://acme.com/older/")
+    repo.upsert_page_state(
+        older, status=200, final_url=older.url, hop_count=0, indexable=True, meta_robots=None,
+        x_robots_tag=None, canonical=None, title=None, description=None, h1=None, word_count=1,
+        analytics_ids=[], signals_sha256="s3", text_sha256="t3", raw_sha256="r3", in_sitemap=True,
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    newer = repo.get_or_create_page(client_id, "https://acme.com/newer/")
+    repo.upsert_page_state(
+        newer, status=200, final_url=newer.url, hop_count=0, indexable=True, meta_robots=None,
+        x_robots_tag=None, canonical=None, title=None, description=None, h1=None, word_count=1,
+        analytics_ids=[], signals_sha256="s4", text_sha256="t4", raw_sha256="r4", in_sitemap=True,
+        now=datetime(2026, 2, 1, tzinfo=UTC),
+    )
+    db.commit()
+
+    asc = client.get(f"/api/v1/clients/{client_id}/monitor/pages?sort=last_checked_at").json()
+    desc = client.get(f"/api/v1/clients/{client_id}/monitor/pages?sort=-last_checked_at").json()
+    assert [p["url"] for p in asc["pages"]] == [older.url, newer.url]
+    assert [p["url"] for p in desc["pages"]] == [newer.url, older.url]
+
+
 def test_list_pages_indexable_and_in_sitemap_filters(client, db):
     # task-36: `indexable`/`in_sitemap` were already supported by
     # `list_pages_page` (repository) but never threaded through this endpoint.

@@ -411,3 +411,86 @@ def test_second_run_of_an_unchanged_site_creates_no_new_versions_or_blobs(temp_d
 
         assert versions_2 == versions_1
         assert blobs_2 == blobs_1
+
+
+def test_run_counters_are_per_run(temp_db, fake_site):
+    """task-37 F4: `changes_critical/warning/info` on the run row must
+    reflect what THIS run found, not the client's current open-count total
+    (the old bug: a 1-URL light run and a 609-URL full run reported the
+    exact same numbers, because both read `open_counts_by_severity`)."""
+    with temp_db.session_scope() as session:
+        client = ClientRepository(session).create(
+            name="Per Run Co", slug="per-run-co", domain="fakeclient.test"
+        )
+        session.commit()
+        repo = MonitorRepository(session)
+        settings = Settings(_env_file=None)
+
+        # Baseline light run: only the homepage is in scope, and baseline
+        # diffing is suppressed — this run finds nothing.
+        light_outcome = run_client_monitor(
+            session,
+            client,
+            kind="light",
+            settings=settings,
+            artifacts_dir=temp_db.artifacts_dir,
+            trigger="manual",
+        )
+        assert light_outcome.status == "succeeded"
+        light_run = repo.get_run(light_outcome.run_id)
+        assert (light_run.changes_critical, light_run.changes_warning, light_run.changes_info) == (
+            0,
+            0,
+            0,
+        )
+
+        # Non-baseline full run right after: every content page is new
+        # (`page_new`, info) and the one pre-broken URL trips the sitemap
+        # aggregate (warning) — real, non-zero, run-specific numbers.
+        full_outcome = _run_full(session, client, temp_db.artifacts_dir)
+        assert full_outcome.status == "succeeded"
+        full_run = repo.get_run(full_outcome.run_id)
+        assert full_run.changes_info > 0
+        assert (
+            full_run.changes_critical,
+            full_run.changes_warning,
+            full_run.changes_info,
+        ) != (
+            light_run.changes_critical,
+            light_run.changes_warning,
+            light_run.changes_info,
+        )
+
+        # And the stored counters equal exactly what `monitor_changes` holds
+        # for that specific `run_id` — not a coincidence of the numbers
+        # merely differing.
+        actual_light = repo.count_changes_by_severity(light_outcome.run_id)
+        actual_full = repo.count_changes_by_severity(full_outcome.run_id)
+        assert (light_run.changes_critical, light_run.changes_warning, light_run.changes_info) == (
+            actual_light["critical"],
+            actual_light["warning"],
+            actual_light["info"],
+        )
+        assert (full_run.changes_critical, full_run.changes_warning, full_run.changes_info) == (
+            actual_full["critical"],
+            actual_full["warning"],
+            actual_full["info"],
+        )
+
+
+def test_urls_total_set_before_loop(temp_db, fake_site):
+    """task-37 F2: `urls_total` is the real target-list size, set once
+    before the crawl loop starts — a true `completed/total` model instead of
+    an animated made-up percentage (frontend/AGENTS.md §9)."""
+    with temp_db.session_scope() as session:
+        client = ClientRepository(session).create(
+            name="Total Co", slug="total-co", domain="fakeclient.test"
+        )
+        session.commit()
+        repo = MonitorRepository(session)
+
+        outcome = _run_full(session, client, temp_db.artifacts_dir)
+        assert outcome.status == "succeeded"
+        run = repo.get_run(outcome.run_id)
+        assert run.urls_total == N_CONTENT_PAGES + 1  # + homepage
+        assert run.urls_total == outcome.urls_checked

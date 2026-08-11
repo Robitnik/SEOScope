@@ -4,7 +4,7 @@
     "last_light_run": {
       "id": "run-active-1", "client_id": "", "kind": "full", "trigger": "manual",
       "status": "running", "started_at": "2026-08-11T10:58:00Z", "finished_at": null,
-      "urls_checked": 17, "urls_changed": 0, "urls_new": 0, "urls_gone": 0,
+      "urls_total": 41, "urls_checked": 17, "urls_changed": 0, "urls_new": 0, "urls_gone": 0,
       "requests_made": 19, "bytes_downloaded": 6100000,
       "changes_critical": 0, "changes_warning": 0, "changes_info": 0,
       "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
@@ -12,7 +12,7 @@
     "last_full_run": {
       "id": "run-active-1", "client_id": "", "kind": "full", "trigger": "manual",
       "status": "running", "started_at": "2026-08-11T10:58:00Z", "finished_at": null,
-      "urls_checked": 17, "urls_changed": 0, "urls_new": 0, "urls_gone": 0,
+      "urls_total": 41, "urls_checked": 17, "urls_changed": 0, "urls_new": 0, "urls_gone": 0,
       "requests_made": 19, "bytes_downloaded": 6100000,
       "changes_critical": 0, "changes_warning": 0, "changes_info": 0,
       "truncated": false, "remaining_count": null, "error_code": null, "error_message": null
@@ -27,7 +27,7 @@
     {
       "id": "run-active-1", "client_id": "", "kind": "full", "trigger": "manual",
       "status": "running", "started_at": "2026-08-11T10:58:00Z", "finished_at": null,
-      "urls_checked": 17, "urls_changed": 0, "urls_new": 0, "urls_gone": 0,
+      "urls_total": 41, "urls_checked": 17, "urls_changed": 0, "urls_new": 0, "urls_gone": 0,
       "requests_made": 19, "bytes_downloaded": 6100000,
       "changes_critical": 0, "changes_warning": 0, "changes_info": 0,
       "truncated": false, "remaining_count": null, "error_code": null, "error_message": null

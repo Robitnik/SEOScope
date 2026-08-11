@@ -557,12 +557,16 @@ class MonitorRepository:
             needle = f"%{q.lower()}%"
             stmt = stmt.where(func.lower(MonitorPage.url).like(needle))
         total = self._session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        descending = sort.startswith("-")
+        field = sort[1:] if descending else sort
         sort_column = {
             "last_checked_at": MonitorPage.last_checked_at,
             "status": MonitorPage.status,
             "url": MonitorPage.url,
-        }.get(sort, MonitorPage.last_checked_at)
-        stmt = stmt.order_by(sort_column.desc().nulls_last()).limit(limit).offset(offset)
+            "version_seq": MonitorPage.version_seq,
+        }.get(field, MonitorPage.last_checked_at)
+        order = sort_column.desc() if descending else sort_column.asc()
+        stmt = stmt.order_by(order.nulls_last()).limit(limit).offset(offset)
         return list(self._session.scalars(stmt)), total
 
     def sitemap_health_counts(self, client_id: str) -> dict[str, int]:
@@ -751,6 +755,19 @@ class MonitorRepository:
         stmt = (
             select(MonitorChange.severity, func.count())
             .where(MonitorChange.client_id == client_id, MonitorChange.resolved_at.is_(None))
+            .group_by(MonitorChange.severity)
+        )
+        counts = {"critical": 0, "warning": 0, "info": 0}
+        for severity, count in self._session.execute(stmt):
+            counts[severity] = count
+        return counts
+
+    def count_changes_by_severity(self, run_id: str) -> dict[str, int]:
+        """What *this run* found, not what is currently open client-wide —
+        distinct from `open_counts_by_severity` (task-37 F4)."""
+        stmt = (
+            select(MonitorChange.severity, func.count())
+            .where(MonitorChange.run_id == run_id)
             .group_by(MonitorChange.severity)
         )
         counts = {"critical": 0, "warning": 0, "info": 0}

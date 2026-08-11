@@ -213,11 +213,18 @@
 
 .monitor-blocks {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start; /* the DNS block usually runs longer than Robots/Sitemap —
-    default grid stretch would leave a slab of empty space in the shorter two. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start; /* Robots and Sitemap carry different amounts of content —
+    default grid stretch would leave a slab of empty space in the shorter one. */
   gap: 16px;
 }
+/* DNS & verification sits at the FOOT of the page, full width, outside the
+ * blocks grid: A/NS/MX/TXT change a few times a year, while pages and the
+ * change feed move on every check, so it earns reference space rather than
+ * first-viewport space. Full width is also what keeps its 3-column table off a
+ * horizontal scroll — squeezed into a column, the GSC verification token (the
+ * block's whole reason to exist) was pushed out of sight. */
+.monitor-block--dns { margin-top: 16px; }
 .monitor-block {
   border: 1px solid var(--line);
   background: var(--surface);
@@ -296,7 +303,12 @@
 .monitor-dns-analytics { color: var(--ink-dim); }
 .monitor-dns-analytics .icon { color: var(--info); }
 .monitor-block .table-scroll { margin: 14px 0 4px; }
-.monitor-dns-table { min-width: 560px; }
+/* No fixed `min-width` (task-37 F5): now that DNS spans the full row, its
+ * table should fit ≥1024px without forcing `.table-scroll`'s horizontal
+ * scroll — the whole point of moving it out of the 3-column grid. */
+.monitor-dns-table .analytics-row__value,
+.monitor-dns-table td:nth-child(3) { overflow-wrap: anywhere; }
+.monitor-dns-show-all { margin: 10px 18px 0; }
 
 @media (max-width: 1023px) {
   .monitor-blocks { grid-template-columns: 1fr; }
@@ -322,7 +334,58 @@
 .monitor-changed-note .icon { width: 15px; height: 15px; flex: 0 0 auto; color: var(--info); }
 .monitor-export-actions { display: flex; gap: 8px; }
 
-.monitor-pages-table { min-width: 1080px; }
+/* 1180, not 1080: the Meta robots column joined the row and the previous floor
+ * started crushing Canonical/Title instead of scrolling. */
+.monitor-pages-table { min-width: 1180px; }
+
+/* Sortable column headers. Without these rules the bare `<button>` fell back to
+ * the UA's `buttonface` — a solid grey slab (rgb(107,107,107)) carrying the
+ * header's own dim grey text (rgb(119,115,110)): ~1.06:1 contrast, so four
+ * column labels were invisible and read as unresolved skeleton placeholders.
+ * The button now inherits the `<th>` typography exactly, so a sortable header
+ * is indistinguishable from a static one until you interact with it. */
+.monitor-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.monitor-sort-button:hover { color: var(--ink); }
+.monitor-sort-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.monitor-sort-button .icon { width: 12px; height: 12px; flex: 0 0 auto; color: var(--accent); }
+/* The active column is the one carrying the arrow — give its label full ink so
+ * "what is this sorted by" is answerable without hunting for a 12px chevron. */
+th[aria-sort]:not([aria-sort="none"]) .monitor-sort-button { color: var(--ink); }
+
+/* Meta robots column. `noindex` is the loudest signal this product has, so it
+ * gets weight AND color AND (through the directive text itself) words — never
+ * color alone (AGENTS.md §7). */
+.monitor-robots {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.monitor-robots--noindex { color: var(--danger); font-weight: 700; }
+.monitor-robots__extra {
+  color: var(--ink-dim);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
 .monitor-row-open {
   display: inline-flex;
   align-items: center;
@@ -366,6 +429,15 @@
 /* ---------------------------------------------------------------------- */
 
 .monitor-feed-toggle { display: flex; gap: 6px; padding: 14px 20px 0; }
+
+.monitor-changes-load-more {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line-soft);
+}
+.monitor-changes-load-more p { margin: 0; color: var(--ink-dim); font-size: 11px; }
 
 .monitor-changes { list-style: none; padding: 0; margin: 0; }
 .monitor-change {

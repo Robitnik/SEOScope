@@ -721,6 +721,9 @@ class MonitorRun(Base):
     status: Mapped[str] = mapped_column(String(24), default="running", index=True)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # `NULL` for rows written before this column existed — `None` != `0`
+    # (project invariant): an old row never renders as "Checked N of 0".
+    urls_total: Mapped[int | None] = mapped_column(Integer, default=None)
     urls_checked: Mapped[int] = mapped_column(Integer, default=0)
     urls_changed: Mapped[int] = mapped_column(Integer, default=0)
     urls_new: Mapped[int] = mapped_column(Integer, default=0)

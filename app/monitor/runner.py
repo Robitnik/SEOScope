@@ -946,6 +946,10 @@ def run_client_monitor(
             targets = (ordered_existing + new_urls)[:max_urls]
             target_in_sitemap = {url: (url in sitemap_urls) for url in targets}
 
+        with _COMMIT_LOCK:
+            repo.update_run_counters(run.id, urls_total=len(targets))
+            session.commit()
+
         checked = 0
         changed_count = 0
         new_count = 0
@@ -982,7 +986,7 @@ def run_client_monitor(
                 new_count += 1
             elif changed:
                 changed_count += 1
-            if checked % 25 == 0:
+            if checked % 10 == 0:
                 with _COMMIT_LOCK:
                     repo.update_run_counters(
                         run.id,
@@ -1032,7 +1036,10 @@ def run_client_monitor(
             _sitemap_aggregate(repo, client, run_id=run.id, settings=settings, now=now)
 
         with _COMMIT_LOCK:
-            counts_by_severity = repo.open_counts_by_severity(client.id)
+            # What THIS run found, not what is currently open client-wide
+            # (task-37 F4) — a light run on 1 URL must not report the same
+            # numbers as a full run on 609.
+            counts_by_severity = repo.count_changes_by_severity(run.id)
             remaining = len(targets) - checked if truncated else None
             repo.finish_run(
                 run.id,

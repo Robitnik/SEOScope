@@ -34,6 +34,18 @@ async function main() {
   const browserErrors = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+  // task-37 §4 (the process fix): every other check in this file passes
+  // `?fixture=...`, which short-circuits `api.js` before it ever makes a
+  // real network call — that is exactly why F1's 422 and F3's
+  // `[object Object]` shipped green. Fixture-mode requests only ever hit
+  // `/fixtures/*.json`, so scoping this to `/api/v1/` is enough to isolate
+  // failures the live pass below introduces from noise elsewhere in the file.
+  const badResponses = [];
+  page.on("response", (response) => {
+    if (response.status() >= 400 && response.url().includes("/api/v1/")) {
+      badResponses.push(`${response.status()} ${response.url()}`);
+    }
+  });
 
   // --- Portfolio page, populated fixture --------------------------------
   // `all-states` — same "just render the populated default" flag frontend-smoke.cjs
@@ -77,6 +89,27 @@ async function main() {
   // dedicated "blocked" scenario below (site-scope change strip) covers the
   // opposite case.
   assert.match(await page.locator("#mc-robots .monitor-conclusion").innerText(), /Googlebot: allowed/, "robots conclusion reads allowed for the populated fixture");
+  assert.doesNotMatch(await page.locator("#mc-dns").innerText(), /has no dedicated check yet/, "F7: no dev-facing TODO copy left in the DNS card");
+  // F5: DNS is 10 records — collapsed to 8 with a "Show all 10" chip, not
+  // silently truncated. Clicking it reveals the rest.
+  await page.locator("#mc-dns .monitor-dns-table").waitFor();
+  assert.equal(await page.locator("#mc-dns tbody tr").count(), 8, "DNS table starts collapsed to 8 rows");
+  const dnsShowAll = page.locator('[data-action="dns-show-all"]');
+  await dnsShowAll.waitFor();
+  assert.match(await dnsShowAll.innerText(), /Show all 10/);
+  await dnsShowAll.click();
+  assert.equal(await page.locator("#mc-dns tbody tr").count(), 10, "Show all reveals every DNS record");
+  assert.equal(await page.locator('[data-action="dns-show-all"]').count(), 0, "Show all chip is gone once expanded");
+  // F6: 26 open changes — capped at 25 with a "Load more" control, not one
+  // 11,000px list.
+  await page.locator("#mc-changes .monitor-changes").waitFor();
+  assert.equal(await page.locator("#mc-changes .monitor-change").count(), 25, "change feed starts capped at 25 rows");
+  const loadMore = page.locator('[data-action="changes-load-more"]');
+  await loadMore.waitFor();
+  assert.match(await page.locator(".monitor-changes-load-more p").innerText(), /Showing 25 of 26/);
+  await loadMore.click();
+  assert.equal(await page.locator("#mc-changes .monitor-change").count(), 26, "Load more reveals the remaining open change");
+  assert.equal(await page.locator('[data-action="changes-load-more"]').count(), 0, "Load more control is gone once every change is shown");
   await page.screenshot({ path: path.join(screenshots, "monitor-client-1440.png"), fullPage: true });
   await assertNoOverflow(page, "monitor client (dense)");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -109,6 +142,15 @@ async function main() {
     await page.goto(`${baseUrl}/?fixture=${fixture}#/client/client-cleveland/monitor`, { waitUntil: "networkidle" });
     await page.locator("#mc-content").waitFor();
     await page.getByText(expectText, { exact: false }).first().waitFor({ timeout: 5000 });
+    if (fixture === "monitor-running") {
+      // task-37 F2: a run still `status: "running"` must show real
+      // "Checked N of M" progress, and the "complete" toast must never fire
+      // while it is still active — the exact bug (poller reading a stale
+      // FINISHED run from `getMonitorSummary` and declaring victory in ~2s).
+      await page.getByText(/Checked \d+ of \d+/, { exact: false }).first().waitFor({ timeout: 5000 });
+      await page.waitForTimeout(2500); // longer than the 2s poll interval
+      assert.equal(await page.locator(".toast-message", { hasText: /complete/i }).count(), 0, "no premature 'complete' toast while the run is still running");
+    }
   }
 
   // Paused-client state comes from the dashboard fixture, not a monitor-* flag
@@ -122,6 +164,26 @@ async function main() {
   await page.locator(".state-panel.state-failed").waitFor();
   assert.equal(await page.getByRole("button", { name: /retry/i }).count() > 0, true, "portfolio error state offers Retry");
 
+  // --- Live pass, no `?fixture=` (task-37 §4) -----------------------------
+  // Hits whatever stack `BASE_URL` points at for real: real `/api/v1/monitor`
+  // fetch, real `/api/v1/clients/{id}/monitor/pages` with the frontend's
+  // actual default `sort=-last_checked_at` — the exact request F1 404'd on
+  // and no fixture-driven check above can ever exercise. Idempotent and
+  // read-only: it never calls `POST .../monitor/runs`, so rerunning against
+  // the same client changes nothing server-side.
+  await page.goto(`${baseUrl}/#/monitor`, { waitUntil: "networkidle" });
+  await page.locator("#monitor-page-root").waitFor();
+
+  const firstClientLink = page.locator(".monitor-client-table tbody tr a[href*='#/client/']").first();
+  if (await firstClientLink.count()) {
+    await firstClientLink.click();
+    await page.locator("#monitor-client-page-root #mc-content").waitFor();
+    await page.waitForLoadState("networkidle");
+  } else {
+    console.log("monitor e2e: live pass skipped client-detail navigation — no clients in this stack's portfolio");
+  }
+
+  assert.deepEqual(badResponses, [], `no >=400 response from the live API: ${badResponses.join(" | ")}`);
   assert.deepEqual(browserErrors, [], `no uncaught browser errors across the run: ${browserErrors.join(" | ")}`);
   await browser.close();
   console.log("monitor e2e: ok");

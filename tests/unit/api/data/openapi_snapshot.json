@@ -4027,6 +4027,17 @@
           "urls_new": {
             "title": "Urls New",
             "type": "integer"
+          },
+          "urls_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urls Total"
           }
         },
         "required": [
@@ -9460,8 +9471,13 @@
               "default": "last_checked_at",
               "enum": [
                 "last_checked_at",
+                "-last_checked_at",
                 "status",
-                "url"
+                "-status",
+                "url",
+                "-url",
+                "version_seq",
+                "-version_seq"
               ],
               "title": "Sort",
               "type": "string"

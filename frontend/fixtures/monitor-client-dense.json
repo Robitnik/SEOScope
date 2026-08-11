@@ -125,6 +125,146 @@
       "details": {}, "detected_at": "2026-08-05T09:00:00Z",
       "acknowledged_at": "2026-08-05T11:00:00Z", "acknowledged_note": "Expected — canonical cleanup.",
       "resolved_at": "2026-08-06T09:00:00Z"
+    },
+    {
+      "id": "chg-bulk-01", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-01/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:41Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-02", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-02/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:42Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-03", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-03/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:43Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-04", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-04/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:44Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-05", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-05/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:45Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-06", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-06/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:46Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-07", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-07/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:47Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-08", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-08/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:48Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-09", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-09/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:49Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-10", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-10/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:50Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-11", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-11/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:51Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-12", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-12/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:52Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-13", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-13/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:53Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-14", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-14/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:54Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-15", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-15/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:55Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-16", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-16/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:56Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-17", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-17/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:57Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-18", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-18/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:58Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-19", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-19/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:07:59Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
+    },
+    {
+      "id": "chg-bulk-20", "client_id": "client-cleveland", "run_id": "run-cleveland-11",
+      "severity": "info", "change_type": "content_changed", "scope": "page",
+      "subject": "https://19cleveland.com/blog/post-20/", "old_value": null, "new_value": null,
+      "details": {}, "detected_at": "2026-08-11T06:08:00Z",
+      "acknowledged_at": null, "acknowledged_note": null, "resolved_at": null
     }
   ],
   "pages": {
@@ -284,6 +424,32 @@
     },
     {
       "id": "dns-4", "name": "19cleveland.com", "record_type": "MX", "values": ["10 mail.19cleveland.com"],
+      "ttl": 3600, "resolver": "dns.google", "version_seq": 1, "last_checked_at": "2026-08-11T06:10:00Z"
+    },
+    {
+      "id": "dns-5", "name": "www.19cleveland.com", "record_type": "A", "values": ["104.21.44.12"],
+      "ttl": 300, "resolver": "dns.google", "version_seq": 1, "last_checked_at": "2026-08-11T06:10:00Z"
+    },
+    {
+      "id": "dns-6", "name": "www.19cleveland.com", "record_type": "NS",
+      "values": ["ns1.cloudflare.com", "ns2.cloudflare.com"],
+      "ttl": 86400, "resolver": "dns.google", "version_seq": 1, "last_checked_at": "2026-08-11T06:10:00Z"
+    },
+    {
+      "id": "dns-7", "name": "www.19cleveland.com", "record_type": "TXT",
+      "values": ["v=spf1 include:_spf.google.com ~all"],
+      "ttl": 3600, "resolver": "cloudflare-dns.com", "version_seq": 1, "last_checked_at": "2026-08-11T06:10:00Z"
+    },
+    {
+      "id": "dns-8", "name": "19cleveland.com", "record_type": "AAAA", "values": ["2606:4700:3033::ac43:2c0c"],
+      "ttl": 300, "resolver": "dns.google", "version_seq": 1, "last_checked_at": "2026-08-11T06:10:00Z"
+    },
+    {
+      "id": "dns-9", "name": "mail.19cleveland.com", "record_type": "A", "values": ["104.21.44.13"],
+      "ttl": 300, "resolver": "dns.google", "version_seq": 1, "last_checked_at": "2026-08-11T06:10:00Z"
+    },
+    {
+      "id": "dns-10", "name": "19cleveland.com", "record_type": "CAA", "values": ["0 issue \"letsencrypt.org\""],
       "ttl": 3600, "resolver": "dns.google", "version_seq": 1, "last_checked_at": "2026-08-11T06:10:00Z"
     }
   ],

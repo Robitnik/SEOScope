@@ -10,6 +10,28 @@ export function isAbortError(error) {
   return error?.name === "AbortError" || /\baborted\b/i.test(error?.message || "");
 }
 
+// FastAPI's own `detail` shape varies by failure kind: our handlers send a
+// string or `{message, error_code}` object, but a 422 request-validation
+// failure (wrong query param, bad body) never goes through our handlers at
+// all — FastAPI renders it as an ARRAY of `{loc, msg, type}` objects. Passing
+// any of those straight to `new Error(...)` either loses the message or (for
+// the array case) stringifies to the literal text "[object Object]" — this
+// normalizer is the one place all three shapes funnel through before
+// reaching `Error`, task-37 F3.
+export function normalizeErrorDetail(detail, status) {
+  if (typeof detail === "string" && detail) return detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail) && detail.message) return detail.message;
+  if (Array.isArray(detail) && detail.length) {
+    return detail.slice(0, 3).map((item) => {
+      if (typeof item === "string") return item;
+      const loc = Array.isArray(item?.loc) ? item.loc.filter((part) => part !== "body" && part !== "query").join(".") : "";
+      const msg = item?.msg || "Invalid request";
+      return loc ? `${loc}: ${msg}` : msg;
+    }).join("; ");
+  }
+  return `HTTP ${status}`;
+}
+
 async function request(path, options = {}, key = path) {
   controllers.get(key)?.abort();
   const controller = new AbortController();
@@ -22,9 +44,11 @@ async function request(path, options = {}, key = path) {
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
-      const error = new Error(payload.detail?.message || payload.detail || `HTTP ${response.status}`);
+      const error = new Error(normalizeErrorDetail(payload.detail, response.status));
       error.status = response.status;
-      error.code = payload.detail?.error_code;
+      error.code = (payload.detail && typeof payload.detail === "object" && !Array.isArray(payload.detail))
+        ? payload.detail.error_code
+        : undefined;
       throw error;
     }
     return response.status === 204 ? null : response.json();
@@ -836,9 +860,11 @@ export async function uploadAltTextSource(file) {
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    const error = new Error(payload.detail?.message || `HTTP ${response.status}`);
+    const error = new Error(normalizeErrorDetail(payload.detail, response.status));
     error.status = response.status;
-    error.code = payload.detail?.error_code;
+    error.code = (payload.detail && typeof payload.detail === "object" && !Array.isArray(payload.detail))
+      ? payload.detail.error_code
+      : undefined;
     throw error;
   }
   return response.json();
@@ -857,13 +883,14 @@ export async function createAltTextReport(payload, { force = false } = {}) {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    const detail = (await response.json().catch(() => ({}))).detail || {};
-    const error = new Error(detail.message || `HTTP ${response.status}`);
+    const detail = (await response.json().catch(() => ({}))).detail;
+    const error = new Error(normalizeErrorDetail(detail, response.status));
     error.status = response.status;
-    error.code = detail.error_code;
+    const detailObj = (detail && typeof detail === "object" && !Array.isArray(detail)) ? detail : {};
+    error.code = detailObj.error_code;
     // `report_exists` carries the id of the report already holding this file —
     // the UI offers "Open existing" instead of a dead end.
-    error.details = detail.details || {};
+    error.details = detailObj.details || {};
     throw error;
   }
   return response.json();
@@ -1152,6 +1179,7 @@ function readMonitorFixtureRun(clientId) {
     status: running ? "running" : "succeeded",
     started_at: new Date(stored.startedAt).toISOString(),
     finished_at: running ? null : new Date(stored.startedAt + MONITOR_FIXTURE_RUN_MS).toISOString(),
+    urls_total: 42,
     urls_checked: running ? Math.round((elapsed / MONITOR_FIXTURE_RUN_MS) * 42) : 42,
     urls_changed: 0, urls_new: 0, urls_gone: 0, requests_made: running ? Math.round(elapsed / 40) : 210,
     bytes_downloaded: running ? elapsed * 900 : 2_600_000,

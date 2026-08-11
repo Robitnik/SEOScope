@@ -33,7 +33,9 @@
 //   .monitor-health-link        — кнопка-число з дрилдауном у Pages
 //   .monitor-dns-banner         — модифікатор на .state-panel для "DNS could not be checked"
 //   .monitor-dns-verify         — рядок GSC/Analytics верифікації під таблицею DNS
-//   .monitor-dns-analytics      — модифікатор для рядка Analytics (додаткове TODO-пояснення)
+//   .monitor-dns-analytics      — модифікатор для рядка Analytics (пояснення без dev-TODO копірайту)
+//   .monitor-dns-show-all       — модифікатор на .chip-button для розгортання списку DNS-записів
+//   .monitor-changes-load-more  — обгортка "Showing N of M" + Load more під стрічкою змін
 //   .monitor-pages-toolbar      — модифікатор на .analytics-toolbar для Pages
 //   .monitor-checkbox           — <label> із чекбоксом-фільтром (hit target)
 //   .monitor-changed-note       — пояснення про клієнтський фільтр changed_since
@@ -62,16 +64,17 @@ import {
   getMonitorSummary, getMonitorSettings, patchMonitorSettings, listMonitorRuns, startMonitorRun,
   listClientMonitorChanges, ackMonitorChange, getMonitorPages, getMonitorDnsRecords,
   monitorExportCsvUrl, monitorExportXlsxUrl, getDashboard, isAbortError,
-} from "./api.js?v=20260811-monitor1";
-import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260811-monitor1";
-import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260811-monitor1";
+} from "./api.js?v=20260811-monitor3";
+import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260811-monitor3";
+import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260811-monitor3";
 import {
   escapeHtml, icon, initials, formatTimestamp, formatDate, MONITOR_SEVERITY_META, changeTypeLabel,
   STATE_META, stateClass,
-} from "./formatters.js?v=20260811-monitor1";
-import { createMonitorDiffViewer } from "./monitor-diff.js?v=20260811-monitor1";
+} from "./formatters.js?v=20260811-monitor3";
+import { createMonitorDiffViewer } from "./monitor-diff.js?v=20260811-monitor3";
 
 const PAGES_PAGE_SIZE = 25;
+const CHANGES_PAGE_SIZE = 25;
 const RUNS_LIMIT = 50;
 const POLL_INTERVAL_MS = 2000;
 // Monitor runs never surface `awaiting_auth` (task-35's engine has no
@@ -107,7 +110,17 @@ let contentMode = "loading"; // "loading" | "never_checked" | "full" | "error"
 let diffViewer = null;
 let pollTimer = null;
 let pollingKind = null;
+let pollingRunId = null;
+// The run row the current poll cycle last saw for `pollingRunId` — `null`
+// while the "Check now" POST has returned but `list_runs` has not yet
+// surfaced the new row as its own #1 result for this kind (task-37 F2).
+let livePollRun = null;
 let pagesToken = 0;
+let dnsShowAll = false;
+let dnsRecords = [];
+const DNS_COLLAPSE_ROWS = 8;
+let changesRaw = [];
+let changesVisibleCount = CHANGES_PAGE_SIZE;
 let pagesQueryHadFocus = false;
 let pagesSearchTimer = null;
 
@@ -198,11 +211,12 @@ function formatCount(value) {
 function formatCheckedProgress(run) {
   if (!run) return "Starting…";
   const checked = run.urls_checked ?? 0;
-  // `remaining_count` is only populated once a cap is known (see the
-  // truncated-run chip below) — mid-run it is usually null, so "of M" is
-  // shown only when a real total is known rather than fabricated.
-  if (Number.isFinite(run.remaining_count)) {
-    return `Checked ${formatCount(checked)} of ${formatCount(checked + run.remaining_count)}`;
+  // `urls_total` is the real target-list size, set once before the crawl
+  // loop starts (task-37 F2) — a true `completed/total` model, shown only
+  // when known rather than animating a made-up percentage (AGENTS.md §9).
+  // `null` on runs started before this field existed.
+  if (Number.isFinite(run.urls_total)) {
+    return `Checked ${formatCount(checked)} of ${formatCount(run.urls_total)}`;
   }
   return `Checked ${formatCount(checked)} so far`;
 }
@@ -250,6 +264,8 @@ export async function initMonitorClientPage(clientId, query) {
   openChanges = [];
   openChangesPromise = null;
   contentMode = "loading";
+  dnsShowAll = false;
+  changesVisibleCount = CHANGES_PAGE_SIZE;
   current = { clientId, ...paramsFromQuery(query) };
   root.innerHTML = shell();
   bindShell();
@@ -279,11 +295,15 @@ function contentShellHtml() {
     <div class="monitor-blocks" id="mc-blocks">
       <section class="monitor-block" id="mc-robots" aria-label="Robots.txt" aria-busy="true">${sectionSkeleton({ label: "robots.txt", rows: 2, columns: 1 })}</section>
       <section class="monitor-block" id="mc-sitemap" aria-label="Sitemap" aria-busy="true">${sectionSkeleton({ label: "sitemap", rows: 3, columns: 1 })}</section>
-      <section class="monitor-block" id="mc-dns" aria-label="DNS and verification" aria-busy="true">${sectionSkeleton({ label: "DNS records", rows: 4, columns: 3 })}</section>
     </div>
     <section class="monitor-pages-section" id="mc-pages" aria-label="Pages" aria-busy="true">${sectionSkeleton({ label: "pages", rows: 8, columns: 6 })}</section>
     <section class="monitor-runs-section" id="mc-runs" aria-label="Check history" aria-busy="true">${sectionSkeleton({ label: "check history", rows: 5, columns: 5 })}</section>
-    <section class="monitor-changes-section" id="mc-changes" aria-label="Change feed" aria-busy="true">${sectionSkeleton({ label: "change feed", rows: 5, columns: 2 })}</section>`;
+    <section class="monitor-changes-section" id="mc-changes" aria-label="Change feed" aria-busy="true">${sectionSkeleton({ label: "change feed", rows: 5, columns: 2 })}</section>
+    <!-- DNS last on purpose: A/NS/MX/TXT change a few times a year, while pages
+         and the change feed move every check. It stays a full-width reference
+         block at the foot of the page rather than competing for the first
+         viewport with what actually changed today. -->
+    <section class="monitor-block monitor-block--dns" id="mc-dns" aria-label="DNS and verification" aria-busy="true">${sectionSkeleton({ label: "DNS records", rows: 4, columns: 3 })}</section>`;
 }
 
 function mountFullContentAndLoadBlocks() {
@@ -338,10 +358,12 @@ function handleContentClick(event) {
     case "ack": showAckForm(target); break;
     case "ack-cancel": restoreAckButton(target); break;
     case "changes-state": setChangesState(target.dataset.state); break;
+    case "changes-load-more": changesVisibleCount += CHANGES_PAGE_SIZE; renderChangesFeed(); break;
     case "pages-clear": clearPagesFilters(); break;
     case "pages-prev": changePage(-1); break;
     case "pages-next": changePage(1); break;
     case "retry-dns": loadDns(); break;
+    case "dns-show-all": dnsShowAll = true; renderDns(dnsRecords); break;
     case "retry-pages": loadPages(); break;
     case "retry-runs": loadRuns(); break;
     case "retry-changes": loadChangesFeed(); break;
@@ -530,8 +552,9 @@ async function startCheck(kind) {
   // still in flight (`pollingKind` would not be set yet to stop the second).
   pollingKind = kind;
   if (contentMode === "full") renderActions();
+  let accepted;
   try {
-    await startMonitorRun(current.clientId, kind);
+    accepted = await startMonitorRun(current.clientId, kind);
   } catch (error) {
     pollingKind = null;
     if (contentMode === "full") renderActions();
@@ -539,19 +562,32 @@ async function startCheck(kind) {
     return;
   }
   mountFullContentAndLoadBlocks();
-  beginPolling(kind);
+  beginPolling(kind, accepted.run_id);
 }
 
 // Restores the live-polling state after F5 mid-check (AGENTS.md §9 —
-// "Reopening or refreshing MUST restore state from the API").
+// "Reopening or refreshing MUST restore state from the API"). `monitorSummary`
+// cannot answer "is a check running right now" — `last_light_run`/
+// `last_full_run` only ever reflect the latest FINISHED run (task-37 F2) —
+// so this asks the run log directly instead.
 function resumePollingIfActive() {
   if (pollingKind) return;
-  if (isRunActive(monitorSummary.last_full_run)) beginPolling("full");
-  else if (isRunActive(monitorSummary.last_light_run)) beginPolling("light");
+  Promise.all([
+    listMonitorRuns(current.clientId, { kind: "full", limit: 1 }),
+    listMonitorRuns(current.clientId, { kind: "light", limit: 1 }),
+  ]).then(([fullRuns, lightRuns]) => {
+    if (pollingKind) return; // a manual check started while this was in flight
+    const full = fullRuns[0];
+    const light = lightRuns[0];
+    if (isRunActive(full)) beginPolling("full", full.id);
+    else if (isRunActive(light)) beginPolling("light", light.id);
+  }).catch(() => { /* best-effort resume; a normal poll cycle will pick it up on the next tick if this fails */ });
 }
 
-function beginPolling(kind) {
+function beginPolling(kind, runId) {
   pollingKind = kind;
+  pollingRunId = runId;
+  livePollRun = null;
   renderActions();
   pollOnce();
   pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
@@ -561,18 +597,31 @@ function stopPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
   pollingKind = null;
+  pollingRunId = null;
+  livePollRun = null;
 }
 
 async function pollOnce() {
   const kind = pollingKind;
+  const runId = pollingRunId;
   if (!kind) return;
   try {
-    const summary = await getMonitorSummary(current.clientId);
+    const runs = await listMonitorRuns(current.clientId, { kind, limit: 1 });
     if (pollingKind !== kind) return;
-    monitorSummary = summary;
-    const run = summary[`last_${kind}_run`];
+    const run = runs[0];
+    // The freshly queued/claimed row can, for one tick right after the POST,
+    // not yet be `list_runs`'s #1 result for this kind — comparing `id`
+    // against the `run_id` the POST returned is the only way to avoid
+    // mistaking an OLDER finished run for this check's progress or
+    // completion (task-37 F2, the exact bug this replaces).
+    if (!run || run.id !== runId) {
+      livePollRun = null;
+      renderLiveStatus(kind, null);
+      return;
+    }
+    livePollRun = run;
     renderLiveStatus(kind, run);
-    if (run && RUN_TERMINAL_STATUSES.has(run.status)) {
+    if (RUN_TERMINAL_STATUSES.has(run.status)) {
       stopPolling();
       toast(run.status === "succeeded"
         ? `${kind === "full" ? "Full" : "Light"} check complete.`
@@ -596,6 +645,7 @@ async function reloadAfterRun() {
   // than leaving the operator on a now-meaningless page, same precedent as
   // `blogs-page.js`'s `onTerminal` resetting `blogsOffset`.
   current.page = 1;
+  changesVisibleCount = CHANGES_PAGE_SIZE;
   persist();
   loadSiteChangesAndDependents();
   loadDns();
@@ -647,7 +697,7 @@ function renderActions() {
       <p class="monitor-next-due">Next light check: ${formatTimestamp(monitorSummary?.next_light_due_at, "not scheduled")} · Next full check: ${formatTimestamp(monitorSummary?.next_full_due_at, "not scheduled")}</p>
     </div>
     <div class="live-collection monitor-live-status" id="mc-live-status" aria-live="polite" ${active ? "" : "hidden"}></div>`;
-  if (active) renderLiveStatus(active, monitorSummary?.[`last_${active}_run`]);
+  if (active) renderLiveStatus(active, livePollRun);
 }
 
 // ---------------------------------------------------------------------------
@@ -795,6 +845,7 @@ async function loadDns() {
   el.innerHTML = sectionSkeleton({ label: "DNS records", rows: 4, columns: 3 });
   try {
     const records = await getMonitorDnsRecords(current.clientId);
+    dnsRecords = records;
     // Best-effort: the "could not be checked" flag needs `openChanges`, but a
     // failure there must not block rendering DNS records that loaded fine.
     await fetchOpenChanges().catch(() => null);
@@ -829,24 +880,25 @@ function renderDns(records) {
   const banner = unavailable
     ? `<div class="state-panel state-attention monitor-dns-banner">${icon("cloud-off")}<p><strong>DNS could not be checked.</strong><br>Showing the last known values below — this is not the same as "no records".</p></div>`
     : "";
+  // Collapsed by default (task-37 F5): a busy domain's full DNS record set
+  // can run well past a screen's height; showing that many is never hidden
+  // silently — the count above the table and the "Show all" chip both say
+  // exactly how many more rows exist.
+  const visibleRecords = dnsShowAll ? records : records.slice(0, DNS_COLLAPSE_ROWS);
+  const showAllChip = !dnsShowAll && records.length > DNS_COLLAPSE_ROWS
+    ? `<button type="button" class="chip-button monitor-dns-show-all" data-action="dns-show-all">${icon("chevron-down")}Show all ${records.length}</button>`
+    : "";
   const table = records.length
     ? `<div class="table-scroll"><table class="analytics-table monitor-dns-table">
         <thead><tr><th>Name</th><th>Type</th><th>Values</th><th class="num">TTL</th><th>Last checked</th><th></th></tr></thead>
-        <tbody>${records.map(dnsRow).join("")}</tbody>
-      </table></div>`
+        <tbody>${visibleRecords.map(dnsRow).join("")}</tbody>
+      </table></div>${showAllChip}`
     : `<div class="state-panel state-not_configured"><p><strong>No DNS records recorded yet.</strong></p></div>`;
   el.innerHTML = `
     ${sectionHeadingWithAction("DNS & verification", records.length ? `${records.length} records` : "", "")}
     ${banner}
     <p class="monitor-dns-verify">${icon(gsc ? "circle-check" : "circle-x")}<span>Search Console verification: ${gsc ? `found (<code>${escapeHtml(gsc)}</code>)` : "not found"}</span></p>
-    <p class="monitor-dns-verify monitor-dns-analytics">${icon("info-circle")}<span>
-      <!-- TODO(task-36-followup): no endpoint scans key pages for an active GA4/GTM
-           tag, and DNS TXT records carry domain-verification strings, not analytics
-           tags, so there is no honest way to answer "found/not found" from DNS alone.
-           Simplified to a pointer at the per-page diff, which already exposes
-           analytics_ids on page signals. -->
-      Analytics (GA4/GTM) tag presence has no dedicated check yet — open a key page's history below and compare its <code>analytics_ids</code> signal directly.
-    </span></p>
+    <p class="monitor-dns-verify monitor-dns-analytics">${icon("info-circle")}<span>Analytics tags (GA4/GTM) are not read from DNS — open a key page's history in Pages above and check its <code>analytics_ids</code> signal to confirm one is present.</span></p>
     ${table}`;
 }
 
@@ -867,11 +919,42 @@ function pagesTableHead() {
     ${sortableTh("status", "Status")}
     <th>In sitemap</th>
     <th>Indexable</th>
+    <th>Meta robots</th>
     <th>Canonical</th>
     <th>Title</th>
     ${sortableTh("last_checked_at", "Last checked")}
     ${sortableTh("version_seq", "Versions")}
   </tr>`;
+}
+
+// Directives that actually change what Google does. WordPress ships
+// `max-image-preview:large, max-snippet:-1, max-video-preview:-1` on virtually
+// every page, and printing that in full would make the column unreadable on
+// 600 rows — so the policy tokens are shown, the rest is counted (`+3`) and the
+// complete string stays available in the cell's `title`. Nothing is dropped
+// silently (PLAN §12).
+const ROBOTS_POLICY_TOKENS = new Set([
+  "index", "noindex", "follow", "nofollow", "none",
+  "noarchive", "nosnippet", "noimageindex", "notranslate",
+]);
+
+function metaRobotsCell(page) {
+  const raw = page.meta_robots || page.x_robots_tag;
+  if (!raw) return "—";
+  const tokens = raw.split(",").map((token) => token.trim()).filter(Boolean);
+  const policy = tokens.filter((token) => ROBOTS_POLICY_TOKENS.has(token.toLowerCase()));
+  const shown = (policy.length ? policy : tokens).join(", ");
+  const hiddenCount = policy.length ? tokens.length - policy.length : 0;
+  // `noindex` and `none` both remove the page from the index — the single most
+  // important thing this whole monitor watches for, so it is never just text.
+  const isNoindex = tokens.some((token) => ["noindex", "none"].includes(token.toLowerCase()));
+  const extra = hiddenCount > 0 ? `<span class="monitor-robots__extra">+${hiddenCount}</span>` : "";
+  // The header carries the same weight as the meta tag but is invisible in the
+  // page source, so where the directive came from is part of the answer.
+  const source = !page.meta_robots && page.x_robots_tag
+    ? `<span class="monitor-robots__extra">X-Robots-Tag</span>`
+    : "";
+  return `<span class="monitor-robots${isNoindex ? " monitor-robots--noindex" : ""}" title="${escapeHtml(raw)}">${escapeHtml(shown)}${extra}${source}</span>`;
 }
 
 function pageRow(page) {
@@ -887,6 +970,7 @@ function pageRow(page) {
     <td>${page.status ?? "—"}</td>
     <td>${page.in_sitemap ? "Yes" : "No"}</td>
     <td>${indexableText}</td>
+    <td>${metaRobotsCell(page)}</td>
     <td>${page.canonical ? escapeHtml(page.canonical) : "—"}</td>
     <td>${page.title ? escapeHtml(page.title) : "—"}</td>
     <td>${formatTimestamp(page.last_checked_at)}</td>
@@ -1124,6 +1208,7 @@ function changeRow(change) {
 
 function setChangesState(state) {
   current.changesState = state === "all" ? "all" : "open";
+  changesVisibleCount = CHANGES_PAGE_SIZE;
   persist();
   loadChangesFeed();
 }
@@ -1157,7 +1242,8 @@ async function loadChangesFeed() {
     } else {
       changes = await listClientMonitorChanges(current.clientId, { state: "all" });
     }
-    renderChangesFeed(changes);
+    changesRaw = changes;
+    renderChangesFeed();
   } catch (error) {
     if (isAbortError(error)) return;
     el.setAttribute("aria-busy", "false");
@@ -1167,7 +1253,7 @@ async function loadChangesFeed() {
 
 const CHANGE_FEED_SEVERITY_RANK = { critical: 0, warning: 1, info: 2 };
 
-function renderChangesFeed(changes) {
+function renderChangesFeed() {
   const el = document.querySelector("#mc-changes");
   if (!el) return;
   el.setAttribute("aria-busy", "false");
@@ -1175,7 +1261,7 @@ function renderChangesFeed(changes) {
   // most recent within a severity — the DoD's "видно за 5 секунд без
   // прокрутки" only holds if a real critical row cannot end up buried under a
   // page of routine info-level rows sharing the same `detected_at`.
-  const ordered = [...changes].sort((a, b) => {
+  const ordered = [...changesRaw].sort((a, b) => {
     const rank = (CHANGE_FEED_SEVERITY_RANK[a.severity] ?? 3) - (CHANGE_FEED_SEVERITY_RANK[b.severity] ?? 3);
     return rank !== 0 ? rank : new Date(b.detected_at) - new Date(a.detected_at);
   });
@@ -1183,10 +1269,18 @@ function renderChangesFeed(changes) {
     <button type="button" class="chip-button" data-action="changes-state" data-state="open" aria-pressed="${String(current.changesState === "open")}">Open</button>
     <button type="button" class="chip-button" data-action="changes-state" data-state="all" aria-pressed="${String(current.changesState === "all")}">All</button>
   </div>`;
-  const list = ordered.length
-    ? `<ul class="monitor-changes" aria-live="polite">${ordered.map(changeRow).join("")}</ul>`
+  // Client-side "Load more" (task-37 F6) — a client with hundreds of open
+  // `info`-level rows (task-35 §1.4) rendered the whole list in one go,
+  // ballooning the page past 11,000px. Same pattern as Pages' pagination:
+  // never hide the true count, just cap what is painted at once.
+  const visible = ordered.slice(0, changesVisibleCount);
+  const loadMore = ordered.length > visible.length
+    ? `<div class="monitor-changes-load-more"><p>Showing ${formatCount(visible.length)} of ${formatCount(ordered.length)}</p><button type="button" class="button button--quiet" data-action="changes-load-more">${icon("chevron-down")}Load more</button></div>`
+    : "";
+  const list = visible.length
+    ? `<ul class="monitor-changes" aria-live="polite">${visible.map(changeRow).join("")}</ul>`
     : `<div class="state-panel state-ok"><p><strong>${current.changesState === "open" ? "No open changes." : "No changes recorded."}</strong></p></div>`;
-  el.innerHTML = `${sectionHeadingWithAction("Change feed", ordered.length ? `${ordered.length} ${current.changesState === "open" ? "open" : "total"}` : "", "")}${toggle}${list}`;
+  el.innerHTML = `${sectionHeadingWithAction("Change feed", ordered.length ? `${ordered.length} ${current.changesState === "open" ? "open" : "total"}` : "", "")}${toggle}${list}${loadMore}`;
 }
 
 // ---------------------------------------------------------------------------

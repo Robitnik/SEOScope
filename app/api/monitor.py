@@ -88,6 +88,7 @@ def _run_dto(run: MonitorRun) -> MonitorRunDTO:
         status=run.status,
         started_at=run.started_at,
         finished_at=run.finished_at,
+        urls_total=run.urls_total,
         urls_checked=run.urls_checked,
         urls_changed=run.urls_changed,
         urls_new=run.urls_new,
@@ -442,7 +443,16 @@ async def list_monitor_pages(
     indexable: bool | None = None,
     in_sitemap: bool | None = None,
     q: str | None = None,
-    sort: Literal["last_checked_at", "status", "url"] = "last_checked_at",
+    sort: Literal[
+        "last_checked_at",
+        "-last_checked_at",
+        "status",
+        "-status",
+        "url",
+        "-url",
+        "version_seq",
+        "-version_seq",
+    ] = "last_checked_at",
 ) -> MonitorPagesPageDTO:
     result = await run_in_threadpool(
         _list_pages,
