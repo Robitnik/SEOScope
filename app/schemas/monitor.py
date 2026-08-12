@@ -142,6 +142,15 @@ class MonitorResourceDTO(BaseModel):
     version_seq: int
     missing_since: datetime | None = None
     last_checked_at: datetime | None = None
+    # Hash of the stored file — the handle `GET /monitor/documents/{sha256}`
+    # takes, so the UI can show what was actually fetched instead of asking the
+    # operator to trust a summary. `None` while nothing has been stored yet.
+    content_sha256: str | None = None
+    # `urlset` entry count / `index` child count, lifted out of `structure_json`
+    # so a file list can be rendered without shipping every URL.
+    entry_count: int | None = None
+    # "urlset" | "index" | "unknown" — an index file has children, not URLs.
+    structure_kind: str | None = None
 
 
 class MonitorResourceVersionDTO(BaseModel):
@@ -169,6 +178,12 @@ class MonitorPageDTO(BaseModel):
     status: int | None = None
     final_url: str | None = None
     indexable: bool | None = None
+    # The directive itself, not just the boolean it collapses to: `noindex,
+    # follow` and `noindex, nofollow` are different instructions to Google, and
+    # `indexable=False` alone cannot tell them apart — nor say whether the
+    # directive came from the meta tag or the `X-Robots-Tag` header.
+    meta_robots: str | None = None
+    x_robots_tag: str | None = None
     title: str | None = None
     canonical: str | None = None
     version_seq: int

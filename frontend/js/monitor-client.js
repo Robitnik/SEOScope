@@ -64,14 +64,15 @@ import {
   getMonitorSummary, getMonitorSettings, patchMonitorSettings, listMonitorRuns, startMonitorRun,
   listClientMonitorChanges, ackMonitorChange, getMonitorPages, getMonitorDnsRecords,
   monitorExportCsvUrl, monitorExportXlsxUrl, getDashboard, isAbortError,
-} from "./api.js?v=20260811-monitor3";
-import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260811-monitor3";
-import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260811-monitor3";
+} from "./api.js?v=20260812-monitor5";
+import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260812-monitor5";
+import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260812-monitor5";
 import {
   escapeHtml, icon, initials, formatTimestamp, formatDate, MONITOR_SEVERITY_META, changeTypeLabel,
   STATE_META, stateClass,
-} from "./formatters.js?v=20260811-monitor3";
-import { createMonitorDiffViewer } from "./monitor-diff.js?v=20260811-monitor3";
+} from "./formatters.js?v=20260812-monitor5";
+import { createMonitorDiffViewer } from "./monitor-diff.js?v=20260812-monitor5";
+import { createMonitorContentViewer } from "./monitor-content.js?v=20260812-monitor5";
 
 const PAGES_PAGE_SIZE = 25;
 const CHANGES_PAGE_SIZE = 25;
@@ -108,6 +109,7 @@ let openChanges = [];
 let openChangesPromise = null;
 let contentMode = "loading"; // "loading" | "never_checked" | "full" | "error"
 let diffViewer = null;
+let contentViewer = null;
 let pollTimer = null;
 let pollingKind = null;
 let pollingRunId = null;
@@ -273,6 +275,12 @@ export async function initMonitorClientPage(clientId, query) {
     onError(error) { toast(`Could not load version history: ${error.message}`); },
     onStateChange(descriptor) { current.diff = descriptor; persist(); },
   });
+  // Deliberately NOT persisted in the URL like `diff` is: this viewer shows the
+  // current stored file, so a deep link would promise a specific state it
+  // cannot guarantee after the next check.
+  contentViewer = createMonitorContentViewer({
+    onError(error) { toast(`Could not load stored file: ${error.message}`); },
+  });
   // Deep-linked diff survives F5/back — restored without a synthetic
   // `trigger`, matching the contract's "programmatically, without trigger".
   if (current.diff) diffViewer.open({ ...current.diff, clientId: current.clientId });
@@ -349,6 +357,10 @@ function handleContentClick(event) {
     // and lets the backend return whatever it already tracked.
     case "robots-history": diffViewer.open({ kind: "robots", clientId: current.clientId, resourceUrl: robotsUrl(), trigger: target }); break;
     case "sitemap-history": diffViewer.open({ kind: "sitemap", clientId: current.clientId, trigger: target }); break;
+    // "What does the file actually say right now" — a different question from
+    // "what changed between two versions", hence a different viewer.
+    case "robots-content": contentViewer.open({ kind: "robots", clientId: current.clientId, trigger: target }); break;
+    case "sitemap-content": contentViewer.open({ kind: "sitemap", clientId: current.clientId, trigger: target }); break;
     case "sitemap-jump": jumpToPages({ inSitemapNot200: true }); break;
     case "dns-history":
       diffViewer.open({ kind: "dns", clientId: current.clientId, dnsName: target.dataset.dnsName, dnsRecordType: target.dataset.dnsType, trigger: target });
@@ -768,7 +780,7 @@ function renderRobots() {
         ? { text: "Site blocked for Googlebot", tone: "alert-triangle", modifier: "critical" }
         : { text: "Googlebot: allowed", tone: "circle-check", modifier: "ok" };
   el.innerHTML = `
-    ${sectionHeadingWithAction("Robots.txt", status !== null && status !== undefined ? `HTTP ${status}` : "", `<button type="button" class="button button--quiet" data-action="robots-history">${icon("history")}History</button>`)}
+    ${sectionHeadingWithAction("Robots.txt", status !== null && status !== undefined ? `HTTP ${status}` : "", `<button type="button" class="button button--quiet" data-action="robots-content">${icon("file-text")}View file</button><button type="button" class="button button--quiet" data-action="robots-history">${icon("history")}History</button>`)}
     <p class="monitor-conclusion monitor-conclusion--${conclusion.modifier}">${icon(conclusion.tone)}<span>${conclusion.text}</span></p>
     <p class="monitor-changed-at">Last checked: ${formatTimestamp(lastChecked, "not checked yet")}</p>`;
 }
@@ -801,7 +813,7 @@ function renderSitemap() {
     ? `<p class="chip-button monitor-chip">${icon("cut")}Truncated · showing first ${formatCount(lastRun.urls_checked)} of ${formatCount(lastRun.urls_checked + (lastRun.remaining_count ?? 0))}</p>`
     : "";
   el.innerHTML = `
-    ${sectionHeadingWithAction("Sitemap", health ? `${formatCount(health.total)} URLs tracked` : "", `<button type="button" class="button button--quiet" data-action="sitemap-history">${icon("history")}History</button>`)}
+    ${sectionHeadingWithAction("Sitemap", health ? `${formatCount(health.total)} URLs tracked` : "", `<button type="button" class="button button--quiet" data-action="sitemap-content">${icon("list-details")}View URLs</button><button type="button" class="button button--quiet" data-action="sitemap-history">${icon("history")}History</button>`)}
     ${truncatedChip}
     <dl class="monitor-sitemap-health">
       <div><dt>OK</dt><dd>${formatCount(health?.ok)}</dd></div>

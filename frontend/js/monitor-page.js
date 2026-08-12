@@ -17,13 +17,13 @@
 import {
   ackMonitorChange, getDashboard, getMonitorSummary, isAbortError,
   listPortfolioMonitorChanges, startMonitorRun,
-} from "./api.js?v=20260811-monitor1";
-import { buildMonitorClientHash, replaceMonitorHash } from "./router.js?v=20260811-monitor1";
+} from "./api.js?v=20260812-monitor5";
+import { buildMonitorClientHash, replaceMonitorHash } from "./router.js?v=20260812-monitor5";
 import {
   MONITOR_SEVERITY_META, changeTypeLabel, escapeHtml, formatTimestamp, icon,
-} from "./formatters.js?v=20260811-monitor1";
-import { sectionSkeleton } from "./skeleton.js?v=20260811-monitor1";
-import { isPaused } from "./client-status.js?v=20260811-monitor1";
+} from "./formatters.js?v=20260812-monitor5";
+import { sectionSkeleton } from "./skeleton.js?v=20260812-monitor5";
+import { isPaused } from "./client-status.js?v=20260812-monitor5";
 
 const root = document.querySelector("#monitor-page-root");
 

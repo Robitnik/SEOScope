@@ -5,16 +5,16 @@
  * переверстка. Пошук тут робочий (фільтрує назву/опис/теги), а не
  * декоративний, і статистика в блоці — справжня.
  */
-import { getToolsCatalog } from "./api.js?v=20260811-monitor1";
-import { buildToolsHash } from "./router.js?v=20260811-monitor1";
-import { escapeHtml, icon } from "./formatters.js?v=20260811-monitor1";
+import { getToolsCatalog } from "./api.js?v=20260812-monitor5";
+import { buildToolsHash } from "./router.js?v=20260812-monitor5";
+import { escapeHtml, icon } from "./formatters.js?v=20260812-monitor5";
 
 const root = document.querySelector("#tools-page-root");
 
 // Реєстр модулів інструментів: ключ із каталогу → динамічний імпорт сторінки.
 const TOOL_MODULES = {
-  "alt-text": () => import("./alt-text-tool.js?v=20260811-monitor1"),
-  "redirects": () => import("./redirect-tool.js?v=20260811-monitor1"),
+  "alt-text": () => import("./alt-text-tool.js?v=20260812-monitor5"),
+  "redirects": () => import("./redirect-tool.js?v=20260812-monitor5"),
 };
 
 export async function initToolsRoute(route) {

@@ -1,9 +1,9 @@
-import { createSyncJob, getAhrefsAffectedUrls, getAhrefsSiteAudit, getDashboard, isAbortError } from "./api.js?v=20260811-monitor1";
-import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260811-monitor1";
-import { buildClientHash, replaceAhrefsHash } from "./router.js?v=20260811-monitor1";
-import { escapeHtml, formatTimestamp, icon, initials, PROVIDERS, STAGE_LABELS, STATE_META, percent, stateClass } from "./formatters.js?v=20260811-monitor1";
-import { renderAhrefsError, renderAhrefsPanel } from "./ahrefs-panel.js?v=20260811-monitor1";
-import { watchJob } from "./sse.js?v=20260811-monitor1";
+import { createSyncJob, getAhrefsAffectedUrls, getAhrefsSiteAudit, getDashboard, isAbortError } from "./api.js?v=20260812-monitor5";
+import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260812-monitor5";
+import { buildClientHash, replaceAhrefsHash } from "./router.js?v=20260812-monitor5";
+import { escapeHtml, formatTimestamp, icon, initials, PROVIDERS, STAGE_LABELS, STATE_META, percent, stateClass } from "./formatters.js?v=20260812-monitor5";
+import { renderAhrefsError, renderAhrefsPanel } from "./ahrefs-panel.js?v=20260812-monitor5";
+import { watchJob } from "./sse.js?v=20260812-monitor5";
 
 const root = document.querySelector("#ahrefs-page-root");
 let requestToken = 0;

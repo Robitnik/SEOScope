@@ -55,8 +55,12 @@ def test_index_recurses_into_children(monkeypatch):
         settings=settings,
     )
     assert set(tree) == set(documents)
-    assert tree["https://x.com/sitemap_index.xml"].kind == "index"
-    assert {e.loc for e in tree["https://x.com/sitemap1.xml"].entries} == {
+    # `_fetch_sitemap_tree` returns `_SitemapFetch` (document + the decompressed
+    # bytes + status), not the bare document: the bytes are what gets stored as
+    # a version of the file.
+    assert tree["https://x.com/sitemap_index.xml"].doc.kind == "index"
+    assert tree["https://x.com/sitemap1.xml"].body == documents["https://x.com/sitemap1.xml"]
+    assert {e.loc for e in tree["https://x.com/sitemap1.xml"].doc.entries} == {
         "https://x.com/a/",
         "https://x.com/b/",
     }

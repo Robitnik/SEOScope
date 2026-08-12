@@ -214,10 +214,21 @@
 .monitor-blocks {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start; /* Robots and Sitemap carry different amounts of content —
-    default grid stretch would leave a slab of empty space in the shorter one. */
+  /* Stretch, not start: Robots and Sitemap are a matched pair of status cards
+   * read side by side, and two cards of different height with a ragged bottom
+   * edge read as a layout bug. Their inner content is top-aligned and the
+   * card simply fills the row height. */
+  align-items: stretch;
   gap: 16px;
 }
+.monitor-blocks > .monitor-block {
+  display: flex;
+  flex-direction: column;
+}
+/* Push the last block of a card (the "last checked" line / the counters) to the
+ * bottom so both cards' footers land on the same baseline. */
+.monitor-blocks > .monitor-block > :last-child { margin-bottom: 0; }
+.monitor-blocks > .monitor-block > .monitor-changed-at { margin-top: auto; }
 /* DNS & verification sits at the FOOT of the page, full width, outside the
  * blocks grid: A/NS/MX/TXT change a few times a year, while pages and the
  * change feed move on every check, so it earns reference space rather than
@@ -543,6 +554,86 @@ th[aria-sort]:not([aria-sort="none"]) .monitor-sort-button { color: var(--ink); 
 
 @media (max-width: 720px) {
   .monitor-diff-dialog { width: 100vw; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Stored-content viewer (robots.txt / sitemap files)                      */
+/* ---------------------------------------------------------------------- */
+
+.monitor-content-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.monitor-content-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.monitor-content-toolbar .search-field { flex: 1 1 220px; min-width: 0; }
+/* Label text and its control need a real gap — a bare `<label>File<select>` puts
+ * them flush against each other ("FileAll files"). Same shape as the toolbar
+ * labels in `.analytics-toolbar`. */
+.monitor-content-toolbar > label:not(.search-field) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ink-dim);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.monitor-content-toolbar select { max-width: 420px; min-width: 0; }
+.monitor-content-count {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.monitor-content-state { margin: 0; padding: 20px; color: var(--ink-dim); }
+.monitor-content-cut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+.monitor-content-cut .icon { width: 15px; height: 15px; flex: 0 0 auto; }
+.monitor-content-text {
+  margin: 0;
+  padding: 16px 20px;
+  /* `pre-wrap`, not `pre`: a sitemap line can be 2 000 characters and the
+   * dialog must never scroll sideways (AGENTS.md §11). */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-muted);
+}
+.monitor-content-urls {
+  margin: 0;
+  padding: 8px 20px 16px 52px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.monitor-content-urls li { padding: 2px 0; overflow-wrap: anywhere; }
+.monitor-content-urls li::marker { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.monitor-content-urls a { color: var(--ink); text-decoration-color: var(--line); }
+.monitor-content-urls a:hover { color: var(--accent); text-decoration-color: var(--accent); }
+
+@media (max-width: 720px) {
+  .monitor-content-dialog { width: 100vw; }
+  .monitor-content-toolbar select { max-width: 100%; }
 }
 
 /* ---------------------------------------------------------------------- */

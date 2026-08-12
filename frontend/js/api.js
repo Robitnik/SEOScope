@@ -1359,6 +1359,43 @@ export async function getMonitorPageDiff(clientId, pageId, { fromVersionId, toVe
   return request(`/clients/${clientId}/monitor/pages/${pageId}/diff${qs ? `?${qs}` : ""}`, {}, "monitor-diff");
 }
 
+// Every tracked robots.txt / sitemap file of a client. Request key names the
+// PURPOSE ("which files exist"), not the resource — a key shared with the
+// version viewer would let one abort the other (see task-38 §1).
+export async function getMonitorResources(clientId, kind) {
+  if (FIXTURE_MODE) {
+    await wait(140);
+    const bundle = await loadMonitorClientFixture();
+    return (bundle.resources?.[kind] || []);
+  }
+  return request(
+    `/clients/${clientId}/monitor/resources/${kind}`,
+    {},
+    `monitor-resources-${kind}-${clientId}`,
+  );
+}
+
+// Stored bytes of one fetched document. Returned as TEXT, not JSON: this is a
+// robots.txt / sitemap XML file exactly as the server sent it.
+export async function getMonitorDocumentText(sha256) {
+  if (FIXTURE_MODE) {
+    await wait(140);
+    const bundle = await loadMonitorClientFixture();
+    return bundle.documents?.[sha256] || "";
+  }
+  const response = await fetch(`${API_ROOT}/monitor/documents/${sha256}`, {
+    headers: { Accept: "text/plain" },
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.text();
+}
+
+// Direct link for "open in a new tab" — the browser fetches it itself, so this
+// is a URL builder, not a request.
+export function monitorDocumentUrl(sha256) {
+  return `${API_ROOT}/monitor/documents/${sha256}`;
+}
+
 export async function getMonitorResourceVersions(clientId, kind, { url } = {}) {
   if (FIXTURE_MODE) {
     await wait(160);

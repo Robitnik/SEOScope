@@ -1,7 +1,7 @@
-import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260811-monitor1";
-import { buildClientHash, buildMonitorClientHash } from "./router.js?v=20260811-monitor1";
-import { clientStatusBadge, clientStatusNote, isPaused } from "./client-status.js?v=20260811-monitor1";
-import { cardSkeletons } from "./skeleton.js?v=20260811-monitor1";
+import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260812-monitor5";
+import { buildClientHash, buildMonitorClientHash } from "./router.js?v=20260812-monitor5";
+import { clientStatusBadge, clientStatusNote, isPaused } from "./client-status.js?v=20260812-monitor5";
+import { cardSkeletons } from "./skeleton.js?v=20260812-monitor5";
 
 function providerIcon(provider) {
   const meta = PROVIDERS[provider];

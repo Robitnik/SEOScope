@@ -9,15 +9,15 @@
     <link rel="icon" href="/assets/brand/logo.svg" type="image/svg+xml">
     <link rel="preload" href="/assets/fonts/league-spartan-black.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/assets/brand/ribbon.webp" as="image" type="image/webp">
-    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260811-monitor1">
-    <link rel="stylesheet" href="/css/tokens.css?v=20260811-monitor1">
-    <link rel="stylesheet" href="/css/app.css?v=20260811-monitor1">
-    <link rel="stylesheet" href="/css/client-page.css?v=20260811-monitor1">
-    <link rel="stylesheet" href="/css/tools.css?v=20260811-monitor1">
-    <link rel="stylesheet" href="/css/trends.css?v=20260811-monitor1">
-    <link rel="stylesheet" href="/css/monitor.css?v=20260811-monitor1">
+    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260812-monitor5">
+    <link rel="stylesheet" href="/css/tokens.css?v=20260812-monitor5">
+    <link rel="stylesheet" href="/css/app.css?v=20260812-monitor5">
+    <link rel="stylesheet" href="/css/client-page.css?v=20260812-monitor5">
+    <link rel="stylesheet" href="/css/tools.css?v=20260812-monitor5">
+    <link rel="stylesheet" href="/css/trends.css?v=20260812-monitor5">
+    <link rel="stylesheet" href="/css/monitor.css?v=20260812-monitor5">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260811-monitor1"></script>
+    <script type="module" src="/js/router.js?v=20260812-monitor5"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -214,6 +214,44 @@
         </header>
         <div class="drawer-body" id="monitor-diff-body"></div>
       </form>
+    </dialog>
+
+    <!-- Stored-content viewer: what robots.txt / a sitemap file actually said at
+         the last check. Separate dialog from the diff viewer above rather than a
+         mode inside it — the two have different state machines (one owns a
+         version pair, this one owns a file + a filter) and sharing one would
+         make both harder to reason about. -->
+    <dialog class="detail-dialog monitor-content-dialog" id="monitor-content-dialog" aria-labelledby="monitor-content-title">
+      <div class="drawer-shell">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">Site Monitor</p>
+            <h2 id="monitor-content-title">Stored content</h2>
+            <p id="monitor-content-subtitle"></p>
+          </div>
+          <div class="monitor-content-actions">
+            <a id="monitor-content-live" class="button button--quiet" href="#" target="_blank" rel="noopener noreferrer">
+              <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-external-link"></use></svg>Open live
+            </a>
+            <a id="monitor-content-raw" class="button button--quiet" href="#" target="_blank" rel="noopener noreferrer">
+              <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-file-text"></use></svg>Open stored copy
+            </a>
+            <button type="button" class="icon-button" data-action="content-close" aria-label="Close panel">
+              <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-x"></use></svg>
+            </button>
+          </div>
+        </header>
+        <div class="monitor-content-toolbar">
+          <label class="search-field">
+            <span class="visually-hidden">Filter content</span>
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-search"></use></svg>
+            <input type="search" id="monitor-content-filter" placeholder="Filter lines" autocomplete="off">
+          </label>
+          <label id="monitor-content-file-label" hidden>File<select id="monitor-content-file"></select></label>
+          <p class="monitor-content-count" id="monitor-content-count" aria-live="polite"></p>
+        </div>
+        <div class="drawer-body" id="monitor-content-body"></div>
+      </div>
     </dialog>
 
     <dialog class="integration-dialog" id="integration-dialog" aria-labelledby="integration-title">

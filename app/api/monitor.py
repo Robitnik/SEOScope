@@ -133,6 +133,8 @@ def _page_dto(page: MonitorPage) -> MonitorPageDTO:
         status=page.status,
         final_url=page.final_url,
         indexable=page.indexable,
+        meta_robots=page.meta_robots,
+        x_robots_tag=page.x_robots_tag,
         title=page.title,
         canonical=page.canonical,
         version_seq=page.version_seq,
@@ -157,6 +159,8 @@ def _page_version_dto(version: MonitorPageVersion) -> MonitorPageVersionDTO:
 
 
 def _resource_dto(resource: MonitorResource) -> MonitorResourceDTO:
+    structure = resource.structure_json or {}
+    entry_count = structure.get("entry_count")
     return MonitorResourceDTO(
         id=resource.id,
         kind=resource.kind,  # type: ignore[arg-type]
@@ -165,6 +169,9 @@ def _resource_dto(resource: MonitorResource) -> MonitorResourceDTO:
         version_seq=resource.version_seq,
         missing_since=resource.missing_since,
         last_checked_at=resource.last_checked_at,
+        content_sha256=resource.content_sha256,
+        entry_count=entry_count if isinstance(entry_count, int) else None,
+        structure_kind=structure.get("kind"),
     )
 
 
@@ -570,6 +577,42 @@ async def get_monitor_page_diff(
 # --- resources (robots/sitemap) -----------------------------------------------
 
 
+def _resources(client_id: str, kind: str) -> list[MonitorResourceDTO] | None:
+    with worker_session_scope() as session:
+        if ClientRepository(session).get(client_id) is None:
+            return None
+        resources = MonitorRepository(session).list_resources(client_id, kind=kind)
+        # Index files first, then by URL: a sitemap tree reads top-down, and a
+        # flat alphabetical list buries the entry point among its own children.
+        return [
+            _resource_dto(resource)
+            for resource in sorted(
+                resources,
+                key=lambda r: ((r.structure_json or {}).get("kind") != "index", r.url),
+            )
+        ]
+
+
+@router.get(
+    "/clients/{client_id}/monitor/resources/{kind}",
+    response_model=list[MonitorResourceDTO],
+    responses={404: {"model": ErrorDTO}},
+)
+async def list_monitor_resources(
+    client_id: str, kind: Literal["robots", "sitemap"]
+) -> list[MonitorResourceDTO]:
+    """Every tracked robots.txt / sitemap file of one client.
+
+    The versions endpoint below answers "how did THIS file change"; this one
+    answers "which files are there at all" — a sitemap tree is routinely a
+    dozen files, and until now the UI could only ever reach the first one.
+    """
+    resources = await run_in_threadpool(_resources, client_id, kind)
+    if resources is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return resources
+
+
 def _resource_versions(
     client_id: str, kind: str, url: str | None
 ) -> list[MonitorResourceVersionDTO] | None:
@@ -799,7 +842,19 @@ async def update_monitor_settings(
 
 # --- export ------------------------------------------------------------------
 
-_EXPORT_HEADER = ("URL", "Status", "Indexable", "In sitemap", "Last checked", "Title")
+_EXPORT_HEADER = (
+    "URL",
+    "Status",
+    "Indexable",
+    # The raw directive travels with the export too: "Indexable: no" alone does
+    # not say whether it was `noindex, follow` or `noindex, nofollow`, and the
+    # export is what gets sent to the client's developer to act on.
+    "Meta robots",
+    "X-Robots-Tag",
+    "In sitemap",
+    "Last checked",
+    "Title",
+)
 
 
 def _export_rows(client_id: str) -> tuple[list[MonitorPage], str] | str:
@@ -812,11 +867,13 @@ def _export_rows(client_id: str) -> tuple[list[MonitorPage], str] | str:
         return sorted(pages, key=lambda p: p.url), slug
 
 
-def _page_row(page: MonitorPage) -> tuple[str, str, str, str, str, str]:
+def _page_row(page: MonitorPage) -> tuple[str, str, str, str, str, str, str, str]:
     return (
         page.url,
         str(page.status) if page.status is not None else "",
         "yes" if page.indexable else ("no" if page.indexable is False else ""),
+        page.meta_robots or "",
+        page.x_robots_tag or "",
         "yes" if page.in_sitemap else "no",
         page.last_checked_at.isoformat() if page.last_checked_at else "",
         page.title or "",

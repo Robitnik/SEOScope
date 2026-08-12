@@ -13,6 +13,7 @@ import threading
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -265,6 +266,20 @@ def _process_robots(
         return doc, result.status is not None and result.status < 400
 
 
+@dataclass(frozen=True)
+class _SitemapFetch:
+    """One fetched sitemap file: parsed document + the bytes worth keeping.
+
+    `body` is the **decompressed** payload, never the raw `.xml.gz` bytes:
+    gzip framing embeds an mtime, so re-gzipping identical XML yields different
+    bytes and every run would look like a new version of an unchanged file.
+    """
+
+    doc: sitemapsmod.SitemapDocument
+    body: bytes | None
+    status: int | None
+
+
 def _fetch_sitemap_tree(
     entry_urls: list[str],
     *,
@@ -272,9 +287,9 @@ def _fetch_sitemap_tree(
     stats: FetchStats,
     settings: Settings,
     max_files: int = 200,
-) -> dict[str, sitemapsmod.SitemapDocument]:
+) -> dict[str, _SitemapFetch]:
     """Recurse into a sitemap index, bounded — task-35 §3.3 "аварійний клапан"."""
-    seen: dict[str, sitemapsmod.SitemapDocument] = {}
+    seen: dict[str, _SitemapFetch] = {}
     queue = list(dict.fromkeys(entry_urls))
     while queue and len(seen) < max_files:
         url = queue.pop(0)
@@ -288,16 +303,48 @@ def _fetch_sitemap_tree(
             max_body_bytes=settings.monitor_max_body_bytes,
         )
         if not result.body:
-            seen[url] = sitemapsmod.SitemapDocument(kind="unknown", entries=())
+            seen[url] = _SitemapFetch(
+                doc=sitemapsmod.SitemapDocument(kind="unknown", entries=()),
+                body=None,
+                status=result.status,
+            )
             continue
         data = sitemapsmod.maybe_decompress(
             result.body, url=url, content_type=result.headers.get("Content-Type")
         )
         doc = sitemapsmod.parse_sitemap(data)
-        seen[url] = doc
+        seen[url] = _SitemapFetch(doc=doc, body=data, status=result.status)
         if doc.kind == "index":
             queue.extend(e.loc for e in doc.entries if e.loc not in seen)
     return seen
+
+
+# A version's `structure` is what the diff view reads, so the URL list has to
+# be in it — but a 25k-URL sitemap would put megabytes of JSON in one row. The
+# list is capped and the cut is FLAGGED (never silent, PLAN §12); the complete
+# file always survives verbatim in the blob store regardless.
+_MAX_STRUCTURE_URLS = 2000
+
+
+def _sitemap_structure(doc: sitemapsmod.SitemapDocument) -> dict[str, Any]:
+    structure: dict[str, Any] = {"kind": doc.kind, "entry_count": len(doc.entries)}
+    locs = [entry.loc for entry in doc.entries]
+    if doc.kind == "index":
+        structure["children"] = locs[:_MAX_STRUCTURE_URLS]
+    elif doc.kind == "urlset":
+        structure["urls"] = locs[:_MAX_STRUCTURE_URLS]
+    if len(locs) > _MAX_STRUCTURE_URLS:
+        structure["urls_truncated"] = True
+    return structure
+
+
+def _structure_changed_fields(old: dict[str, Any] | None, new: dict[str, Any]) -> list[str]:
+    """Which keys of a resource structure differ — the `changed_fields` the
+    diff view highlights. Empty for a first version: there is nothing to
+    compare against, and every key would read as "changed"."""
+    if not old:
+        return []
+    return sorted(key for key in set(old) | set(new) if old.get(key) != new.get(key))
 
 
 def _process_sitemaps(
@@ -310,6 +357,7 @@ def _process_sitemaps(
     throttle: HostThrottle,
     stats: FetchStats,
     settings: Settings,
+    artifacts_dir: Path,
     is_baseline_run: bool,
     now: datetime,
 ) -> dict[str, str | None]:
@@ -323,27 +371,62 @@ def _process_sitemaps(
     # reason (task-35 §3.6 — serializing SQLite writes under 4-way parallelism).
     all_urls: dict[str, str | None] = {}
     with _COMMIT_LOCK:
-        for url, doc in tree.items():
+        for url, fetched in tree.items():
+            doc = fetched.doc
             resource = repo.get_resource(client.id, url)
+            old_structure = resource.structure_json if resource else None
+            old_content_sha256 = resource.content_sha256 if resource else None
             # A file that answered but was not itself fetched successfully
             # this pass (e.g. queued as a child but the fetch failed) already
             # has kind="unknown" and no entries — treat as missing.
             status = 200 if doc.kind != "unknown" else (resource.status if resource else None)
             missing = doc.kind == "unknown"
 
-            structure = {"kind": doc.kind, "entry_count": len(doc.entries)}
-            if doc.kind == "index":
-                structure["children"] = [e.loc for e in doc.entries]
+            # The file itself is kept, not just its shape: "зберігати всі версії
+            # sitemap" (task-35 §2) means the XML has to survive, and the blob
+            # store already deduplicates identical bytes.
+            content_sha256 = None
+            if fetched.body:
+                blob = storage.store_blob(artifacts_dir, fetched.body)
+                repo.record_blob(
+                    blob.sha256,
+                    size_bytes=blob.size_bytes,
+                    gzip_size_bytes=blob.gzip_size_bytes,
+                    mime="application/xml",
+                    path=blob.path,
+                )
+                content_sha256 = blob.sha256
+
+            structure = _sitemap_structure(doc)
             resource = repo.upsert_resource_state(
                 client.id,
                 url,
                 kind="sitemap",
                 status=(None if missing else status),
-                content_sha256=None,
+                content_sha256=content_sha256,
                 structure=structure,
                 missing=missing,
                 now=now,
             )
+
+            # Same rule as robots (`_process_robots`): a version is appended
+            # only when the stored bytes actually differ, so an unchanged
+            # sitemap costs nothing and a disappeared one is recorded as a
+            # version with no content rather than silently overwritten.
+            if content_sha256 != old_content_sha256:
+                changed_fields = (
+                    [] if is_baseline_run else _structure_changed_fields(old_structure, structure)
+                )
+                prev = repo.latest_resource_version(resource.id)
+                repo.create_resource_version(
+                    resource,
+                    http_status=(None if missing else status),
+                    content_sha256=content_sha256,
+                    structure=structure,
+                    changed_fields=changed_fields,
+                    prev_version_id=prev.id if prev else None,
+                    observed_at=now,
+                )
 
             changes = diffmod.diff_sitemap_resource(
                 resource_url=url,
@@ -905,6 +988,7 @@ def run_client_monitor(
             throttle=throttle,
             stats=stats,
             settings=settings,
+            artifacts_dir=artifacts_dir,
             is_baseline_run=is_baseline_run,
             now=now,
         )

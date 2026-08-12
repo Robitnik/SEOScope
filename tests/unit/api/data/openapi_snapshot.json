@@ -3579,6 +3579,17 @@
             ],
             "title": "Last Checked At"
           },
+          "meta_robots": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Robots"
+          },
           "status": {
             "anyOf": [
               {
@@ -3608,6 +3619,17 @@
           "version_seq": {
             "title": "Version Seq",
             "type": "integer"
+          },
+          "x_robots_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Robots Tag"
           }
         },
         "required": [
@@ -3789,6 +3811,106 @@
           "offset"
         ],
         "title": "MonitorPagesPageDTO",
+        "type": "object"
+      },
+      "MonitorResourceDTO": {
+        "properties": {
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "entry_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Count"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "robots",
+              "sitemap"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "missing_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Since"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "structure_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structure Kind"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "version_seq": {
+            "title": "Version Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "url",
+          "version_seq"
+        ],
+        "title": "MonitorResourceDTO",
         "type": "object"
       },
       "MonitorResourceDiffDTO": {
@@ -9698,6 +9820,76 @@
           }
         },
         "summary": "List Monitor Page Versions",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/resources/{kind}": {
+      "get": {
+        "description": "Every tracked robots.txt / sitemap file of one client.\n\nThe versions endpoint below answers \"how did THIS file change\"; this one\nanswers \"which files are there at all\" \u2014 a sitemap tree is routinely a\ndozen files, and until now the UI could only ever reach the first one.",
+        "operationId": "list_monitor_resources_api_v1_clients__client_id__monitor_resources__kind__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "robots",
+                "sitemap"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorResourceDTO"
+                  },
+                  "title": "Response List Monitor Resources Api V1 Clients  Client Id  Monitor Resources  Kind  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Monitor Resources",
         "tags": [
           "monitor"
         ]
