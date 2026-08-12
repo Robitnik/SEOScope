@@ -20,10 +20,10 @@ import {
   setAltTextItemStatus,
   uploadAltTextSource,
   verifyAltTextItem,
-} from "./api.js?v=20260812-monitor5";
-import { buildToolsHash, replaceToolsHash } from "./router.js?v=20260812-monitor5";
-import { panelSkeleton } from "./skeleton.js?v=20260812-monitor5";
-import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260812-monitor5";
+} from "./api.js?v=20260812-monitor7";
+import { buildToolsHash, replaceToolsHash } from "./router.js?v=20260812-monitor7";
+import { panelSkeleton } from "./skeleton.js?v=20260812-monitor7";
+import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260812-monitor7";
 
 const PAGE_SIZE = 50;
 const TOOL_KEY = "alt-text";

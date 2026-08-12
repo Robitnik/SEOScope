@@ -62,17 +62,17 @@
 
 import {
   getMonitorSummary, getMonitorSettings, patchMonitorSettings, listMonitorRuns, startMonitorRun,
-  listClientMonitorChanges, ackMonitorChange, getMonitorPages, getMonitorDnsRecords,
+  listClientMonitorChanges, ackMonitorChange, getMonitorPages, checkMonitorPage, getMonitorDnsRecords,
   monitorExportCsvUrl, monitorExportXlsxUrl, getDashboard, isAbortError,
-} from "./api.js?v=20260812-monitor5";
-import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260812-monitor5";
-import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260812-monitor5";
+} from "./api.js?v=20260812-monitor7";
+import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260812-monitor7";
+import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260812-monitor7";
 import {
   escapeHtml, icon, initials, formatTimestamp, formatDate, MONITOR_SEVERITY_META, changeTypeLabel,
   STATE_META, stateClass,
-} from "./formatters.js?v=20260812-monitor5";
-import { createMonitorDiffViewer } from "./monitor-diff.js?v=20260812-monitor5";
-import { createMonitorContentViewer } from "./monitor-content.js?v=20260812-monitor5";
+} from "./formatters.js?v=20260812-monitor7";
+import { createMonitorDiffViewer } from "./monitor-diff.js?v=20260812-monitor7";
+import { createMonitorContentViewer } from "./monitor-content.js?v=20260812-monitor7";
 
 const PAGES_PAGE_SIZE = 25;
 const CHANGES_PAGE_SIZE = 25;
@@ -224,6 +224,12 @@ function formatCheckedProgress(run) {
 }
 
 function formatDuration(run) {
+  // `failed_interrupted` means a worker died mid-run; `finished_at` is
+  // written later by the reaper that notices, not by real work ending — the
+  // gap between them is a detection delay, not a duration (task-38 §3.5,
+  // live case: a run that checked 0 pages showing "90m 17s"). Showing that
+  // number as "how long this took" would be a lie.
+  if (run.status === "failed_interrupted") return "—";
   if (!run.started_at || !run.finished_at) return "—";
   const ms = new Date(run.finished_at) - new Date(run.started_at);
   if (!Number.isFinite(ms) || ms < 0) return "—";
@@ -243,6 +249,20 @@ function formatBytes(value) {
 
 function sectionHeadingWithAction(title, subtitle, actionHtml = "") {
   return `<div class="section-heading"><div><p class="eyebrow">Site Monitor</p><h2>${escapeHtml(title)}</h2>${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ""}</div>${actionHtml}</div>`;
+}
+
+// task-38 D2: a cancelled request must never leave a section `aria-busy`
+// forever. With intent-named keys (§1.4) a section's own load is now only
+// ever aborted by a NEWER call for that SAME purpose — which will render
+// its own result momentarily — but "momentarily" is not a guarantee, so this
+// is the backstop: clear busy immediately, and if nothing had rendered yet
+// (the skeleton this function itself mounted is still up), replace it with a
+// neutral state instead of leaving a "Loading…" that will never resolve.
+function settleAbortedSection(el, heading, retryAction) {
+  el.setAttribute("aria-busy", "false");
+  if (el.querySelector(".skeleton")) {
+    el.innerHTML = `${sectionHeadingWithAction(heading, "", "")}<div class="state-panel"><p><strong>Loading was interrupted.</strong></p><button type="button" class="button button--primary" data-action="${retryAction}">${icon("refresh-alert")}Retry</button></div>`;
+  }
 }
 
 function isRunActive(run) {
@@ -304,14 +324,14 @@ function contentShellHtml() {
       <section class="monitor-block" id="mc-robots" aria-label="Robots.txt" aria-busy="true">${sectionSkeleton({ label: "robots.txt", rows: 2, columns: 1 })}</section>
       <section class="monitor-block" id="mc-sitemap" aria-label="Sitemap" aria-busy="true">${sectionSkeleton({ label: "sitemap", rows: 3, columns: 1 })}</section>
     </div>
-    <section class="monitor-pages-section" id="mc-pages" aria-label="Pages" aria-busy="true">${sectionSkeleton({ label: "pages", rows: 8, columns: 6 })}</section>
-    <section class="monitor-runs-section" id="mc-runs" aria-label="Check history" aria-busy="true">${sectionSkeleton({ label: "check history", rows: 5, columns: 5 })}</section>
+    <section class="monitor-pages-section" id="mc-pages" aria-label="Pages" aria-busy="true">${sectionSkeleton({ label: "pages", rows: 8, columns: 10 })}</section>
+    <section class="monitor-runs-section" id="mc-runs" aria-label="Check history" aria-busy="true">${sectionSkeleton({ label: "check history", rows: 5, columns: 8 })}</section>
     <section class="monitor-changes-section" id="mc-changes" aria-label="Change feed" aria-busy="true">${sectionSkeleton({ label: "change feed", rows: 5, columns: 2 })}</section>
     <!-- DNS last on purpose: A/NS/MX/TXT change a few times a year, while pages
          and the change feed move every check. It stays a full-width reference
          block at the foot of the page rather than competing for the first
          viewport with what actually changed today. -->
-    <section class="monitor-block monitor-block--dns" id="mc-dns" aria-label="DNS and verification" aria-busy="true">${sectionSkeleton({ label: "DNS records", rows: 4, columns: 3 })}</section>`;
+    <section class="monitor-block monitor-block--dns" id="mc-dns" aria-label="DNS and verification" aria-busy="true">${sectionSkeleton({ label: "DNS records", rows: 4, columns: 6 })}</section>`;
 }
 
 function mountFullContentAndLoadBlocks() {
@@ -366,6 +386,7 @@ function handleContentClick(event) {
       diffViewer.open({ kind: "dns", clientId: current.clientId, dnsName: target.dataset.dnsName, dnsRecordType: target.dataset.dnsType, trigger: target });
       break;
     case "page-open": diffViewer.open({ kind: "page", clientId: current.clientId, pageId: target.dataset.pageId, trigger: target }); break;
+    case "page-check": checkPageRow(target, target.closest("tr")); break;
     case "sort": toggleSort(target.dataset.sortField); break;
     case "ack": showAckForm(target); break;
     case "ack-cancel": restoreAckButton(target); break;
@@ -585,8 +606,8 @@ async function startCheck(kind) {
 function resumePollingIfActive() {
   if (pollingKind) return;
   Promise.all([
-    listMonitorRuns(current.clientId, { kind: "full", limit: 1 }),
-    listMonitorRuns(current.clientId, { kind: "light", limit: 1 }),
+    listMonitorRuns(current.clientId, { kind: "full", limit: 1, requestKey: `monitor-runs-resume-full-${current.clientId}` }),
+    listMonitorRuns(current.clientId, { kind: "light", limit: 1, requestKey: `monitor-runs-resume-light-${current.clientId}` }),
   ]).then(([fullRuns, lightRuns]) => {
     if (pollingKind) return; // a manual check started while this was in flight
     const full = fullRuns[0];
@@ -618,7 +639,7 @@ async function pollOnce() {
   const runId = pollingRunId;
   if (!kind) return;
   try {
-    const runs = await listMonitorRuns(current.clientId, { kind, limit: 1 });
+    const runs = await listMonitorRuns(current.clientId, { kind, limit: 1, requestKey: `monitor-runs-poll-${current.clientId}` });
     if (pollingKind !== kind) return;
     const run = runs[0];
     // The freshly queued/claimed row can, for one tick right after the POST,
@@ -854,7 +875,7 @@ async function loadDns() {
   const el = document.querySelector("#mc-dns");
   if (!el) return;
   el.setAttribute("aria-busy", "true");
-  el.innerHTML = sectionSkeleton({ label: "DNS records", rows: 4, columns: 3 });
+  el.innerHTML = sectionSkeleton({ label: "DNS records", rows: 4, columns: 6 });
   try {
     const records = await getMonitorDnsRecords(current.clientId);
     dnsRecords = records;
@@ -863,7 +884,7 @@ async function loadDns() {
     await fetchOpenChanges().catch(() => null);
     renderDns(records);
   } catch (error) {
-    if (isAbortError(error)) return;
+    if (isAbortError(error)) { settleAbortedSection(el, "DNS & verification", "retry-dns"); return; }
     el.setAttribute("aria-busy", "false");
     el.innerHTML = `${sectionHeadingWithAction("DNS & verification", "", "")}<div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Could not load DNS records.</strong><br>${escapeHtml(error.message)}</p><button type="button" class="button button--primary" data-action="retry-dns">${icon("refresh")}Retry</button></div>`;
   }
@@ -936,6 +957,7 @@ function pagesTableHead() {
     <th>Title</th>
     ${sortableTh("last_checked_at", "Last checked")}
     ${sortableTh("version_seq", "Versions")}
+    <th><span class="visually-hidden">Actions</span></th>
   </tr>`;
 }
 
@@ -966,7 +988,53 @@ function metaRobotsCell(page) {
   const source = !page.meta_robots && page.x_robots_tag
     ? `<span class="monitor-robots__extra">X-Robots-Tag</span>`
     : "";
-  return `<span class="monitor-robots${isNoindex ? " monitor-robots--noindex" : ""}" title="${escapeHtml(raw)}">${escapeHtml(shown)}${extra}${source}</span>`;
+  // `aria-label` carries the full string independently of `title` (task-38
+  // §3.6): a tooltip alone never reaches a screen reader, so "+3" used to be
+  // read as literally "plus three" with no way to learn what the other three
+  // tokens were.
+  return `<span class="monitor-robots${isNoindex ? " monitor-robots--noindex" : ""}" title="${escapeHtml(raw)}" aria-label="${escapeHtml(raw)}">${escapeHtml(shown)}${extra}${source}</span>`;
+}
+
+// task-38 §3.1: canonical duplicates the row's own URL in ~90% of rows — the
+// widest column in the table spent on a repeat of the first one. `self`
+// (muted) makes the common case take a glance, and the anomaly (a REAL
+// cross-URL canonical, which is what an operator is actually scanning for)
+// is the only time this column prints a full URL at all.
+function canonicalCell(page) {
+  if (!page.canonical) return "—";
+  if (page.canonical === page.url) {
+    return `<span class="monitor-canonical-self" title="${escapeHtml(page.canonical)}">self</span>`;
+  }
+  return wrapUrlPath(page.canonical);
+}
+
+// Breaks only at path separators (`<wbr>`), never mid-token: the default
+// break behavior was cutting words in half ("…/shop/utru" / "stning/teddy/",
+// task-38 §3.2). `<wbr>` is a zero-width, invisible break opportunity — it
+// changes nothing when the URL fits on one line.
+function wrapUrlPath(url) {
+  return escapeHtml(url).replace(/\//g, "/<wbr>");
+}
+
+// Same four-state vocabulary as `sitemap_health` (`app/monitor/severity.py`
+// `classify_sitemap_status` — task-38 §3.3: "той самий словник"), so a page's
+// row-level status and the sitemap block's aggregate counts never disagree
+// about what counts as broken.
+function pageStatusKind(status) {
+  if (status === null || status === undefined || status >= 500) return "unavailable";
+  if (status >= 400) return "broken";
+  if (status >= 300) return "redirect";
+  return "ok";
+}
+
+const PAGE_STATUS_LABEL = { ok: "OK", redirect: "Redirect", broken: "Broken", unavailable: "Unavailable" };
+
+function pageStatusCell(page) {
+  if (page.status === null || page.status === undefined) return "—";
+  const kind = pageStatusKind(page.status);
+  // Color is never the only signal (AGENTS §7) — the word and the number
+  // both travel with the chip, not just its class.
+  return `<span class="status-label ${stateClass(kind)}">${escapeHtml(PAGE_STATUS_LABEL[kind])} ${page.status}</span>`;
 }
 
 function pageRow(page) {
@@ -974,20 +1042,39 @@ function pageRow(page) {
   // is not the same claim as `false` ("checked, and it is not indexable") —
   // collapsing the two would misreport a page nobody has looked at yet.
   const indexableText = page.indexable === true ? "Yes" : page.indexable === false ? "No" : "Not checked yet";
-  return `<tr>
+  return `<tr data-page-id="${escapeHtml(page.id)}">
     <td class="analytics-row__value">
-      <button type="button" class="monitor-row-open" data-action="page-open" data-page-id="${escapeHtml(page.id)}" aria-label="Open version history: ${escapeHtml(page.url)}">${icon("history", "icon icon--tiny")}<span>${escapeHtml(page.url)}</span></button>
+      <button type="button" class="monitor-row-open" data-action="page-open" data-page-id="${escapeHtml(page.id)}" aria-label="Open version history: ${escapeHtml(page.url)}">${icon("history", "icon icon--tiny")}<span>${wrapUrlPath(page.url)}</span></button>
       ${page.is_key_page ? `<span class="monitor-key-badge" title="Key page">${icon("star")}</span>` : ""}
     </td>
-    <td>${page.status ?? "—"}</td>
+    <td>${pageStatusCell(page)}</td>
     <td>${page.in_sitemap ? "Yes" : "No"}</td>
     <td>${indexableText}</td>
     <td>${metaRobotsCell(page)}</td>
-    <td>${page.canonical ? escapeHtml(page.canonical) : "—"}</td>
+    <td>${canonicalCell(page)}</td>
     <td>${page.title ? escapeHtml(page.title) : "—"}</td>
     <td>${formatTimestamp(page.last_checked_at)}</td>
     <td class="num">${page.version_seq ?? "—"}</td>
+    <td><button type="button" class="button button--quiet monitor-page-check" data-action="page-check" data-page-id="${escapeHtml(page.id)}" aria-label="Check this page now: ${escapeHtml(page.url)}">${icon("refresh", "icon icon--tiny")}Check</button></td>
   </tr>`;
+}
+
+async function checkPageRow(button, row) {
+  if (!row || button.disabled) return;
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = `${icon("loader-2", "icon icon--spin icon--tiny")}Checking…`;
+  try {
+    const page = await checkMonitorPage(current.clientId, button.dataset.pageId);
+    const fresh = document.createElement("tbody");
+    fresh.innerHTML = pageRow(page);
+    row.replaceWith(fresh.firstElementChild);
+    toast(`Checked ${page.url} — HTTP ${page.status ?? "no response"}.`);
+  } catch (error) {
+    button.disabled = false;
+    button.innerHTML = original;
+    toast(`Could not check this page: ${error.message}`);
+  }
 }
 
 function pagesToolbar() {
@@ -1002,7 +1089,7 @@ function pagesToolbar() {
     </select></label>
     <label class="monitor-checkbox"><input type="checkbox" id="mc-pages-not-indexable" ${current.notIndexable ? "checked" : ""}><span>Not indexable only</span></label>
     <label class="monitor-checkbox"><input type="checkbox" id="mc-pages-in-sitemap-not200" ${current.inSitemapNot200 ? "checked" : ""}><span>In sitemap &amp; not 200</span></label>
-    <label>Changed since<input type="date" id="mc-pages-changed-since" value="${escapeHtml(current.changedSince)}"></label>
+    <label>Changed since <span class="monitor-field-hint">(YYYY-MM-DD)</span><input type="date" id="mc-pages-changed-since" lang="en-GB" value="${escapeHtml(current.changedSince)}"></label>
     ${filtersActive ? `<button type="button" class="button button--quiet" data-action="pages-clear">${icon("x")}Clear filters</button>` : ""}
   </div>`;
 }
@@ -1042,7 +1129,7 @@ async function loadPages() {
   const el = document.querySelector("#mc-pages");
   if (!el) return;
   el.setAttribute("aria-busy", "true");
-  el.innerHTML = sectionSkeleton({ label: "pages", rows: 8, columns: 6 });
+  el.innerHTML = sectionSkeleton({ label: "pages", rows: 8, columns: 10 });
   try {
     const effectiveStatus = current.inSitemapNot200 ? "broken" : (current.status || undefined);
     const effectiveInSitemap = current.inSitemapNot200 ? true : undefined;
@@ -1067,7 +1154,7 @@ async function loadPages() {
     }
     renderPages({ ...result, pages: rows }, changedNote);
   } catch (error) {
-    if (isAbortError(error)) return;
+    if (isAbortError(error)) { settleAbortedSection(el, "Pages", "retry-pages"); return; }
     el.setAttribute("aria-busy", "false");
     el.innerHTML = `${sectionHeadingWithAction("Pages", "", "")}<div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Could not load pages.</strong><br>${escapeHtml(error.message)}</p><button type="button" class="button button--primary" data-action="retry-pages">${icon("refresh")}Retry</button></div>`;
   }
@@ -1133,7 +1220,8 @@ function runRow(run) {
   const state = STATE_META[run.status] || { label: run.status || "Unknown", icon: "help-circle" };
   const errorNote = run.error_message ? `<br><small class="monitor-run-error">${escapeHtml(run.error_message)}</small>` : "";
   return `<tr class="${stateClass(run.status)}">
-    <td><span class="status-label ${stateClass(run.status)}">${icon(state.icon)}${run.kind === "full" ? "Full" : "Light"}</span>${errorNote}</td>
+    <td>${run.kind === "full" ? "Full" : "Light"}</td>
+    <td><span class="status-label ${stateClass(run.status)}">${icon(state.icon)}${escapeHtml(state.label)}</span>${errorNote}</td>
     <td>${escapeHtml(run.trigger || "—")}</td>
     <td>${formatTimestamp(run.started_at)}</td>
     <td>${formatDuration(run)}</td>
@@ -1147,21 +1235,27 @@ async function loadRuns() {
   const el = document.querySelector("#mc-runs");
   if (!el) return;
   el.setAttribute("aria-busy", "true");
-  el.innerHTML = sectionSkeleton({ label: "check history", rows: 5, columns: 5 });
+  el.innerHTML = sectionSkeleton({ label: "check history", rows: 5, columns: 8 });
   try {
-    const runs = await listMonitorRuns(current.clientId, { limit: RUNS_LIMIT });
+    const runs = await listMonitorRuns(current.clientId, { limit: RUNS_LIMIT, requestKey: `monitor-runs-history-${current.clientId}` });
     renderRuns(runs);
   } catch (error) {
-    if (isAbortError(error)) return;
+    if (isAbortError(error)) { settleAbortedSection(el, "Check history", "retry-runs"); return; }
     el.setAttribute("aria-busy", "false");
     el.innerHTML = `${sectionHeadingWithAction("Check history", "", "")}<div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Could not load check history.</strong><br>${escapeHtml(error.message)}</p><button type="button" class="button button--primary" data-action="retry-runs">${icon("refresh")}Retry</button></div>`;
   }
 }
 
-function renderRuns(runs) {
+function renderRuns(allRuns) {
   const el = document.querySelector("#mc-runs");
   if (!el) return;
   el.setAttribute("aria-busy", "false");
+  // task-38 §2: this table is the client-wide check log (light/full sweeps).
+  // Per-page re-checks fired from the Pages table share the same `MonitorRun`
+  // log for data integrity (every change still has a real run behind it) but
+  // would flood this history with dozens of one-URL rows if shown here too —
+  // they stay visible on their own row in the Pages table instead.
+  const runs = allRuns.filter((run) => run.kind !== "page");
   if (!runs.length) {
     el.innerHTML = `${sectionHeadingWithAction("Check history", "", "")}<div class="state-panel state-not_configured">${icon("history")}<p><strong>No checks recorded yet.</strong></p></div>`;
     return;
@@ -1181,7 +1275,7 @@ function renderRuns(runs) {
     return;
   }
   el.innerHTML = `${sectionHeadingWithAction("Check history", `${runs.length} checks`, "")}<div class="table-scroll"><table class="analytics-table monitor-runs-table">
-    <thead><tr><th>Kind</th><th>Trigger</th><th>Started</th><th>Duration</th><th class="num">Checked</th><th class="num">Changed</th><th class="num">Traffic</th></tr></thead>
+    <thead><tr><th>Kind</th><th>Status</th><th>Trigger</th><th>Started</th><th>Duration</th><th class="num">Checked</th><th class="num">Changed</th><th class="num">Traffic</th></tr></thead>
     <tbody>${runs.map(runRow).join("")}</tbody>
   </table></div>`;
 }
@@ -1257,7 +1351,7 @@ async function loadChangesFeed() {
     changesRaw = changes;
     renderChangesFeed();
   } catch (error) {
-    if (isAbortError(error)) return;
+    if (isAbortError(error)) { settleAbortedSection(el, "Change feed", "retry-changes"); return; }
     el.setAttribute("aria-busy", "false");
     el.innerHTML = `${sectionHeadingWithAction("Change feed", "", "")}<div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Could not load changes.</strong><br>${escapeHtml(error.message)}</p><button type="button" class="button button--primary" data-action="retry-changes">${icon("refresh")}Retry</button></div>`;
   }

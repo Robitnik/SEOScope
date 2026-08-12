@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.monitor import MonitorRepository
+from app.monitor import runner as runner_mod
+from app.monitor.fetcher import FetchResult
 
 
 def _create_client(db, *, slug: str = "acme") -> str:
@@ -174,6 +176,49 @@ def test_portfolio_changes_spans_clients(client, db):
     critical_only = client.get("/api/v1/monitor/changes?severity=critical").json()
     assert len(critical_only) == 1
     assert critical_only[0]["client_id"] == client_a
+
+    # Narrowing to one client is the server's job (LIVE 2026-08-12): `limit`
+    # takes the newest N rows portfolio-wide, so a UI that filtered a fetched
+    # window in JS showed "no changes" for every client whose rows sat past
+    # that window — a quiet client goes blank whenever a noisy one runs.
+    only_b = client.get(f"/api/v1/monitor/changes?client_id={client_b}").json()
+    assert [row["client_id"] for row in only_b] == [client_b]
+    by_type = client.get("/api/v1/monitor/changes?change_type=title_changed").json()
+    assert [row["change_type"] for row in by_type] == ["title_changed"]
+
+
+def test_portfolio_client_filter_survives_a_limit_smaller_than_the_feed(client, db):
+    """The exact live failure: a noisy client fills the newest-N window."""
+    quiet = _create_client(db, slug="quiet")
+    noisy = _create_client(db, slug="noisy")
+    repo = MonitorRepository(db)
+    quiet_run = repo.create_run(quiet, kind="full")
+    repo.record_change(
+        quiet,
+        run_id=quiet_run.id,
+        severity="warning",
+        change_type="title_changed",
+        scope="page",
+        subject="https://quiet.com/",
+    )
+    noisy_run = repo.create_run(noisy, kind="full")
+    for index in range(20):
+        repo.record_change(
+            noisy,
+            run_id=noisy_run.id,
+            severity="info",
+            change_type="content_changed",
+            scope="page",
+            subject=f"https://noisy.com/{index}",
+        )
+    db.commit()
+
+    # Without server-side filtering this window holds only noisy rows.
+    window = client.get("/api/v1/monitor/changes?state=all&limit=5").json()
+    assert all(row["client_id"] == noisy for row in window)
+    # ...yet asking for the quiet client must still find its change.
+    found = client.get(f"/api/v1/monitor/changes?client_id={quiet}&state=all&limit=5").json()
+    assert [row["subject"] for row in found] == ["https://quiet.com/"]
 
 
 def test_ack_change_404_for_unknown_change(client):
@@ -379,6 +424,78 @@ def test_list_pages_indexable_and_in_sitemap_filters(client, db):
         f"/api/v1/clients/{client_id}/monitor/pages?in_sitemap=true"
     ).json()
     assert [p["url"] for p in in_sitemap_only["pages"]] == [indexed_in_sitemap.url]
+
+
+# --- per-page check (task-38 §2) ----------------------------------------------
+
+
+def _fake_fetch(*, status=200, body=b"<html><head><title>Hello</title></head></html>"):
+    def fetch(url, *, throttle, stats, timeout, max_body_bytes):
+        stats.requests_made += 1
+        return FetchResult(
+            requested_url=url,
+            final_url=url,
+            status=status,
+            hop_count=0,
+            headers={"Content-Type": "text/html"},
+            body=body,
+            truncated_body=False,
+            elapsed_ms=1,
+            error=None,
+        )
+
+    return fetch
+
+
+def test_check_page_404_for_unknown_client(client):
+    response = client.post("/api/v1/clients/nope/monitor/pages/nope/check")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "page_not_found"
+
+
+def test_check_page_404_for_unknown_page(client, db):
+    client_id = _create_client(db)
+    response = client.post(f"/api/v1/clients/{client_id}/monitor/pages/nope/check")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "page_not_found"
+
+
+def test_check_page_runs_synchronously_and_returns_the_updated_dto(client, db, monkeypatch):
+    client_id = _create_client(db)
+    repo = MonitorRepository(db)
+    page = repo.get_or_create_page(client_id, "https://acme.com/")
+    db.commit()
+
+    monkeypatch.setattr(runner_mod, "fetch", _fake_fetch())
+
+    response = client.post(f"/api/v1/clients/{client_id}/monitor/pages/{page.id}/check")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == page.id
+    assert body["status"] == 200
+    assert body["title"] == "Hello"
+
+    runs = repo.list_runs(client_id)
+    assert len(runs) == 1
+    assert runs[0].kind == "page"
+    assert runs[0].status == "succeeded"
+
+
+def test_check_page_rejects_a_second_concurrent_request_with_409(client, db):
+    # A double-click / two operators clicking the same row must never fire a
+    # second outbound request — same precedent as `claim_target` (task-29).
+    client_id = _create_client(db)
+    repo = MonitorRepository(db)
+    page = repo.get_or_create_page(client_id, "https://acme.com/")
+    db.commit()
+
+    runner_mod._PAGE_CHECK_IN_FLIGHT.add(page.id)
+    try:
+        response = client.post(f"/api/v1/clients/{client_id}/monitor/pages/{page.id}/check")
+        assert response.status_code == 409
+        assert response.json()["detail"]["error_code"] == "page_check_in_progress"
+    finally:
+        runner_mod._PAGE_CHECK_IN_FLIGHT.discard(page.id)
 
 
 def test_page_versions_404_for_unknown_page(client, db):

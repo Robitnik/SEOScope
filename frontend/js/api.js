@@ -1222,7 +1222,19 @@ export async function getMonitorSummary(clientId) {
   return request(`/clients/${clientId}/monitor`, {}, `monitor-summary-${clientId}`);
 }
 
-export async function listMonitorRuns(clientId, { kind, limit = 50 } = {}) {
+// `requestKey` is REQUIRED, not defaulted: this function used to invent its
+// own key from `clientId` alone, so every caller — the history table, the
+// F5-resume check (fired twice, one per kind), and the live poll tick — sat
+// under one shared key and aborted each other. `request()` treats a shared
+// key as "supersede the previous call", which is correct WITHIN one purpose
+// and wrong ACROSS four different ones (task-38 §1: the "Check history"
+// section got stuck in its skeleton forever because its own request was
+// aborted by the F5-resume calls, whose `.catch` swallowed the failure
+// silently). Making the caller name its own intent is the fix that closes
+// the whole class: forgetting the key is now a `TypeError` at the call site,
+// not a silent collision discovered live.
+export async function listMonitorRuns(clientId, { kind, limit = 50, requestKey } = {}) {
+  if (!requestKey) throw new Error("listMonitorRuns requires an explicit requestKey");
   if (FIXTURE_MODE) {
     await wait(160);
     const bundle = await loadMonitorClientFixture();
@@ -1233,7 +1245,7 @@ export async function listMonitorRuns(clientId, { kind, limit = 50 } = {}) {
   }
   const params = new URLSearchParams({ limit: String(limit) });
   if (kind) params.set("kind", kind);
-  return request(`/clients/${clientId}/monitor/runs?${params}`, {}, `monitor-runs-${clientId}`);
+  return request(`/clients/${clientId}/monitor/runs?${params}`, {}, requestKey);
 }
 
 export async function startMonitorRun(clientId, kind = "light") {
@@ -1275,7 +1287,7 @@ export async function listClientMonitorChanges(clientId, { severity, state = "op
 // `type`/`client` are client-side-only filters — `GET /monitor/changes` only
 // accepts `severity`/`state`/`limit` (verified against `app/api/monitor.py`).
 // Callers filter the returned array further by `change_type`/`client_id`.
-export async function listPortfolioMonitorChanges({ severity, state = "open", limit = 200, requestKey } = {}) {
+export async function listPortfolioMonitorChanges({ clientId, severity, state = "open", limit = 200, requestKey } = {}) {
   if (FIXTURE_MODE) {
     if (FIXTURE_MODE === "error") { await wait(400); throw new Error("Fixture connection error"); }
     await wait(180);
@@ -1283,10 +1295,17 @@ export async function listPortfolioMonitorChanges({ severity, state = "open", li
     let changes = bundle.changes || [];
     if (state === "open") changes = changes.filter((change) => !change.resolved_at);
     if (severity) changes = changes.filter((change) => change.severity === severity);
+    if (clientId) changes = changes.filter((change) => change.client_id === clientId);
     return changes.slice(0, limit);
   }
   const params = new URLSearchParams({ state, limit: String(limit) });
   if (severity) params.set("severity", severity);
+  // Narrowing by client belongs on the SERVER: `limit` cuts the newest N rows
+  // across the whole portfolio, so filtering a fetched window in JS reports
+  // "no changes" for any client whose rows sit past that window (LIVE
+  // 2026-08-12 — LAXTON went blank right after a noisy repair run on another
+  // client).
+  if (clientId) params.set("client_id", clientId);
   // Keyed by the CALLER's declared purpose, not auto-derived from severity/state
   // alone: the portfolio page fires several concurrent calls for different
   // reasons (open critical strip, blocked-state detection, the filterable feed)
@@ -1335,6 +1354,24 @@ export async function getMonitorPages(clientId, {
   if (inSitemap !== undefined) params.set("in_sitemap", String(inSitemap));
   if (q) params.set("q", q);
   return request(`/clients/${clientId}/monitor/pages?${params}`, {}, `monitor-pages-${clientId}`);
+}
+
+// Re-check one URL right now (task-38 §2) — synchronous, unlike `startMonitorRun`:
+// one HTTP round trip, the response IS the updated row. `409` means a check for
+// this exact page is already running (double-click / another operator).
+export async function checkMonitorPage(clientId, pageId) {
+  if (FIXTURE_MODE) {
+    await wait(700);
+    const bundle = await loadMonitorClientFixture();
+    const page = (bundle.pages?.pages || []).find((p) => p.id === pageId);
+    if (!page) throw new Error("Page not found");
+    return { ...page, last_checked_at: new Date().toISOString() };
+  }
+  return request(
+    `/clients/${clientId}/monitor/pages/${pageId}/check`,
+    { method: "POST", body: "{}" },
+    `monitor-page-check-${pageId}`,
+  );
 }
 
 export async function getMonitorPageVersions(clientId, pageId) {

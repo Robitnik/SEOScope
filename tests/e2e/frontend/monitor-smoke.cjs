@@ -179,6 +179,33 @@ async function main() {
     await firstClientLink.click();
     await page.locator("#monitor-client-page-root #mc-content").waitFor();
     await page.waitForLoadState("networkidle");
+    // task-38 §1: this is the ONLY pass in this file hitting real concurrent
+    // network timing — fixture mode short-circuits before `request()` even
+    // runs, so it can never reproduce the abort race that left "Check
+    // history" stuck in its skeleton forever (loadRuns' own request aborted
+    // by resumePollingIfActive's two calls, all three sharing one key). One
+    // assertion catches the whole class of bug regardless of cause: no
+    // section may still claim `aria-busy="true"` a few seconds after the
+    // page settled.
+    await page.waitForTimeout(10_000);
+    const stillBusy = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("#mc-content [aria-busy='true']")).map((el) => el.id || el.className)
+    );
+    assert.deepEqual(stillBusy, [], `no section stuck aria-busy after 10s: ${stillBusy.join(", ")}`);
+
+    // F5 mid-page-life: `resumePollingIfActive` fires its two calls again on
+    // reload, over the SAME "Check history" load this file just verified
+    // settles — re-asserting after a reload is a safe, read-only way to
+    // exercise that path a second time without starting a real check
+    // against the client's live site (this file's read-only contract,
+    // documented above).
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator("#mc-content").waitFor();
+    await page.waitForTimeout(10_000);
+    const stillBusyAfterReload = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("#mc-content [aria-busy='true']")).map((el) => el.id || el.className)
+    );
+    assert.deepEqual(stillBusyAfterReload, [], `no section stuck aria-busy after F5: ${stillBusyAfterReload.join(", ")}`);
   } else {
     console.log("monitor e2e: live pass skipped client-detail navigation — no clients in this stack's portfolio");
   }

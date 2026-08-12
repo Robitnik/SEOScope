@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.models import Client
+from app.db.models import Client, MonitorPage
 from app.db.repositories.dimensions import DimensionRepository
 from app.db.repositories.monitor import MonitorRepository
 from app.monitor import diff as diffmod
@@ -37,6 +37,20 @@ logger = logging.getLogger(__name__)
 
 LIGHT = "light"
 FULL = "full"
+PAGE = "page"
+
+# One page checked at a time — `run_single_page_check` fires a real outbound
+# fetch to the client's site, so a double-click (or two operators clicking
+# the same row) must get a 409, not a second concurrent request racing the
+# first (task-38 §2, precedent: `claim_target` in task-29). A run-scoped or
+# per-process lock is enough here: unlike `_COMMIT_LOCK`, this guards a
+# single page's OWN check for its own duration, not every DB write.
+_PAGE_CHECK_IN_FLIGHT: set[str] = set()
+_PAGE_CHECK_GUARD = threading.Lock()
+
+
+class PageCheckConflict(Exception):
+    """A check for this exact page is already running."""
 
 # `monitor_client_workers` (default 4, task-35 §3.6) write against the same
 # SQLite file concurrently, from separate threads of the SAME worker process.
@@ -1159,3 +1173,92 @@ def run_client_monitor(
             )
             session.commit()
         return RunOutcome(run_id=run.id, status="failed", urls_checked=0, truncated=False)
+
+
+def run_single_page_check(
+    session: Session,
+    client: Client,
+    page: MonitorPage,
+    *,
+    settings: Settings,
+    artifacts_dir: Path,
+    now: datetime | None = None,
+) -> MonitorPage:
+    """Re-check one URL on demand (task-38 §2) — an operator who just fixed a
+    `noindex` on one page should not have to wait for the next scheduled
+    sweep or run all 600+ URLs to confirm it.
+
+    Deliberately thin: reuses `_process_page` exactly as `run_client_monitor`
+    does, so a page checked this way gets the same fetch politeness
+    (`HostThrottle`), fingerprinting, versioning and diffing as any other —
+    the fix shows up as a real, diffable, alertable change, not a shortcut
+    that bypasses history. `is_baseline_run=False` unconditionally: this path
+    only ever targets a page that already exists in `monitor_pages` (picked
+    from the Pages table), so it is by definition not the client's first-ever
+    look at it.
+
+    Raises `PageCheckConflict` if a check for this exact page is already in
+    flight — never fires a second concurrent fetch at the client's site.
+    """
+    now = now or datetime.now(UTC)
+    with _PAGE_CHECK_GUARD:
+        if page.id in _PAGE_CHECK_IN_FLIGHT:
+            raise PageCheckConflict(page.id)
+        _PAGE_CHECK_IN_FLIGHT.add(page.id)
+    try:
+        repo = MonitorRepository(session)
+        with _COMMIT_LOCK:
+            run = repo.create_run(client.id, kind=PAGE, trigger="manual")
+            session.commit()
+
+        min_interval = crawl_delay_floor(None, settings.monitor_host_min_interval_seconds)
+        throttle = HostThrottle(min_interval_seconds=min_interval)
+        stats = FetchStats()
+
+        try:
+            _process_page(
+                repo,
+                client,
+                page.url,
+                run_id=run.id,
+                is_key_page=page.is_key_page,
+                in_sitemap=page.in_sitemap,
+                throttle=throttle,
+                stats=stats,
+                settings=settings,
+                artifacts_dir=artifacts_dir,
+                is_baseline_run=False,
+                now=now,
+            )
+        except Exception as exc:  # noqa: BLE001 - the run row must reflect the failure either way
+            logger.exception(
+                "monitor_page_check_failed client_id=%s page_id=%s", client.id, page.id
+            )
+            with _COMMIT_LOCK:
+                repo.finish_run(
+                    run.id, status="failed", error_code="run_failed", error_message=str(exc)[:900]
+                )
+                session.commit()
+            raise
+
+        with _COMMIT_LOCK:
+            counts_by_severity = repo.count_changes_by_severity(run.id)
+            repo.finish_run(run.id, status="succeeded")
+            repo.update_run_counters(
+                run.id,
+                urls_total=1,
+                urls_checked=1,
+                requests_made=stats.requests_made,
+                bytes_downloaded=stats.bytes_downloaded,
+                changes_critical=counts_by_severity.get("critical", 0),
+                changes_warning=counts_by_severity.get("warning", 0),
+                changes_info=counts_by_severity.get("info", 0),
+            )
+            session.commit()
+
+        updated = repo.get_page_by_id(page.id)
+        assert updated is not None, "the page this function was called with must still exist"
+        return updated
+    finally:
+        with _PAGE_CHECK_GUARD:
+            _PAGE_CHECK_IN_FLIGHT.discard(page.id)

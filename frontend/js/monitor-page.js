@@ -17,13 +17,13 @@
 import {
   ackMonitorChange, getDashboard, getMonitorSummary, isAbortError,
   listPortfolioMonitorChanges, startMonitorRun,
-} from "./api.js?v=20260812-monitor5";
-import { buildMonitorClientHash, replaceMonitorHash } from "./router.js?v=20260812-monitor5";
+} from "./api.js?v=20260812-monitor7";
+import { buildMonitorClientHash, replaceMonitorHash } from "./router.js?v=20260812-monitor7";
 import {
   MONITOR_SEVERITY_META, changeTypeLabel, escapeHtml, formatTimestamp, icon,
-} from "./formatters.js?v=20260812-monitor5";
-import { sectionSkeleton } from "./skeleton.js?v=20260812-monitor5";
-import { isPaused } from "./client-status.js?v=20260812-monitor5";
+} from "./formatters.js?v=20260812-monitor7";
+import { sectionSkeleton } from "./skeleton.js?v=20260812-monitor7";
+import { isPaused } from "./client-status.js?v=20260812-monitor7";
 
 const root = document.querySelector("#monitor-page-root");
 
@@ -175,7 +175,9 @@ function onRootChange(event) {
   } else if (event.target.id === "mon-f-client") {
     current.client = event.target.value;
     persist();
-    renderFeedList();
+    // Refetch, not re-render: the client filter is applied server-side now, so
+    // the currently held feed window is the wrong dataset for the new value.
+    void reloadFeed();
   } else if (event.target.id === "mon-f-info") {
     current.info = event.target.checked;
     persist();
@@ -223,7 +225,7 @@ async function load({ quiet = false } = {}) {
       // WARNING-severity change type (app/monitor/severity.py), so the
       // critical-only list above never contains it.
       listPortfolioMonitorChanges({ state: "open", limit: 500, requestKey: "monitor-portfolio-blocked-detect" }),
-      listPortfolioMonitorChanges({ severity: current.severity || undefined, state: current.state, limit: feedLimit, requestKey: "monitor-portfolio-feed" }),
+      listPortfolioMonitorChanges({ clientId: current.client || undefined, severity: current.severity || undefined, state: current.state, limit: feedLimit, requestKey: "monitor-portfolio-feed" }),
     ]);
     if (token !== requestToken) return;
 
@@ -262,6 +264,7 @@ async function reloadFeed() {
   try {
     const feedLimit = current.type || current.client ? 500 : 200;
     const feedRaw = await listPortfolioMonitorChanges({
+      clientId: current.client || undefined,
       severity: current.severity || undefined, state: current.state, limit: feedLimit, requestKey: "monitor-portfolio-feed",
     });
     if (token !== feedToken) return;

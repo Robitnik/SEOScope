@@ -36,6 +36,7 @@ from app.db.models import (
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.monitor import MonitorRepository
 from app.db.session import worker_session_scope
+from app.monitor.runner import PageCheckConflict, run_single_page_check
 from app.monitor.storage import read_blob
 from app.schemas.api import ErrorDTO
 from app.schemas.monitor import (
@@ -73,6 +74,9 @@ _VERSION_NOT_FOUND = ErrorDTO(
 ).model_dump()
 _DOCUMENT_NOT_FOUND = ErrorDTO(
     error_code="document_not_found", message="Document not found"
+).model_dump()
+_PAGE_CHECK_CONFLICT = ErrorDTO(
+    error_code="page_check_in_progress", message="A check for this page is already running"
 ).model_dump()
 
 
@@ -369,21 +373,44 @@ async def list_client_monitor_changes(
 
 
 def _list_portfolio_changes(
-    *, severity: str | None, state: ChangeState, limit: int
+    *,
+    client_id: str | None,
+    severity: str | None,
+    change_type: str | None,
+    state: ChangeState,
+    limit: int,
 ) -> list[MonitorChangeDTO]:
     with worker_session_scope() as session:
         changes = MonitorRepository(session).list_changes(
-            None, severity=severity, state=state, limit=limit
+            client_id, severity=severity, change_type=change_type, state=state, limit=limit
         )
         return [_change_dto(c) for c in changes]
 
 
 @router.get("/monitor/changes", response_model=list[MonitorChangeDTO])
 async def list_portfolio_monitor_changes(
-    severity: Severity | None = None, state: ChangeState = "open", limit: int = 200
+    client_id: str | None = None,
+    severity: Severity | None = None,
+    change_type: str | None = None,
+    state: ChangeState = "open",
+    limit: int = 200,
 ) -> list[MonitorChangeDTO]:
+    """Portfolio-wide change feed.
+
+    `client_id` / `change_type` are filtered HERE, not by the caller: `limit`
+    takes the newest N rows across every client, so a UI that fetched a window
+    and narrowed it in JS would report "no changes" for any client whose rows
+    fall outside that window — which is exactly what a busy portfolio does to
+    a quiet client (LIVE 2026-08-12). The repository already supported both
+    filters; only this endpoint failed to pass them through.
+    """
     return await run_in_threadpool(
-        _list_portfolio_changes, severity=severity, state=state, limit=limit
+        _list_portfolio_changes,
+        client_id=client_id,
+        severity=severity,
+        change_type=change_type,
+        state=state,
+        limit=limit,
     )
 
 
@@ -571,6 +598,45 @@ async def get_monitor_page_diff(
     if result == "version_not_found":
         raise HTTPException(status_code=404, detail=_VERSION_NOT_FOUND)
     assert isinstance(result, MonitorPageDiffDTO)
+    return result
+
+
+def _check_page(client_id: str, page_id: str) -> MonitorPageDTO | str:
+    settings = get_settings()
+    try:
+        with worker_session_scope() as session:
+            client = ClientRepository(session).get(client_id)
+            if client is None:
+                return "not_found"
+            repo = MonitorRepository(session)
+            page = repo.get_page_by_id(page_id)
+            if page is None or page.client_id != client_id:
+                return "not_found"
+            updated = run_single_page_check(
+                session, client, page, settings=settings, artifacts_dir=settings.artifacts_dir
+            )
+            return _page_dto(updated)
+    except PageCheckConflict:
+        return "conflict"
+
+
+@router.post(
+    "/clients/{client_id}/monitor/pages/{page_id}/check",
+    response_model=MonitorPageDTO,
+    responses={404: {"model": ErrorDTO}, 409: {"model": ErrorDTO}},
+)
+async def check_monitor_page(client_id: str, page_id: str) -> MonitorPageDTO:
+    """Synchronous re-check of one URL (task-38 §2) — unlike "Check now",
+    which enqueues for the worker, this runs inline and returns the updated
+    page: an operator confirming a single fix does not want to wait for the
+    next scheduler tick or watch a poller.
+    """
+    result = await run_in_threadpool(_check_page, client_id, page_id)
+    if result == "not_found":
+        raise HTTPException(status_code=404, detail=_PAGE_NOT_FOUND)
+    if result == "conflict":
+        raise HTTPException(status_code=409, detail=_PAGE_CHECK_CONFLICT)
+    assert isinstance(result, MonitorPageDTO)
     return result
 
 

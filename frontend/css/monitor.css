@@ -332,6 +332,13 @@
 .monitor-pages-toolbar { align-items: center; }
 .monitor-checkbox { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
 .monitor-checkbox input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+/* task-38 §3.4: the native date input's empty-state placeholder follows the
+ * BROWSER's own display locale, not `lang="en-GB"` on the element — verified
+ * live, the attribute alone did not stop a Ukrainian-locale Chrome from
+ * showing "дд.мм.рррр" in this English-copy UI. An explicit format hint next
+ * to the label is unambiguous regardless of what the browser renders. */
+.monitor-field-hint { color: var(--ink-dim); font-weight: 400; font-size: 11px; }
 .monitor-changed-note {
   display: flex;
   align-items: start;
@@ -415,6 +422,25 @@ th[aria-sort]:not([aria-sort="none"]) .monitor-sort-button { color: var(--ink); 
 .monitor-row-open .icon { width: 14px; height: 14px; flex: 0 0 auto; color: var(--ink-dim); }
 .monitor-key-badge { display: inline-flex; margin-left: 6px; color: var(--accent); }
 .monitor-key-badge .icon { width: 13px; height: 13px; }
+
+/* Canonical column (task-38 §3.1): ~90% of rows repeat the row's own URL —
+ * `self` (muted, no underline) reads as "nothing to see here" at a glance,
+ * so the column stops competing with URL/Title for width and a REAL
+ * cross-URL canonical (the actual anomaly worth scanning for) is the only
+ * case that still prints a full path. */
+.monitor-canonical-self { color: var(--ink-dim); font-style: italic; }
+
+/* Per-page status chip (task-38 §3.3) — same ok/redirect/broken/unavailable
+ * vocabulary as the Sitemap block's health counts. `ok`/`unavailable` already
+ * carry a tone globally (app.css); `redirect`/`broken` are added here since
+ * only this per-row chip needed them. */
+.state-redirect { --state-color: var(--warning); }
+.state-broken { --state-color: var(--danger); }
+
+/* Per-row "Check" action column: a single icon-button-sized cell, never
+ * forced to wrap or stretch the row. */
+.monitor-pages-table td:last-child { white-space: nowrap; text-align: right; }
+.monitor-page-check .icon { width: 14px; height: 14px; }
 
 /* Numeric columns shared by every monitor table (dns/runs/pages) — same
  * convention as `.tool-table td.num` (tools.css), scoped per-table since

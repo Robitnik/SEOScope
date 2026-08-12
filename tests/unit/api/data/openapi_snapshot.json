@@ -4093,7 +4093,8 @@
           "kind": {
             "enum": [
               "light",
-              "full"
+              "full",
+              "page"
             ],
             "title": "Kind",
             "type": "string"
@@ -9667,6 +9668,78 @@
         ]
       }
     },
+    "/api/v1/clients/{client_id}/monitor/pages/{page_id}/check": {
+      "post": {
+        "description": "Synchronous re-check of one URL (task-38 \u00a72) \u2014 unlike \"Check now\",\nwhich enqueues for the worker, this runs inline and returns the updated\npage: an operator confirming a single fix does not want to wait for the\nnext scheduler tick or watch a poller.",
+        "operationId": "check_monitor_page_api_v1_clients__client_id__monitor_pages__page_id__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "title": "Page Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Monitor Page",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
     "/api/v1/clients/{client_id}/monitor/pages/{page_id}/diff": {
       "get": {
         "operationId": "get_monitor_page_diff_api_v1_clients__client_id__monitor_pages__page_id__diff_get",
@@ -10975,8 +11048,25 @@
     },
     "/api/v1/monitor/changes": {
       "get": {
+        "description": "Portfolio-wide change feed.\n\n`client_id` / `change_type` are filtered HERE, not by the caller: `limit`\ntakes the newest N rows across every client, so a UI that fetched a window\nand narrowed it in JS would report \"no changes\" for any client whose rows\nfall outside that window \u2014 which is exactly what a busy portfolio does to\na quiet client (LIVE 2026-08-12). The repository already supported both\nfilters; only this endpoint failed to pass them through.",
         "operationId": "list_portfolio_monitor_changes_api_v1_monitor_changes_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
           {
             "in": "query",
             "name": "severity",
@@ -10996,6 +11086,22 @@
                 }
               ],
               "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "change_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Change Type"
             }
           },
           {

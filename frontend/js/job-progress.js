@@ -12,7 +12,7 @@
 // `#sync-dialog`. Pages contribute only their own callbacks through
 // `configureJobProgress` — the instance itself is created once, lazily, on the
 // first `getJobProgress()`.
-import { createSyncModal } from "./sync-modal.js?v=20260812-monitor5";
+import { createSyncModal } from "./sync-modal.js?v=20260812-monitor7";
 
 let instance = null;
 

@@ -8,8 +8,8 @@
 // (content-addressed blob), а не те, що сайт віддає прямо зараз: у цьому вся
 // суть моніторингу. Посилання «Open live» поруч дає другий бік — живий файл.
 
-import { getMonitorDocumentText, getMonitorResources, isAbortError, monitorDocumentUrl } from "./api.js?v=20260812-monitor5";
-import { escapeHtml, icon } from "./formatters.js?v=20260812-monitor5";
+import { getMonitorDocumentText, getMonitorResources, isAbortError, monitorDocumentUrl } from "./api.js?v=20260812-monitor7";
+import { escapeHtml, icon } from "./formatters.js?v=20260812-monitor7";
 
 const MAX_RENDERED_LINES = 5000;
 

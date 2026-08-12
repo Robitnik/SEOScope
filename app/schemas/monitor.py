@@ -16,7 +16,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 Severity = Literal["critical", "warning", "info"]
 ChangeScope = Literal["site", "page", "dns", "robots", "sitemap"]
-RunKind = Literal["light", "full"]
+# "page" (task-38 §2): an operator re-checking one URL from the Pages table,
+# not a client-wide sweep — a distinct kind rather than `run_id=None` or
+# attaching to the last light/full run, so the run log stays honest about
+# what actually produced a change (task-37 F4 already fixed one case of a
+# change misattributed to the wrong run; this avoids reintroducing that).
+RunKind = Literal["light", "full", "page"]
 ChangeState = Literal["open", "all"]
 
 

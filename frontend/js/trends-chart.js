@@ -9,7 +9,7 @@
 // the moment its client drops out, rather than reshuffling everyone still on
 // screen — a filter change must not repaint the survivors.
 
-import { escapeHtml } from "./formatters.js?v=20260812-monitor5";
+import { escapeHtml } from "./formatters.js?v=20260812-monitor7";
 
 export const PALETTE = [
   "#3987e5", "#d95926", "#199e70", "#c98500",
