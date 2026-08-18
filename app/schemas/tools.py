@@ -30,6 +30,14 @@ VerifyVerdict = Literal[
 
 UrlKindDTO = Literal["uploads", "theme_asset", "plugin_asset", "external", "unknown"]
 
+# Стан пошуку точного WordPress `attachment ID` (task-39). `None` (поле не
+# заповнене) — «ще не шукали»; `not_searchable` — свідомо не ходили в мережу
+# (URL не з uploads); решта — реальна спроба з відповідним результатом.
+MediaLookupStatusDTO = Literal[
+    "resolved", "ambiguous", "not_found", "rest_unavailable", "not_searchable", "failed"
+]
+MediaConfidenceDTO = Literal["exact", "filename"]
+
 SourceKindDTO = Literal["xlsx", "csv", "tsv"]
 
 MappableField = Literal["image_url", "new_alt", "page_url", "old_alt"]
@@ -123,6 +131,16 @@ class AltTextReportDTO(AltTextReportSummaryDTO):
 # --- рядки --------------------------------------------------------------------
 
 
+class MediaCandidateDTO(BaseModel):
+    """Один кандидат при `ambiguous` — вибір лишається за оператором."""
+
+    id: int
+    file: str | None = None
+    source_url: str | None = None
+    alt_text: str | None = None
+    title: str | None = None
+
+
 class AltTextItemDTO(BaseModel):
     id: str
     row_index: int
@@ -151,6 +169,16 @@ class AltTextItemDTO(BaseModel):
     verify_http_status: int | None = None
     verify_detail: str | None = None
     verify_checked_at: datetime | None = None
+    # WordPress media ID (task-39). `None` = ще не шукали — окремо від
+    # `not_found` (шукали, нема) і `not_searchable` (URL не з uploads).
+    wp_media_id: int | None = None
+    wp_media_status: MediaLookupStatusDTO | None = None
+    wp_media_confidence: MediaConfidenceDTO | None = None
+    wp_media_alt: str | None = None
+    wp_media_admin_url: str | None = None
+    wp_media_detail: str | None = None
+    wp_media_candidates: list[MediaCandidateDTO] = []
+    wp_media_checked_at: datetime | None = None
 
 
 class AltTextItemsPageDTO(BaseModel):
@@ -165,6 +193,27 @@ class AltTextItemStatusRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: ItemStatus
+
+
+class AltTextMediaBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Стеля 50: кожен рядок — реальний запит(и) до сайту клієнта (PLAN §13).
+    limit: int = Field(default=50, ge=1, le=50)
+
+
+class AltTextMediaBatchDTO(BaseModel):
+    """Підсумок пакетного пошуку ID (task-39): скільки рядків у кожному стані."""
+
+    resolved: int = 0
+    ambiguous: int = 0
+    not_found: int = 0
+    rest_unavailable: int = 0
+    failed: int = 0
+    # Скільки рядків із пакета взагалі не мало сенсу шукати (не-uploads URL).
+    skipped: int = 0
+    # Скільки uploads-рядків без ID лишилось у звіті ПІСЛЯ цього пакета.
+    remaining: int = 0
 
 
 # --- інструмент Redirect Checker (task-29) -------------------------------------

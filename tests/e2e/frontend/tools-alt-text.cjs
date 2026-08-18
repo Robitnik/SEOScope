@@ -181,9 +181,65 @@ async function main() {
 
   await page.goto(`${baseUrl}/?fixture=normal${REPORT}`, { waitUntil: "networkidle" });
   await page.locator(".at-table tbody tr").first().waitFor();
+
+  // 7. WordPress media ID (task-39): honest "not checked" state, Find →
+  // resolved link, ambiguous → candidates dialog, filter, batch resolve.
+  const rooftopRow = page.locator("tr", { hasText: "rooftop-terrace-sunset" });
+  assert.match(await rooftopRow.locator(".at-media").innerText(), /Not checked/,
+    "an unresolved uploads row shows an honest 'not checked' state, not a blank cell");
+  await rooftopRow.locator("button[data-action='resolve-media']").click();
+  await page.waitForTimeout(700);
+  assert.match(await rooftopRow.locator(".at-media").innerText(), /#4002/,
+    "a resolved row shows the exact WordPress media ID");
+  const findLink = rooftopRow.locator("a[data-action='open-media']");
+  assert.equal(await findLink.getAttribute("target"), "_blank",
+    "the resolved action is a real link (not a button gated behind an await) so the tab opens in the click gesture");
+  await findLink.click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()),
+    "Rooftop terrace at 19 Cleveland at sunset", "clicking Open in WP copies the new alt text");
+
+  const themeRow2 = page.locator("tr", { hasText: "/assets/brand/logo.svg" });
+  assert.match(await themeRow2.locator(".at-media").innerText(), /Not in media library/,
+    "a non-uploads row is never offered a Find button — nothing to look up");
+  assert.equal(await themeRow2.locator("button[data-action='resolve-media']").count(), 0);
+
+  // A duplicate-counter name (`bar-counter-2`) must resolve to an honest
+  // ambiguous state with a human choice, never a guessed ID.
+  const barRow = page.locator("tr", { hasText: "bar-counter-2" });
+  await barRow.locator("button[data-action='resolve-media']").click();
+  await page.waitForTimeout(700);
+  assert.match(await barRow.locator(".at-media").innerText(), /2 matches to confirm/,
+    "an unconfirmed lookup names the candidate count honestly, not a generic 'multiple' that lies for a single candidate");
+  await barRow.locator("button[data-action='choose-media']").click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator("#at-media-dialog").evaluate((d) => d.open), true,
+    "Choose… opens the candidates dialog");
+  assert.equal(await page.locator("#at-media-dialog .at-media-dialog__item").count(), 2,
+    "both unconfirmed candidates are listed so the operator can pick");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator("#at-media-dialog").evaluate((d) => d.open), false,
+    "Escape closes the candidates dialog");
+
+  // Filtering by Media ID narrows the table and persists in the URL, same as
+  // the other filters.
+  await page.locator("#at-filter-media").selectOption("resolved");
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator(".at-table tbody tr").count(), 1, "the media filter narrows the table");
+  assert.match(page.url(), /md=resolved/, "the media filter persists in the URL");
+  await page.locator("#at-filter-media").selectOption("");
+  await page.waitForTimeout(400);
+
+  // The batch button picks up every uploads row still unchecked in one click.
+  await page.locator("#at-resolve-media-batch").click();
+  await page.waitForTimeout(900);
+  assert.equal(await page.locator(".at-media__pending").count(), 0,
+    "the batch button resolves every remaining uploads row, none left unchecked");
+
   await page.screenshot({ path: path.join(screenshots, "tools-alt-text-1440.png"), fullPage: true });
 
-  // 7. Mobile: no accidental horizontal page scroll (the table scrolls itself).
+  // 8. Mobile: no accidental horizontal page scroll (the table scrolls itself).
   const mobile = await browser.newContext({ viewport: { width: 390, height: 900 }, reducedMotion: "reduce" });
   const mobilePage = await mobile.newPage();
   await mobilePage.goto(`${baseUrl}/?fixture=normal${REPORT}`, { waitUntil: "networkidle" });

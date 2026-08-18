@@ -34,7 +34,15 @@
         "https://19cleveland.example.com/events/summer-series",
         "https://19cleveland.example.com/gallery",
         "https://19cleveland.example.com/press"
-      ]
+      ],
+      "wp_media_id": null,
+      "wp_media_status": null,
+      "wp_media_confidence": null,
+      "wp_media_alt": null,
+      "wp_media_admin_url": null,
+      "wp_media_detail": null,
+      "wp_media_candidates": [],
+      "wp_media_checked_at": null
     },
     {
       "id": "fixture-item-2",
@@ -61,7 +69,15 @@
       "verify_checked_at": "2026-07-26T11:21:00Z",
       "page_urls": [
         "https://19cleveland.example.com/private-dining"
-      ]
+      ],
+      "wp_media_id": null,
+      "wp_media_status": null,
+      "wp_media_confidence": null,
+      "wp_media_alt": null,
+      "wp_media_admin_url": null,
+      "wp_media_detail": null,
+      "wp_media_candidates": [],
+      "wp_media_checked_at": null
     },
     {
       "id": "fixture-item-3",
@@ -91,7 +107,15 @@
       "verify_checked_at": null,
       "page_urls": [
         "https://19cleveland.example.com/bar"
-      ]
+      ],
+      "wp_media_id": null,
+      "wp_media_status": null,
+      "wp_media_confidence": null,
+      "wp_media_alt": null,
+      "wp_media_admin_url": null,
+      "wp_media_detail": null,
+      "wp_media_candidates": [],
+      "wp_media_checked_at": null
     },
     {
       "id": "fixture-item-4",
@@ -120,7 +144,15 @@
       "verify_checked_at": "2026-07-26T11:25:00Z",
       "page_urls": [
         "https://19cleveland.example.com/"
-      ]
+      ],
+      "wp_media_id": null,
+      "wp_media_status": null,
+      "wp_media_confidence": null,
+      "wp_media_alt": null,
+      "wp_media_admin_url": null,
+      "wp_media_detail": null,
+      "wp_media_candidates": [],
+      "wp_media_checked_at": null
     },
     {
       "id": "fixture-item-5",
@@ -149,7 +181,15 @@
       "verify_http_status": null,
       "verify_detail": null,
       "verify_checked_at": null,
-      "page_urls": []
+      "page_urls": [],
+      "wp_media_id": null,
+      "wp_media_status": null,
+      "wp_media_confidence": null,
+      "wp_media_alt": null,
+      "wp_media_admin_url": null,
+      "wp_media_detail": null,
+      "wp_media_candidates": [],
+      "wp_media_checked_at": null
     },
     {
       "id": "fixture-item-6",
@@ -174,7 +214,15 @@
       "verify_checked_at": null,
       "page_urls": [
         "https://19cleveland.example.com/team"
-      ]
+      ],
+      "wp_media_id": null,
+      "wp_media_status": null,
+      "wp_media_confidence": null,
+      "wp_media_alt": null,
+      "wp_media_admin_url": null,
+      "wp_media_detail": null,
+      "wp_media_candidates": [],
+      "wp_media_checked_at": null
     }
   ]
 }

@@ -402,3 +402,111 @@ def test_delete_report_removes_its_rows(session: Session) -> None:
 
 def test_delete_missing_report_is_false_not_an_error(session: Session) -> None:
     assert AltTextRepository(session).delete_report("00000000-0000-0000-0000-000000000000") is False
+
+
+# --- WordPress media ID (task-39) -----------------------------------------------
+
+
+def test_media_result_is_stored(session: Session) -> None:
+    report = _create(session)
+    session.commit()
+    repository = AltTextRepository(session)
+    item = repository.all_items(report.id)[0]
+
+    repository.set_media_result(
+        item,
+        media_id=42,
+        status="resolved",
+        confidence="exact",
+        alt_text="Team at the office",
+        admin_url="https://acme.test/wp-admin/upload.php?item=42",
+        detail=None,
+        candidates=[],
+    )
+    session.commit()
+
+    assert item.wp_media_id == 42
+    assert item.wp_media_status == "resolved"
+    assert item.wp_media_confidence == "exact"
+    assert item.wp_media_alt == "Team at the office"
+    assert item.wp_media_admin_url == "https://acme.test/wp-admin/upload.php?item=42"
+    assert item.wp_media_json == {"candidates": []}
+    assert item.wp_media_checked_at is not None
+
+
+def test_media_status_counts_ignore_unresolved_rows(session: Session) -> None:
+    report = _create(session)
+    session.commit()
+    repository = AltTextRepository(session)
+    items = repository.all_items(report.id)
+    repository.set_media_result(
+        items[0],
+        media_id=1,
+        status="resolved",
+        confidence="exact",
+        alt_text=None,
+        admin_url=None,
+        detail=None,
+        candidates=[],
+    )
+    repository.set_media_result(
+        items[1],
+        media_id=None,
+        status="ambiguous",
+        confidence=None,
+        alt_text=None,
+        admin_url=None,
+        detail="2 attachment(s) matched",
+        candidates=[{"id": 1, "file": None, "source_url": None, "alt_text": None, "title": None}],
+    )
+    session.commit()
+
+    assert repository.media_status_counts(report.id) == {"resolved": 1, "ambiguous": 1}
+
+
+def test_list_unresolved_items_only_returns_uploads_rows_without_a_status(
+    session: Session,
+) -> None:
+    report = AltTextRepository(session).create_report(
+        client_id=None,
+        title="Mixed sources",
+        source_filename="a.csv",
+        source_kind="csv",
+        source_sheet=None,
+        source_sha256="c" * 64,
+        column_map={"image_url": 0, "new_alt": 1},
+        skipped_count=0,
+        warnings=[],
+        items=[
+            _item(1, url_kind="uploads"),
+            _item(2, url_kind="theme_asset"),
+            _item(3, url_kind="uploads"),
+        ],
+    )
+    session.commit()
+    repository = AltTextRepository(session)
+    items = repository.all_items(report.id)
+    repository.set_media_result(
+        items[0],
+        media_id=7,
+        status="resolved",
+        confidence="exact",
+        alt_text=None,
+        admin_url=None,
+        detail=None,
+        candidates=[],
+    )
+    session.commit()
+
+    unresolved = repository.list_unresolved_items(report.id, limit=10)
+    assert [item.row_index for item in unresolved] == [3]
+    assert repository.unresolved_count(report.id) == 1
+
+
+def test_list_unresolved_items_respects_the_limit(session: Session) -> None:
+    report = _create(session, count=5)
+    session.commit()
+    repository = AltTextRepository(session)
+
+    unresolved = repository.list_unresolved_items(report.id, limit=2)
+    assert len(unresolved) == 2

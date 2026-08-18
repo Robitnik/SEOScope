@@ -50,6 +50,9 @@ class ItemFilters:
     verify_status: str | None = None
     # `has_page=True` — лише рядки, які взагалі можна перевірити.
     has_page: bool | None = None
+    # `media_status` (task-39): `"unresolved"` — синтетичний фільтр «ще не
+    # шукали» (`wp_media_status IS NULL`), решта — точний збіг зі стовпцем.
+    media_status: str | None = None
 
 
 class AltTextRepository:
@@ -190,6 +193,10 @@ class AltTextRepository:
             conditions.append(AltTextItem.page_url.is_not(None))
         elif filters.has_page is False:
             conditions.append(AltTextItem.page_url.is_(None))
+        if filters.media_status == "unresolved":
+            conditions.append(AltTextItem.wp_media_status.is_(None))
+        elif filters.media_status:
+            conditions.append(AltTextItem.wp_media_status == filters.media_status)
         if filters.query:
             needle = f"%{filters.query.strip().lower()}%"
             conditions.append(
@@ -259,6 +266,74 @@ class AltTextRepository:
         self._touch(item.report_id)
         self._session.flush()
         return item
+
+    # --- WordPress media ID (task-39) -----------------------------------------
+
+    def set_media_result(
+        self,
+        item: AltTextItem,
+        *,
+        media_id: int | None,
+        status: str,
+        confidence: str | None,
+        alt_text: str | None,
+        admin_url: str | None,
+        detail: str | None,
+        candidates: list[dict[str, Any]],
+        checked_at: datetime | None = None,
+    ) -> AltTextItem:
+        item.wp_media_id = media_id
+        item.wp_media_status = status
+        item.wp_media_confidence = confidence
+        item.wp_media_alt = alt_text
+        item.wp_media_admin_url = admin_url
+        item.wp_media_detail = detail
+        item.wp_media_json = {"candidates": candidates}
+        item.wp_media_checked_at = checked_at or utcnow()
+        self._touch(item.report_id)
+        self._session.flush()
+        return item
+
+    def media_status_counts(self, report_id: str) -> dict[str, int]:
+        """Скільки рядків у кожному стані. `NULL` (не шукали) не рахуємо."""
+        statement = (
+            select(AltTextItem.wp_media_status, func.count())
+            .where(AltTextItem.report_id == report_id, AltTextItem.wp_media_status.is_not(None))
+            .group_by(AltTextItem.wp_media_status)
+        )
+        return {status: count for status, count in self._session.execute(statement) if status}
+
+    def list_unresolved_items(self, report_id: str, *, limit: int) -> list[AltTextItem]:
+        """Рядки з `uploads`-картинками, для яких ще не шукали ID — для пакета.
+
+        Фільтр по `url_kind == "uploads"` тут, а не лише в API-шарі: немає
+        сенсу тягнути з БД рядки, які `is_searchable()` однаково відкине.
+        """
+        statement = (
+            select(AltTextItem)
+            .where(
+                AltTextItem.report_id == report_id,
+                AltTextItem.wp_media_status.is_(None),
+                AltTextItem.url_kind == "uploads",
+            )
+            .order_by(AltTextItem.row_index, AltTextItem.id)
+            .limit(limit)
+        )
+        return list(self._session.scalars(statement))
+
+    def unresolved_count(self, report_id: str) -> int:
+        return (
+            self._session.scalar(
+                select(func.count())
+                .select_from(AltTextItem)
+                .where(
+                    AltTextItem.report_id == report_id,
+                    AltTextItem.wp_media_status.is_(None),
+                    AltTextItem.url_kind == "uploads",
+                )
+            )
+            or 0
+        )
 
     def _touch(self, report_id: str) -> None:
         report = self.get_report(report_id)

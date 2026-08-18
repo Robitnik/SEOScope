@@ -218,7 +218,7 @@
 /* --- таблиця рядків ------------------------------------------------------- */
 
 .at-toolbar { padding: 0 0 14px; }
-.at-table { min-width: 1180px; }
+.at-table { min-width: 1370px; }
 .at-table td { font-size: 12px; }
 .at-row-index { color: var(--ink-dim); }
 .at-cache-note {
@@ -292,9 +292,12 @@
 
 /* НЕ `display: grid/flex` на самому `<td>`: це виводить клітинку з табличного
  * алгоритму (вона перестає бути table-cell), і колонки праворуч злипаються в
- * одну. Тому вертикальний стек збираємо блоковими дітьми + margin. */
-.at-key > *, .at-alt > *, .at-page > * { margin-top: 6px; }
-.at-key > :first-child, .at-alt > :first-child, .at-page > :first-child { margin-top: 0; }
+ * одну. Тому вертикальний стек збираємо блоковими дітьми + margin. Той самий
+ * ризик — чому чіп статусу media ID зветься `.at-media-status`, а не
+ * `.at-media`: остання лишається виключно за `<td>`. */
+.at-key > *, .at-alt > *, .at-page > *, .at-media > * { margin-top: 6px; }
+.at-key > :first-child, .at-alt > :first-child, .at-page > :first-child,
+.at-media > :first-child { margin-top: 0; }
 
 .at-key { max-width: 300px; }
 .at-copy {
@@ -353,6 +356,38 @@
 .at-status__select[data-status="applied"] { border-color: var(--success); color: var(--success); }
 .at-status__select[data-status="skipped"] { color: var(--ink-dim); }
 .at-status small { display: block; margin-top: 4px; color: var(--ink-dim); font-size: 10px; }
+
+/* --- WordPress media ID (task-39) ------------------------------------------ */
+
+.at-media { max-width: 190px; }
+.at-media__pending { display: block; font-size: 11px; }
+.at-media__action { display: flex; width: fit-content; white-space: nowrap; text-decoration: none; }
+.at-media__id { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.at-media__confidence { color: var(--ink-dim); font-size: 10px; }
+/* Чіп-стан пошуку — той самий словник тонів, що `.at-kind`/`.at-verdict`. */
+.at-media-status { display: flex; width: fit-content; align-items: center; gap: 6px; font-size: 11px; }
+.at-media-status--good { color: var(--success); }
+.at-media-status--warn { color: var(--warning); }
+.at-media-status--bad { color: var(--danger); }
+
+/* Кандидати при ambiguous. */
+.at-media-dialog { max-width: min(560px, 92vw); border: 0; padding: 0; background: transparent; }
+.at-media-dialog::backdrop { background: rgb(0 0 0 / 72%); }
+.at-media-dialog .dialog-shell {
+  display: grid; background: var(--surface); border: 1px solid var(--line);
+  border-top: 3px solid var(--warning); box-shadow: var(--shadow-dialog);
+}
+.at-media-dialog__hint { margin: 6px 0 0; color: var(--ink-muted); font-size: 12px; max-width: 46ch; }
+.at-media-dialog__list { display: grid; gap: 1px; max-height: 60vh; overflow-y: auto; background: var(--line-soft); }
+.at-media-dialog__item {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px 12px;
+  padding: 12px 16px; background: var(--surface); color: var(--ink); text-decoration: none;
+}
+.at-media-dialog__item:hover, .at-media-dialog__item:focus-visible { background: var(--canvas-raised); }
+.at-media-dialog__item code { color: var(--ink); font-size: 12px; }
+.at-media-dialog__item small { grid-column: 1 / -1; color: var(--ink-muted); font-size: 11px; overflow-wrap: anywhere; }
+.at-media-dialog__file { color: var(--ink-muted); font-size: 12px; overflow-wrap: anywhere; }
+.at-media-dialog__item .icon { flex: 0 0 auto; color: var(--ink-dim); }
 
 /* --- Redirect Checker (task-29) -------------------------------------------- */
 
@@ -545,7 +580,7 @@
    * відсовувала головну дію («Copy alt») ще далі за горизонтальний скрол,
    * тож ховаємо саме її. Жодних даних при цьому не втрачається. */
   .at-table th:nth-child(2), .at-table td:nth-child(2) { display: none; }
-  .at-table { min-width: 980px; }
+  .at-table { min-width: 1170px; }
   /* На вузькому екрані «Destination» дублює те, що видно в розкритому
    * ланцюжку (останній хоп), тож ховаємо саме її, а не дані. */
   .rd-table th:nth-child(4), .rd-table td:nth-child(4) { display: none; }

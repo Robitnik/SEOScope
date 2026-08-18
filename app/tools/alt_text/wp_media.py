@@ -71,6 +71,77 @@ class UrlKind(StrEnum):
 
 
 @dataclass(frozen=True)
+class UploadLocation:
+    """Корінь WP-інсталяції + uploads-шлях картинки (task-39).
+
+    Основа для REST-пошуку точного `attachment ID`: `original_relative_path`
+    — те саме значення, що WordPress зберігає в `_wp_attached_file` (метадані
+    оригіналу), тож пошук по ньому звужує медіатеку до одного вкладення навіть
+    для беззмістовних назв (`1.jpg`). `wp_root` виводиться з самого URL (усе
+    до `/wp-content/uploads/`), а не з домену клієнта.
+
+    **Відомий ліміт для інсталяцій у підкаталозі.** Спільний з
+    `derive_search_key` розбір «вкладеного uploads-шляху» (WebP-Express:
+    `/wp-content/webp-express/doc-root/wp-content/uploads/…`) не відрізняє
+    цей випадок від звичайного підкаталогу (`/blog/wp-content/uploads/…`) —
+    обидва мають один і той самий вигляд `<префікс>/wp-content/uploads/…`.
+    Тому для сайтів у підкаталозі `wp_root` виходить кореневим доменом, а не
+    підкаталогом (REST-пошук у такому разі піде на `not_searchable`/`failed`,
+    а не дасть хибний ID — `TODO(task-40)` за потреби різняти ці випадки).
+    """
+
+    wp_root: str
+    relative_path: str
+    original_relative_path: str
+    basename: str
+    original_basename: str
+
+
+def derive_upload_location(raw_url: str) -> UploadLocation | None:
+    """Вивести корінь WP і uploads-шлях картинки. `None`, якщо це не uploads-URL.
+
+    Той самий розбір проксі/CDN, що й `derive_search_key` — «справжній» хост і
+    шлях виводяться однаково в обох функціях, тож результати не розходяться.
+    """
+    original = raw_url.strip()
+    if not original:
+        return None
+
+    warnings: list[str] = []
+    scheme, host, path = _unwrap_proxies(original, warnings)
+    if scheme not in {"http", "https"} or not host:
+        return None
+
+    lowered = path.lower()
+    marker_index = lowered.find(_UPLOADS_MARKER)
+    if marker_index < 0:
+        return None
+
+    relative_path = path[marker_index + len(_UPLOADS_MARKER) :].strip("/")
+    directory, _, filename = relative_path.rpartition("/")
+    if not filename:
+        return None
+
+    stripped: list[str] = []
+    stem, extension = _split_extension(filename, stripped)
+    if extension is None:
+        return None
+    original_stem, _ = strip_wp_suffixes(stem)
+    if not original_stem:
+        return None
+    original_basename = f"{original_stem}.{extension}"
+    original_relative_path = f"{directory}/{original_basename}" if directory else original_basename
+
+    return UploadLocation(
+        wp_root=f"{scheme}://{host}{path[:marker_index]}",
+        relative_path=relative_path,
+        original_relative_path=original_relative_path,
+        basename=filename,
+        original_basename=original_basename,
+    )
+
+
+@dataclass(frozen=True)
 class DerivedSearchKey:
     """Результат деривації одного URL. Незмінний, серіалізовний, без мережі."""
 

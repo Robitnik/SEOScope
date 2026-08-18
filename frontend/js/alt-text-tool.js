@@ -17,13 +17,15 @@ import {
   getAltTextReport,
   getAltTextReports,
   getDashboard,
+  resolveAltTextItemMedia,
+  resolveAltTextReportMedia,
   setAltTextItemStatus,
   uploadAltTextSource,
   verifyAltTextItem,
-} from "./api.js?v=20260812-monitor7";
-import { buildToolsHash, replaceToolsHash } from "./router.js?v=20260812-monitor7";
-import { panelSkeleton } from "./skeleton.js?v=20260812-monitor7";
-import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260812-monitor7";
+} from "./api.js?v=20260817-spin1";
+import { buildToolsHash, replaceToolsHash } from "./router.js?v=20260817-spin1";
+import { panelSkeleton } from "./skeleton.js?v=20260817-spin1";
+import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260817-spin1";
 
 const PAGE_SIZE = 50;
 const TOOL_KEY = "alt-text";
@@ -49,6 +51,30 @@ const URL_KIND_META = {
   plugin_asset: { label: "Plugin file", tone: "warn" },
   external: { label: "External host", tone: "warn" },
   unknown: { label: "Not recognized", tone: "bad" },
+};
+
+// Стани пошуку точного WordPress media ID (task-39). `null`/`undefined` —
+// «ще не шукали» — це не стан із цієї таблиці, він рендериться окремо.
+const MEDIA_STATUS_META = {
+  resolved: { label: "Found", icon: "circle-check", tone: "good" },
+  // "Ambiguous" can mean exactly one unconfirmed candidate as easily as
+  // several — this generic label is only a fallback for places without the
+  // candidate count (e.g. the batch summary counts rows, not candidates).
+  // Anywhere a specific item is on hand, use `mediaMatchLabel()` instead.
+  ambiguous: { label: "Needs confirmation", icon: "help-circle", tone: "warn" },
+  not_found: { label: "Not found", icon: "search-off", tone: "bad" },
+  rest_unavailable: { label: "REST API closed", icon: "lock", tone: "warn" },
+  not_searchable: { label: "Not in media library", icon: "circle-off", tone: "bad" },
+  failed: { label: "Site unavailable", icon: "wifi-off", tone: "warn" },
+};
+
+function mediaMatchLabel(count) {
+  return count === 1 ? "1 match to confirm" : `${count} matches to confirm`;
+}
+
+const MEDIA_CONFIDENCE_LABEL = {
+  exact: "Exact match",
+  filename: "Matched by file name",
 };
 
 // Машинні попередження деривації → операторська підказка. Показуємо саме
@@ -89,6 +115,7 @@ export async function initTool(mount, route) {
       status: route.query.get("st") || "",
       urlKind: route.query.get("uk") || "",
       verify: route.query.get("vf") || "",
+      mediaStatus: route.query.get("md") || "",
       offset: Number(route.query.get("off") || 0) || 0,
     };
     await renderReportView();
@@ -105,6 +132,7 @@ function persist() {
     st: state.status,
     uk: state.urlKind,
     vf: state.verify,
+    md: state.mediaStatus,
     off: state.offset || "",
   });
 }
@@ -577,9 +605,43 @@ function renderReportHeader(report) {
       ${report.verifiable_count === 0 ? `<p class="at-progress__note">${icon("info-circle", "icon icon--tiny")}No page column was mapped, so alt checks are unavailable for this report.</p>` : ""}
     </div>
     <div class="at-export">
+      <button class="button button--quiet" type="button" id="at-resolve-media-batch">
+        ${icon("search")}Resolve media IDs</button>
       <a class="button button--quiet" href="${altTextExportCsvUrl(report.id)}">${icon("download")}Export CSV</a>
       <a class="button button--quiet" href="${altTextExportXlsxUrl(report.id)}">${icon("download")}Export XLSX</a>
     </div>`;
+  // Кожен виклик `renderReportHeader` замінює `innerHTML` контейнера, тож
+  // нова кнопка — новий елемент; прив'язка тут не дублюється між рендерами.
+  root.querySelector("#at-resolve-media-batch")
+    ?.addEventListener("click", () => void resolveReportMediaBatch());
+}
+
+async function resolveReportMediaBatch() {
+  const button = root.querySelector("#at-resolve-media-batch");
+  if (!button) return;
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = `${icon("loader-2", "icon icon--spin")}Resolving…`;
+  try {
+    const summary = await resolveAltTextReportMedia(state.reportId, { limit: 50 });
+    const parts = [
+      summary.resolved ? `${summary.resolved} found` : null,
+      summary.ambiguous ? `${summary.ambiguous} ambiguous` : null,
+      summary.not_found ? `${summary.not_found} not found` : null,
+      summary.rest_unavailable ? `${summary.rest_unavailable} REST closed` : null,
+      summary.failed ? `${summary.failed} failed` : null,
+    ].filter(Boolean);
+    const tail = summary.remaining
+      ? ` — ${summary.remaining} row(s) left, click again to continue`
+      : " — every uploads row is checked";
+    toast(`${parts.length ? parts.join(", ") : "Nothing to resolve"}${tail}`);
+    await loadItems();
+  } catch (error) {
+    toast(`Could not resolve media IDs: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = original;
+  }
 }
 
 async function loadItems() {
@@ -591,6 +653,7 @@ async function loadItems() {
       status: state.status,
       urlKind: state.urlKind,
       verify: state.verify,
+      mediaStatus: state.mediaStatus,
       limit: PAGE_SIZE,
       offset: state.offset,
     });
@@ -621,6 +684,7 @@ function renderItems(body, page) {
             <th scope="col"><span class="visually-hidden">Preview</span></th>
             <th scope="col">Image URL</th>
             <th scope="col">Media library search</th>
+            <th scope="col">Media ID</th>
             <th scope="col">New alt text</th>
             <th scope="col">Page</th>
             <th scope="col">Status</th>
@@ -667,6 +731,13 @@ function toolbar(page) {
         <select id="at-filter-verify">
           ${option("", "All", state.verify)}
           ${Object.entries(VERIFY_META).map(([key, meta]) => option(key, meta.label, state.verify)).join("")}
+        </select>
+      </label>
+      <label class="sort-field">Media ID
+        <select id="at-filter-media">
+          ${option("", "All", state.mediaStatus)}
+          ${option("unresolved", "Not yet checked", state.mediaStatus)}
+          ${Object.entries(MEDIA_STATUS_META).map(([key, meta]) => option(key, meta.label, state.mediaStatus)).join("")}
         </select>
       </label>
       <p class="result-count" aria-live="polite">${page.total} row${page.total === 1 ? "" : "s"}</p>
@@ -718,6 +789,7 @@ function itemRow(item) {
         ${stripped}
         ${warnings.length ? `<span class="at-warn">${icon("alert-triangle", "icon icon--tiny")}${escapeHtml(warnings.join(" "))}</span>` : ""}
       </td>
+      <td class="at-media">${mediaCell(item)}</td>
       <td class="at-alt">
         ${item.new_alt
           ? `<span class="at-alt__text">${escapeHtml(item.new_alt)}</span>
@@ -771,6 +843,71 @@ function pageCell(item) {
       ? `<span class="at-verdict at-verdict--${verdict.tone}">${icon(verdict.icon, "icon icon--tiny")}${escapeHtml(verdict.label)}
           <small>${escapeHtml(formatTimestamp(item.verify_checked_at, ""))}</small></span>${found}${detail}`
       : '<span class="at-verdict at-verdict--none">Not checked yet</span>'}`;
+}
+
+// WordPress media ID (task-39). Кожен стан — окрема гілка розмітки, не одна
+// узагальнена: "resolved" показує справжнє посилання в адмінку (яке ще й
+// копіює alt у кліку), решта — чіп причини й фолбек-дію, ніколи порожню
+// клітинку без пояснення (PLAN §12).
+function mediaCell(item) {
+  const status = item.wp_media_status;
+
+  if (!status) {
+    if (!item.searchable) {
+      return `<span class="at-media-status at-media-status--bad muted">${icon("circle-off", "icon icon--tiny")}Not in media library</span>`;
+    }
+    return `
+      <span class="at-media__pending muted">Not checked</span>
+      <button class="button button--quiet at-media__action" type="button" data-action="resolve-media"
+        aria-label="${escapeHtml(`Find the WordPress media ID for row ${item.row_index}`)}">
+        ${icon("search", "icon icon--tiny")}Find</button>`;
+  }
+
+  if (status === "not_searchable") {
+    return `<span class="at-media-status at-media-status--bad muted" title="${escapeHtml(item.wp_media_detail || "")}">
+      ${icon("circle-off", "icon icon--tiny")}Not in media library</span>`;
+  }
+
+  if (status === "resolved") {
+    const confidence = MEDIA_CONFIDENCE_LABEL[item.wp_media_confidence] || "";
+    return `
+      <span class="at-media__id">
+        <button class="at-copy" type="button" data-action="copy" data-copy="${escapeHtml(String(item.wp_media_id))}"
+          aria-label="${escapeHtml(`Copy media ID ${item.wp_media_id} for row ${item.row_index}`)}">
+          ${icon("copy", "icon icon--tiny")}<code>#${escapeHtml(String(item.wp_media_id))}</code></button>
+        ${confidence ? `<small class="at-media__confidence">${escapeHtml(confidence)}</small>` : ""}
+      </span>
+      ${item.wp_media_admin_url
+        ? `<a class="button button--quiet at-media__action" data-action="open-media"
+            data-copy="${escapeHtml(item.new_alt || "")}" data-media-id="${escapeHtml(String(item.wp_media_id))}"
+            href="${escapeHtml(item.wp_media_admin_url)}" target="_blank" rel="noreferrer"
+            aria-label="${escapeHtml(`Copy the new alt and open media ${item.wp_media_id} in WordPress for row ${item.row_index}`)}">
+            ${icon("external-link", "icon icon--tiny")}Open in WP</a>`
+        : ""}`;
+  }
+
+  if (status === "ambiguous") {
+    const label = mediaMatchLabel((item.wp_media_candidates || []).length);
+    return `
+      <span class="at-media-status at-media-status--warn">${icon("help-circle", "icon icon--tiny")}${escapeHtml(label)}</span>
+      <button class="button button--quiet at-media__action" type="button" data-action="choose-media"
+        aria-label="${escapeHtml(`Choose the right media ID for row ${item.row_index}`)}">
+        ${icon("list-search", "icon icon--tiny")}Choose…</button>`;
+  }
+
+  const meta = MEDIA_STATUS_META[status] || MEDIA_STATUS_META.failed;
+  return `
+    <span class="at-media-status at-media-status--${meta.tone}" title="${escapeHtml(item.wp_media_detail || "")}">
+      ${icon(meta.icon, "icon icon--tiny")}${escapeHtml(meta.label)}</span>
+    <span class="at-actions">
+      ${item.wp_media_admin_url
+        ? `<a class="button button--quiet" href="${escapeHtml(item.wp_media_admin_url)}" target="_blank" rel="noreferrer"
+            aria-label="${escapeHtml(`Search the media library for row ${item.row_index}`)}">
+            ${icon("search", "icon icon--tiny")}Search in WP</a>`
+        : ""}
+      <button class="icon-button" type="button" data-action="resolve-media"
+        aria-label="${escapeHtml(`Try finding the media ID again for row ${item.row_index}`)}">${icon("refresh", "icon icon--tiny")}</button>
+    </span>`;
 }
 
 // --- попап із великим прев'ю --------------------------------------------------
@@ -855,6 +992,83 @@ function openPreview(button, row) {
   dialog.showModal();
 }
 
+// --- модалка кандидатів при ambiguous media ID --------------------------------
+
+// `wp_media_admin_url` при `ambiguous` — це посилання на пошук в адмінці
+// (`upload.php?mode=list&s=…`), не на конкретне вкладення; корінь інсталяції
+// з нього все одно можна витягти — і зібрати точні `item=<id>` посилання на
+// кожного кандидата, не питаючи бекенд ще раз.
+function adminRootFrom(url) {
+  if (!url) return null;
+  const marker = "/wp-admin/";
+  const index = url.indexOf(marker);
+  return index === -1 ? null : url.slice(0, index);
+}
+
+function mediaCandidatesDialog() {
+  let dialog = document.querySelector("#at-media-dialog");
+  if (dialog) return dialog;
+  dialog = document.createElement("dialog");
+  dialog.id = "at-media-dialog";
+  dialog.className = "at-media-dialog";
+  dialog.setAttribute("aria-labelledby", "at-media-dialog-title");
+  dialog.innerHTML = `
+    <div class="dialog-shell">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">Media library</p>
+          <h2 id="at-media-dialog-title"></h2>
+          <p class="at-media-dialog__hint">The search is not exact. Each link opens that attachment in
+            WordPress so you can confirm it visually before using its ID.</p>
+        </div>
+        <button class="icon-button" type="button" data-close aria-label="Close">${icon("x")}</button>
+      </header>
+      <div class="at-media-dialog__list" id="at-media-dialog-list"></div>
+    </div>`;
+  document.body.append(dialog);
+  dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog || event.target.closest(".at-media-dialog__item")) dialog.close();
+  });
+  return dialog;
+}
+
+function openMediaCandidates(row) {
+  const item = currentRows.find((candidate) => candidate.id === row?.dataset.itemId);
+  if (!item) return;
+  const dialog = mediaCandidatesDialog();
+  const list = dialog.querySelector("#at-media-dialog-list");
+  const root = adminRootFrom(item.wp_media_admin_url);
+  const candidates = item.wp_media_candidates || [];
+  dialog.querySelector("#at-media-dialog-title").textContent =
+    `${mediaMatchLabel(candidates.length)} — pick the right one`;
+  list.innerHTML = candidates.length
+    ? candidates.map((candidate) => {
+        const label = candidate.file
+          || (candidate.source_url ? candidate.source_url.split("/").pop() : `Attachment ${candidate.id}`);
+        // No `&mode=grid`: WordPress's own grid router matches `item=:slug`
+        // with a regex that stops at `/` or `?` but not `&`, so anything
+        // appended after `item=<id>` gets swallowed into the id and silently
+        // breaks the deep link whenever the item isn't already on the
+        // pre-loaded grid page (found live — see `build_admin_url` docstring).
+        const href = root
+          ? `${root}/wp-admin/upload.php?item=${candidate.id}`
+          : (candidate.source_url || "#");
+        return `
+          <a class="at-media-dialog__item" href="${escapeHtml(href)}" target="_blank" rel="noreferrer"
+            aria-label="${escapeHtml(`Open candidate ${label} in WordPress`)}">
+            <code>#${candidate.id}</code>
+            <span class="at-media-dialog__file">${escapeHtml(label)}</span>
+            ${candidate.alt_text
+              ? `<small>Current alt: “${escapeHtml(candidate.alt_text)}”</small>`
+              : '<small class="muted">No alt set</small>'}
+            ${icon("external-link", "icon icon--tiny")}
+          </a>`;
+      }).join("")
+    : `<p class="tool-empty">${icon("search-off")}<span>No candidates left to show.</span></p>`;
+  dialog.showModal();
+}
+
 // Коротка, але однозначна підпис-мітка сторінки: шлях без домену (домен той
 // самий у межах звіту), а корінь — як «/».
 function pageLabel(url) {
@@ -881,8 +1095,10 @@ function bindItemHandlers(body) {
     applyFilters({ urlKind: event.target.value }));
   body.querySelector("#at-filter-verify")?.addEventListener("change", (event) =>
     applyFilters({ verify: event.target.value }));
+  body.querySelector("#at-filter-media")?.addEventListener("change", (event) =>
+    applyFilters({ mediaStatus: event.target.value }));
   body.querySelector("[data-action='clear-filters']")?.addEventListener("click", () =>
-    applyFilters({ q: "", status: "", urlKind: "", verify: "" }));
+    applyFilters({ q: "", status: "", urlKind: "", verify: "", mediaStatus: "" }));
   body.querySelectorAll("button[data-page]").forEach((button) => {
     button.addEventListener("click", () => {
       state.offset = button.dataset.page === "next"
@@ -903,13 +1119,20 @@ function bindDelegatedHandlers(body) {
   body.dataset.delegated = "true";
 
   body.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-action]");
-    if (!button) return;
-    const row = button.closest("tr[data-item-id]");
-    if (button.dataset.action === "copy") void copyValue(button);
-    else if (button.dataset.action === "copy-alt") void copyAlt(button, row);
-    else if (button.dataset.action === "verify") void verifyRow(button, row);
-    else if (button.dataset.action === "preview") openPreview(button, row);
+    // `[data-action]`, не `button[data-action]`: "Open in WP"/"Search in WP"
+    // are real `<a target="_blank">`, not buttons — a real link lets the
+    // browser open the new tab in the same click gesture instead of after an
+    // `await`, which popup blockers would otherwise kill.
+    const target = event.target.closest("[data-action]");
+    if (!target) return;
+    const row = target.closest("tr[data-item-id]");
+    if (target.dataset.action === "copy") void copyValue(target);
+    else if (target.dataset.action === "copy-alt") void copyAlt(target, row);
+    else if (target.dataset.action === "verify") void verifyRow(target, row);
+    else if (target.dataset.action === "preview") openPreview(target, row);
+    else if (target.dataset.action === "resolve-media") void resolveMediaRow(target, row);
+    else if (target.dataset.action === "open-media") void openMediaLink(target);
+    else if (target.dataset.action === "choose-media") openMediaCandidates(row);
   });
   body.addEventListener("change", (event) => {
     const select = event.target.closest("select[data-action='status']");
@@ -1005,6 +1228,36 @@ async function verifyRow(button, row) {
     button.innerHTML = original;
     toast(`Could not check the page: ${error.message}`);
   }
+}
+
+async function resolveMediaRow(button, row) {
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = `${icon("loader-2", "icon icon--spin")}Finding…`;
+  try {
+    const item = await resolveAltTextItemMedia(state.reportId, row.dataset.itemId);
+    row.querySelector(".at-media").innerHTML = mediaCell(item);
+    const index = currentRows.findIndex((candidate) => candidate.id === item.id);
+    if (index !== -1) currentRows[index] = item;
+    const label = item.wp_media_status === "ambiguous"
+      ? mediaMatchLabel((item.wp_media_candidates || []).length)
+      : MEDIA_STATUS_META[item.wp_media_status]?.label;
+    toast(label ? `Row ${item.row_index}: ${label}` : `Row ${item.row_index} checked`);
+  } catch (error) {
+    button.disabled = false;
+    button.innerHTML = original;
+    toast(`Could not find the media ID: ${error.message}`);
+  }
+}
+
+// Справжнє посилання (не `button`), тож клік відкриває WordPress у тому ж
+// жесті користувача — копіювання йде паралельно, а не перед навігацією, щоб
+// `await navigator.clipboard.writeText` не встиг дати попап-блокеру привід
+// вважати відкриття вкладки не викликаним дією людини.
+async function openMediaLink(link) {
+  const alt = link.dataset.copy;
+  if (!alt) return;
+  if (await copyText(alt)) toast(`Alt copied — media #${link.dataset.mediaId} opened in WordPress`);
 }
 
 // Лічильники в шапці — єдине джерело правди про прогрес, тож після кожної

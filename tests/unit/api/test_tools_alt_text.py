@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import io
+import json
 from typing import Any
 
 import pytest
 from openpyxl import Workbook
 
 from app.tools.alt_text.verify import FetchedPage
+from app.tools.alt_text.wp_rest import RestResponse
 
 UPLOADS = "https://acme.example.com/wp-content/uploads/2024/03"
 
@@ -514,6 +516,390 @@ def test_report_verify_counts_are_reported(
     _patch_fetch(monkeypatch, f'<img src="{UPLOADS}/hero-image.jpg" alt="">')
     api_client.post(f"{base}/items/{item['id']}/verify")
     assert api_client.get(base).json()["verify_counts"] == {"empty_alt": 1}
+
+
+# --- WordPress media ID (task-39) -----------------------------------------------
+
+
+def _rest_response(payload: Any, *, status: int = 200) -> RestResponse:
+    body = json.dumps(payload).encode()
+    return RestResponse(http_status=status, content_type="application/json", body=body)
+
+
+def _patch_media(monkeypatch: pytest.MonkeyPatch, responses: list[RestResponse]) -> list[str]:
+    """Підмінити `wp_rest.fetch_rest`; повертає список реально запитаних URL."""
+    from app.tools.alt_text import wp_rest as wp_rest_module
+
+    requested: list[str] = []
+    queue = list(responses)
+
+    def fake_fetch(url: str) -> RestResponse:
+        requested.append(url)
+        return queue.pop(0)
+
+    monkeypatch.setattr(wp_rest_module, "fetch_rest", fake_fetch)
+    return requested
+
+
+def test_resolve_item_media_finds_an_exact_match(
+    api_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = _create_report(api_client)
+    base = f"/api/v1/tools/alt-text/reports/{report['id']}"
+    item = api_client.get(f"{base}/items").json()["rows"][0]  # hero-image, uploads
+    requested = _patch_media(
+        monkeypatch,
+        [
+            _rest_response(
+                [
+                    {
+                        "id": 42,
+                        "slug": "hero-image",
+                        "alt_text": "Team at the office",
+                        "source_url": f"{UPLOADS}/hero-image.jpg",
+                        "media_details": {"file": "2024/03/hero-image.jpg", "sizes": {}},
+                    }
+                ]
+            )
+        ],
+    )
+
+    response = api_client.post(f"{base}/items/{item['id']}/resolve-media")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["wp_media_id"] == 42
+    assert body["wp_media_status"] == "resolved"
+    assert body["wp_media_confidence"] == "exact"
+    assert body["wp_media_alt"] == "Team at the office"
+    assert body["wp_media_admin_url"] == "https://acme.example.com/wp-admin/upload.php?item=42"
+    assert body["wp_media_checked_at"] is not None
+    assert len(requested) == 1
+
+
+def test_resolve_item_media_is_not_searchable_for_a_non_uploads_row(api_client: Any) -> None:
+    report = _create_report(api_client)
+    base = f"/api/v1/tools/alt-text/reports/{report['id']}"
+    items = api_client.get(f"{base}/items").json()["rows"]
+    theme_item = next(row for row in items if row["url_kind"] == "theme_asset")
+
+    response = api_client.post(f"{base}/items/{theme_item['id']}/resolve-media")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["wp_media_status"] == "not_searchable"
+    assert body["wp_media_id"] is None
+
+
+def test_resolve_item_media_is_ambiguous_with_multiple_unconfirmed_candidates(
+    api_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = _create_report(api_client)
+    base = f"/api/v1/tools/alt-text/reports/{report['id']}"
+    item = api_client.get(f"{base}/items").json()["rows"][0]
+    candidates = [
+        {
+            "id": 101,
+            "slug": "hero-image",
+            "alt_text": None,
+            "source_url": f"{UPLOADS}/other/hero-image.jpg",
+            "media_details": {"file": "2023/01/hero-image.jpg", "sizes": {}},
+        },
+        {
+            "id": 102,
+            "slug": "hero-image-2",
+            "alt_text": None,
+            "source_url": f"{UPLOADS}/other/hero-image-2.jpg",
+            "media_details": {"file": "2022/11/hero-image.jpg", "sizes": {}},
+        },
+    ]
+    _patch_media(monkeypatch, [_rest_response(candidates)])
+
+    response = api_client.post(f"{base}/items/{item['id']}/resolve-media")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["wp_media_status"] == "ambiguous"
+    assert body["wp_media_id"] is None
+    assert {candidate["id"] for candidate in body["wp_media_candidates"]} == {101, 102}
+
+
+def test_resolve_item_media_falls_back_to_the_client_domain_when_the_image_host_has_no_rest_api(
+    api_client: Any, seed_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression (live QA 2026-08-14): a custom CDN subdomain (`cdn.client.com`) that
+
+    isn't one of the recognized proxy patterns (Photon/Cloudflare/Statically) serves
+    the image but has no WordPress REST API of its own — the real site lives at the
+    client's registered domain. The first attempt must fail honestly (`rest_unavailable`)
+    before the fallback, not silently swap hosts.
+    """
+    client_id = seed_client(domain="realsite.example.com")
+    sheet = [
+        AUDIT_SHEET[0],
+        [
+            "https://cdn.realsite.example.com/wp-content/uploads/2024/03/hero-1.jpg",
+            "An alt",
+            "",
+            "",
+            "",
+        ],
+    ]
+    upload = _upload(api_client, _xlsx({"Images": sheet}))
+    report = api_client.post(
+        "/api/v1/tools/alt-text/reports",
+        json={
+            "upload_id": upload.json()["upload_id"],
+            "title": "CDN host",
+            "sheet": "Images",
+            "client_id": client_id,
+            "column_map": {"image_url": 0, "new_alt": 1},
+        },
+    ).json()
+    base = f"/api/v1/tools/alt-text/reports/{report['id']}"
+    item = api_client.get(f"{base}/items").json()["rows"][0]
+
+    from app.tools.alt_text import wp_rest as wp_rest_module
+
+    requested: list[str] = []
+
+    def fake_fetch(url: str) -> RestResponse:
+        requested.append(url)
+        if "cdn.realsite.example.com" in url:
+            return RestResponse(http_status=403, content_type="application/json", body=b"{}")
+        return _rest_response(
+            [
+                {
+                    "id": 55,
+                    "slug": "hero-1",
+                    "alt_text": None,
+                    "source_url": "https://realsite.example.com/wp-content/uploads/2024/03/hero-1.jpg",
+                    "media_details": {"file": "2024/03/hero-1.jpg", "sizes": {}},
+                }
+            ]
+        )
+
+    monkeypatch.setattr(wp_rest_module, "fetch_rest", fake_fetch)
+
+    response = api_client.post(f"{base}/items/{item['id']}/resolve-media")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["wp_media_status"] == "resolved"
+    assert body["wp_media_id"] == 55
+    assert body["wp_media_admin_url"] == "https://realsite.example.com/wp-admin/upload.php?item=55"
+    # The image host was tried first (and honestly failed) before the fallback.
+    assert any("cdn.realsite.example.com" in url for url in requested)
+    assert any("realsite.example.com" in url and "cdn." not in url for url in requested)
+
+
+def test_resolve_item_media_fallback_uses_the_monitor_canonical_www_setting(
+    api_client: Any, seed_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression (live QA 2026-08-14): the client-domain fallback used
+
+    `client.domain` verbatim, so a client stored as bare `realsite.example.com`
+    whose site actually canonicalizes to `www.` got an admin link that bounced
+    through a cross-host login redirect. `MonitorSettings.canonical_www`
+    (Site Monitor, task-38 follow-up) already records the answer per client —
+    the fallback must apply the same www/non-www correction as
+    `app.monitor.runner._base_url`, not just echo the stored domain.
+    """
+    client_id = seed_client(domain="realsite.example.com")
+    settings_response = api_client.patch(
+        f"/api/v1/clients/{client_id}/monitor/settings", json={"canonical_www": True}
+    )
+    assert settings_response.status_code == 200
+
+    sheet = [
+        AUDIT_SHEET[0],
+        [
+            "https://cdn.realsite.example.com/wp-content/uploads/2024/03/hero-1.jpg",
+            "An alt",
+            "",
+            "",
+            "",
+        ],
+    ]
+    upload = _upload(api_client, _xlsx({"Images": sheet}))
+    report = api_client.post(
+        "/api/v1/tools/alt-text/reports",
+        json={
+            "upload_id": upload.json()["upload_id"],
+            "title": "CDN host with canonical www",
+            "sheet": "Images",
+            "client_id": client_id,
+            "column_map": {"image_url": 0, "new_alt": 1},
+        },
+    ).json()
+    base = f"/api/v1/tools/alt-text/reports/{report['id']}"
+    item = api_client.get(f"{base}/items").json()["rows"][0]
+
+    from app.tools.alt_text import wp_rest as wp_rest_module
+
+    requested: list[str] = []
+
+    def fake_fetch(url: str) -> RestResponse:
+        requested.append(url)
+        if "cdn.realsite.example.com" in url:
+            return RestResponse(http_status=403, content_type="application/json", body=b"{}")
+        return _rest_response(
+            [
+                {
+                    "id": 77,
+                    "slug": "hero-1",
+                    "alt_text": None,
+                    "source_url": "https://www.realsite.example.com/wp-content/uploads/2024/03/hero-1.jpg",
+                    "media_details": {"file": "2024/03/hero-1.jpg", "sizes": {}},
+                }
+            ]
+        )
+
+    monkeypatch.setattr(wp_rest_module, "fetch_rest", fake_fetch)
+
+    response = api_client.post(f"{base}/items/{item['id']}/resolve-media")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["wp_media_status"] == "resolved"
+    assert body["wp_media_admin_url"] == "https://www.realsite.example.com/wp-admin/upload.php?item=77"
+    assert any(url.startswith("https://www.realsite.example.com/") for url in requested)
+
+
+def test_resolve_item_media_of_a_missing_item_is_404(api_client: Any) -> None:
+    report = _create_report(api_client)
+    base = f"/api/v1/tools/alt-text/reports/{report['id']}"
+    response = api_client.post(
+        f"{base}/items/00000000-0000-0000-0000-000000000000/resolve-media"
+    )
+    assert response.status_code == 404
+
+
+def test_resolve_report_media_processes_unresolved_uploads_rows_only(
+    api_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = _create_report(api_client)
+    base = f"/api/v1/tools/alt-text/reports/{report['id']}"
+    items = api_client.get(f"{base}/items").json()["rows"]
+    uploads_rows = [row for row in items if row["url_kind"] == "uploads"]
+    assert len(uploads_rows) == 2  # hero-image (row 1) + logo (row 2); pattern.svg is a theme asset
+
+    requested = _patch_media(
+        monkeypatch,
+        [
+            _rest_response(
+                [
+                    {
+                        "id": 1,
+                        "slug": "hero-image",
+                        "alt_text": None,
+                        "source_url": f"{UPLOADS}/hero-image.jpg",
+                        "media_details": {"file": "2024/03/hero-image.jpg", "sizes": {}},
+                    }
+                ]
+            ),
+            _rest_response([]),  # logo row, step 1: exact path — empty
+            _rest_response([]),  # logo row, step 2: slug — empty
+            _rest_response([]),  # logo row, step 3: broad search — empty
+        ],
+    )
+
+    response = api_client.post(f"{base}/resolve-media", json={"limit": 50})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resolved"] == 1
+    assert body["not_found"] == 1
+    assert body["remaining"] == 0
+    assert len(requested) == 4
+
+    updated = api_client.get(f"{base}/items").json()["rows"]
+    theme_row = next(row for row in updated if row["url_kind"] == "theme_asset")
+    # Не-uploads рядок пакет узагалі не чіпав: `wp_media_status` лишається `None`.
+    assert theme_row["wp_media_status"] is None
+
+
+def test_resolve_report_media_of_a_missing_report_is_404(api_client: Any) -> None:
+    missing = "/api/v1/tools/alt-text/reports/00000000-0000-0000-0000-000000000000/resolve-media"
+    assert api_client.post(missing).status_code == 404
+
+
+def test_resolve_report_media_is_idempotent_and_stops_reprocessing(
+    api_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = _create_report(api_client)
+    base = f"/api/v1/tools/alt-text/reports/{report['id']}"
+    _patch_media(monkeypatch, [_rest_response([]), _rest_response([]), _rest_response([])] * 2)
+
+    first = api_client.post(f"{base}/resolve-media").json()
+    assert first["not_found"] == 2
+
+    # Другий прогін не бачить уже вирішених рядків узагалі — жодного запиту.
+    second_requested = _patch_media(monkeypatch, [])
+    second = api_client.post(f"{base}/resolve-media").json()
+    assert second == {
+        "resolved": 0,
+        "ambiguous": 0,
+        "not_found": 0,
+        "rest_unavailable": 0,
+        "failed": 0,
+        "skipped": 0,
+        "remaining": 0,
+    }
+    assert second_requested == []
+
+
+def test_items_filter_by_media_status(api_client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    report = _create_report(api_client)
+    base = f"/api/v1/tools/alt-text/reports/{report['id']}"
+    item = api_client.get(f"{base}/items").json()["rows"][0]
+    _patch_media(
+        monkeypatch,
+        [
+            _rest_response(
+                [
+                    {
+                        "id": 42,
+                        "slug": "hero-image",
+                        "alt_text": None,
+                        "source_url": f"{UPLOADS}/hero-image.jpg",
+                        "media_details": {"file": "2024/03/hero-image.jpg", "sizes": {}},
+                    }
+                ]
+            )
+        ],
+    )
+    api_client.post(f"{base}/items/{item['id']}/resolve-media")
+
+    resolved = api_client.get(f"{base}/items", params={"media_status": "resolved"}).json()
+    assert [row["id"] for row in resolved["rows"]] == [item["id"]]
+
+    unresolved = api_client.get(f"{base}/items", params={"media_status": "unresolved"}).json()
+    assert item["id"] not in [row["id"] for row in unresolved["rows"]]
+    # Дві решта — logo (uploads) і pattern.svg (theme_asset), обидва ще не шукали.
+    assert unresolved["total"] == 2
+
+
+def test_media_id_appears_in_csv_export(api_client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    report = _create_report(api_client)
+    base = f"/api/v1/tools/alt-text/reports/{report['id']}"
+    item = api_client.get(f"{base}/items").json()["rows"][0]
+    _patch_media(
+        monkeypatch,
+        [
+            _rest_response(
+                [
+                    {
+                        "id": 42,
+                        "slug": "hero-image",
+                        "alt_text": None,
+                        "source_url": f"{UPLOADS}/hero-image.jpg",
+                        "media_details": {"file": "2024/03/hero-image.jpg", "sizes": {}},
+                    }
+                ]
+            )
+        ],
+    )
+    api_client.post(f"{base}/items/{item['id']}/resolve-media")
+
+    body = api_client.get(f"{base}/export.csv").text
+    assert "Media ID" in body
+    assert "42" in body
+    assert "resolved" in body
 
 
 # --- експорт і видалення -------------------------------------------------------

@@ -26,7 +26,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
@@ -42,17 +42,22 @@ from app.core.security import PathTraversalError, safe_resolve
 from app.db.models import AltTextItem, AltTextReport
 from app.db.repositories.alt_text import AltTextItemInput, AltTextRepository, ItemFilters
 from app.db.repositories.clients import ClientRepository
+from app.db.repositories.monitor import MonitorRepository
 from app.schemas.api import ErrorDTO
 from app.schemas.tools import (
     AltTextItemDTO,
     AltTextItemsPageDTO,
     AltTextItemStatusRequest,
+    AltTextMediaBatchDTO,
+    AltTextMediaBatchRequest,
     AltTextReportCreateRequest,
     AltTextReportDTO,
     AltTextReportSummaryDTO,
     AltTextUploadDTO,
+    MediaCandidateDTO,
     SheetPreviewDTO,
 )
+from app.tools.alt_text import wp_rest
 from app.tools.alt_text.tables import (
     MAX_PAGE_URLS,
     REQUIRED_FIELDS,
@@ -62,7 +67,7 @@ from app.tools.alt_text.tables import (
     parse_rows,
 )
 from app.tools.alt_text.verify import VerifyResult, VerifyStatus, verify_alt
-from app.tools.alt_text.wp_media import derive_search_key, is_searchable
+from app.tools.alt_text.wp_media import derive_search_key, derive_upload_location, is_searchable
 
 router = APIRouter(prefix="/api/v1/tools/alt-text", tags=["tools"])
 
@@ -161,6 +166,7 @@ def _drop_upload(settings: Settings, upload_id: str) -> None:
 
 def _item_dto(item: AltTextItem) -> AltTextItemDTO:
     derivation = item.derivation_json or {}
+    media = item.wp_media_json or {}
     return AltTextItemDTO(
         id=item.id,
         row_index=item.row_index,
@@ -183,6 +189,16 @@ def _item_dto(item: AltTextItem) -> AltTextItemDTO:
         verify_http_status=item.verify_http_status,
         verify_detail=item.verify_detail,
         verify_checked_at=item.verify_checked_at,
+        wp_media_id=item.wp_media_id,
+        wp_media_status=item.wp_media_status,  # type: ignore[arg-type]
+        wp_media_confidence=item.wp_media_confidence,  # type: ignore[arg-type]
+        wp_media_alt=item.wp_media_alt,
+        wp_media_admin_url=item.wp_media_admin_url,
+        wp_media_detail=item.wp_media_detail,
+        wp_media_candidates=[
+            MediaCandidateDTO(**candidate) for candidate in (media.get("candidates") or [])
+        ],
+        wp_media_checked_at=item.wp_media_checked_at,
     )
 
 
@@ -460,11 +476,17 @@ async def list_items(
     url_kind: str | None = None,
     verify: str | None = None,
     has_page: bool | None = None,
+    media_status: str | None = None,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> AltTextItemsPageDTO:
     filters = ItemFilters(
-        query=q, status=status, url_kind=url_kind, verify_status=verify, has_page=has_page
+        query=q,
+        status=status,
+        url_kind=url_kind,
+        verify_status=verify,
+        has_page=has_page,
+        media_status=media_status,
     )
 
     def _read(sync_session: Session) -> AltTextItemsPageDTO | None:
@@ -604,6 +626,211 @@ async def _store_verify(
     return dto
 
 
+# --- WordPress media ID (task-39) -----------------------------------------------
+
+
+def _apply_canonical_www(host: str, canonical_www: bool | None) -> str:
+    """Та сама поправка хоста, що й `app.monitor.runner._base_url` (task-38
+
+    follow-up): `None` — оператор не задавав, хост лишається як записаний;
+    `True`/`False` вибирає www/non-www напряму замість того, щоб кожен
+    REST-запит з'їдав власний редірект сайту.
+    """
+    has_www = host.lower().startswith("www.")
+    if canonical_www is True and not has_www:
+        return f"www.{host}"
+    if canonical_www is False and has_www:
+        return host[len("www.") :]
+    return host
+
+
+def _report_site_host(sync_session: Session, report_id: str) -> str | None:
+    """Домен клієнта звіту (з поправкою www/non-www із Site Monitor, якщо
+
+    оператор її задав) — фолбек-корінь, коли хост картинки не WordPress.
+    """
+    report = AltTextRepository(sync_session).get_report(report_id)
+    if report is None or report.client_id is None:
+        return None
+    client = ClientRepository(sync_session).get(report.client_id)
+    if client is None:
+        return None
+    settings = MonitorRepository(sync_session).get_settings(report.client_id)
+    canonical_www = settings.canonical_www if settings else None
+    return _apply_canonical_www(client.domain, canonical_www)
+
+
+def _lookup_dict(lookup: wp_rest.MediaLookup) -> dict[str, Any]:
+    return {
+        "media_id": lookup.media_id,
+        "status": lookup.status.value,
+        "confidence": lookup.confidence.value if lookup.confidence else None,
+        "alt_text": lookup.alt_text,
+        "admin_url": lookup.admin_url,
+        "detail": lookup.detail,
+        "candidates": [
+            {
+                "id": candidate.id,
+                "file": candidate.file,
+                "source_url": candidate.source_url,
+                "alt_text": candidate.alt_text,
+                "title": candidate.title,
+            }
+            for candidate in lookup.candidates
+        ],
+    }
+
+
+def _resolve_media_sync(
+    image_url: str, url_kind: str, search_key: str, *, site_host: str | None = None
+) -> dict[str, Any]:
+    """Знайти точний `attachment ID`. Блокуюча (до 6 запитів) — через `run_in_threadpool`.
+
+    Не-uploads URL і закороткий фрагмент — `not_searchable` без жодного
+    мережевого запиту: цей стан ставиться тут, а не всередині `wp_rest`,
+    бо `wp_rest.lookup_media()` завжди отримує вже валідний `UploadLocation`.
+
+    Хост картинки не завжди хост WordPress: бувають кастомні CDN-піддомени
+    (`cdn.client.com`), яких `derive_upload_location`'s CDN-розпізнавання не
+    знає (на відміну від Photon/Cloudflare/Statically — ті вже розгорнуті).
+    Такий хост не має REST API → `rest_unavailable`. Якщо в нас є домен
+    клієнта і він інший — пробуємо ще раз з ним як коренем, перш ніж здатися.
+    """
+    if not is_searchable(url_kind, search_key):
+        return {
+            "media_id": None,
+            "status": "not_searchable",
+            "confidence": None,
+            "alt_text": None,
+            "admin_url": None,
+            "detail": "Not in the uploads folder — it cannot be in the media library.",
+            "candidates": [],
+        }
+    location = derive_upload_location(image_url)
+    if location is None:
+        return {
+            "media_id": None,
+            "status": "not_searchable",
+            "confidence": None,
+            "alt_text": None,
+            "admin_url": None,
+            "detail": "Could not determine the WordPress uploads path from this URL.",
+            "candidates": [],
+        }
+    lookup = wp_rest.lookup_media(location)
+    if lookup.status is wp_rest.MediaLookupStatus.rest_unavailable and site_host:
+        image_host = urlsplit(location.wp_root).hostname or ""
+        client_host = site_host.strip().lower().removeprefix("www.")
+        if client_host and image_host.removeprefix("www.") != client_host:
+            alt_lookup = wp_rest.lookup_media(replace(location, wp_root=f"https://{site_host}"))
+            if alt_lookup.status is not wp_rest.MediaLookupStatus.rest_unavailable:
+                lookup = alt_lookup
+    return _lookup_dict(lookup)
+
+
+async def _store_media_result(
+    session: AsyncSession, report_id: str, item_id: str, result: dict[str, Any]
+) -> AltTextItemDTO:
+    def _write(sync_session: Session) -> AltTextItemDTO | None:
+        repository = AltTextRepository(sync_session)
+        item = repository.get_item(report_id, item_id)
+        if item is None:
+            return None
+        repository.set_media_result(
+            item,
+            media_id=result["media_id"],
+            status=result["status"],
+            confidence=result["confidence"],
+            alt_text=result["alt_text"],
+            admin_url=result["admin_url"],
+            detail=result["detail"],
+            candidates=result["candidates"],
+        )
+        return _item_dto(item)
+
+    dto = await session.run_sync(_write)
+    if dto is None:
+        raise HTTPException(status_code=404, detail=_ITEM_NOT_FOUND)
+    await session.commit()
+    return dto
+
+
+@router.post(
+    "/reports/{report_id}/items/{item_id}/resolve-media",
+    response_model=AltTextItemDTO,
+    responses={404: {"model": ErrorDTO}},
+)
+async def resolve_item_media(report_id: str, item_id: str, session: SessionDep) -> AltTextItemDTO:
+    """Знайти точний WordPress media ID для одного рядка й зберегти результат."""
+
+    def _read(sync_session: Session) -> tuple[str, str, str, str | None] | None:
+        repository = AltTextRepository(sync_session)
+        item = repository.get_item(report_id, item_id)
+        if item is None:
+            return None
+        site_host = _report_site_host(sync_session, report_id)
+        return (item.image_url, item.url_kind, item.search_key, site_host)
+
+    found = await session.run_sync(_read)
+    if found is None:
+        raise HTTPException(status_code=404, detail=_ITEM_NOT_FOUND)
+    image_url, url_kind, search_key, site_host = found
+    result = await run_in_threadpool(
+        _resolve_media_sync, image_url, url_kind, search_key, site_host=site_host
+    )
+    return await _store_media_result(session, report_id, item_id, result)
+
+
+@router.post(
+    "/reports/{report_id}/resolve-media",
+    response_model=AltTextMediaBatchDTO,
+    responses={404: {"model": ErrorDTO}},
+)
+async def resolve_report_media(
+    report_id: str, session: SessionDep, body: AltTextMediaBatchRequest | None = None
+) -> AltTextMediaBatchDTO:
+    """Пакетно знайти ID для рядків, які ще не шукали — до `limit` за раз.
+
+    Послідовно, рядок за рядком: це реальні запити до сайту клієнта, а не
+    наш ресурс, тож паралелити їх — навантажувальний тест чужого сервера.
+    """
+    limit = (body or AltTextMediaBatchRequest()).limit
+
+    def _read(sync_session: Session) -> tuple[str | None, list[tuple[str, str, str, str]]] | None:
+        repository = AltTextRepository(sync_session)
+        if repository.get_report(report_id) is None:
+            return None
+        rows = repository.list_unresolved_items(report_id, limit=limit)
+        site_host = _report_site_host(sync_session, report_id)
+        return site_host, [(row.id, row.image_url, row.url_kind, row.search_key) for row in rows]
+
+    found = await session.run_sync(_read)
+    if found is None:
+        raise HTTPException(status_code=404, detail=_REPORT_NOT_FOUND)
+    site_host, items = found
+
+    counts = {
+        "resolved": 0,
+        "ambiguous": 0,
+        "not_found": 0,
+        "rest_unavailable": 0,
+        "failed": 0,
+        "skipped": 0,
+    }
+    for item_id, image_url, url_kind, search_key in items:
+        result = await run_in_threadpool(
+            _resolve_media_sync, image_url, url_kind, search_key, site_host=site_host
+        )
+        if result["status"] == "not_searchable":
+            counts["skipped"] += 1
+        else:
+            counts[result["status"]] = counts.get(result["status"], 0) + 1
+        await _store_media_result(session, report_id, item_id, result)
+
+    remaining = await session.run_sync(lambda s: AltTextRepository(s).unresolved_count(report_id))
+    return AltTextMediaBatchDTO(**counts, remaining=remaining)
+
+
 # --- видалення -----------------------------------------------------------------
 
 
@@ -640,6 +867,9 @@ _EXPORT_HEADER = (
     "Verify",
     "Alt found on page",
     "Checked at",
+    "Media ID",
+    "Media status",
+    "Admin URL",
 )
 # Клітинка, що починається з цих символів, у Excel/Sheets стає формулою —
 # експорт звіту не має виконувати нічого з чужого файлу.
@@ -669,6 +899,9 @@ def _export_values(item: AltTextItem) -> tuple[str, ...]:
             item.verify_status or "",
             item.verify_alt or "",
             item.verify_checked_at.isoformat() if item.verify_checked_at else "",
+            item.wp_media_id if item.wp_media_id is not None else "",
+            item.wp_media_status or "",
+            item.wp_media_admin_url or "",
         )
     )
 

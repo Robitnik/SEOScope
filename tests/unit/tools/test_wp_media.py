@@ -13,6 +13,7 @@ from app.tools.alt_text.wp_media import (
     MAX_SEARCH_KEY_LENGTH,
     UrlKind,
     derive_search_key,
+    derive_upload_location,
     strip_wp_suffixes,
 )
 
@@ -235,3 +236,68 @@ def test_strip_never_eats_the_whole_name() -> None:
     stem, stripped = strip_wp_suffixes("300x200")
     assert stem == "300x200"
     assert stripped == []
+
+
+# --- derive_upload_location (task-39) ------------------------------------------
+
+
+def test_upload_location_for_a_plain_original() -> None:
+    location = derive_upload_location(f"{UPLOADS}/hero-image.jpg")
+    assert location is not None
+    assert location.wp_root == f"https://{SITE}"
+    assert location.relative_path == "2024/03/hero-image.jpg"
+    assert location.original_relative_path == "2024/03/hero-image.jpg"
+    assert location.basename == "hero-image.jpg"
+    assert location.original_basename == "hero-image.jpg"
+
+
+def test_upload_location_strips_resize_suffix_from_the_original_path_only() -> None:
+    location = derive_upload_location(f"{UPLOADS}/hero-image-300x200.jpg")
+    assert location is not None
+    # `relative_path` — те, що реально в URL (з суфіксом розміру).
+    assert location.relative_path == "2024/03/hero-image-300x200.jpg"
+    # `original_relative_path` — те, що WP тримає в `_wp_attached_file`.
+    assert location.original_relative_path == "2024/03/hero-image.jpg"
+    assert location.basename == "hero-image-300x200.jpg"
+    assert location.original_basename == "hero-image.jpg"
+
+
+def test_upload_location_root_is_flattened_for_subdirectory_installs() -> None:
+    # Відомий ліміт (докстрінг `UploadLocation`): спільне з `derive_search_key`
+    # розгортання «вкладеного uploads-шляху» не відрізняє підкаталог
+    # інсталяції від WebP-Express-обгортки — обидва відсікаються однаково.
+    location = derive_upload_location(
+        f"https://{SITE}/blog/wp-content/uploads/2024/03/1-e1712345678901-1024x683.jpg"
+    )
+    assert location is not None
+    assert location.wp_root == f"https://{SITE}"
+    assert location.original_relative_path == "2024/03/1.jpg"
+
+
+def test_upload_location_unwraps_cdn_proxy() -> None:
+    location = derive_upload_location(
+        f"https://i0.wp.com/{SITE}/wp-content/uploads/2024/03/hero-image.jpg?resize=300,200&ssl=1"
+    )
+    assert location is not None
+    assert location.wp_root == f"https://{SITE}"
+    assert location.original_relative_path == "2024/03/hero-image.jpg"
+
+
+def test_upload_location_is_none_for_theme_assets() -> None:
+    assert derive_upload_location(f"https://{SITE}/wp-content/themes/yovth/img/logo.png") is None
+
+
+def test_upload_location_is_none_for_non_uploads_urls() -> None:
+    assert derive_upload_location(f"https://{SITE}/images/static-banner.jpg") is None
+
+
+def test_upload_location_is_none_for_empty_input() -> None:
+    assert derive_upload_location("   ") is None
+
+
+def test_upload_location_is_none_when_the_upload_root_is_bare_size() -> None:
+    # Файл, назва якого — суто розмір: `strip_wp_suffixes` не знімає нічого,
+    # тож `original_stem` лишається валідним, і фрагмент усе одно є.
+    location = derive_upload_location(f"{UPLOADS}/300x200.jpg")
+    assert location is not None
+    assert location.original_relative_path == "2024/03/300x200.jpg"
