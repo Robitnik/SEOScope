@@ -26,6 +26,7 @@
 .client-page__identity .client-logo { width: 52px; height: 52px; flex: 0 0 auto; object-fit: contain; background: #fff; color: #111; display: grid; place-items: center; font-family: var(--font-display); font-size: 18px; border: 1px solid var(--line); }
 .client-page__identity h1 { font-size: clamp(22px, 2.6vw, 32px); overflow-wrap: anywhere; }
 .client-page__identity a { color: var(--ink-muted); display: inline-block; margin-top: 3px; }
+.monitor-canonical-badge { display: inline-block; margin: 3px 0 0 10px; padding: 1px 8px; border: 1px solid var(--line); color: var(--ink-muted); font-size: 11px; }
 .client-page__status { display: grid; gap: 6px; justify-items: end; text-align: right; padding-inline: 18px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 .client-page__sync { color: var(--ink-muted); font-size: 11px; }
 /* Бейдж статусу (task-34) успадковує вигляд із app.css; тут лише вирівнювання

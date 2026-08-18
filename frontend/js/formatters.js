@@ -156,6 +156,7 @@ const CHANGE_TYPE_LABELS = {
   dns_apex_a_changed: "DNS apex A record changed",
   canonical_offsite: "Canonical points off-site",
   sitemap_lost: "Sitemap lost",
+  sitemap_unavailable: "Sitemap could not be checked",
   canonical_changed: "Canonical changed",
   title_changed: "Title changed",
   description_changed: "Description changed",
@@ -222,6 +223,15 @@ export function icon(name, className = "icon") {
   return `<svg class="${className}" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-${name}"></use></svg>`;
 }
 
+// A `loader-2` glyph that does not turn reads as a broken page, not as work in
+// flight — and every status map here spells "Running" with exactly that glyph.
+// `.icon--spin` (app.css) is the one spinner the rest of the app already uses,
+// and the global `prefers-reduced-motion` guard stops it, so the animation
+// never has to be re-decided per call site.
+export function statusIcon(name, className = "icon icon--tiny") {
+  return icon(name, name === "loader-2" ? `${className} icon--spin` : className);
+}
+
 export function metricLabel(metric) {
   return METRIC_LABELS[metric.metric_key] || metric.label || metric.metric_key;
 }
@@ -247,6 +257,25 @@ export function formatShortDate(value) {
   if (!value) return null;
   const iso = String(value).length <= 10 ? `${value}T12:00:00` : value;
   return shortDateFormatter.format(new Date(iso));
+}
+
+// One date-range dialect for reports (task-45 §3.2): "Jul 1 – Jul 31, 2026",
+// collapsing to a single year when both ends share one. Used by the run
+// detail's period rows and METRICS header AND by the wizard's period preview,
+// so the same range never appears in two different formats across the flow.
+// Noon-anchored so a date-only ISO string can't slip a day in a negative UTC
+// offset; `Intl` does the localizing (AGENTS §5).
+const rangeMonthDayFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
+export function formatDateRange(fromIso, toIso) {
+  if (!fromIso || !toIso) return "";
+  const from = new Date(`${String(fromIso).slice(0, 10)}T12:00:00`);
+  const to = new Date(`${String(toIso).slice(0, 10)}T12:00:00`);
+  if (!Number.isFinite(from.valueOf()) || !Number.isFinite(to.valueOf())) return "";
+  const tail = `${rangeMonthDayFormatter.format(to)}, ${to.getFullYear()}`;
+  return from.getFullYear() === to.getFullYear()
+    ? `${rangeMonthDayFormatter.format(from)} – ${tail}`
+    : `${rangeMonthDayFormatter.format(from)}, ${from.getFullYear()} – ${tail}`;
 }
 
 export function formatTimestamp(value, fallback = "Never updated") {
@@ -297,4 +326,78 @@ export function percent(value) {
 
 export function isTerminal(status) {
   return ["succeeded", "partial", "failed", "cancelled"].includes(status);
+}
+
+// --- Reports (task-43) ------------------------------------------------------
+
+// Report run status reuses the existing `.state-*` tone dictionary
+// (app.css already styles state-queued/running/succeeded/partial/failed/
+// cancelled for jobs and monitor runs) rather than inventing new colors —
+// task-43 §5.3 forbids new colors outright. Kept as its own dict, not folded
+// into `STATE_META` above, because the copy is report-specific ("Succeeded"
+// vs STATE_META's job-flavored "Completed").
+export const REPORT_RUN_STATUS_META = {
+  queued: { label: "Queued", icon: "clock" },
+  running: { label: "Running", icon: "loader-2" },
+  succeeded: { label: "Succeeded", icon: "circle-check" },
+  partial: { label: "Partial", icon: "alert-triangle" },
+  failed: { label: "Failed", icon: "circle-x" },
+  cancelled: { label: "Cancelled", icon: "ban" },
+};
+
+export const REPORT_SOURCE_META = {
+  api: { label: "API", icon: "bolt" },
+  pdf: { label: "PDF", icon: "file-text" },
+};
+
+// New `.state-*` tones (match/within_tolerance/mismatch) live in
+// reports.css, built from the same `--success`/`--warning`/--danger` tokens
+// every other tone uses — no new color literal anywhere.
+export const REPORT_CROSS_CHECK_META = {
+  match: { label: "Match", icon: "check" },
+  within_tolerance: { label: "Within tolerance", icon: "alert-triangle" },
+  mismatch: { label: "Mismatch", icon: "alert-octagon" },
+};
+
+export const REPORT_KIND_META = {
+  monthly: { label: "Monthly", description: "6 standard periods (month, quarter, YOY)" },
+  yearly: { label: "Yearly", description: "Year over year" },
+  custom_months: { label: "Custom months", description: "Pick up to 24 months" },
+  comparator: { label: "Comparator", description: "Same month across up to 4 years" },
+};
+
+export function reportKindLabel(kind) {
+  return REPORT_KIND_META[kind]?.label || kind;
+}
+
+// Pure function of a second count so both a finished run (fixed duration)
+// and a live one (recomputed every tick against `Date.now()`) share one
+// implementation — never hand-built "Xm Ys" string concatenation per caller.
+export function formatDurationSeconds(totalSeconds) {
+  if (totalSeconds === null || totalSeconds === undefined || !Number.isFinite(totalSeconds) || totalSeconds < 0) return "—";
+  const seconds = Math.floor(totalSeconds);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+  if (m > 0) return `${m}m ${String(s).padStart(2, "0")}s`;
+  return `${s}s`;
+}
+
+// `endIso` defaults to "now" so a still-running row's duration ticks forward
+// on every re-render instead of freezing at the value first fetched.
+export function formatDuration(startIso, endIso) {
+  if (!startIso) return "—";
+  const start = Date.parse(startIso);
+  const end = endIso ? Date.parse(endIso) : Date.now();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return "—";
+  return formatDurationSeconds((end - start) / 1000);
+}
+
+export function formatFileSize(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) return "—";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(0)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }

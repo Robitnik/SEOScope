@@ -1,5 +1,5 @@
-import { escapeHtml, icon } from "./formatters.js?v=20260812-monitor7";
-import { formatUaCtr, formatUaDelta, formatUaNumber, formatUaPosition } from "./client-page.js?v=20260812-monitor7";
+import { escapeHtml, icon } from "./formatters.js?v=20260817-spin1";
+import { formatUaCtr, formatUaDelta, formatUaNumber, formatUaPosition } from "./client-page.js?v=20260817-spin1";
 
 const PAGE_SIZE = 20;
 const SORT_OPTIONS = [

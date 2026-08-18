@@ -9,15 +9,16 @@
     <link rel="icon" href="/assets/brand/logo.svg" type="image/svg+xml">
     <link rel="preload" href="/assets/fonts/league-spartan-black.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/assets/brand/ribbon.webp" as="image" type="image/webp">
-    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260812-monitor7">
-    <link rel="stylesheet" href="/css/tokens.css?v=20260812-monitor7">
-    <link rel="stylesheet" href="/css/app.css?v=20260812-monitor7">
-    <link rel="stylesheet" href="/css/client-page.css?v=20260812-monitor7">
-    <link rel="stylesheet" href="/css/tools.css?v=20260812-monitor7">
-    <link rel="stylesheet" href="/css/trends.css?v=20260812-monitor7">
-    <link rel="stylesheet" href="/css/monitor.css?v=20260812-monitor7">
+    <link rel="stylesheet" href="/vendor/bootstrap-5.3.8/bootstrap.min.css?v=20260817-spin1">
+    <link rel="stylesheet" href="/css/tokens.css?v=20260817-spin1">
+    <link rel="stylesheet" href="/css/app.css?v=20260817-spin1">
+    <link rel="stylesheet" href="/css/client-page.css?v=20260817-spin1">
+    <link rel="stylesheet" href="/css/tools.css?v=20260817-spin1">
+    <link rel="stylesheet" href="/css/trends.css?v=20260817-spin1">
+    <link rel="stylesheet" href="/css/monitor.css?v=20260817-spin1">
+    <link rel="stylesheet" href="/css/reports.css?v=20260817-spin1">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260812-monitor7"></script>
+    <script type="module" src="/js/router.js?v=20260817-spin1"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -38,6 +39,10 @@
           <a href="#/tools" data-nav="tools">
             <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-tool"></use></svg>
             <span>Tools</span>
+          </a>
+          <a href="#/reports" data-nav="reports">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-file-report"></use></svg>
+            <span>Reports</span>
           </a>
           <a href="#/trends" data-nav="trends">
             <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-chart-line"></use></svg>
@@ -154,6 +159,12 @@
     <main class="app-main" id="monitor-page-root" hidden></main>
 
     <main class="app-main" id="monitor-client-page-root" hidden></main>
+
+    <main class="app-main" id="reports-page-root" hidden></main>
+
+    <main class="app-main" id="reports-run-page-root" hidden></main>
+
+    <main class="app-main" id="reports-batch-page-root" hidden></main>
     </div>
 
     <div class="job-dock" id="job-dock" hidden>
@@ -328,6 +339,46 @@
           <button class="button button--quiet" type="button" data-close>Cancel</button>
           <button class="button button--primary" type="submit" id="client-status-save">Save</button>
         </footer>
+      </form>
+    </dialog>
+
+    <!-- task-43: report launch wizard (Type -> Parameters -> Source). One shared
+         dialog bound once by reports-wizard.js, same pattern as sync-dialog. -->
+    <dialog class="reports-wizard-dialog" id="reports-wizard-dialog" aria-labelledby="reports-wizard-title">
+      <form method="dialog" class="dialog-shell" id="reports-wizard-form">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">Reports</p>
+            <h2 id="reports-wizard-title">Generate report</h2>
+            <p id="reports-wizard-subtitle">Choose a report type, its parameters, then how to collect it.</p>
+          </div>
+          <button class="icon-button" value="close" aria-label="Close dialog">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-x"></use></svg>
+          </button>
+        </header>
+        <nav class="reports-wizard-steps" id="reports-wizard-steps" aria-label="Wizard steps"></nav>
+        <div class="dialog-body reports-wizard-body" id="reports-wizard-body"></div>
+        <footer class="dialog-footer reports-wizard-footer">
+          <p class="reports-wizard-reason" id="reports-wizard-reason" role="status"></p>
+          <div class="reports-wizard-actions" id="reports-wizard-actions"></div>
+        </footer>
+      </form>
+    </dialog>
+
+    <!-- task-43: PDF inline viewer / details drawer for a finished run's files. -->
+    <dialog class="detail-dialog" id="reports-file-dialog" aria-labelledby="reports-file-title">
+      <form method="dialog" class="drawer-shell">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">Report file</p>
+            <h2 id="reports-file-title">File</h2>
+            <p id="reports-file-subtitle"></p>
+          </div>
+          <button class="icon-button" value="close" aria-label="Close panel">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-x"></use></svg>
+          </button>
+        </header>
+        <div class="drawer-body" id="reports-file-body"></div>
       </form>
     </dialog>
 

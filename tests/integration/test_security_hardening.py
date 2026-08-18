@@ -217,7 +217,7 @@ def test_committed_fixtures_and_env_example_carry_no_secrets():
     """Sanitized-фікстури мусять бути справді sanitized (ризик із плану таски)."""
     scanned = 0
     for path in (REPO_ROOT / "tests" / "fixtures").rglob("*"):
-        if not path.is_file() or path.suffix in {".xlsx", ".png", ".webp"}:
+        if not path.is_file() or path.suffix in {".xlsx", ".png", ".webp", ".pdf"}:
             continue
         scanned += 1
         assert scan_text(path.read_text(encoding="utf-8")) == [], f"секрет у фікстурі {path}"

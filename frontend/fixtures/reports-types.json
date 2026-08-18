@@ -1,0 +1,10 @@
+{
+  "types": [
+    { "kind": "monthly", "label": "Monthly", "estimate": { "api_seconds_per_column": 2.0, "pdf_seconds_per_column": 55.0 } },
+    { "kind": "yearly", "label": "Yearly", "estimate": { "api_seconds_per_column": 2.0, "pdf_seconds_per_column": 55.0 } },
+    { "kind": "custom_months", "label": "Custom", "estimate": { "api_seconds_per_column": 2.0, "pdf_seconds_per_column": 55.0 } },
+    { "kind": "comparator", "label": "Comparator", "estimate": { "api_seconds_per_column": 2.0, "pdf_seconds_per_column": 55.0 } }
+  ],
+  "max_months": 24,
+  "max_comparator_years": 4
+}

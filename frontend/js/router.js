@@ -11,6 +11,14 @@ const TOOLS_ROUTE = /^#\/tools(?:\/([^/?]+))?(?:\/([^/?]+))?/;
 const TRENDS_ROUTE = /^#\/trends/;
 // Site Monitor portfolio page (task-36): same shape as Trends — top-level, no client id.
 const MONITOR_ROUTE = /^#\/monitor/;
+// Reports (task-43): portfolio-level history (`#/reports`) and one run's
+// detail (`#/reports/<runId>`) — same "top-level, optional sub-resource"
+// shape TOOLS_ROUTE uses, not a client-scoped section.
+const REPORTS_ROUTE = /^#\/reports(?:\/([^/?]+))?/;
+// One batch's detail (task-47 §2.4), matched BEFORE the generic
+// `REPORTS_ROUTE` above — otherwise `#/reports/batches/<id>` would parse as
+// a single run whose id is literally `batches`.
+const REPORTS_BATCH_ROUTE = /^#\/reports\/batches\/([^/?]+)/;
 
 export function parseRoute() {
   const hash = location.hash || "";
@@ -26,6 +34,13 @@ export function parseRoute() {
   }
   if (TRENDS_ROUTE.test(hash)) return { name: "trends", query };
   if (MONITOR_ROUTE.test(hash)) return { name: "monitor", query };
+  const batchMatch = hash.match(REPORTS_BATCH_ROUTE);
+  if (batchMatch) return { name: "reports-batch", batchId: decodeURIComponent(batchMatch[1]), query };
+  const reportsMatch = hash.match(REPORTS_ROUTE);
+  if (reportsMatch) {
+    const runId = reportsMatch[1] ? decodeURIComponent(reportsMatch[1]) : null;
+    return { name: runId ? "reports-run" : "reports", runId, query };
+  }
   const ahrefsMatch = hash.match(AHREFS_ROUTE);
   if (ahrefsMatch) return { name: "ahrefs", clientId: decodeURIComponent(ahrefsMatch[1]), query };
   const blogsMatch = hash.match(BLOGS_ROUTE);
@@ -80,6 +95,28 @@ export function buildMonitorClientHash(clientId, params = {}) {
   return buildHash(`#/client/${encodeURIComponent(clientId)}/monitor`, params);
 }
 
+// Reports (task-43) — portfolio history (like Trends/Monitor) and one run's
+// detail (`#/reports/<runId>`, like `#/tools/<key>/<reportId>`).
+export function buildReportsHash(params = {}) {
+  return buildHash("#/reports", params);
+}
+
+export function replaceReportsHash(params) {
+  history.replaceState(null, "", `${location.pathname}${location.search}${buildReportsHash(params)}`);
+}
+
+export function buildReportsRunHash(runId, params = {}) {
+  return buildHash(`#/reports/${encodeURIComponent(runId)}`, params);
+}
+
+export function replaceReportsRunHash(runId, params) {
+  history.replaceState(null, "", `${location.pathname}${location.search}${buildReportsRunHash(runId, params)}`);
+}
+
+export function buildReportsBatchHash(batchId, params = {}) {
+  return buildHash(`#/reports/batches/${encodeURIComponent(batchId)}`, params);
+}
+
 export function replaceMonitorClientHash(clientId, params) {
   history.replaceState(null, "", `${location.pathname}${location.search}${buildMonitorClientHash(clientId, params)}`);
 }
@@ -122,17 +159,23 @@ async function activate() {
   const trendsRoot = document.querySelector("#trends-page-root");
   const monitorRoot = document.querySelector("#monitor-page-root");
   const monitorClientRoot = document.querySelector("#monitor-client-page-root");
+  const reportsRoot = document.querySelector("#reports-page-root");
+  const reportsRunRoot = document.querySelector("#reports-run-page-root");
+  const reportsBatchRoot = document.querySelector("#reports-batch-page-root");
   const dashboardChrome = [
     document.querySelector("#dashboard-header-actions"),
     document.querySelector("#dashboard-command-bar"),
   ];
-  const allRoots = [clientRoot, ahrefsRoot, blogsRoot, toolsRoot, trendsRoot, monitorRoot, monitorClientRoot];
+  const allRoots = [
+    clientRoot, ahrefsRoot, blogsRoot, toolsRoot, trendsRoot, monitorRoot, monitorClientRoot,
+    reportsRoot, reportsRunRoot, reportsBatchRoot,
+  ];
   // Global nav marks the active destination for assistive tech and for the eye
   // (`aria-current`), since a cross-route move is a full reload here.
+  const NAV_ROUTES = new Set(["tools", "trends", "monitor", "reports", "reports-run", "reports-batch"]);
   document.querySelectorAll("[data-nav]").forEach((link) => {
-    const isActive = link.dataset.nav === (
-      route.name === "tools" || route.name === "trends" || route.name === "monitor" ? route.name : "dashboard"
-    );
+    const navName = (route.name === "reports-run" || route.name === "reports-batch") ? "reports" : route.name;
+    const isActive = link.dataset.nav === (NAV_ROUTES.has(navName) ? navName : "dashboard");
     if (isActive) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
@@ -141,55 +184,76 @@ async function activate() {
     allRoots.filter((el) => el !== toolsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     toolsRoot?.removeAttribute("hidden");
-    const { initToolsRoute } = await import("./tools-page.js?v=20260812-monitor7");
+    const { initToolsRoute } = await import("./tools-page.js?v=20260817-spin1");
     await initToolsRoute(route);
   } else if (route.name === "trends") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== trendsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     trendsRoot?.removeAttribute("hidden");
-    const { initTrendsPage } = await import("./trends-page.js?v=20260812-monitor7");
+    const { initTrendsPage } = await import("./trends-page.js?v=20260817-spin1");
     await initTrendsPage(route.query);
   } else if (route.name === "monitor") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== monitorRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     monitorRoot?.removeAttribute("hidden");
-    const { initMonitorPage } = await import("./monitor-page.js?v=20260812-monitor7");
+    const { initMonitorPage } = await import("./monitor-page.js?v=20260817-spin1");
     await initMonitorPage(route.query);
+  } else if (route.name === "reports") {
+    dashboardView?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== reportsRoot).forEach((el) => el?.setAttribute("hidden", ""));
+    dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
+    reportsRoot?.removeAttribute("hidden");
+    const { initReportsPage } = await import("./reports-page.js?v=20260817-spin1");
+    await initReportsPage(route.query);
+  } else if (route.name === "reports-run") {
+    dashboardView?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== reportsRunRoot).forEach((el) => el?.setAttribute("hidden", ""));
+    dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
+    reportsRunRoot?.removeAttribute("hidden");
+    const { initReportsRunPage } = await import("./reports-run.js?v=20260817-spin1");
+    await initReportsRunPage(route.runId, route.query);
+  } else if (route.name === "reports-batch") {
+    dashboardView?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== reportsBatchRoot).forEach((el) => el?.setAttribute("hidden", ""));
+    dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
+    reportsBatchRoot?.removeAttribute("hidden");
+    const { initReportsBatchPage } = await import("./reports-batch.js?v=20260817-spin1");
+    await initReportsBatchPage(route.batchId);
   } else if (route.name === "ahrefs") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== ahrefsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     ahrefsRoot?.removeAttribute("hidden");
-    const { initAhrefsPage } = await import("./ahrefs-page.js?v=20260812-monitor7");
+    const { initAhrefsPage } = await import("./ahrefs-page.js?v=20260817-spin1");
     initAhrefsPage(route.clientId, route.query);
   } else if (route.name === "blogs") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== blogsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     blogsRoot?.removeAttribute("hidden");
-    const { initBlogsPage } = await import("./blogs-page.js?v=20260812-monitor7");
+    const { initBlogsPage } = await import("./blogs-page.js?v=20260817-spin1");
     initBlogsPage(route.clientId, route.query);
   } else if (route.name === "monitor-client") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== monitorClientRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     monitorClientRoot?.removeAttribute("hidden");
-    const { initMonitorClientPage } = await import("./monitor-client.js?v=20260812-monitor7");
+    const { initMonitorClientPage } = await import("./monitor-client.js?v=20260817-spin1");
     initMonitorClientPage(route.clientId, route.query);
   } else if (route.name === "client") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== clientRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     clientRoot?.removeAttribute("hidden");
-    const { initClientPage } = await import("./client-page.js?v=20260812-monitor7");
+    const { initClientPage } = await import("./client-page.js?v=20260817-spin1");
     initClientPage(route.clientId, route.query);
   } else {
     allRoots.forEach((el) => el?.setAttribute("hidden", ""));
     dashboardView?.removeAttribute("hidden");
     dashboardChrome.forEach((el) => el?.removeAttribute("hidden"));
-    await import("./dashboard.js?v=20260812-monitor7");
+    await import("./dashboard.js?v=20260817-spin1");
   }
 }
 

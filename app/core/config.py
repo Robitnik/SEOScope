@@ -127,6 +127,52 @@ class Settings(BaseSettings):
     monitor_sitemap_broken_alert_pct: Decimal = Decimal("10")
     monitor_sitemap_broken_alert_count: int = 50
 
+    # Reports engine (task-42, PLAN §16 "Хвиля N"). Defaults are measurements,
+    # not taste — see task-42 §1.2/§1.5/§1.7/§3.6/§3.7 for the live numbers
+    # behind each one.
+    reports_enabled: bool = True
+    reports_api_workers: int = 3
+    # NOT to be raised: one login, one browser, one cabinet session per
+    # process — a second concurrent PDF run would double-click the same UI.
+    reports_pdf_workers: int = 1
+    reports_max_months: int = 24
+    reports_max_comparator_years: int = 4
+    # Measured 41-67s per column headless; generous ceiling for a slow one.
+    reports_pdf_period_timeout_seconds: float = 300.0
+    reports_pdf_retries: int = 3
+    reports_cross_check_tolerance_pct: Decimal = Decimal("0.5")
+    reports_pdf_cache_enabled: bool = True
+    # `False` leaves a hook for local debugging under Xvfb.
+    reports_headless: bool = True
+    reports_run_stale_minutes: float = 60.0
+    # How many COMPLETE months the "Historical Data" block covers (task-45
+    # §2.4). 12 mirrors the hand-kept Google Sheets history it replaces; the
+    # whole window costs two Reporting Ninja queries (~2s), so this is a
+    # readability choice, not a cost one.
+    reports_history_months: int = 12
+
+    # Batch + client document/PDF (task-47). Defaults are measurements, not
+    # taste — see task-47 §1.6/§2.3 for the live numbers behind each one.
+    #
+    # Separate from `reports_api_workers` on purpose (task-47 §2.3): without
+    # its own pool, a 14-client batch would occupy every API-path slot and an
+    # operator's unrelated single-client report would queue behind the whole
+    # batch. `ReportScheduler` now runs standalone and batch-sourced API runs
+    # in two independent pools of this size.
+    reports_batch_client_workers: int = 3
+    # Token-bucket ceiling on Reporting Ninja API calls, shared across the
+    # whole process (task-47 §1.6/§2.3): the account's own limit is 300/min,
+    # and a 14-client batch alone issues ~280 — without a limiter here, one
+    # concurrent ad-hoc report on top of a running batch would exceed it.
+    # 240 is 80% of the account ceiling, leaving headroom for exactly that.
+    reports_api_max_rpm: float = 240.0
+    # The API process's own base URL, reachable from the WORKER process too:
+    # both run with `network_mode: host` (compose.yaml), so the worker can
+    # render a client PDF by driving Chromium against the API's own
+    # `/reports/runs/{id}/document` page (task-47 §2.1) exactly like a
+    # browser would — one rendered markup, on screen and in the PDF alike.
+    reports_internal_base_url: str = "http://127.0.0.1:6524"
+
 
 @lru_cache
 def get_settings() -> Settings:

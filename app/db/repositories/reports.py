@@ -1,0 +1,493 @@
+"""Report repository (`report_runs`/`report_run_events`/`report_files`, task-42 §4).
+
+Same conventions as `app/db/repositories/monitor.py`: constructed directly
+with a plain `Session`, every mutating method `flush()`es and leaves
+`commit()` to the caller's transaction boundary (the scheduler's tick, or the
+API's own `worker_session_scope()`).
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
+from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.db.base import utcnow
+from app.db.models import ReportBatch, ReportFile, ReportRun, ReportRunEvent
+
+_TERMINAL_STATUSES = ("succeeded", "partial", "failed", "cancelled")
+
+# Per-period states (task-45 §2.1). `cached` is deliberately its own terminal
+# state, not a flavour of `done`: on the PDF path it is the difference between
+# 0 and ~60 seconds of browser work, and the operator has to see which it was.
+PERIOD_TERMINAL_STATES = ("done", "cached", "failed", "skipped")
+PERIOD_PENDING_STATES = ("waiting", "running")
+
+
+def _elapsed_seconds(started_at: Any, now: datetime) -> float | None:
+    """Seconds between a stored ISO `started_at` and `now`, or `None` when the
+    period never started (a cancelled `waiting` period has no duration — `0.0`
+    would read as "took no time", which is not the same thing, PLAN §12).
+    """
+    if not isinstance(started_at, str):
+        return None
+    try:
+        started = datetime.fromisoformat(started_at)
+    except ValueError:
+        return None
+    return round((now - started).total_seconds(), 3)
+
+
+class ReportRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def commit(self) -> None:
+        self._session.commit()
+
+    # --- runs -----------------------------------------------------------
+
+    def create_run(
+        self,
+        client_id: str,
+        *,
+        kind: str,
+        source: str,
+        params: dict[str, Any],
+        period_count: int,
+        periods: list[dict[str, Any]] | None = None,
+        batch_id: str | None = None,
+    ) -> ReportRun:
+        """`periods` (task-45 §2.1) is the full per-period list, every entry
+        `waiting` with its dates already resolved — passed at CREATE time so
+        the UI shows a complete, date-labelled period list from the first
+        second of a `queued` run, before the worker has even claimed it.
+        `batch_id` (task-47 §2.2) makes this run a batch's child — `None` for
+        every standalone run, unchanged from task-42.
+        """
+        run = ReportRun(
+            client_id=client_id,
+            kind=kind,
+            source=source,
+            params_json=params,
+            period_count=period_count,
+            periods_json=list(periods) if periods is not None else None,
+            batch_id=batch_id,
+        )
+        self._session.add(run)
+        self._session.flush()
+        return run
+
+    def get(self, run_id: str) -> ReportRun | None:
+        return self._session.get(ReportRun, run_id)
+
+    def list_runs(
+        self,
+        *,
+        client_id: str | None = None,
+        kind: str | None = None,
+        source: str | None = None,
+        status: str | None = None,
+        has_batch: bool | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[ReportRun], int]:
+        stmt = select(ReportRun)
+        if client_id is not None:
+            stmt = stmt.where(ReportRun.client_id == client_id)
+        if kind is not None:
+            stmt = stmt.where(ReportRun.kind == kind)
+        if source is not None:
+            stmt = stmt.where(ReportRun.source == source)
+        if status is not None:
+            stmt = stmt.where(ReportRun.status == status)
+        # `Scope` filter (task-47 §3.5 point 6): `Single runs` hides every
+        # batch child so a 14-client batch doesn't drown the history in
+        # near-identical rows; `Batches` is served by `list_batches` instead.
+        if has_batch is True:
+            stmt = stmt.where(ReportRun.batch_id.is_not(None))
+        elif has_batch is False:
+            stmt = stmt.where(ReportRun.batch_id.is_(None))
+
+        total = self._session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        stmt = stmt.order_by(ReportRun.created_at.desc()).limit(limit).offset(offset)
+        rows = list(self._session.scalars(stmt))
+        return rows, total
+
+    def claim_next_queued(
+        self, source: str, *, lease_owner: str, batch_only: bool | None = None
+    ) -> ReportRun | None:
+        """Atomically claim the oldest `queued` run of one `source` for this worker.
+
+        Mirrors `MonitorScheduler`'s claim-then-commit shape: the caller holds
+        the process-wide write lock across this call and its `commit()`, so
+        the `SELECT` + `UPDATE` pair is safe without a DB-level `FOR UPDATE`
+        (SQLite has no row locking; the lock IS the concurrency control).
+
+        `batch_only` (task-47 §2.3) splits the API-path queue in two: a batch
+        monopolizing every `reports_api_workers` slot would otherwise queue an
+        unrelated ad-hoc single-client report behind the whole batch.
+        """
+        stmt = select(ReportRun).where(ReportRun.source == source, ReportRun.status == "queued")
+        if batch_only is True:
+            stmt = stmt.where(ReportRun.batch_id.is_not(None))
+        elif batch_only is False:
+            stmt = stmt.where(ReportRun.batch_id.is_(None))
+        stmt = stmt.order_by(ReportRun.queued_at).limit(1)
+        run = self._session.scalars(stmt).first()
+        if run is None:
+            return None
+        run.status = "running"
+        run.lease_owner = lease_owner
+        run.started_at = utcnow()
+        run.heartbeat_at = utcnow()
+        self._session.flush()
+        return run
+
+    def cancel_queued_run(self, run_id: str) -> bool:
+        """A still-`queued` batch child never started, so cancelling it is
+        immediate — no `is_cancelled()` check to wait for (task-47 §2.2:
+        "Скасування батчу … незапущені лишаються скасованими" / DoD "< 90s").
+        """
+        run = self._session.get(ReportRun, run_id)
+        if run is None or run.status != "queued":
+            return False
+        run.status = "cancelled"
+        run.cancel_requested = True
+        run.finished_at = utcnow()
+        self._session.flush()
+        return True
+
+    def heartbeat(self, run_id: str, *, lease_owner: str) -> None:
+        run = self._session.get(ReportRun, run_id)
+        if run is None:
+            return
+        run.lease_owner = lease_owner
+        run.heartbeat_at = utcnow()
+        self._session.flush()
+
+    def update_progress(
+        self,
+        run_id: str,
+        *,
+        periods_done: int | None = None,
+        periods_failed: int | None = None,
+    ) -> None:
+        run = self._session.get(ReportRun, run_id)
+        if run is None:
+            return
+        if periods_done is not None:
+            run.periods_done = periods_done
+        if periods_failed is not None:
+            run.periods_failed = periods_failed
+        self._session.flush()
+
+    # --- per-period progress (task-45 §2.1) --------------------------------
+    #
+    # Every write reassigns `periods_json` wholesale — a plain `JSON` column is
+    # not a `MutableList`, so mutating a nested dict in place would never be
+    # flushed. Each of these runs inside the caller's own short transaction,
+    # exactly like `update_progress`, so progress stays continuously persisted
+    # (PLAN §9.2) and survives F5 or a worker restart.
+
+    def set_periods(self, run_id: str, periods: list[dict[str, Any]]) -> None:
+        run = self._session.get(ReportRun, run_id)
+        if run is None:
+            return
+        run.periods_json = [dict(period) for period in periods]
+        self._session.flush()
+
+    def update_period(
+        self,
+        run_id: str,
+        label: str,
+        *,
+        state: str,
+        from_cache: bool | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Move one period to `state`, stamping the timestamps that state
+        implies: `running` starts the clock, any terminal state stops it and
+        records `duration_seconds`.
+        """
+        run = self._session.get(ReportRun, run_id)
+        if run is None or not run.periods_json:
+            return
+        now = utcnow()
+        rows = [dict(row) for row in run.periods_json]
+        for row in rows:
+            if row.get("label") != label:
+                continue
+            row["state"] = state
+            if state == "running":
+                row["started_at"] = now.isoformat()
+                row["finished_at"] = None
+                row["duration_seconds"] = None
+            elif state in PERIOD_TERMINAL_STATES:
+                row["finished_at"] = now.isoformat()
+                row["duration_seconds"] = _elapsed_seconds(row.get("started_at"), now)
+            if from_cache is not None:
+                row["from_cache"] = from_cache
+            if error is not None:
+                row["error"] = error[:400]
+        run.periods_json = rows
+        self._session.flush()
+
+    def mark_pending_periods(self, run_id: str, *, state: str) -> None:
+        """Everything still `waiting`/`running` becomes `state` — used when a
+        run is cancelled, so the remaining periods read `Skipped` instead of
+        forever `Waiting` (task-45 §5).
+        """
+        run = self._session.get(ReportRun, run_id)
+        if run is None or not run.periods_json:
+            return
+        now = utcnow()
+        rows = []
+        for source_row in run.periods_json:
+            row = dict(source_row)
+            if row.get("state") in PERIOD_PENDING_STATES:
+                row["state"] = state
+                row["finished_at"] = now.isoformat()
+                row["duration_seconds"] = _elapsed_seconds(row.get("started_at"), now)
+            rows.append(row)
+        run.periods_json = rows
+        self._session.flush()
+
+    def finish(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        result: dict[str, Any] | None = None,
+        cross_check_status: str | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> ReportRun | None:
+        run = self._session.get(ReportRun, run_id)
+        if run is None:
+            return None
+        run.status = status
+        if result is not None:
+            run.result_json = result
+        if cross_check_status is not None:
+            run.cross_check_status = cross_check_status
+        run.error_code = error_code
+        run.error_message = error_message
+        run.finished_at = utcnow()
+        self._session.flush()
+        return run
+
+    def request_cancel(self, run_id: str) -> ReportRun | None:
+        run = self._session.get(ReportRun, run_id)
+        if run is None or run.status in _TERMINAL_STATUSES:
+            return None
+        run.cancel_requested = True
+        self._session.flush()
+        return run
+
+    def recover_stale_running(self, *, stale_minutes: float) -> int:
+        """Startup recovery (task-42 §9 DoD): a `running` row with no live
+        owner is, by definition, orphaned in a single-writer worker. Mirrors
+        `MonitorScheduler._recover_stale_runs`.
+        """
+        cutoff = utcnow() - timedelta(minutes=stale_minutes)
+        stmt = select(ReportRun).where(ReportRun.status == "running")
+        recovered = 0
+        for run in self._session.scalars(stmt):
+            reference = run.heartbeat_at or run.started_at or run.queued_at
+            if reference is not None and reference < cutoff:
+                run.status = "failed"
+                run.error_code = "interrupted"
+                run.error_message = "Worker restarted while this run was in progress"
+                run.finished_at = utcnow()
+                recovered += 1
+        self._session.flush()
+        return recovered
+
+    # --- events -----------------------------------------------------------
+
+    def append_event(
+        self,
+        run_id: str,
+        level: str,
+        *,
+        stage: str | None = None,
+        message: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> int:
+        next_seq = (
+            self._session.scalar(
+                select(func.coalesce(func.max(ReportRunEvent.seq), 0)).where(
+                    ReportRunEvent.run_id == run_id
+                )
+            )
+            or 0
+        ) + 1
+        event = ReportRunEvent(
+            run_id=run_id,
+            seq=next_seq,
+            level=level,
+            stage=stage,
+            message=message,
+            details_json=details or {},
+        )
+        self._session.add(event)
+        self._session.flush()
+        return next_seq
+
+    def events_since(self, run_id: str, last_seq: int) -> list[ReportRunEvent]:
+        stmt = (
+            select(ReportRunEvent)
+            .where(ReportRunEvent.run_id == run_id, ReportRunEvent.seq > last_seq)
+            .order_by(ReportRunEvent.seq)
+        )
+        return list(self._session.scalars(stmt))
+
+    # --- files --------------------------------------------------------------
+
+    def find_cached_file(
+        self,
+        client_id: str,
+        source_report_name: str,
+        date_from: date,
+        date_to: date,
+    ) -> ReportFile | None:
+        stmt = (
+            select(ReportFile)
+            .where(
+                ReportFile.client_id == client_id,
+                ReportFile.source_report_name == source_report_name,
+                ReportFile.date_from == date_from,
+                ReportFile.date_to == date_to,
+                ReportFile.kind == "pdf",
+            )
+            .order_by(ReportFile.created_at.desc())
+        )
+        return self._session.scalars(stmt).first()
+
+    def create_file(
+        self,
+        client_id: str,
+        *,
+        run_id: str | None,
+        kind: str,
+        path: str,
+        sha256: str,
+        size_bytes: int,
+        mime: str | None = None,
+        period_label: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        is_partial_period: bool = False,
+        source_report_name: str | None = None,
+    ) -> ReportFile:
+        file = ReportFile(
+            client_id=client_id,
+            run_id=run_id,
+            kind=kind,
+            path=path,
+            sha256=sha256,
+            size_bytes=size_bytes,
+            mime=mime,
+            period_label=period_label,
+            date_from=date_from,
+            date_to=date_to,
+            is_partial_period=is_partial_period,
+            source_report_name=source_report_name,
+        )
+        self._session.add(file)
+        self._session.flush()
+        return file
+
+    def get_file(self, file_id: str) -> ReportFile | None:
+        return self._session.get(ReportFile, file_id)
+
+    def list_files_for_run(self, run_id: str) -> list[ReportFile]:
+        stmt = select(ReportFile).where(ReportFile.run_id == run_id).order_by(ReportFile.created_at)
+        return list(self._session.scalars(stmt))
+
+    # --- batches (task-47 §2.2/§4) ------------------------------------------
+
+    def create_batch(
+        self, *, kind: str, source: str, params: dict[str, Any], client_count: int
+    ) -> ReportBatch:
+        batch = ReportBatch(
+            kind=kind, source=source, params_json=params, client_count=client_count
+        )
+        self._session.add(batch)
+        self._session.flush()
+        return batch
+
+    def get_batch(self, batch_id: str) -> ReportBatch | None:
+        return self._session.get(ReportBatch, batch_id)
+
+    def list_batches(
+        self, *, client_id: str | None = None, status: str | None = None,
+        limit: int = 100, offset: int = 0,
+    ) -> tuple[list[ReportBatch], int]:
+        stmt = select(ReportBatch)
+        if status is not None:
+            stmt = stmt.where(ReportBatch.status == status)
+        if client_id is not None:
+            # A batch "contains" a client filter (task-47 §3.5 point 7):
+            # never hide a batch a client is genuinely part of just because
+            # the client filter was built for single runs.
+            stmt = stmt.where(
+                ReportBatch.id.in_(
+                    select(ReportRun.batch_id).where(
+                        ReportRun.client_id == client_id, ReportRun.batch_id.is_not(None)
+                    )
+                )
+            )
+        total = self._session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        stmt = stmt.order_by(ReportBatch.created_at.desc()).limit(limit).offset(offset)
+        rows = list(self._session.scalars(stmt))
+        return rows, total
+
+    def list_runs_for_batch(self, batch_id: str) -> list[ReportRun]:
+        stmt = (
+            select(ReportRun)
+            .where(ReportRun.batch_id == batch_id)
+            .order_by(ReportRun.created_at)
+        )
+        return list(self._session.scalars(stmt))
+
+    def start_batch(self, batch_id: str) -> None:
+        batch = self._session.get(ReportBatch, batch_id)
+        if batch is None or batch.status != "queued":
+            return
+        batch.status = "running"
+        batch.started_at = utcnow()
+        self._session.flush()
+
+    def update_batch_progress(
+        self, batch_id: str, *, clients_done: int, clients_failed: int
+    ) -> None:
+        batch = self._session.get(ReportBatch, batch_id)
+        if batch is None:
+            return
+        batch.clients_done = clients_done
+        batch.clients_failed = clients_failed
+        self._session.flush()
+
+    def finish_batch(self, batch_id: str, *, status: str) -> None:
+        batch = self._session.get(ReportBatch, batch_id)
+        if batch is None:
+            return
+        batch.status = status
+        batch.finished_at = utcnow()
+        self._session.flush()
+
+    def request_cancel_batch(self, batch_id: str) -> ReportBatch | None:
+        batch = self._session.get(ReportBatch, batch_id)
+        if batch is None or batch.status in _TERMINAL_STATUSES:
+            return None
+        batch.cancel_requested = True
+        self._session.flush()
+        return batch
+
+    def non_terminal_batch_ids(self) -> list[str]:
+        stmt = select(ReportBatch.id).where(ReportBatch.status.not_in(_TERMINAL_STATUSES))
+        return list(self._session.scalars(stmt))

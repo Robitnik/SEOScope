@@ -1,0 +1,178 @@
+/* The client document (task-47 §2.1/§3.2) — a printed deliverable, not an
+ * application screen. Deliberately NOT loaded by index.html (§6): only
+ * `GET /reports/runs/{id}/document` links it, so nothing here can leak into
+ * the app and nothing app.css does can leak into a client's PDF. Reuses
+ * `tokens.css` (fonts, brand colors, the ribbon watermark) — the one thing
+ * every surface in this repo shares — but owns every other rule itself.
+ */
+
+* { box-sizing: border-box; }
+
+.report-doc-body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+
+.report-doc {
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.report-doc__page {
+  position: relative;
+  width: 860px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 36px 40px 40px;
+  background: var(--canvas);
+  overflow: hidden;
+}
+
+/* The fired brand ribbon as a low-density, full-bleed watermark (task-47
+   §3.2) — the first prototype clipped it and it read as a stray artifact;
+   here it is the page's own background, not a positioned decoration. */
+.report-doc__page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--brand-ribbon);
+  background-repeat: no-repeat;
+  background-position: right -420px top -120px;
+  background-size: 2200px auto;
+  opacity: .16;
+  pointer-events: none;
+}
+
+.report-doc__header,
+.report-doc__tiles,
+.report-doc__charts,
+.report-doc__footer {
+  position: relative;
+  z-index: 1;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Header                                                              */
+/* ------------------------------------------------------------------ */
+
+.report-doc__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+.report-doc__identity h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 42px;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.report-doc__subtitle { margin: 10px 0 0; color: var(--ink-muted); font-size: 13px; }
+.report-doc__logo { display: block; width: 168px; height: 21px; flex: 0 0 auto; }
+
+/* ------------------------------------------------------------------ */
+/* Tiles (8 Monthly/Quarterly, 8 YOY — task-47 §3.2)                   */
+/* ------------------------------------------------------------------ */
+
+.report-doc__tiles { display: flex; gap: 20px; }
+.report-doc__tile-group {
+  flex: 1 1 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.report-doc__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: center;
+}
+.report-doc__tile-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--ink-muted);
+}
+.report-doc__tile-value {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.report-doc__tile-value--muted { color: var(--ink-dim); }
+
+.report-doc__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.report-doc__delta--up { color: var(--success); }
+.report-doc__delta--down { color: var(--danger); }
+.report-doc__delta--flat { color: var(--ink-dim); }
+.report-doc__arrow { flex: 0 0 auto; }
+
+/* ------------------------------------------------------------------ */
+/* Charts (task-47 §1.3/§3.2) — inline SVG, vector at any zoom          */
+/* ------------------------------------------------------------------ */
+
+.report-doc__charts { display: flex; flex-direction: column; gap: 18px; }
+.report-doc__chart-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 16px 16px 10px;
+}
+.report-doc__chart-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--ink-muted);
+}
+.report-doc-chart { display: block; width: 100%; height: auto; }
+.report-doc-chart__tick, .report-doc-chart__empty { font-family: var(--font-body); }
+
+/* ------------------------------------------------------------------ */
+/* Footer                                                              */
+/* ------------------------------------------------------------------ */
+
+.report-doc__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+.report-doc__footer p { margin: 0; }

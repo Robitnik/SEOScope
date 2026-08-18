@@ -1,0 +1,222 @@
+{
+  "rows": [
+    {
+      "id": "report-run-queued",
+      "client_id": "client-cleveland",
+      "kind": "monthly",
+      "source": "api",
+      "status": "queued",
+      "period_count": 6,
+      "periods_done": 0,
+      "periods_failed": 0,
+      "cross_check_status": null,
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-17T11:58:00Z",
+      "started_at": null,
+      "finished_at": null,
+      "params": {
+        "force_refresh": false
+      }
+    },
+    {
+      "id": "report-run-running",
+      "client_id": "client-nyc-hearing",
+      "kind": "comparator",
+      "source": "pdf",
+      "status": "running",
+      "period_count": 4,
+      "periods_done": 2,
+      "periods_failed": 0,
+      "cross_check_status": null,
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-17T11:48:10Z",
+      "started_at": "2026-08-17T11:48:20Z",
+      "finished_at": null,
+      "params": {
+        "force_refresh": false,
+        "months": [
+          "2026-07",
+          "2025-07",
+          "2024-07",
+          "2023-07"
+        ]
+      }
+    },
+    {
+      "id": "report-run-succeeded-match",
+      "client_id": "client-nyc-hearing",
+      "kind": "monthly",
+      "source": "pdf",
+      "status": "succeeded",
+      "period_count": 6,
+      "periods_done": 6,
+      "periods_failed": 0,
+      "cross_check_status": "match",
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-17T09:40:00Z",
+      "started_at": "2026-08-17T09:40:05Z",
+      "finished_at": "2026-08-17T09:46:52Z",
+      "params": {
+        "force_refresh": false
+      }
+    },
+    {
+      "id": "report-run-succeeded-api",
+      "client_id": "client-cleveland",
+      "kind": "monthly",
+      "source": "api",
+      "status": "succeeded",
+      "period_count": 6,
+      "periods_done": 6,
+      "periods_failed": 0,
+      "cross_check_status": null,
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-17T09:10:00Z",
+      "started_at": "2026-08-17T09:10:02Z",
+      "finished_at": "2026-08-17T09:10:16Z",
+      "params": {
+        "force_refresh": false
+      }
+    },
+    {
+      "id": "report-run-tolerance",
+      "client_id": "client-long-name",
+      "kind": "yearly",
+      "source": "pdf",
+      "status": "succeeded",
+      "period_count": 3,
+      "periods_done": 3,
+      "periods_failed": 0,
+      "cross_check_status": "within_tolerance",
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-16T14:02:00Z",
+      "started_at": "2026-08-16T14:02:05Z",
+      "finished_at": "2026-08-16T14:04:48Z",
+      "params": {
+        "force_refresh": false,
+        "years": [
+          2026,
+          2025,
+          2024
+        ],
+        "span": "full"
+      }
+    },
+    {
+      "id": "report-run-mismatch",
+      "client_id": "client-onboarding",
+      "kind": "comparator",
+      "source": "pdf",
+      "status": "succeeded",
+      "period_count": 4,
+      "periods_done": 4,
+      "periods_failed": 0,
+      "cross_check_status": "mismatch",
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-16T10:00:00Z",
+      "started_at": "2026-08-16T10:00:06Z",
+      "finished_at": "2026-08-16T10:04:02Z",
+      "params": {
+        "force_refresh": false,
+        "months": [
+          "2026-07",
+          "2025-07",
+          "2024-07",
+          "2023-07"
+        ]
+      }
+    },
+    {
+      "id": "report-run-partial",
+      "client_id": "client-nyc-hearing",
+      "kind": "custom_months",
+      "source": "pdf",
+      "status": "partial",
+      "period_count": 6,
+      "periods_done": 5,
+      "periods_failed": 1,
+      "cross_check_status": null,
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-15T08:20:00Z",
+      "started_at": "2026-08-15T08:20:05Z",
+      "finished_at": "2026-08-15T08:25:41Z",
+      "params": {
+        "force_refresh": false,
+        "months": [
+          "2026-08",
+          "2026-07",
+          "2026-06",
+          "2026-05",
+          "2026-04",
+          "2026-03"
+        ]
+      }
+    },
+    {
+      "id": "report-run-failed",
+      "client_id": "client-cleveland",
+      "kind": "monthly",
+      "source": "pdf",
+      "status": "failed",
+      "period_count": 6,
+      "periods_done": 0,
+      "periods_failed": 0,
+      "cross_check_status": null,
+      "error_code": "auth_failed",
+      "error_message": "Reporting Ninja re-login failed twice in a row — check the saved credentials.",
+      "cancel_requested": false,
+      "queued_at": "2026-08-14T16:05:00Z",
+      "started_at": "2026-08-14T16:05:04Z",
+      "finished_at": "2026-08-14T16:05:52Z",
+      "params": {
+        "force_refresh": false
+      }
+    },
+    {
+      "id": "report-run-cancelled",
+      "client_id": "client-long-name",
+      "kind": "custom_months",
+      "source": "pdf",
+      "status": "cancelled",
+      "period_count": 10,
+      "periods_done": 3,
+      "periods_failed": 0,
+      "cross_check_status": null,
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": true,
+      "queued_at": "2026-08-13T12:00:00Z",
+      "started_at": "2026-08-13T12:00:05Z",
+      "finished_at": "2026-08-13T12:03:10Z",
+      "params": {
+        "force_refresh": false,
+        "months": [
+          "2026-08",
+          "2026-07",
+          "2026-06",
+          "2026-05",
+          "2026-04",
+          "2026-03",
+          "2026-02",
+          "2026-01",
+          "2025-12",
+          "2025-11"
+        ]
+      }
+    }
+  ]
+}

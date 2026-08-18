@@ -1,5 +1,5 @@
-import { getSyncJob, isFixtureMode } from "./api.js?v=20260812-monitor7";
-import { isTerminal } from "./formatters.js?v=20260812-monitor7";
+import { getSyncJob, isFixtureMode } from "./api.js?v=20260817-spin1";
+import { isTerminal } from "./formatters.js?v=20260817-spin1";
 
 // One job snapshot poll per this many ms at most (task-30). Every SSE event
 // used to trigger its own `getSyncJob`, and `request()` aborts the previous

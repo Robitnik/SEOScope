@@ -578,6 +578,19 @@ class AltTextItem(Base):
     verify_http_status: Mapped[int | None] = mapped_column(Integer, default=None)
     verify_detail: Mapped[str | None] = mapped_column(String(500), default=None)
     verify_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # WordPress `attachment ID` (task-39): точний збіг у медіатеці, не «схожий
+    # файл». `NULL` = ще не шукали — не плутати з `not_found` (шукали, нема).
+    wp_media_id: Mapped[int | None] = mapped_column(Integer, default=None)
+    wp_media_status: Mapped[str | None] = mapped_column(String(24), default=None)
+    wp_media_confidence: Mapped[str | None] = mapped_column(String(16), default=None)
+    # Alt, що ЗАРАЗ стоїть у медіатеці WordPress — не плутати з `verify_alt`
+    # (alt, знайдений на сторінці): це різні джерела істини.
+    wp_media_alt: Mapped[str | None] = mapped_column(String(MAX_ALT_TEXT_LENGTH), default=None)
+    wp_media_admin_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+    wp_media_detail: Mapped[str | None] = mapped_column(String(500), default=None)
+    # Кандидати при `ambiguous` — вибір лишається за оператором, не вгадуємо.
+    wp_media_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    wp_media_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
 
 class RedirectCheck(Base):
@@ -687,6 +700,12 @@ class MonitorSettings(Base):
     client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     base_url_override: Mapped[str | None] = mapped_column(String(500), default=None)
+    # NULL = not known which host the site canonically redirects to (`www.`
+    # vs bare) — `_base_url` uses `client.domain` verbatim, exactly as before
+    # this field existed. `True`/`False` picks the host directly instead of
+    # relying on the site's own redirect to correct it on every request
+    # (task-38 follow-up — operator-confused-by-redirect-noise report).
+    canonical_www: Mapped[bool | None] = mapped_column(Boolean, default=None)
     # NULL = use the global `monitor_*_interval_hours` setting.
     light_interval_hours: Mapped[float | None] = mapped_column(Float, default=None)
     full_interval_hours: Mapped[float | None] = mapped_column(Float, default=None)
@@ -979,6 +998,166 @@ class MonitorChange(Base):
     acknowledged_note: Mapped[str | None] = mapped_column(String(500), default=None)
     # Set when the underlying condition self-heals (task-35 §3.4 "Самозагасання").
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
+
+# --- Added by task-42 (Reports engine, PLAN §16 "Хвиля N") -----------------
+#
+# `kind`/`source`/`status`/`cross_check_status` are plain `String`, not
+# `sa.Enum` — the same choice task-35 already made for monitor's own
+# tool-level states: adding a report kind or a new source must not require
+# DDL. Reports are deliberately NOT a `SyncJob`/provider (task-42 §2.2): no
+# `(client, provider)` cell, no metrics catalog, no browser profile lock —
+# just a client, a parameter set and a list of output files.
+
+
+# --- Added by task-47 (batch reports + client document/PDF) ----------------
+#
+# A batch is a parent AGGREGATE, not a new kind of work (task-47 §2.2): every
+# client in it is a perfectly ordinary `ReportRun` with `batch_id` set, so it
+# keeps every existing behaviour for free — periods, `periods_json`, events,
+# XLSX, cancellation, stale-run recovery. `client_count`/`clients_done`/
+# `clients_failed` are a live-updated summary the scheduler's own tick
+# maintains (`app/reports/batch.py`), not something the API recomputes by
+# scanning every child run on each read.
+
+
+class ReportBatch(Base):
+    __tablename__ = "report_batches"
+    __table_args__ = (Index("ix_report_batches_status", "status"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    kind: Mapped[str] = mapped_column(String(32))
+    source: Mapped[str] = mapped_column(String(8))
+    params_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    client_count: Mapped[int] = mapped_column(Integer, default=0)
+    clients_done: Mapped[int] = mapped_column(Integer, default=0)
+    clients_failed: Mapped[int] = mapped_column(Integer, default=0)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    queued_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class ReportRun(Base):
+    """One report generation run (task-42 §4). Mutable while `status` is
+    `queued`/`running` (counters update live, mirrors `SyncJob.progress_percent`
+    and `MonitorRun`), then left alone once finished.
+    """
+
+    __tablename__ = "report_runs"
+    __table_args__ = (
+        Index("ix_report_runs_client_created", "client_id", "created_at"),
+        Index("ix_report_runs_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    # NULL for a standalone run (task-47 §4) — `SET NULL` rather than
+    # `CASCADE`: deleting the parent batch row must never destroy a report a
+    # client has already been sent (task-47 §4 rationale).
+    batch_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("report_batches.id", ondelete="SET NULL"), default=None, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32))  # monthly|yearly|custom_months|comparator
+    source: Mapped[str] = mapped_column(String(8))  # api|pdf
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    # Report parameters only (years/span/months/force_refresh) — NEVER secrets
+    # (PLAN §13): API keys/passwords/session cookies must never land here.
+    params_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    period_count: Mapped[int] = mapped_column(Integer, default=0)
+    periods_done: Mapped[int] = mapped_column(Integer, default=0)
+    periods_failed: Mapped[int] = mapped_column(Integer, default=0)
+    # Per-period progress AS DATA (task-45 §2.1), one dict per period:
+    # `{label, date_from, date_to, is_partial, state, started_at,
+    #   finished_at, duration_seconds, from_cache, error}`. Written in full
+    # (every period `waiting`, dates already known) when the run is queued and
+    # again when the worker starts it, then patched in place as each period
+    # moves — so the UI reads per-period state instead of re-deriving it from
+    # log message text, which is how task-43 had to do it (task-45 §1.1).
+    periods_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, default=None)
+    # NULL until a `source=pdf` run's cross-check actually runs (task-42 §3.6);
+    # always NULL for `source=api` — never a stand-in "unknown" string.
+    cross_check_status: Mapped[str | None] = mapped_column(String(16), default=None)
+    # The finished 8xN table + cross-check cell details (task-42 §3.6/§5).
+    result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    error_code: Mapped[str | None] = mapped_column(String(100), default=None)
+    error_message: Mapped[str | None] = mapped_column(String(1000), default=None)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(200), default=None)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    queued_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class ReportRunEvent(Base):
+    """Progress/log line for one run (task-42 §2.5). `seq` is monotonic WITHIN
+    a run (not global like `JobEvent.seq`) — a run's own SSE endpoint replays
+    `Last-Event-ID` against `WHERE run_id=... AND seq>...`, so per-run
+    numbering keeps the id meaningful without a shared counter across runs.
+    """
+
+    __tablename__ = "report_run_events"
+    __table_args__ = (UniqueConstraint("run_id", "seq", name="uq_report_run_events_run_id_seq"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    run_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    seq: Mapped[int] = mapped_column(Integer)
+    level: Mapped[str] = mapped_column(String(16), default="info")  # debug|info|warning|error
+    stage: Mapped[str | None] = mapped_column(String(64), default=None)
+    message: Mapped[str] = mapped_column(String(2000), default="")
+    details_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class ReportFile(Base):
+    """One PDF/XLSX/screenshot artifact (task-42 §3.5/§3.7.4/§3.7.7).
+
+    `run_id` is `SET NULL`, not `CASCADE`: deleting a run must never destroy a
+    PDF that other runs have since reused via the closed-period cache
+    (task-42 §3.5) — the index below is exactly that cache's lookup key.
+    `period_label`/`date_from`/`date_to` are NULL for a run-level file (the
+    XLSX covers every column, not one period).
+    """
+
+    __tablename__ = "report_files"
+    __table_args__ = (
+        Index(
+            "ix_report_files_cache_lookup",
+            "client_id",
+            "source_report_name",
+            "date_from",
+            "date_to",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    run_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("report_runs.id", ondelete="SET NULL"), default=None
+    )
+    kind: Mapped[str] = mapped_column(String(16))  # pdf|xlsx|screenshot
+    period_label: Mapped[str | None] = mapped_column(String(64), default=None)
+    date_from: Mapped[date | None] = mapped_column(Date, default=None)
+    date_to: Mapped[date | None] = mapped_column(Date, default=None)
+    is_partial_period: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Ninja report name the PDF was pulled from — only set for kind="pdf".
+    source_report_name: Mapped[str | None] = mapped_column(String(200), default=None)
+    # Relative to `Settings.artifacts_dir`, never absolute (mirrors `Artifact.path`).
+    path: Mapped[str] = mapped_column(String(500))
+    sha256: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    mime: Mapped[str | None] = mapped_column(String(100), default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
 def _reject_update(mapper: Any, connection: Any, target: Base) -> None:

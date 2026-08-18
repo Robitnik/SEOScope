@@ -21,6 +21,7 @@ from app.integrations.browser_session import check_session
 from app.jobs.dispatcher import Dispatcher
 from app.jobs.recovery import run_startup_recovery
 from app.monitor.scheduler import MonitorScheduler
+from app.reports.scheduler import ReportScheduler
 from app.schemas.enums import Provider
 
 logger = get_logger(__name__)
@@ -83,10 +84,20 @@ def main() -> None:
     monitor_scheduler = MonitorScheduler(session_scope=worker_session_scope, settings=settings)
     monitor_scheduler.start()
 
+    # task-42: Reports engine's own scheduler loop, independent of both the
+    # job dispatcher and MonitorScheduler above (PLAN §14 "scheduler loop
+    # inside the single worker" — a second process would be a second SQLite
+    # writer, which PLAN §5.1 forbids). One point-of-contact touch to
+    # `app/jobs/worker.py` (task-05 zone), documented in the task-42
+    # Completion report, same pattern as task-35's MonitorScheduler above.
+    report_scheduler = ReportScheduler(session_scope=worker_session_scope, settings=settings)
+    report_scheduler.start()
+
     def _handle_signal(signum: int, _frame: types.FrameType | None) -> None:
         logger.info("worker_shutdown_signal signum=%s", signum)
         dispatcher.stop()
         monitor_scheduler.stop()
+        report_scheduler.stop()
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)

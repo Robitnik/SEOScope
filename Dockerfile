@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
       libxfixes3 \
       libxkbcommon0 \
       libxrandr2 \
+      poppler-utils \
       procps \
       xauth \
       xdg-utils \
@@ -90,6 +91,17 @@ RUN mkdir -p /seo/AISeoTools/seo_audit \
     > /seo/AISeoTools/seo_audit/__init__.py
 
 RUN poetry install --no-root --with local
+
+# task-42: Playwright's own default cache dir is `~/.cache/ms-playwright`, but
+# this container runs under an arbitrary uid with `HOME=/tmp` (see the `user:`
+# rationale in compose.yaml) — /tmp is ephemeral, so a Chromium installed
+# there (even by hand, into a *running* container) vanishes on the next
+# `compose up --force-recreate`/rebuild. Baking it into the image at a fixed,
+# non-tmp path — readable by any uid via `a+rX` — makes it survive exactly
+# the recreate that silently broke it before (task-42 §1.5).
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN python -m playwright install chromium \
+ && chmod -R a+rX /opt/ms-playwright
 
 COPY app ./app
 COPY frontend ./frontend

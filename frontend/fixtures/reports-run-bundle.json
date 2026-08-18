@@ -1,0 +1,4353 @@
+{
+  "report-run-queued": {
+    "run": {
+      "id": "report-run-queued",
+      "client_id": "client-cleveland",
+      "kind": "monthly",
+      "source": "api",
+      "status": "queued",
+      "period_count": 6,
+      "periods_done": 0,
+      "periods_failed": 0,
+      "cross_check_status": null,
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-17T11:58:00Z",
+      "started_at": null,
+      "finished_at": null,
+      "params": {
+        "force_refresh": false
+      },
+      "periods": [
+        {
+          "label": "This Month",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "waiting",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Last Month",
+          "date_from": "2026-06-01",
+          "date_to": "2026-06-30",
+          "is_partial": false,
+          "state": "waiting",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Month YOY",
+          "date_from": "2025-07-01",
+          "date_to": "2025-07-31",
+          "is_partial": false,
+          "state": "waiting",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "This Quarter",
+          "date_from": "2026-05-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "waiting",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Last Quarter",
+          "date_from": "2026-02-01",
+          "date_to": "2026-04-30",
+          "is_partial": false,
+          "state": "waiting",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Quarterly YOY",
+          "date_from": "2025-05-01",
+          "date_to": "2025-07-31",
+          "is_partial": false,
+          "state": "waiting",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        }
+      ],
+      "ninja_report_name": null
+    },
+    "events": [
+      {
+        "seq": 1,
+        "level": "info",
+        "provider": null,
+        "stage": "queued",
+        "percent": null,
+        "message": "Queued — 6 period(s) via API.",
+        "details": {},
+        "timestamp": "2026-08-17T11:58:00Z"
+      }
+    ],
+    "table": null,
+    "files": []
+  },
+  "report-run-running": {
+    "run": {
+      "id": "report-run-running",
+      "client_id": "client-nyc-hearing",
+      "kind": "comparator",
+      "source": "pdf",
+      "status": "running",
+      "period_count": 4,
+      "periods_done": 2,
+      "periods_failed": 0,
+      "cross_check_status": null,
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-17T11:48:10Z",
+      "started_at": "2026-08-17T11:48:20Z",
+      "finished_at": null,
+      "params": {
+        "force_refresh": false,
+        "months": [
+          "2026-07",
+          "2025-07",
+          "2024-07",
+          "2023-07"
+        ]
+      },
+      "periods": [
+        {
+          "label": "July 2026",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T11:48:20Z",
+          "finished_at": "2026-08-17T11:49:02Z",
+          "duration_seconds": 42.0,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "July 2025",
+          "date_from": "2025-07-01",
+          "date_to": "2025-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T11:49:02Z",
+          "finished_at": "2026-08-17T11:49:44Z",
+          "duration_seconds": 42.0,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "July 2024",
+          "date_from": "2024-07-01",
+          "date_to": "2024-07-31",
+          "is_partial": false,
+          "state": "running",
+          "started_at": "2026-08-17T11:49:44Z",
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "July 2023",
+          "date_from": "2023-07-01",
+          "date_to": "2023-07-31",
+          "is_partial": false,
+          "state": "waiting",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        }
+      ],
+      "ninja_report_name": "NYC-HEARING-Internal report"
+    },
+    "events": [
+      {
+        "seq": 1,
+        "level": "info",
+        "provider": null,
+        "stage": "queued",
+        "percent": null,
+        "message": "Queued — 4 period(s) via PDF.",
+        "details": {},
+        "timestamp": "2026-08-17T11:48:10Z"
+      },
+      {
+        "seq": 2,
+        "level": "info",
+        "provider": null,
+        "stage": "start",
+        "percent": null,
+        "message": "Signed in to Reporting Ninja — starting downloads.",
+        "details": {},
+        "timestamp": "2026-08-17T11:48:22Z"
+      },
+      {
+        "seq": 3,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "July 2026 done",
+        "details": {
+          "period": "July 2026"
+        },
+        "timestamp": "2026-08-17T11:49:05Z"
+      },
+      {
+        "seq": 4,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "July 2025 done",
+        "details": {
+          "period": "July 2025"
+        },
+        "timestamp": "2026-08-17T11:49:58Z"
+      },
+      {
+        "seq": 5,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "Downloading July 2024",
+        "details": {
+          "period": "July 2024"
+        },
+        "timestamp": "2026-08-17T11:50:40Z"
+      }
+    ],
+    "table": null,
+    "files": [
+      {
+        "id": "report-run-running-pdf-0",
+        "run_id": "report-run-running",
+        "kind": "pdf",
+        "period_label": "July 2026",
+        "date_from": "2026-07-01",
+        "date_to": "2026-07-31",
+        "is_partial_period": false,
+        "size_bytes": 612000,
+        "mime": "application/pdf",
+        "created_at": "2026-08-17T11:49:05Z"
+      },
+      {
+        "id": "report-run-running-pdf-1",
+        "run_id": "report-run-running",
+        "kind": "pdf",
+        "period_label": "July 2025",
+        "date_from": "2025-07-01",
+        "date_to": "2025-07-31",
+        "is_partial_period": false,
+        "size_bytes": 588000,
+        "mime": "application/pdf",
+        "created_at": "2026-08-17T11:49:58Z"
+      }
+    ]
+  },
+  "report-run-succeeded-match": {
+    "run": {
+      "id": "report-run-succeeded-match",
+      "client_id": "client-nyc-hearing",
+      "kind": "monthly",
+      "source": "pdf",
+      "status": "succeeded",
+      "period_count": 6,
+      "periods_done": 6,
+      "periods_failed": 0,
+      "cross_check_status": "match",
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-17T09:40:00Z",
+      "started_at": "2026-08-17T09:40:05Z",
+      "finished_at": "2026-08-17T09:46:52Z",
+      "params": {
+        "force_refresh": false
+      },
+      "periods": [
+        {
+          "label": "This Month",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T09:40:05Z",
+          "finished_at": "2026-08-17T09:41:12.833333Z",
+          "duration_seconds": 67.8,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Last Month",
+          "date_from": "2026-06-01",
+          "date_to": "2026-06-30",
+          "is_partial": false,
+          "state": "cached",
+          "started_at": "2026-08-17T09:41:12.833333Z",
+          "finished_at": "2026-08-17T09:41:13.233333Z",
+          "duration_seconds": 0.4,
+          "from_cache": true,
+          "error": null
+        },
+        {
+          "label": "Month YOY",
+          "date_from": "2025-07-01",
+          "date_to": "2025-07-31",
+          "is_partial": false,
+          "state": "cached",
+          "started_at": "2026-08-17T09:41:13.233333Z",
+          "finished_at": "2026-08-17T09:41:13.633333Z",
+          "duration_seconds": 0.4,
+          "from_cache": true,
+          "error": null
+        },
+        {
+          "label": "This Quarter",
+          "date_from": "2026-05-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T09:41:13.633333Z",
+          "finished_at": "2026-08-17T09:42:21.466666Z",
+          "duration_seconds": 67.8,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Last Quarter",
+          "date_from": "2026-02-01",
+          "date_to": "2026-04-30",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T09:42:21.466666Z",
+          "finished_at": "2026-08-17T09:43:29.299999Z",
+          "duration_seconds": 67.8,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Quarterly YOY",
+          "date_from": "2025-05-01",
+          "date_to": "2025-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T09:43:29.299999Z",
+          "finished_at": "2026-08-17T09:44:37.133332Z",
+          "duration_seconds": 67.8,
+          "from_cache": false,
+          "error": null
+        }
+      ],
+      "ninja_report_name": "NYC-HEARING-Internal report"
+    },
+    "events": [
+      {
+        "seq": 1,
+        "level": "info",
+        "provider": null,
+        "stage": "queued",
+        "percent": null,
+        "message": "Queued — 6 period(s) via PDF.",
+        "details": {},
+        "timestamp": "2026-08-17T09:40:00Z"
+      },
+      {
+        "seq": 2,
+        "level": "info",
+        "provider": null,
+        "stage": "start",
+        "percent": null,
+        "message": "Signed in to Reporting Ninja — starting downloads.",
+        "details": {},
+        "timestamp": "2026-08-17T09:40:08Z"
+      },
+      {
+        "seq": 3,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "This Month done",
+        "details": {
+          "period": "This Month"
+        },
+        "timestamp": "2026-08-17T09:41:10Z"
+      },
+      {
+        "seq": 4,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "Last Month done",
+        "details": {
+          "period": "Last Month"
+        },
+        "timestamp": "2026-08-17T09:42:12Z"
+      },
+      {
+        "seq": 5,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "Month YOY done",
+        "details": {
+          "period": "Month YOY"
+        },
+        "timestamp": "2026-08-17T09:43:05Z"
+      },
+      {
+        "seq": 6,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "This Quarter done",
+        "details": {
+          "period": "This Quarter"
+        },
+        "timestamp": "2026-08-17T09:44:20Z"
+      },
+      {
+        "seq": 7,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "Last Quarter done",
+        "details": {
+          "period": "Last Quarter"
+        },
+        "timestamp": "2026-08-17T09:45:30Z"
+      },
+      {
+        "seq": 8,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "Quarterly YOY done",
+        "details": {
+          "period": "Quarterly YOY"
+        },
+        "timestamp": "2026-08-17T09:46:20Z"
+      },
+      {
+        "seq": 9,
+        "level": "info",
+        "provider": null,
+        "stage": "cross_check",
+        "percent": null,
+        "message": "Cross-check passed — API matches the PDF for every value.",
+        "details": {},
+        "timestamp": "2026-08-17T09:46:45Z"
+      },
+      {
+        "seq": 10,
+        "level": "info",
+        "provider": null,
+        "stage": "complete",
+        "percent": null,
+        "message": "Report finished.",
+        "details": {},
+        "timestamp": "2026-08-17T09:46:52Z"
+      }
+    ],
+    "table": {
+      "run_id": "report-run-succeeded-match",
+      "kind": "monthly",
+      "source": "pdf",
+      "periods": [
+        {
+          "label": "This Month",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false
+        },
+        {
+          "label": "Last Month",
+          "date_from": "2026-06-01",
+          "date_to": "2026-06-30",
+          "is_partial": false
+        },
+        {
+          "label": "Month YOY",
+          "date_from": "2025-07-01",
+          "date_to": "2025-07-31",
+          "is_partial": false
+        },
+        {
+          "label": "This Quarter",
+          "date_from": "2026-05-01",
+          "date_to": "2026-07-31",
+          "is_partial": false
+        },
+        {
+          "label": "Last Quarter",
+          "date_from": "2026-02-01",
+          "date_to": "2026-04-30",
+          "is_partial": false
+        },
+        {
+          "label": "Quarterly YOY",
+          "date_from": "2025-05-01",
+          "date_to": "2025-07-31",
+          "is_partial": false
+        }
+      ],
+      "change_labels": [
+        "% M/M",
+        "% Q/Q",
+        "% M YOY",
+        "% Q YOY"
+      ],
+      "rows": [
+        {
+          "key": "users",
+          "label": "Users",
+          "values": [
+            6251,
+            5980,
+            5504,
+            18320,
+            16890,
+            15760
+          ],
+          "changes": [
+            0.0453,
+            0.0847,
+            0.1357,
+            0.1625
+          ]
+        },
+        {
+          "key": "organic_users",
+          "label": "Organic Users",
+          "values": [
+            3061,
+            2895,
+            2610,
+            8990,
+            8210,
+            7640
+          ],
+          "changes": [
+            0.0573,
+            0.095,
+            0.1728,
+            0.1767
+          ]
+        },
+        {
+          "key": "direct_users",
+          "label": "Direct Users",
+          "values": [
+            2858,
+            2712,
+            2530,
+            8380,
+            7690,
+            7120
+          ],
+          "changes": [
+            0.0538,
+            0.0897,
+            0.1296,
+            0.177
+          ]
+        },
+        {
+          "key": "conversions",
+          "label": "Total Conversions",
+          "values": [
+            1099,
+            1042,
+            960,
+            3210,
+            2980,
+            2740
+          ],
+          "changes": [
+            0.0547,
+            0.0772,
+            0.1448,
+            0.1715
+          ]
+        },
+        {
+          "key": "organic_conversions",
+          "label": "Organic Conversions",
+          "values": [
+            654,
+            611,
+            560,
+            1890,
+            1720,
+            1580
+          ],
+          "changes": [
+            0.0704,
+            0.0988,
+            0.1679,
+            0.1962
+          ]
+        },
+        {
+          "key": "direct_conversions",
+          "label": "Direct Conversions",
+          "values": [
+            391,
+            372,
+            340,
+            1140,
+            1050,
+            960
+          ],
+          "changes": [
+            0.0511,
+            0.0857,
+            0.15,
+            0.1875
+          ]
+        },
+        {
+          "key": "clicks",
+          "label": "Clicks",
+          "values": [
+            2528,
+            2410,
+            2201,
+            7390,
+            6820,
+            6210
+          ],
+          "changes": [
+            0.049,
+            0.0836,
+            0.1486,
+            0.19
+          ]
+        },
+        {
+          "key": "impressions",
+          "label": "Impressions",
+          "values": [
+            31564,
+            29870,
+            27340,
+            92100,
+            84600,
+            77850
+          ],
+          "changes": [
+            0.0567,
+            0.0887,
+            0.1545,
+            0.183
+          ]
+        }
+      ],
+      "sources": {
+        "This Month": "nyc-hearing__This_Month__2026-07-01_2026-07-31.pdf",
+        "Last Month": "nyc-hearing__Last_Month__2026-06-01_2026-06-30.pdf",
+        "Month YOY": "nyc-hearing__Month_YOY__2025-07-01_2025-07-31.pdf",
+        "This Quarter": "nyc-hearing__This_Quarter__2026-05-01_2026-07-31.pdf",
+        "Last Quarter": "nyc-hearing__Last_Quarter__2026-02-01_2026-04-30.pdf",
+        "Quarterly YOY": "nyc-hearing__Quarterly_YOY__2025-05-01_2025-07-31.pdf"
+      },
+      "cross_check": {
+        "status": "match",
+        "cells": [
+          {
+            "period_label": "This Month",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 6251,
+            "api_value": 6251,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Month",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 5980,
+            "api_value": 5980,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Month YOY",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 5504,
+            "api_value": 5504,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Quarter",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 18320,
+            "api_value": 18320,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Quarter",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 16890,
+            "api_value": 16890,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Quarterly YOY",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 15760,
+            "api_value": 15760,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Month",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 3061,
+            "api_value": 3061,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Month",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 2895,
+            "api_value": 2895,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Month YOY",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 2610,
+            "api_value": 2610,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Quarter",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 8990,
+            "api_value": 8990,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Quarter",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 8210,
+            "api_value": 8210,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Quarterly YOY",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 7640,
+            "api_value": 7640,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Month",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 2858,
+            "api_value": 2858,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Month",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 2712,
+            "api_value": 2712,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Month YOY",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 2530,
+            "api_value": 2530,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Quarter",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 8380,
+            "api_value": 8380,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Quarter",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 7690,
+            "api_value": 7690,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Quarterly YOY",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 7120,
+            "api_value": 7120,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Month",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 1099,
+            "api_value": 1099,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Month",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 1042,
+            "api_value": 1042,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Month YOY",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 960,
+            "api_value": 960,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Quarter",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 3210,
+            "api_value": 3210,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Quarter",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 2980,
+            "api_value": 2980,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Quarterly YOY",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 2740,
+            "api_value": 2740,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Month",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 654,
+            "api_value": 654,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Month",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 611,
+            "api_value": 611,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Month YOY",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 560,
+            "api_value": 560,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Quarter",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 1890,
+            "api_value": 1890,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Quarter",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 1720,
+            "api_value": 1720,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Quarterly YOY",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 1580,
+            "api_value": 1580,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Month",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 391,
+            "api_value": 391,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Month",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 372,
+            "api_value": 372,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Month YOY",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 340,
+            "api_value": 340,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Quarter",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 1140,
+            "api_value": 1140,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Quarter",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 1050,
+            "api_value": 1050,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Quarterly YOY",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 960,
+            "api_value": 960,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Month",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 2528,
+            "api_value": 2528,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Month",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 2410,
+            "api_value": 2410,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Month YOY",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 2201,
+            "api_value": 2201,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Quarter",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 7390,
+            "api_value": 7390,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Quarter",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 6820,
+            "api_value": 6820,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Quarterly YOY",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 6210,
+            "api_value": 6210,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Month",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 31564,
+            "api_value": 31564,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Month",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 29870,
+            "api_value": 29870,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Month YOY",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 27340,
+            "api_value": 27340,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "This Quarter",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 92100,
+            "api_value": 92100,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Last Quarter",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 84600,
+            "api_value": 84600,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "Quarterly YOY",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 77850,
+            "api_value": 77850,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          }
+        ]
+      },
+      "history": {
+        "months": [
+          {
+            "month": "2025-08",
+            "label": "August 2025",
+            "clicks": 2685,
+            "impressions": 47287,
+            "ctr": 0.056781,
+            "organic_conversions": 402
+          },
+          {
+            "month": "2025-09",
+            "label": "September 2025",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": null
+          },
+          {
+            "month": "2025-10",
+            "label": "October 2025",
+            "clicks": 2049,
+            "impressions": 94019,
+            "ctr": 0.021793,
+            "organic_conversions": 550
+          },
+          {
+            "month": "2025-11",
+            "label": "November 2025",
+            "clicks": 2136,
+            "impressions": 36037,
+            "ctr": 0.059272,
+            "organic_conversions": 861
+          },
+          {
+            "month": "2025-12",
+            "label": "December 2025",
+            "clicks": 2253,
+            "impressions": 135082,
+            "ctr": 0.016679,
+            "organic_conversions": 509
+          },
+          {
+            "month": "2026-01",
+            "label": "January 2026",
+            "clicks": 1482,
+            "impressions": 28719,
+            "ctr": 0.051603,
+            "organic_conversions": 737
+          },
+          {
+            "month": "2026-02",
+            "label": "February 2026",
+            "clicks": 1885,
+            "impressions": 60598,
+            "ctr": 0.031107,
+            "organic_conversions": 552
+          },
+          {
+            "month": "2026-03",
+            "label": "March 2026",
+            "clicks": 1955,
+            "impressions": 126177,
+            "ctr": 0.015494,
+            "organic_conversions": 469
+          },
+          {
+            "month": "2026-04",
+            "label": "April 2026",
+            "clicks": 2709,
+            "impressions": 137184,
+            "ctr": 0.019747,
+            "organic_conversions": 465
+          },
+          {
+            "month": "2026-05",
+            "label": "May 2026",
+            "clicks": 2879,
+            "impressions": 126129,
+            "ctr": 0.022826,
+            "organic_conversions": 390
+          },
+          {
+            "month": "2026-06",
+            "label": "June 2026",
+            "clicks": 2848,
+            "impressions": 132155,
+            "ctr": 0.02155,
+            "organic_conversions": 670
+          },
+          {
+            "month": "2026-07",
+            "label": "July 2026",
+            "clicks": 1674,
+            "impressions": 143390,
+            "ctr": 0.011674,
+            "organic_conversions": 672
+          }
+        ],
+        "has_gsc": true,
+        "has_ga4": true
+      }
+    },
+    "files": [
+      {
+        "id": "rrsm-pdf-0",
+        "run_id": "report-run-succeeded-match",
+        "kind": "pdf",
+        "period_label": "This Month",
+        "date_from": "2026-07-01",
+        "date_to": "2026-07-31",
+        "is_partial_period": false,
+        "size_bytes": 705400,
+        "mime": "application/pdf",
+        "created_at": "2026-08-17T09:41:10Z"
+      },
+      {
+        "id": "rrsm-pdf-1",
+        "run_id": "report-run-succeeded-match",
+        "kind": "pdf",
+        "period_label": "Last Month",
+        "date_from": "2026-06-01",
+        "date_to": "2026-06-30",
+        "is_partial_period": false,
+        "size_bytes": 662100,
+        "mime": "application/pdf",
+        "created_at": "2026-08-17T09:42:12Z"
+      },
+      {
+        "id": "rrsm-pdf-2",
+        "run_id": "report-run-succeeded-match",
+        "kind": "pdf",
+        "period_label": "Month YOY",
+        "date_from": "2025-07-01",
+        "date_to": "2025-07-31",
+        "is_partial_period": false,
+        "size_bytes": 241800,
+        "mime": "application/pdf",
+        "created_at": "2026-08-17T09:43:05Z"
+      },
+      {
+        "id": "rrsm-pdf-3",
+        "run_id": "report-run-succeeded-match",
+        "kind": "pdf",
+        "period_label": "This Quarter",
+        "date_from": "2026-05-01",
+        "date_to": "2026-07-31",
+        "is_partial_period": false,
+        "size_bytes": 812300,
+        "mime": "application/pdf",
+        "created_at": "2026-08-17T09:44:20Z"
+      },
+      {
+        "id": "rrsm-pdf-4",
+        "run_id": "report-run-succeeded-match",
+        "kind": "pdf",
+        "period_label": "Last Quarter",
+        "date_from": "2026-02-01",
+        "date_to": "2026-04-30",
+        "is_partial_period": false,
+        "size_bytes": 799600,
+        "mime": "application/pdf",
+        "created_at": "2026-08-17T09:45:30Z"
+      },
+      {
+        "id": "rrsm-pdf-5",
+        "run_id": "report-run-succeeded-match",
+        "kind": "pdf",
+        "period_label": "Quarterly YOY",
+        "date_from": "2025-05-01",
+        "date_to": "2025-07-31",
+        "is_partial_period": false,
+        "size_bytes": 754200,
+        "mime": "application/pdf",
+        "created_at": "2026-08-17T09:46:20Z"
+      },
+      {
+        "id": "rrsm-xlsx",
+        "run_id": "report-run-succeeded-match",
+        "kind": "xlsx",
+        "period_label": null,
+        "date_from": null,
+        "date_to": null,
+        "is_partial_period": false,
+        "size_bytes": 41200,
+        "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "created_at": "2026-08-17T09:46:50Z"
+      }
+    ]
+  },
+  "report-run-succeeded-api": {
+    "run": {
+      "id": "report-run-succeeded-api",
+      "client_id": "client-cleveland",
+      "kind": "monthly",
+      "source": "api",
+      "status": "succeeded",
+      "period_count": 6,
+      "periods_done": 6,
+      "periods_failed": 0,
+      "cross_check_status": null,
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-17T09:10:00Z",
+      "started_at": "2026-08-17T09:10:02Z",
+      "finished_at": "2026-08-17T09:10:16Z",
+      "params": {
+        "force_refresh": false
+      },
+      "periods": [
+        {
+          "label": "This Month",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T09:10:02Z",
+          "finished_at": "2026-08-17T09:10:04.333333Z",
+          "duration_seconds": 2.3,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Last Month",
+          "date_from": "2026-06-01",
+          "date_to": "2026-06-30",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T09:10:04.333333Z",
+          "finished_at": "2026-08-17T09:10:06.666666Z",
+          "duration_seconds": 2.3,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Month YOY",
+          "date_from": "2025-07-01",
+          "date_to": "2025-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T09:10:06.666666Z",
+          "finished_at": "2026-08-17T09:10:08.999999Z",
+          "duration_seconds": 2.3,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "This Quarter",
+          "date_from": "2026-05-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T09:10:08.999999Z",
+          "finished_at": "2026-08-17T09:10:11.333332Z",
+          "duration_seconds": 2.3,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Last Quarter",
+          "date_from": "2026-02-01",
+          "date_to": "2026-04-30",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T09:10:11.333332Z",
+          "finished_at": "2026-08-17T09:10:13.666665Z",
+          "duration_seconds": 2.3,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Quarterly YOY",
+          "date_from": "2025-05-01",
+          "date_to": "2025-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-17T09:10:13.666665Z",
+          "finished_at": "2026-08-17T09:10:15.999998Z",
+          "duration_seconds": 2.3,
+          "from_cache": false,
+          "error": null
+        }
+      ],
+      "ninja_report_name": null
+    },
+    "events": [
+      {
+        "seq": 1,
+        "level": "info",
+        "provider": null,
+        "stage": "queued",
+        "percent": null,
+        "message": "Queued — 6 period(s) via API.",
+        "details": {},
+        "timestamp": "2026-08-17T09:10:00Z"
+      },
+      {
+        "seq": 2,
+        "level": "info",
+        "provider": null,
+        "stage": "start",
+        "percent": null,
+        "message": "Querying Reporting Ninja API.",
+        "details": {},
+        "timestamp": "2026-08-17T09:10:03Z"
+      },
+      {
+        "seq": 3,
+        "level": "warning",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "GSC not configured — clicks/impressions unavailable for every period.",
+        "details": {},
+        "timestamp": "2026-08-17T09:10:04Z"
+      },
+      {
+        "seq": 4,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "This Month done",
+        "details": {
+          "period": "This Month"
+        },
+        "timestamp": "2026-08-17T09:10:06Z"
+      },
+      {
+        "seq": 5,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "Last Month done",
+        "details": {
+          "period": "Last Month"
+        },
+        "timestamp": "2026-08-17T09:10:08Z"
+      },
+      {
+        "seq": 6,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "Month YOY done",
+        "details": {
+          "period": "Month YOY"
+        },
+        "timestamp": "2026-08-17T09:10:10Z"
+      },
+      {
+        "seq": 7,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "This Quarter done",
+        "details": {
+          "period": "This Quarter"
+        },
+        "timestamp": "2026-08-17T09:10:12Z"
+      },
+      {
+        "seq": 8,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "Last Quarter done",
+        "details": {
+          "period": "Last Quarter"
+        },
+        "timestamp": "2026-08-17T09:10:14Z"
+      },
+      {
+        "seq": 9,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "Quarterly YOY done",
+        "details": {
+          "period": "Quarterly YOY"
+        },
+        "timestamp": "2026-08-17T09:10:15Z"
+      },
+      {
+        "seq": 10,
+        "level": "info",
+        "provider": null,
+        "stage": "complete",
+        "percent": null,
+        "message": "Report finished.",
+        "details": {},
+        "timestamp": "2026-08-17T09:10:16Z"
+      }
+    ],
+    "table": {
+      "run_id": "report-run-succeeded-api",
+      "kind": "monthly",
+      "source": "api",
+      "periods": [
+        {
+          "label": "This Month",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false
+        },
+        {
+          "label": "Last Month",
+          "date_from": "2026-06-01",
+          "date_to": "2026-06-30",
+          "is_partial": false
+        },
+        {
+          "label": "Month YOY",
+          "date_from": "2025-07-01",
+          "date_to": "2025-07-31",
+          "is_partial": false
+        },
+        {
+          "label": "This Quarter",
+          "date_from": "2026-05-01",
+          "date_to": "2026-07-31",
+          "is_partial": false
+        },
+        {
+          "label": "Last Quarter",
+          "date_from": "2026-02-01",
+          "date_to": "2026-04-30",
+          "is_partial": false
+        },
+        {
+          "label": "Quarterly YOY",
+          "date_from": "2025-05-01",
+          "date_to": "2025-07-31",
+          "is_partial": false
+        }
+      ],
+      "change_labels": [
+        "% M/M",
+        "% Q/Q",
+        "% M YOY",
+        "% Q YOY"
+      ],
+      "rows": [
+        {
+          "key": "users",
+          "label": "Users",
+          "values": [
+            4820,
+            4590,
+            4102,
+            14100,
+            12980,
+            11640
+          ],
+          "changes": [
+            0.0501,
+            0.0863,
+            0.1751,
+            0.2113
+          ]
+        },
+        {
+          "key": "organic_users",
+          "label": "Organic Users",
+          "values": [
+            2210,
+            2080,
+            1890,
+            6430,
+            5890,
+            5210
+          ],
+          "changes": [
+            0.0625,
+            0.0917,
+            0.1693,
+            0.2342
+          ]
+        },
+        {
+          "key": "direct_users",
+          "label": "Direct Users",
+          "values": [
+            2005,
+            1900,
+            1720,
+            5870,
+            5360,
+            4790
+          ],
+          "changes": [
+            0.0553,
+            0.0952,
+            0.1657,
+            0.2255
+          ]
+        },
+        {
+          "key": "conversions",
+          "label": "Total Conversions",
+          "values": [
+            812,
+            770,
+            690,
+            2360,
+            2150,
+            1890
+          ],
+          "changes": [
+            0.0545,
+            0.0977,
+            0.1768,
+            0.2487
+          ]
+        },
+        {
+          "key": "organic_conversions",
+          "label": "Organic Conversions",
+          "values": [
+            401,
+            378,
+            340,
+            1160,
+            1040,
+            910
+          ],
+          "changes": [
+            0.0608,
+            0.1154,
+            0.1794,
+            0.2747
+          ]
+        },
+        {
+          "key": "direct_conversions",
+          "label": "Direct Conversions",
+          "values": [
+            288,
+            271,
+            244,
+            835,
+            760,
+            660
+          ],
+          "changes": [
+            0.0627,
+            0.0987,
+            0.1803,
+            0.2652
+          ]
+        },
+        {
+          "key": "clicks",
+          "label": "Clicks",
+          "values": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "changes": [
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        {
+          "key": "impressions",
+          "label": "Impressions",
+          "values": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "changes": [
+            null,
+            null,
+            null,
+            null
+          ]
+        }
+      ],
+      "sources": {},
+      "cross_check": null,
+      "history": {
+        "months": [
+          {
+            "month": "2025-08",
+            "label": "August 2025",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 559
+          },
+          {
+            "month": "2025-09",
+            "label": "September 2025",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": null
+          },
+          {
+            "month": "2025-10",
+            "label": "October 2025",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 422
+          },
+          {
+            "month": "2025-11",
+            "label": "November 2025",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 443
+          },
+          {
+            "month": "2025-12",
+            "label": "December 2025",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 852
+          },
+          {
+            "month": "2026-01",
+            "label": "January 2026",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 750
+          },
+          {
+            "month": "2026-02",
+            "label": "February 2026",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 830
+          },
+          {
+            "month": "2026-03",
+            "label": "March 2026",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 685
+          },
+          {
+            "month": "2026-04",
+            "label": "April 2026",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 592
+          },
+          {
+            "month": "2026-05",
+            "label": "May 2026",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 597
+          },
+          {
+            "month": "2026-06",
+            "label": "June 2026",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 842
+          },
+          {
+            "month": "2026-07",
+            "label": "July 2026",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": 897
+          }
+        ],
+        "has_gsc": false,
+        "has_ga4": true
+      }
+    },
+    "files": [
+      {
+        "id": "rrsa-xlsx",
+        "run_id": "report-run-succeeded-api",
+        "kind": "xlsx",
+        "period_label": null,
+        "date_from": null,
+        "date_to": null,
+        "is_partial_period": false,
+        "size_bytes": 33900,
+        "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "created_at": "2026-08-17T09:10:16Z"
+      }
+    ]
+  },
+  "report-run-tolerance": {
+    "run": {
+      "id": "report-run-tolerance",
+      "client_id": "client-long-name",
+      "kind": "yearly",
+      "source": "pdf",
+      "status": "succeeded",
+      "period_count": 3,
+      "periods_done": 3,
+      "periods_failed": 0,
+      "cross_check_status": "within_tolerance",
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-16T14:02:00Z",
+      "started_at": "2026-08-16T14:02:05Z",
+      "finished_at": "2026-08-16T14:04:48Z",
+      "params": {
+        "force_refresh": false,
+        "years": [
+          2026,
+          2025,
+          2024
+        ],
+        "span": "full"
+      },
+      "periods": [
+        {
+          "label": "2026",
+          "date_from": "2026-01-01",
+          "date_to": "2026-07-31",
+          "is_partial": true,
+          "state": "done",
+          "started_at": "2026-08-16T14:02:05Z",
+          "finished_at": "2026-08-16T14:02:59.333333Z",
+          "duration_seconds": 54.3,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "2025",
+          "date_from": "2025-01-01",
+          "date_to": "2025-12-31",
+          "is_partial": false,
+          "state": "cached",
+          "started_at": "2026-08-16T14:02:59.333333Z",
+          "finished_at": "2026-08-16T14:02:59.733333Z",
+          "duration_seconds": 0.4,
+          "from_cache": true,
+          "error": null
+        },
+        {
+          "label": "2024",
+          "date_from": "2024-01-01",
+          "date_to": "2024-12-31",
+          "is_partial": false,
+          "state": "cached",
+          "started_at": "2026-08-16T14:02:59.733333Z",
+          "finished_at": "2026-08-16T14:03:00.133333Z",
+          "duration_seconds": 0.4,
+          "from_cache": true,
+          "error": null
+        }
+      ],
+      "ninja_report_name": "LONG-NAME-Internal report"
+    },
+    "events": [
+      {
+        "seq": 1,
+        "level": "info",
+        "provider": null,
+        "stage": "queued",
+        "percent": null,
+        "message": "Queued — 3 period(s) via PDF.",
+        "details": {},
+        "timestamp": "2026-08-16T14:02:00Z"
+      },
+      {
+        "seq": 2,
+        "level": "info",
+        "provider": null,
+        "stage": "start",
+        "percent": null,
+        "message": "Signed in to Reporting Ninja — starting downloads.",
+        "details": {},
+        "timestamp": "2026-08-16T14:02:07Z"
+      },
+      {
+        "seq": 3,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "2026 done",
+        "details": {
+          "period": "2026"
+        },
+        "timestamp": "2026-08-16T14:03:00Z"
+      },
+      {
+        "seq": 4,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "2025 done",
+        "details": {
+          "period": "2025"
+        },
+        "timestamp": "2026-08-16T14:03:50Z"
+      },
+      {
+        "seq": 5,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "2024 done",
+        "details": {
+          "period": "2024"
+        },
+        "timestamp": "2026-08-16T14:04:35Z"
+      },
+      {
+        "seq": 6,
+        "level": "warning",
+        "provider": null,
+        "stage": "cross_check",
+        "percent": null,
+        "message": "Cross-check: Impressions for 2025 differs by 0.23% — within the 0.5% freshness tolerance.",
+        "details": {},
+        "timestamp": "2026-08-16T14:04:45Z"
+      },
+      {
+        "seq": 7,
+        "level": "info",
+        "provider": null,
+        "stage": "complete",
+        "percent": null,
+        "message": "Report finished.",
+        "details": {},
+        "timestamp": "2026-08-16T14:04:48Z"
+      }
+    ],
+    "table": {
+      "run_id": "report-run-tolerance",
+      "kind": "yearly",
+      "source": "pdf",
+      "periods": [
+        {
+          "label": "2026",
+          "date_from": "2026-01-01",
+          "date_to": "2026-07-31",
+          "is_partial": true
+        },
+        {
+          "label": "2025",
+          "date_from": "2025-01-01",
+          "date_to": "2025-12-31",
+          "is_partial": false
+        },
+        {
+          "label": "2024",
+          "date_from": "2024-01-01",
+          "date_to": "2024-12-31",
+          "is_partial": false
+        }
+      ],
+      "change_labels": [
+        "2026 vs 2025",
+        "2025 vs 2024"
+      ],
+      "rows": [
+        {
+          "key": "users",
+          "label": "Users",
+          "values": [
+            41200,
+            68900,
+            61200
+          ],
+          "changes": [
+            -0.4021,
+            0.1258
+          ]
+        },
+        {
+          "key": "organic_users",
+          "label": "Organic Users",
+          "values": [
+            19800,
+            33100,
+            29000
+          ],
+          "changes": [
+            -0.4018,
+            0.1414
+          ]
+        },
+        {
+          "key": "direct_users",
+          "label": "Direct Users",
+          "values": [
+            15300,
+            25600,
+            22900
+          ],
+          "changes": [
+            -0.4023,
+            0.1179
+          ]
+        },
+        {
+          "key": "conversions",
+          "label": "Total Conversions",
+          "values": [
+            6210,
+            10380,
+            9210
+          ],
+          "changes": [
+            -0.4017,
+            0.127
+          ]
+        },
+        {
+          "key": "organic_conversions",
+          "label": "Organic Conversions",
+          "values": [
+            3010,
+            5040,
+            4460
+          ],
+          "changes": [
+            -0.4028,
+            0.13
+          ]
+        },
+        {
+          "key": "direct_conversions",
+          "label": "Direct Conversions",
+          "values": [
+            2210,
+            3690,
+            3260
+          ],
+          "changes": [
+            -0.4011,
+            0.1319
+          ]
+        },
+        {
+          "key": "clicks",
+          "label": "Clicks",
+          "values": [
+            15400,
+            25800,
+            22900
+          ],
+          "changes": [
+            -0.4031,
+            0.1266
+          ]
+        },
+        {
+          "key": "impressions",
+          "label": "Impressions",
+          "values": [
+            210000,
+            352000,
+            311000
+          ],
+          "changes": [
+            -0.4034,
+            0.1318
+          ]
+        }
+      ],
+      "sources": {
+        "2026": "icaird-manhattan__2026__2026-01-01_2026-07-31.pdf",
+        "2025": "icaird-manhattan__2025__2025-01-01_2025-12-31.pdf",
+        "2024": "icaird-manhattan__2024__2024-01-01_2024-12-31.pdf"
+      },
+      "cross_check": {
+        "status": "within_tolerance",
+        "cells": [
+          {
+            "period_label": "2026",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 41200,
+            "api_value": 41200,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2025",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 68900,
+            "api_value": 68900,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2024",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 61200,
+            "api_value": 61200,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2026",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 19800,
+            "api_value": 19800,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2025",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 33100,
+            "api_value": 33100,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2024",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 29000,
+            "api_value": 29000,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2026",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 15300,
+            "api_value": 15300,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2025",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 25600,
+            "api_value": 25600,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2024",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 22900,
+            "api_value": 22900,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2026",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 6210,
+            "api_value": 6210,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2025",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 10380,
+            "api_value": 10380,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2024",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 9210,
+            "api_value": 9210,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2026",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 3010,
+            "api_value": 3010,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2025",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 5040,
+            "api_value": 5040,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2024",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 4460,
+            "api_value": 4460,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2026",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 2210,
+            "api_value": 2210,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2025",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 3690,
+            "api_value": 3690,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2024",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 3260,
+            "api_value": 3260,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2026",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 15400,
+            "api_value": 15400,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2025",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 25800,
+            "api_value": 25800,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2024",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 22900,
+            "api_value": 22900,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2026",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 210000,
+            "api_value": 210000,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "2025",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 352000,
+            "api_value": 351200,
+            "diff_pct": 0.002277904328018223,
+            "verdict": "within_tolerance"
+          },
+          {
+            "period_label": "2024",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 311000,
+            "api_value": 311000,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          }
+        ]
+      },
+      "history": {
+        "months": [
+          {
+            "month": "2025-08",
+            "label": "August 2025",
+            "clicks": 2515,
+            "impressions": 76019,
+            "ctr": 0.033084,
+            "organic_conversions": 673
+          },
+          {
+            "month": "2025-09",
+            "label": "September 2025",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": null
+          },
+          {
+            "month": "2025-10",
+            "label": "October 2025",
+            "clicks": 1599,
+            "impressions": 55784,
+            "ctr": 0.028664,
+            "organic_conversions": 736
+          },
+          {
+            "month": "2025-11",
+            "label": "November 2025",
+            "clicks": 2309,
+            "impressions": 34869,
+            "ctr": 0.066219,
+            "organic_conversions": 430
+          },
+          {
+            "month": "2025-12",
+            "label": "December 2025",
+            "clicks": 2777,
+            "impressions": 101618,
+            "ctr": 0.027328,
+            "organic_conversions": 702
+          },
+          {
+            "month": "2026-01",
+            "label": "January 2026",
+            "clicks": 1670,
+            "impressions": 115039,
+            "ctr": 0.014517,
+            "organic_conversions": 421
+          },
+          {
+            "month": "2026-02",
+            "label": "February 2026",
+            "clicks": 2518,
+            "impressions": 65926,
+            "ctr": 0.038194,
+            "organic_conversions": 453
+          },
+          {
+            "month": "2026-03",
+            "label": "March 2026",
+            "clicks": 2436,
+            "impressions": 53238,
+            "ctr": 0.045757,
+            "organic_conversions": 773
+          },
+          {
+            "month": "2026-04",
+            "label": "April 2026",
+            "clicks": 1875,
+            "impressions": 124094,
+            "ctr": 0.01511,
+            "organic_conversions": 714
+          },
+          {
+            "month": "2026-05",
+            "label": "May 2026",
+            "clicks": 2042,
+            "impressions": 79940,
+            "ctr": 0.025544,
+            "organic_conversions": 670
+          },
+          {
+            "month": "2026-06",
+            "label": "June 2026",
+            "clicks": 2983,
+            "impressions": 141008,
+            "ctr": 0.021155,
+            "organic_conversions": 654
+          },
+          {
+            "month": "2026-07",
+            "label": "July 2026",
+            "clicks": 2969,
+            "impressions": 107501,
+            "ctr": 0.027618,
+            "organic_conversions": 607
+          }
+        ],
+        "has_gsc": true,
+        "has_ga4": true
+      }
+    },
+    "files": [
+      {
+        "id": "rrt-pdf-0",
+        "run_id": "report-run-tolerance",
+        "kind": "pdf",
+        "period_label": "2026",
+        "date_from": "2026-01-01",
+        "date_to": "2026-07-31",
+        "is_partial_period": true,
+        "size_bytes": 890200,
+        "mime": "application/pdf",
+        "created_at": "2026-08-16T14:03:00Z"
+      },
+      {
+        "id": "rrt-pdf-1",
+        "run_id": "report-run-tolerance",
+        "kind": "pdf",
+        "period_label": "2025",
+        "date_from": "2025-01-01",
+        "date_to": "2025-12-31",
+        "is_partial_period": false,
+        "size_bytes": 964800,
+        "mime": "application/pdf",
+        "created_at": "2026-08-16T14:03:50Z"
+      },
+      {
+        "id": "rrt-pdf-2",
+        "run_id": "report-run-tolerance",
+        "kind": "pdf",
+        "period_label": "2024",
+        "date_from": "2024-01-01",
+        "date_to": "2024-12-31",
+        "is_partial_period": false,
+        "size_bytes": 941300,
+        "mime": "application/pdf",
+        "created_at": "2026-08-16T14:04:35Z"
+      },
+      {
+        "id": "rrt-xlsx",
+        "run_id": "report-run-tolerance",
+        "kind": "xlsx",
+        "period_label": null,
+        "date_from": null,
+        "date_to": null,
+        "is_partial_period": false,
+        "size_bytes": 29800,
+        "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "created_at": "2026-08-16T14:04:47Z"
+      }
+    ]
+  },
+  "report-run-mismatch": {
+    "run": {
+      "id": "report-run-mismatch",
+      "client_id": "client-onboarding",
+      "kind": "comparator",
+      "source": "pdf",
+      "status": "succeeded",
+      "period_count": 4,
+      "periods_done": 4,
+      "periods_failed": 0,
+      "cross_check_status": "mismatch",
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-16T10:00:00Z",
+      "started_at": "2026-08-16T10:00:06Z",
+      "finished_at": "2026-08-16T10:04:02Z",
+      "params": {
+        "force_refresh": false,
+        "months": [
+          "2026-07",
+          "2025-07",
+          "2024-07",
+          "2023-07"
+        ]
+      },
+      "periods": [
+        {
+          "label": "July 2026",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-16T10:00:06Z",
+          "finished_at": "2026-08-16T10:01:05Z",
+          "duration_seconds": 59.0,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "July 2025",
+          "date_from": "2025-07-01",
+          "date_to": "2025-07-31",
+          "is_partial": false,
+          "state": "cached",
+          "started_at": "2026-08-16T10:01:05Z",
+          "finished_at": "2026-08-16T10:01:05.400000Z",
+          "duration_seconds": 0.4,
+          "from_cache": true,
+          "error": null
+        },
+        {
+          "label": "July 2024",
+          "date_from": "2024-07-01",
+          "date_to": "2024-07-31",
+          "is_partial": false,
+          "state": "cached",
+          "started_at": "2026-08-16T10:01:05.400000Z",
+          "finished_at": "2026-08-16T10:01:05.800000Z",
+          "duration_seconds": 0.4,
+          "from_cache": true,
+          "error": null
+        },
+        {
+          "label": "July 2023",
+          "date_from": "2023-07-01",
+          "date_to": "2023-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-16T10:01:05.800000Z",
+          "finished_at": "2026-08-16T10:02:04.800000Z",
+          "duration_seconds": 59.0,
+          "from_cache": false,
+          "error": null
+        }
+      ],
+      "ninja_report_name": "ONBOARDING-Internal report"
+    },
+    "events": [
+      {
+        "seq": 1,
+        "level": "info",
+        "provider": null,
+        "stage": "queued",
+        "percent": null,
+        "message": "Queued — 4 period(s) via PDF.",
+        "details": {},
+        "timestamp": "2026-08-16T10:00:00Z"
+      },
+      {
+        "seq": 2,
+        "level": "info",
+        "provider": null,
+        "stage": "start",
+        "percent": null,
+        "message": "Signed in to Reporting Ninja — starting downloads.",
+        "details": {},
+        "timestamp": "2026-08-16T10:00:08Z"
+      },
+      {
+        "seq": 3,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "July 2026 done",
+        "details": {
+          "period": "July 2026"
+        },
+        "timestamp": "2026-08-16T10:01:10Z"
+      },
+      {
+        "seq": 4,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "July 2025 done",
+        "details": {
+          "period": "July 2025"
+        },
+        "timestamp": "2026-08-16T10:02:00Z"
+      },
+      {
+        "seq": 5,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "July 2024 done",
+        "details": {
+          "period": "July 2024"
+        },
+        "timestamp": "2026-08-16T10:02:55Z"
+      },
+      {
+        "seq": 6,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "July 2023 done",
+        "details": {
+          "period": "July 2023"
+        },
+        "timestamp": "2026-08-16T10:03:40Z"
+      },
+      {
+        "seq": 7,
+        "level": "warning",
+        "provider": null,
+        "stage": "cross_check",
+        "percent": null,
+        "message": "Cross-check: Organic Users, July 2026: PDF 3980 vs API 3790 (-4.8%).",
+        "details": {},
+        "timestamp": "2026-08-16T10:03:55Z"
+      },
+      {
+        "seq": 8,
+        "level": "warning",
+        "provider": null,
+        "stage": "cross_check",
+        "percent": null,
+        "message": "Cross-check: Direct Conversions, July 2026: PDF 512 vs API 560 (+9.4%).",
+        "details": {},
+        "timestamp": "2026-08-16T10:03:57Z"
+      },
+      {
+        "seq": 9,
+        "level": "info",
+        "provider": null,
+        "stage": "complete",
+        "percent": null,
+        "message": "Report finished.",
+        "details": {},
+        "timestamp": "2026-08-16T10:04:02Z"
+      }
+    ],
+    "table": {
+      "run_id": "report-run-mismatch",
+      "kind": "comparator",
+      "source": "pdf",
+      "periods": [
+        {
+          "label": "July 2026",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false
+        },
+        {
+          "label": "July 2025",
+          "date_from": "2025-07-01",
+          "date_to": "2025-07-31",
+          "is_partial": false
+        },
+        {
+          "label": "July 2024",
+          "date_from": "2024-07-01",
+          "date_to": "2024-07-31",
+          "is_partial": false
+        },
+        {
+          "label": "July 2023",
+          "date_from": "2023-07-01",
+          "date_to": "2023-07-31",
+          "is_partial": false
+        }
+      ],
+      "change_labels": [
+        "July 2026 vs July 2025",
+        "July 2025 vs July 2024",
+        "July 2024 vs July 2023"
+      ],
+      "rows": [
+        {
+          "key": "users",
+          "label": "Users",
+          "values": [
+            8120,
+            7480,
+            6990,
+            6210
+          ],
+          "changes": [
+            0.0856,
+            0.0701,
+            0.1256
+          ]
+        },
+        {
+          "key": "organic_users",
+          "label": "Organic Users",
+          "values": [
+            3980,
+            3610,
+            3350,
+            2960
+          ],
+          "changes": [
+            0.1025,
+            0.0776,
+            0.1318
+          ]
+        },
+        {
+          "key": "direct_users",
+          "label": "Direct Users",
+          "values": [
+            3510,
+            3260,
+            3010,
+            2680
+          ],
+          "changes": [
+            0.0767,
+            0.0831,
+            0.1231
+          ]
+        },
+        {
+          "key": "conversions",
+          "label": "Total Conversions",
+          "values": [
+            1420,
+            1310,
+            1210,
+            1060
+          ],
+          "changes": [
+            0.084,
+            0.0826,
+            0.1415
+          ]
+        },
+        {
+          "key": "organic_conversions",
+          "label": "Organic Conversions",
+          "values": [
+            705,
+            648,
+            598,
+            520
+          ],
+          "changes": [
+            0.088,
+            0.0836,
+            0.15
+          ]
+        },
+        {
+          "key": "direct_conversions",
+          "label": "Direct Conversions",
+          "values": [
+            512,
+            470,
+            432,
+            378
+          ],
+          "changes": [
+            0.0894,
+            0.088,
+            0.1429
+          ]
+        },
+        {
+          "key": "clicks",
+          "label": "Clicks",
+          "values": [
+            4210,
+            3890,
+            3610,
+            3190
+          ],
+          "changes": [
+            0.0823,
+            0.0776,
+            0.1317
+          ]
+        },
+        {
+          "key": "impressions",
+          "label": "Impressions",
+          "values": [
+            58900,
+            54200,
+            50100,
+            44300
+          ],
+          "changes": [
+            0.0867,
+            0.0818,
+            0.1309
+          ]
+        }
+      ],
+      "sources": {
+        "July 2026": "onboarding-test-co__July_2026__2026-07-01_2026-07-31.pdf",
+        "July 2025": "onboarding-test-co__July_2025__2025-07-01_2025-07-31.pdf",
+        "July 2024": "onboarding-test-co__July_2024__2024-07-01_2024-07-31.pdf",
+        "July 2023": "onboarding-test-co__July_2023__2023-07-01_2023-07-31.pdf"
+      },
+      "cross_check": {
+        "status": "mismatch",
+        "cells": [
+          {
+            "period_label": "July 2026",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 8120,
+            "api_value": 8120,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2025",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 7480,
+            "api_value": 7480,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2024",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 6990,
+            "api_value": 6990,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2023",
+            "metric_key": "users",
+            "metric_label": "Users",
+            "pdf_value": 6210,
+            "api_value": 6210,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2026",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 3980,
+            "api_value": 3790,
+            "diff_pct": 0.05013192612137203,
+            "verdict": "mismatch"
+          },
+          {
+            "period_label": "July 2025",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 3610,
+            "api_value": 3610,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2024",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 3350,
+            "api_value": 3350,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2023",
+            "metric_key": "organic_users",
+            "metric_label": "Organic Users",
+            "pdf_value": 2960,
+            "api_value": 2960,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2026",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 3510,
+            "api_value": 3510,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2025",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 3260,
+            "api_value": 3260,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2024",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 3010,
+            "api_value": 3010,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2023",
+            "metric_key": "direct_users",
+            "metric_label": "Direct Users",
+            "pdf_value": 2680,
+            "api_value": 2680,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2026",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 1420,
+            "api_value": 1420,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2025",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 1310,
+            "api_value": 1310,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2024",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 1210,
+            "api_value": 1210,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2023",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": 1060,
+            "api_value": 1060,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2026",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 705,
+            "api_value": 705,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2025",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 648,
+            "api_value": 648,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2024",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 598,
+            "api_value": 598,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2023",
+            "metric_key": "organic_conversions",
+            "metric_label": "Organic Conversions",
+            "pdf_value": 520,
+            "api_value": 520,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2026",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 512,
+            "api_value": 560,
+            "diff_pct": 0.08571428571428572,
+            "verdict": "mismatch"
+          },
+          {
+            "period_label": "July 2025",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 470,
+            "api_value": 470,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2024",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 432,
+            "api_value": 432,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2023",
+            "metric_key": "direct_conversions",
+            "metric_label": "Direct Conversions",
+            "pdf_value": 378,
+            "api_value": 378,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2026",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 4210,
+            "api_value": 4210,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2025",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 3890,
+            "api_value": 3890,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2024",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 3610,
+            "api_value": 3610,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2023",
+            "metric_key": "clicks",
+            "metric_label": "Clicks",
+            "pdf_value": 3190,
+            "api_value": 3190,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2026",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 58900,
+            "api_value": 58900,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2025",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 54200,
+            "api_value": 54200,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2024",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 50100,
+            "api_value": 50100,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2023",
+            "metric_key": "impressions",
+            "metric_label": "Impressions",
+            "pdf_value": 44300,
+            "api_value": 44300,
+            "diff_pct": 0.0,
+            "verdict": "match"
+          },
+          {
+            "period_label": "July 2023",
+            "metric_key": "conversions",
+            "metric_label": "Total Conversions",
+            "pdf_value": null,
+            "api_value": null,
+            "diff_pct": null,
+            "verdict": "no_data"
+          }
+        ]
+      },
+      "history": {
+        "months": [
+          {
+            "month": "2025-08",
+            "label": "August 2025",
+            "clicks": 2939,
+            "impressions": 53814,
+            "ctr": 0.054614,
+            "organic_conversions": 546
+          },
+          {
+            "month": "2025-09",
+            "label": "September 2025",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": null
+          },
+          {
+            "month": "2025-10",
+            "label": "October 2025",
+            "clicks": 1706,
+            "impressions": 95557,
+            "ctr": 0.017853,
+            "organic_conversions": 616
+          },
+          {
+            "month": "2025-11",
+            "label": "November 2025",
+            "clicks": 2634,
+            "impressions": 112648,
+            "ctr": 0.023383,
+            "organic_conversions": 487
+          },
+          {
+            "month": "2025-12",
+            "label": "December 2025",
+            "clicks": 2962,
+            "impressions": 137867,
+            "ctr": 0.021484,
+            "organic_conversions": 605
+          },
+          {
+            "month": "2026-01",
+            "label": "January 2026",
+            "clicks": 2279,
+            "impressions": 126342,
+            "ctr": 0.018038,
+            "organic_conversions": 873
+          },
+          {
+            "month": "2026-02",
+            "label": "February 2026",
+            "clicks": 2267,
+            "impressions": 47490,
+            "ctr": 0.047736,
+            "organic_conversions": 763
+          },
+          {
+            "month": "2026-03",
+            "label": "March 2026",
+            "clicks": 1806,
+            "impressions": 102710,
+            "ctr": 0.017583,
+            "organic_conversions": 402
+          },
+          {
+            "month": "2026-04",
+            "label": "April 2026",
+            "clicks": 2199,
+            "impressions": 98378,
+            "ctr": 0.022353,
+            "organic_conversions": 836
+          },
+          {
+            "month": "2026-05",
+            "label": "May 2026",
+            "clicks": 2478,
+            "impressions": 131850,
+            "ctr": 0.018794,
+            "organic_conversions": 529
+          },
+          {
+            "month": "2026-06",
+            "label": "June 2026",
+            "clicks": 1973,
+            "impressions": 49821,
+            "ctr": 0.039602,
+            "organic_conversions": 587
+          },
+          {
+            "month": "2026-07",
+            "label": "July 2026",
+            "clicks": 2027,
+            "impressions": 80377,
+            "ctr": 0.025219,
+            "organic_conversions": 539
+          }
+        ],
+        "has_gsc": true,
+        "has_ga4": true
+      }
+    },
+    "files": [
+      {
+        "id": "rrm-pdf-0",
+        "run_id": "report-run-mismatch",
+        "kind": "pdf",
+        "period_label": "July 2026",
+        "date_from": "2026-07-01",
+        "date_to": "2026-07-31",
+        "is_partial_period": false,
+        "size_bytes": 421000,
+        "mime": "application/pdf",
+        "created_at": "2026-08-16T10:01:10Z"
+      },
+      {
+        "id": "rrm-pdf-1",
+        "run_id": "report-run-mismatch",
+        "kind": "pdf",
+        "period_label": "July 2025",
+        "date_from": "2025-07-01",
+        "date_to": "2025-07-31",
+        "is_partial_period": false,
+        "size_bytes": 398000,
+        "mime": "application/pdf",
+        "created_at": "2026-08-16T10:02:00Z"
+      },
+      {
+        "id": "rrm-pdf-2",
+        "run_id": "report-run-mismatch",
+        "kind": "pdf",
+        "period_label": "July 2024",
+        "date_from": "2024-07-01",
+        "date_to": "2024-07-31",
+        "is_partial_period": false,
+        "size_bytes": 372000,
+        "mime": "application/pdf",
+        "created_at": "2026-08-16T10:02:55Z"
+      },
+      {
+        "id": "rrm-pdf-3",
+        "run_id": "report-run-mismatch",
+        "kind": "pdf",
+        "period_label": "July 2023",
+        "date_from": "2023-07-01",
+        "date_to": "2023-07-31",
+        "is_partial_period": false,
+        "size_bytes": 355000,
+        "mime": "application/pdf",
+        "created_at": "2026-08-16T10:03:40Z"
+      },
+      {
+        "id": "rrm-xlsx",
+        "run_id": "report-run-mismatch",
+        "kind": "xlsx",
+        "period_label": null,
+        "date_from": null,
+        "date_to": null,
+        "is_partial_period": false,
+        "size_bytes": 36700,
+        "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "created_at": "2026-08-16T10:04:00Z"
+      }
+    ]
+  },
+  "report-run-partial": {
+    "run": {
+      "id": "report-run-partial",
+      "client_id": "client-nyc-hearing",
+      "kind": "custom_months",
+      "source": "pdf",
+      "status": "partial",
+      "period_count": 6,
+      "periods_done": 5,
+      "periods_failed": 1,
+      "cross_check_status": null,
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": false,
+      "queued_at": "2026-08-15T08:20:00Z",
+      "started_at": "2026-08-15T08:20:05Z",
+      "finished_at": "2026-08-15T08:25:41Z",
+      "params": {
+        "force_refresh": false,
+        "months": [
+          "2026-08",
+          "2026-07",
+          "2026-06",
+          "2026-05",
+          "2026-04",
+          "2026-03"
+        ]
+      },
+      "periods": [
+        {
+          "label": "August 2026",
+          "date_from": "2026-08-01",
+          "date_to": "2026-08-15",
+          "is_partial": true,
+          "state": "done",
+          "started_at": "2026-08-15T08:20:05Z",
+          "finished_at": "2026-08-15T08:21:01Z",
+          "duration_seconds": 56.0,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "July 2026",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-15T08:21:01Z",
+          "finished_at": "2026-08-15T08:21:57Z",
+          "duration_seconds": 56.0,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "June 2026",
+          "date_from": "2026-06-01",
+          "date_to": "2026-06-30",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-15T08:21:57Z",
+          "finished_at": "2026-08-15T08:22:53Z",
+          "duration_seconds": 56.0,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "May 2026",
+          "date_from": "2026-05-01",
+          "date_to": "2026-05-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-15T08:22:53Z",
+          "finished_at": "2026-08-15T08:23:49Z",
+          "duration_seconds": 56.0,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "April 2026",
+          "date_from": "2026-04-01",
+          "date_to": "2026-04-30",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-15T08:23:49Z",
+          "finished_at": "2026-08-15T08:24:45Z",
+          "duration_seconds": 56.0,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "March 2026",
+          "date_from": "2026-03-01",
+          "date_to": "2026-03-31",
+          "is_partial": false,
+          "state": "failed",
+          "started_at": "2026-08-15T08:24:45Z",
+          "finished_at": "2026-08-15T08:25:41Z",
+          "duration_seconds": 56.0,
+          "from_cache": false,
+          "error": "Layout selector timed out on the live report page"
+        }
+      ],
+      "ninja_report_name": "NYC-HEARING-Internal report"
+    },
+    "events": [
+      {
+        "seq": 1,
+        "level": "info",
+        "provider": null,
+        "stage": "queued",
+        "percent": null,
+        "message": "Queued — 6 period(s) via PDF.",
+        "details": {},
+        "timestamp": "2026-08-15T08:20:00Z"
+      },
+      {
+        "seq": 2,
+        "level": "info",
+        "provider": null,
+        "stage": "start",
+        "percent": null,
+        "message": "Signed in to Reporting Ninja — starting downloads.",
+        "details": {},
+        "timestamp": "2026-08-15T08:20:07Z"
+      },
+      {
+        "seq": 3,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "August 2026 done",
+        "details": {
+          "period": "August 2026"
+        },
+        "timestamp": "2026-08-15T08:21:00Z"
+      },
+      {
+        "seq": 4,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "July 2026 done",
+        "details": {
+          "period": "July 2026"
+        },
+        "timestamp": "2026-08-15T08:21:55Z"
+      },
+      {
+        "seq": 5,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "June 2026 done",
+        "details": {
+          "period": "June 2026"
+        },
+        "timestamp": "2026-08-15T08:22:48Z"
+      },
+      {
+        "seq": 6,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "May 2026 done",
+        "details": {
+          "period": "May 2026"
+        },
+        "timestamp": "2026-08-15T08:23:40Z"
+      },
+      {
+        "seq": 7,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "April 2026 done",
+        "details": {
+          "period": "April 2026"
+        },
+        "timestamp": "2026-08-15T08:24:35Z"
+      },
+      {
+        "seq": 8,
+        "level": "error",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "March 2026: layout selector timed out on the live report page — not retried (possible template drift).",
+        "details": {
+          "period": "March 2026"
+        },
+        "timestamp": "2026-08-15T08:25:38Z"
+      },
+      {
+        "seq": 9,
+        "level": "info",
+        "provider": null,
+        "stage": "complete",
+        "percent": null,
+        "message": "Report finished — 5 of 6 periods succeeded.",
+        "details": {},
+        "timestamp": "2026-08-15T08:25:41Z"
+      }
+    ],
+    "table": {
+      "run_id": "report-run-partial",
+      "kind": "custom_months",
+      "source": "pdf",
+      "periods": [
+        {
+          "label": "August 2026",
+          "date_from": "2026-08-01",
+          "date_to": "2026-08-15",
+          "is_partial": true
+        },
+        {
+          "label": "July 2026",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false
+        },
+        {
+          "label": "June 2026",
+          "date_from": "2026-06-01",
+          "date_to": "2026-06-30",
+          "is_partial": false
+        },
+        {
+          "label": "May 2026",
+          "date_from": "2026-05-01",
+          "date_to": "2026-05-31",
+          "is_partial": false
+        },
+        {
+          "label": "April 2026",
+          "date_from": "2026-04-01",
+          "date_to": "2026-04-30",
+          "is_partial": false
+        },
+        {
+          "label": "March 2026",
+          "date_from": "2026-03-01",
+          "date_to": "2026-03-31",
+          "is_partial": false
+        }
+      ],
+      "change_labels": [
+        "August 2026 vs July 2026",
+        "July 2026 vs June 2026",
+        "June 2026 vs May 2026",
+        "May 2026 vs April 2026",
+        "April 2026 vs March 2026"
+      ],
+      "rows": [
+        {
+          "key": "users",
+          "label": "Users",
+          "values": [
+            5320,
+            5980,
+            5510,
+            5240,
+            4990,
+            null
+          ],
+          "changes": [
+            -0.1104,
+            0.0853,
+            0.0515,
+            0.0501,
+            null
+          ]
+        },
+        {
+          "key": "organic_users",
+          "label": "Organic Users",
+          "values": [
+            2610,
+            2895,
+            2680,
+            2540,
+            2410,
+            null
+          ],
+          "changes": [
+            -0.0985,
+            0.0803,
+            0.0551,
+            0.0539,
+            null
+          ]
+        },
+        {
+          "key": "direct_users",
+          "label": "Direct Users",
+          "values": [
+            2410,
+            2712,
+            2500,
+            2380,
+            2260,
+            null
+          ],
+          "changes": [
+            -0.1114,
+            0.0848,
+            0.0504,
+            0.0531,
+            null
+          ]
+        },
+        {
+          "key": "conversions",
+          "label": "Total Conversions",
+          "values": [
+            940,
+            1042,
+            960,
+            910,
+            860,
+            null
+          ],
+          "changes": [
+            -0.0979,
+            0.0854,
+            0.0549,
+            0.0581,
+            null
+          ]
+        },
+        {
+          "key": "organic_conversions",
+          "label": "Organic Conversions",
+          "values": [
+            560,
+            611,
+            565,
+            535,
+            505,
+            null
+          ],
+          "changes": [
+            -0.0835,
+            0.0814,
+            0.0561,
+            0.0594,
+            null
+          ]
+        },
+        {
+          "key": "direct_conversions",
+          "label": "Direct Conversions",
+          "values": [
+            335,
+            372,
+            343,
+            325,
+            308,
+            null
+          ],
+          "changes": [
+            -0.0995,
+            0.0845,
+            0.0554,
+            0.0552,
+            null
+          ]
+        },
+        {
+          "key": "clicks",
+          "label": "Clicks",
+          "values": [
+            2190,
+            2410,
+            2230,
+            2110,
+            2000,
+            null
+          ],
+          "changes": [
+            -0.0913,
+            0.0807,
+            0.0569,
+            0.055,
+            null
+          ]
+        },
+        {
+          "key": "impressions",
+          "label": "Impressions",
+          "values": [
+            27100,
+            29870,
+            27650,
+            26200,
+            24800,
+            null
+          ],
+          "changes": [
+            -0.0928,
+            0.0802,
+            0.0554,
+            0.0565,
+            null
+          ]
+        }
+      ],
+      "sources": {
+        "August 2026": "nyc-hearing__August_2026__2026-08-01_2026-08-15.pdf",
+        "July 2026": "nyc-hearing__July_2026__2026-07-01_2026-07-31.pdf",
+        "June 2026": "nyc-hearing__June_2026__2026-06-01_2026-06-30.pdf",
+        "May 2026": "nyc-hearing__May_2026__2026-05-01_2026-05-31.pdf",
+        "April 2026": "nyc-hearing__April_2026__2026-04-01_2026-04-30.pdf"
+      },
+      "cross_check": null,
+      "history": {
+        "months": [
+          {
+            "month": "2025-08",
+            "label": "August 2025",
+            "clicks": 1614,
+            "impressions": 82411,
+            "ctr": 0.019585,
+            "organic_conversions": 877
+          },
+          {
+            "month": "2025-09",
+            "label": "September 2025",
+            "clicks": null,
+            "impressions": null,
+            "ctr": null,
+            "organic_conversions": null
+          },
+          {
+            "month": "2025-10",
+            "label": "October 2025",
+            "clicks": 2472,
+            "impressions": 121452,
+            "ctr": 0.020354,
+            "organic_conversions": 546
+          },
+          {
+            "month": "2025-11",
+            "label": "November 2025",
+            "clicks": 2137,
+            "impressions": 94921,
+            "ctr": 0.022513,
+            "organic_conversions": 721
+          },
+          {
+            "month": "2025-12",
+            "label": "December 2025",
+            "clicks": 2754,
+            "impressions": 96208,
+            "ctr": 0.028625,
+            "organic_conversions": 793
+          },
+          {
+            "month": "2026-01",
+            "label": "January 2026",
+            "clicks": 2552,
+            "impressions": 139184,
+            "ctr": 0.018335,
+            "organic_conversions": 864
+          },
+          {
+            "month": "2026-02",
+            "label": "February 2026",
+            "clicks": 1836,
+            "impressions": 96690,
+            "ctr": 0.018989,
+            "organic_conversions": 644
+          },
+          {
+            "month": "2026-03",
+            "label": "March 2026",
+            "clicks": 2448,
+            "impressions": 73984,
+            "ctr": 0.033088,
+            "organic_conversions": 721
+          },
+          {
+            "month": "2026-04",
+            "label": "April 2026",
+            "clicks": 1504,
+            "impressions": 112806,
+            "ctr": 0.013333,
+            "organic_conversions": 726
+          },
+          {
+            "month": "2026-05",
+            "label": "May 2026",
+            "clicks": 1732,
+            "impressions": 45691,
+            "ctr": 0.037907,
+            "organic_conversions": 650
+          },
+          {
+            "month": "2026-06",
+            "label": "June 2026",
+            "clicks": 2817,
+            "impressions": 79305,
+            "ctr": 0.035521,
+            "organic_conversions": 444
+          },
+          {
+            "month": "2026-07",
+            "label": "July 2026",
+            "clicks": 2416,
+            "impressions": 55677,
+            "ctr": 0.043393,
+            "organic_conversions": 548
+          }
+        ],
+        "has_gsc": true,
+        "has_ga4": true
+      }
+    },
+    "files": [
+      {
+        "id": "rrp-pdf-0",
+        "run_id": "report-run-partial",
+        "kind": "pdf",
+        "period_label": "August 2026",
+        "date_from": "2026-08-01",
+        "date_to": "2026-08-15",
+        "is_partial_period": true,
+        "size_bytes": 198500,
+        "mime": "application/pdf",
+        "created_at": "2026-08-15T08:21:00Z"
+      },
+      {
+        "id": "rrp-pdf-1",
+        "run_id": "report-run-partial",
+        "kind": "pdf",
+        "period_label": "July 2026",
+        "date_from": "2026-07-01",
+        "date_to": "2026-07-31",
+        "is_partial_period": false,
+        "size_bytes": 705400,
+        "mime": "application/pdf",
+        "created_at": "2026-08-15T08:21:55Z"
+      },
+      {
+        "id": "rrp-pdf-2",
+        "run_id": "report-run-partial",
+        "kind": "pdf",
+        "period_label": "June 2026",
+        "date_from": "2026-06-01",
+        "date_to": "2026-06-30",
+        "is_partial_period": false,
+        "size_bytes": 662100,
+        "mime": "application/pdf",
+        "created_at": "2026-08-15T08:22:48Z"
+      },
+      {
+        "id": "rrp-pdf-3",
+        "run_id": "report-run-partial",
+        "kind": "pdf",
+        "period_label": "May 2026",
+        "date_from": "2026-05-01",
+        "date_to": "2026-05-31",
+        "is_partial_period": false,
+        "size_bytes": 630900,
+        "mime": "application/pdf",
+        "created_at": "2026-08-15T08:23:40Z"
+      },
+      {
+        "id": "rrp-pdf-4",
+        "run_id": "report-run-partial",
+        "kind": "pdf",
+        "period_label": "April 2026",
+        "date_from": "2026-04-01",
+        "date_to": "2026-04-30",
+        "is_partial_period": false,
+        "size_bytes": 598200,
+        "mime": "application/pdf",
+        "created_at": "2026-08-15T08:24:35Z"
+      },
+      {
+        "id": "rrp-screenshot-0",
+        "run_id": "report-run-partial",
+        "kind": "screenshot",
+        "period_label": "March 2026",
+        "date_from": "2026-03-01",
+        "date_to": "2026-03-31",
+        "is_partial_period": false,
+        "size_bytes": 84200,
+        "mime": "image/png",
+        "created_at": "2026-08-15T08:25:38Z"
+      },
+      {
+        "id": "rrp-xlsx",
+        "run_id": "report-run-partial",
+        "kind": "xlsx",
+        "period_label": null,
+        "date_from": null,
+        "date_to": null,
+        "is_partial_period": false,
+        "size_bytes": 35100,
+        "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "created_at": "2026-08-15T08:25:40Z"
+      }
+    ]
+  },
+  "report-run-failed": {
+    "run": {
+      "id": "report-run-failed",
+      "client_id": "client-cleveland",
+      "kind": "monthly",
+      "source": "pdf",
+      "status": "failed",
+      "period_count": 6,
+      "periods_done": 0,
+      "periods_failed": 0,
+      "cross_check_status": null,
+      "error_code": "auth_failed",
+      "error_message": "Reporting Ninja re-login failed twice in a row — check the saved credentials.",
+      "cancel_requested": false,
+      "queued_at": "2026-08-14T16:05:00Z",
+      "started_at": "2026-08-14T16:05:04Z",
+      "finished_at": "2026-08-14T16:05:52Z",
+      "params": {
+        "force_refresh": false
+      },
+      "periods": [
+        {
+          "label": "This Month",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Last Month",
+          "date_from": "2026-06-01",
+          "date_to": "2026-06-30",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Month YOY",
+          "date_from": "2025-07-01",
+          "date_to": "2025-07-31",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "This Quarter",
+          "date_from": "2026-05-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Last Quarter",
+          "date_from": "2026-02-01",
+          "date_to": "2026-04-30",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "Quarterly YOY",
+          "date_from": "2025-05-01",
+          "date_to": "2025-07-31",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        }
+      ],
+      "ninja_report_name": "CLEVELAND-Internal report"
+    },
+    "events": [
+      {
+        "seq": 1,
+        "level": "info",
+        "provider": null,
+        "stage": "queued",
+        "percent": null,
+        "message": "Queued — 6 period(s) via PDF.",
+        "details": {},
+        "timestamp": "2026-08-14T16:05:00Z"
+      },
+      {
+        "seq": 2,
+        "level": "info",
+        "provider": null,
+        "stage": "start",
+        "percent": null,
+        "message": "Signing in to Reporting Ninja…",
+        "details": {},
+        "timestamp": "2026-08-14T16:05:06Z"
+      },
+      {
+        "seq": 3,
+        "level": "error",
+        "provider": null,
+        "stage": "authenticate",
+        "percent": null,
+        "message": "Login form still shown after submit — retrying once.",
+        "details": {},
+        "timestamp": "2026-08-14T16:05:30Z"
+      },
+      {
+        "seq": 4,
+        "level": "error",
+        "provider": null,
+        "stage": "authenticate",
+        "percent": null,
+        "message": "Second login attempt also failed — stopping (this needs a human, not a third retry).",
+        "details": {},
+        "timestamp": "2026-08-14T16:05:50Z"
+      },
+      {
+        "seq": 5,
+        "level": "error",
+        "provider": null,
+        "stage": "failed",
+        "percent": null,
+        "message": "Reporting Ninja re-login failed twice in a row — check the saved credentials.",
+        "details": {},
+        "timestamp": "2026-08-14T16:05:52Z"
+      }
+    ],
+    "table": null,
+    "files": []
+  },
+  "report-run-cancelled": {
+    "run": {
+      "id": "report-run-cancelled",
+      "client_id": "client-long-name",
+      "kind": "custom_months",
+      "source": "pdf",
+      "status": "cancelled",
+      "period_count": 10,
+      "periods_done": 3,
+      "periods_failed": 0,
+      "cross_check_status": null,
+      "error_code": null,
+      "error_message": null,
+      "cancel_requested": true,
+      "queued_at": "2026-08-13T12:00:00Z",
+      "started_at": "2026-08-13T12:00:05Z",
+      "finished_at": "2026-08-13T12:03:10Z",
+      "params": {
+        "force_refresh": false,
+        "months": [
+          "2026-08",
+          "2026-07",
+          "2026-06",
+          "2026-05",
+          "2026-04",
+          "2026-03",
+          "2026-02",
+          "2026-01",
+          "2025-12",
+          "2025-11"
+        ]
+      },
+      "periods": [
+        {
+          "label": "August 2026",
+          "date_from": "2026-08-01",
+          "date_to": "2026-08-13",
+          "is_partial": true,
+          "state": "done",
+          "started_at": "2026-08-13T12:00:05Z",
+          "finished_at": "2026-08-13T12:00:23.500000Z",
+          "duration_seconds": 18.5,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "July 2026",
+          "date_from": "2026-07-01",
+          "date_to": "2026-07-31",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-13T12:00:23.500000Z",
+          "finished_at": "2026-08-13T12:00:42Z",
+          "duration_seconds": 18.5,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "June 2026",
+          "date_from": "2026-06-01",
+          "date_to": "2026-06-30",
+          "is_partial": false,
+          "state": "done",
+          "started_at": "2026-08-13T12:00:42Z",
+          "finished_at": "2026-08-13T12:01:00.500000Z",
+          "duration_seconds": 18.5,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "May 2026",
+          "date_from": "2026-05-01",
+          "date_to": "2026-05-31",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "April 2026",
+          "date_from": "2026-04-01",
+          "date_to": "2026-04-30",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "March 2026",
+          "date_from": "2026-03-01",
+          "date_to": "2026-03-31",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "February 2026",
+          "date_from": "2026-02-01",
+          "date_to": "2026-02-28",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "January 2026",
+          "date_from": "2026-01-01",
+          "date_to": "2026-01-31",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "December 2025",
+          "date_from": "2025-12-01",
+          "date_to": "2025-12-31",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        },
+        {
+          "label": "November 2025",
+          "date_from": "2025-11-01",
+          "date_to": "2025-11-30",
+          "is_partial": false,
+          "state": "skipped",
+          "started_at": null,
+          "finished_at": null,
+          "duration_seconds": null,
+          "from_cache": false,
+          "error": null
+        }
+      ],
+      "ninja_report_name": "LONG-NAME-Internal report"
+    },
+    "events": [
+      {
+        "seq": 1,
+        "level": "info",
+        "provider": null,
+        "stage": "queued",
+        "percent": null,
+        "message": "Queued — 10 period(s) via PDF.",
+        "details": {},
+        "timestamp": "2026-08-13T12:00:00Z"
+      },
+      {
+        "seq": 2,
+        "level": "info",
+        "provider": null,
+        "stage": "start",
+        "percent": null,
+        "message": "Signed in to Reporting Ninja — starting downloads.",
+        "details": {},
+        "timestamp": "2026-08-13T12:00:08Z"
+      },
+      {
+        "seq": 3,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "August 2026 done",
+        "details": {
+          "period": "August 2026"
+        },
+        "timestamp": "2026-08-13T12:01:00Z"
+      },
+      {
+        "seq": 4,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "July 2026 done",
+        "details": {
+          "period": "July 2026"
+        },
+        "timestamp": "2026-08-13T12:01:55Z"
+      },
+      {
+        "seq": 5,
+        "level": "warning",
+        "provider": null,
+        "stage": "cancel_requested",
+        "percent": null,
+        "message": "Cancellation requested by operator — finishing the current period, then stopping.",
+        "details": {},
+        "timestamp": "2026-08-13T12:02:30Z"
+      },
+      {
+        "seq": 6,
+        "level": "info",
+        "provider": null,
+        "stage": "period",
+        "percent": null,
+        "message": "June 2026 done",
+        "details": {
+          "period": "June 2026"
+        },
+        "timestamp": "2026-08-13T12:03:05Z"
+      },
+      {
+        "seq": 7,
+        "level": "warning",
+        "provider": null,
+        "stage": "cancel",
+        "percent": null,
+        "message": "Cancelled by operator — already-downloaded files were kept.",
+        "details": {},
+        "timestamp": "2026-08-13T12:03:10Z"
+      }
+    ],
+    "table": null,
+    "files": [
+      {
+        "id": "rrc-pdf-0",
+        "run_id": "report-run-cancelled",
+        "kind": "pdf",
+        "period_label": "August 2026",
+        "date_from": "2026-08-01",
+        "date_to": "2026-08-13",
+        "is_partial_period": true,
+        "size_bytes": 176300,
+        "mime": "application/pdf",
+        "created_at": "2026-08-13T12:01:00Z"
+      },
+      {
+        "id": "rrc-pdf-1",
+        "run_id": "report-run-cancelled",
+        "kind": "pdf",
+        "period_label": "July 2026",
+        "date_from": "2026-07-01",
+        "date_to": "2026-07-31",
+        "is_partial_period": false,
+        "size_bytes": 812300,
+        "mime": "application/pdf",
+        "created_at": "2026-08-13T12:01:55Z"
+      },
+      {
+        "id": "rrc-pdf-2",
+        "run_id": "report-run-cancelled",
+        "kind": "pdf",
+        "period_label": "June 2026",
+        "date_from": "2026-06-01",
+        "date_to": "2026-06-30",
+        "is_partial_period": false,
+        "size_bytes": 799600,
+        "mime": "application/pdf",
+        "created_at": "2026-08-13T12:03:05Z"
+      },
+      {
+        "id": "rrc-xlsx",
+        "run_id": "report-run-cancelled",
+        "kind": "xlsx",
+        "period_label": null,
+        "date_from": null,
+        "date_to": null,
+        "is_partial_period": false,
+        "size_bytes": 18900,
+        "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "created_at": "2026-08-13T12:03:09Z"
+      }
+    ]
+  }
+}

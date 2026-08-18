@@ -821,7 +821,9 @@ export async function getAltTextReport(reportId) {
   return request(`/tools/alt-text/reports/${reportId}`, {}, "alt-text-report");
 }
 
-export async function getAltTextItems(reportId, { q, status, urlKind, verify, limit = 50, offset = 0 } = {}) {
+export async function getAltTextItems(
+  reportId, { q, status, urlKind, verify, mediaStatus, limit = 50, offset = 0 } = {}
+) {
   if (FIXTURE_MODE) {
     await wait(140);
     const state = await altTextFixture();
@@ -829,10 +831,13 @@ export async function getAltTextItems(reportId, { q, status, urlKind, verify, li
     const rows = state.rows.filter((row) => {
       const matchesQuery = !needle
         || `${row.image_url} ${row.new_alt} ${row.search_key}`.toLocaleLowerCase("en-US").includes(needle);
+      const matchesMedia = !mediaStatus
+        || (mediaStatus === "unresolved" ? !row.wp_media_status : row.wp_media_status === mediaStatus);
       return matchesQuery
         && (!status || row.status === status)
         && (!urlKind || row.url_kind === urlKind)
-        && (!verify || row.verify_status === verify);
+        && (!verify || row.verify_status === verify)
+        && matchesMedia;
     });
     return { report_id: reportId, total: rows.length, limit, offset, rows: rows.slice(offset, offset + limit) };
   }
@@ -841,6 +846,7 @@ export async function getAltTextItems(reportId, { q, status, urlKind, verify, li
   if (status) params.set("status", status);
   if (urlKind) params.set("url_kind", urlKind);
   if (verify) params.set("verify", verify);
+  if (mediaStatus) params.set("media_status", mediaStatus);
   return request(`/tools/alt-text/reports/${reportId}/items?${params}`, {}, "alt-text-items");
 }
 
@@ -931,6 +937,103 @@ export async function verifyAltTextItem(reportId, itemId) {
     method: "POST",
     body: "{}",
   }, `alt-text-verify-${itemId}`);
+}
+
+// Deterministic demo outcome for the WordPress media ID lookup (task-39):
+// non-uploads rows are `not_searchable`, a row whose name looks like a
+// duplicate-counter collision (`bar-counter-2`) demos `ambiguous` with two
+// candidates, everything else resolves with a fake ID under the row's own
+// site host — so "Find" always opens a plausible-looking admin URL.
+function fixtureMediaLookup(row) {
+  const checkedAt = new Date().toISOString();
+  if (row.url_kind !== "uploads") {
+    return {
+      wp_media_id: null,
+      wp_media_status: "not_searchable",
+      wp_media_confidence: null,
+      wp_media_alt: null,
+      wp_media_admin_url: null,
+      wp_media_detail: "This image is not in the uploads folder, so it cannot be in the media library.",
+      wp_media_candidates: [],
+      wp_media_checked_at: checkedAt,
+    };
+  }
+  const root = new URL(row.image_url, location.origin).origin;
+  if ((row.derivation_warnings || []).includes("possible_duplicate_counter")) {
+    return {
+      wp_media_id: null,
+      wp_media_status: "ambiguous",
+      wp_media_confidence: null,
+      wp_media_alt: null,
+      wp_media_admin_url: `${root}/wp-admin/upload.php?mode=list&s=${encodeURIComponent(row.search_key_fallback || row.search_key)}`,
+      wp_media_detail: "2 attachment(s) matched — pick the right one.",
+      wp_media_candidates: [
+        {
+          id: 5001,
+          file: "2024/02/bar-counter.jpg",
+          source_url: `${root}/wp-content/uploads/2024/02/bar-counter.jpg`,
+          alt_text: null,
+          title: "bar-counter",
+        },
+        {
+          id: 5002,
+          file: "2023/09/bar-counter.jpg",
+          source_url: `${root}/wp-content/uploads/2023/09/bar-counter.jpg`,
+          alt_text: "Old bar photo",
+          title: "bar-counter",
+        },
+      ],
+      wp_media_checked_at: checkedAt,
+    };
+  }
+  const fakeId = 4000 + Number(row.row_index || 0);
+  return {
+    wp_media_id: fakeId,
+    wp_media_status: "resolved",
+    wp_media_confidence: "exact",
+    wp_media_alt: row.old_alt || null,
+    wp_media_admin_url: `${root}/wp-admin/upload.php?item=${fakeId}&mode=grid`,
+    wp_media_detail: null,
+    wp_media_candidates: [],
+    wp_media_checked_at: checkedAt,
+  };
+}
+
+export async function resolveAltTextItemMedia(reportId, itemId) {
+  if (FIXTURE_MODE) {
+    await wait(500);
+    const state = await altTextFixture();
+    const row = state.rows.find((item) => item.id === itemId);
+    Object.assign(row, fixtureMediaLookup(row));
+    saveAltTextFixture();
+    return { ...row };
+  }
+  return request(`/tools/alt-text/reports/${reportId}/items/${itemId}/resolve-media`, {
+    method: "POST",
+    body: "{}",
+  }, `alt-text-resolve-media-${itemId}`);
+}
+
+export async function resolveAltTextReportMedia(reportId, { limit = 50 } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(700);
+    const state = await altTextFixture();
+    const counts = {
+      resolved: 0, ambiguous: 0, not_found: 0, rest_unavailable: 0, failed: 0, skipped: 0, remaining: 0,
+    };
+    state.rows.forEach((row) => {
+      if (row.wp_media_status) return;
+      if (row.url_kind !== "uploads") { counts.skipped += 1; return; }
+      Object.assign(row, fixtureMediaLookup(row));
+      counts[row.wp_media_status] = (counts[row.wp_media_status] || 0) + 1;
+    });
+    saveAltTextFixture();
+    return counts;
+  }
+  return request(`/tools/alt-text/reports/${reportId}/resolve-media`, {
+    method: "POST",
+    body: JSON.stringify({ limit }),
+  }, `alt-text-resolve-media-batch-${reportId}`);
 }
 
 export async function deleteAltTextReport(reportId) {
@@ -1491,7 +1594,7 @@ export async function getMonitorSettings(clientId) {
     await wait(160);
     const bundle = await loadMonitorClientFixture();
     return bundle.settings || {
-      client_id: clientId, enabled: true, base_url_override: null,
+      client_id: clientId, enabled: true, base_url_override: null, canonical_www: null,
       light_interval_hours: null, full_interval_hours: null, max_urls: null,
       monitor_when_paused: false, ignore_patterns: [], muted_change_types: [],
       updated_at: new Date().toISOString(),
@@ -1520,4 +1623,730 @@ export function monitorExportCsvUrl(clientId) {
 
 export function monitorExportXlsxUrl(clientId) {
   return `${API_ROOT}/clients/${clientId}/monitor/export.xlsx`;
+}
+
+// --- Reports (task-43) -------------------------------------------------------
+//
+// Three distinct intents against the same run id share nothing (task-43 §5.1
+// — this already broke Site Monitor twice, tasks 36/38): the history table's
+// `reports-history`, the live-row/detail-page snapshot poll's
+// `reports-run-poll-<id>`, and the one-shot finished table/file list's
+// `reports-run-table-<id>` / `reports-run-files-<id>`. All four are
+// independent `request()` keys, never derived from each other.
+
+const REPORT_METRICS = [
+  ["users", "Users"], ["organic_users", "Organic Users"], ["direct_users", "Direct Users"],
+  ["conversions", "Total Conversions"], ["organic_conversions", "Organic Conversions"],
+  ["direct_conversions", "Direct Conversions"], ["clicks", "Clicks"], ["impressions", "Impressions"],
+];
+const REPORT_GSC_KEYS = new Set(["clicks", "impressions"]);
+const MONTHLY_CHANGE_DEFS = [
+  ["% M/M", "This Month", "Last Month"],
+  ["% Q/Q", "This Quarter", "Last Quarter"],
+  ["% M YOY", "This Month", "Month YOY"],
+  ["% Q YOY", "This Quarter", "Quarterly YOY"],
+];
+const MONTH_NAMES_EN = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+function isoDate(y, m, d) { return `${y}-${pad2(m)}-${pad2(d)}`; }
+function lastDayOfMonth(y, m) { return new Date(y, m, 0).getDate(); }
+function monthBack(y, m, n) {
+  let year = y;
+  let month = m - n;
+  while (month <= 0) { month += 12; year -= 1; }
+  return [year, month];
+}
+function monthLabel(y, m) { return `${MONTH_NAMES_EN[m - 1]} ${y}`; }
+function monthBoundsFor(year, month, today) {
+  const ty = today.getFullYear();
+  const tm = today.getMonth() + 1;
+  const td = today.getDate();
+  if (year > ty || (year === ty && month > tm)) return null; // future month — invalid, mirrors periods.py
+  const dateFrom = isoDate(year, month, 1);
+  if (year === ty && month === tm) return { date_from: dateFrom, date_to: isoDate(ty, tm, td), is_partial: true };
+  return { date_from: dateFrom, date_to: isoDate(year, month, lastDayOfMonth(year, month)), is_partial: false };
+}
+
+// Ported from `app/reports/periods.py` (task-42 §2.4/§3.1). There is no
+// dry-run/preview endpoint — `POST /reports/runs` is the only place the real
+// engine computes periods — so the wizard's step-2 "what will actually run"
+// preview (task-43 §3) has to reproduce the same date math client-side. Kept
+// as one pure function so drift from the backend is a one-file diff to spot.
+export function computeReportPeriods(kind, params, today = new Date()) {
+  if (kind === "monthly") {
+    let refYear = today.getFullYear();
+    let refMonth = today.getMonth(); // 0-based "this month" == 1-based "previous month"
+    if (refMonth === 0) { refMonth = 12; refYear -= 1; }
+    const refDay = lastDayOfMonth(refYear, refMonth);
+    const thisMonthStart = isoDate(refYear, refMonth, 1);
+    const thisMonthEnd = isoDate(refYear, refMonth, refDay);
+
+    const [lmY, lmM] = monthBack(refYear, refMonth, 1);
+    const lastMonthStart = isoDate(lmY, lmM, 1);
+    const lastMonthEnd = isoDate(lmY, lmM, lastDayOfMonth(lmY, lmM));
+
+    const monthYoyStart = isoDate(refYear - 1, refMonth, 1);
+    const monthYoyEnd = isoDate(refYear - 1, refMonth, lastDayOfMonth(refYear - 1, refMonth));
+
+    const [tqY, tqM] = monthBack(refYear, refMonth, 2);
+    const thisQuarterStart = isoDate(tqY, tqM, 1);
+    const thisQuarterEnd = thisMonthEnd;
+
+    const [lqeY, lqeM] = monthBack(tqY, tqM, 1);
+    const [lqY, lqM] = monthBack(lqeY, lqeM, 2);
+    const lastQuarterStart = isoDate(lqY, lqM, 1);
+    const lastQuarterEnd = isoDate(lqeY, lqeM, lastDayOfMonth(lqeY, lqeM));
+
+    const qyoyStart = isoDate(tqY - 1, tqM, 1);
+    const qyoyEnd = monthYoyEnd; // same calendar month/year as Month YOY's end, by construction
+
+    return [
+      { label: "This Month", date_from: thisMonthStart, date_to: thisMonthEnd, is_partial: false },
+      { label: "Last Month", date_from: lastMonthStart, date_to: lastMonthEnd, is_partial: false },
+      { label: "Month YOY", date_from: monthYoyStart, date_to: monthYoyEnd, is_partial: false },
+      { label: "This Quarter", date_from: thisQuarterStart, date_to: thisQuarterEnd, is_partial: false },
+      { label: "Last Quarter", date_from: lastQuarterStart, date_to: lastQuarterEnd, is_partial: false },
+      { label: "Quarterly YOY", date_from: qyoyStart, date_to: qyoyEnd, is_partial: false },
+    ];
+  }
+
+  if (kind === "yearly") {
+    const span = params.span === "ytd" ? "ytd" : "full";
+    let refYear = today.getFullYear();
+    let refMonth = today.getMonth();
+    if (refMonth === 0) { refMonth = 12; refYear -= 1; }
+    const refIso = isoDate(refYear, refMonth, lastDayOfMonth(refYear, refMonth));
+    const years = [...new Set(params.years || [])].filter((year) => year <= refYear).sort((a, b) => b - a);
+    return years.map((year) => {
+      const dateFrom = isoDate(year, 1, 1);
+      if (span === "ytd") {
+        return { label: String(year), date_from: dateFrom, date_to: isoDate(year, refMonth, lastDayOfMonth(year, refMonth)), is_partial: false };
+      }
+      const isCurrent = year === refYear;
+      return { label: String(year), date_from: dateFrom, date_to: isCurrent ? refIso : isoDate(year, 12, 31), is_partial: isCurrent };
+    });
+  }
+
+  if (kind === "custom_months" || kind === "comparator") {
+    const parsed = [...new Set(params.months || [])]
+      .map((value) => value.split("-").map(Number))
+      .sort((a, b) => (b[0] - a[0]) || (b[1] - a[1]));
+    return parsed
+      .map(([year, month]) => {
+        const bounds = monthBoundsFor(year, month, today);
+        return bounds ? { label: monthLabel(year, month), ...bounds } : null;
+      })
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function reportsFixtureName() {
+  return FIXTURE_MODE === "reports-empty" ? "reports-empty" : "reports-runs";
+}
+
+let reportsHistoryCache = null;
+let reportsHistoryCacheName = null;
+async function loadReportsHistory() {
+  const name = reportsFixtureName();
+  if (!reportsHistoryCache || reportsHistoryCacheName !== name) {
+    reportsHistoryCacheName = name;
+    reportsHistoryCache = fixture(name);
+  }
+  return reportsHistoryCache;
+}
+
+let reportRunBundleCache = null;
+async function loadReportRunBundle() {
+  if (!reportRunBundleCache) reportRunBundleCache = fixture("reports-run-bundle");
+  return reportRunBundleCache;
+}
+
+const REPORTS_MOCK_KEY = "yovth:reports-mock-runs";
+// Compressed demo pacing — real columns take ~2s (API) / ~55s (PDF) each
+// (task-42 §1.2); a wizard-created fixture run instead finishes in a few
+// seconds so the live-progress/SSE-log states are actually exercisable in
+// visual QA and e2e without a 4-minute wait.
+const REPORT_PERIOD_MS = { api: 260, pdf: 900 };
+const REPORT_QUEUE_MS = 350;
+
+function readMockReportRuns() {
+  try { return JSON.parse(sessionStorage.getItem(REPORTS_MOCK_KEY)) || {}; }
+  catch { return {}; }
+}
+function writeMockReportRuns(runs) { sessionStorage.setItem(REPORTS_MOCK_KEY, JSON.stringify(runs)); }
+
+function hashString(value) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  return hash;
+}
+
+function isMockReportRunId(runId) { return runId.startsWith("fixture-report-"); }
+
+function baseMockRunDto(stored, overrides) {
+  const dto = {
+    id: stored.id, client_id: stored.client_id, kind: stored.kind, source: stored.source,
+    period_count: stored.period_count, periods_failed: 0, cross_check_status: null,
+    error_code: null, error_message: null, cancel_requested: false, params: stored.params || {},
+    ninja_report_name: stored.source === "pdf"
+      ? `${stored.client_id.replace("client-", "").toUpperCase()}-Internal report` : null,
+    batch_id: stored.batch_id || null,
+    queued_at: stored.queued_at, started_at: null, finished_at: null,
+    ...overrides,
+  };
+  dto.periods = mockReportPeriods(stored, dto);
+  return dto;
+}
+
+// `ReportRunDTO.periods` (task-45 §2.1) — the real engine writes these states;
+// the fixture engine has to produce the same shape or the progress list has
+// nothing to read (task-43 learned the same lesson about `details.period`).
+function mockReportPeriods(stored, dto) {
+  const perPeriodMs = REPORT_PERIOD_MS[stored.source] || REPORT_PERIOD_MS.api;
+  const terminal = ["succeeded", "partial", "failed", "cancelled"].includes(dto.status);
+  return (stored.periods || []).map((period, index) => {
+    const done = index < dto.periods_done;
+    const running = dto.status === "running" && index === dto.periods_done;
+    const startedAtMs = stored.startedAtMs + index * perPeriodMs;
+    return {
+      label: period.label,
+      date_from: period.date_from,
+      date_to: period.date_to,
+      is_partial: period.is_partial,
+      state: done ? "done" : running ? "running" : terminal ? "skipped" : "waiting",
+      started_at: done || running ? new Date(startedAtMs).toISOString() : null,
+      finished_at: done ? new Date(startedAtMs + perPeriodMs).toISOString() : null,
+      duration_seconds: done ? perPeriodMs / 1000 : null,
+      from_cache: false,
+      error: null,
+    };
+  });
+}
+
+// 12 complete months, oldest first, ending at the last complete month — the
+// same window `app/reports/history.py` builds. One month is deliberately
+// data-less so the `—`/empty-CTR path is exercised in every visual pass
+// (task-45 §1.6).
+function mockReportHistory(runId, { noGsc = false } = {}) {
+  const today = new Date();
+  const months = [];
+  for (let back = 12; back >= 1; back -= 1) {
+    const anchor = new Date(today.getFullYear(), today.getMonth() - back, 1);
+    const year = anchor.getFullYear();
+    const month = anchor.getMonth() + 1;
+    const key = `${year}-${pad2(month)}`;
+    const empty = back === 11;
+    const clicks = empty || noGsc ? null : 1400 + (hashString(`${runId}-clicks-${key}`) % 1600);
+    const impressions = empty || noGsc ? null : 28000 + (hashString(`${runId}-impr-${key}`) % 120000);
+    months.push({
+      month: key,
+      label: `${MONTH_NAMES_EN[month - 1]} ${year}`,
+      clicks,
+      impressions,
+      ctr: clicks === null || !impressions ? null : clicks / impressions,
+      organic_conversions: empty ? null : 380 + (hashString(`${runId}-conv-${key}`) % 520),
+    });
+  }
+  return { months, has_gsc: !noGsc, has_ga4: true };
+}
+
+function computeMockReportRun(runId) {
+  const stored = readMockReportRuns()[runId];
+  if (!stored) throw new Error("Report run not found");
+  const now = Date.now();
+  // A cancel while still `queued` (never even started) must stick — checked
+  // before the queued early-return, not after, or the run would ignore the
+  // cancellation entirely and quietly run to completion once its start time
+  // arrives.
+  if (stored.cancelledAtMs && now < stored.startedAtMs) {
+    return baseMockRunDto(stored, {
+      status: "cancelled", periods_done: 0, cancel_requested: true,
+      finished_at: new Date(stored.cancelledAtMs).toISOString(),
+    });
+  }
+  if (now < stored.startedAtMs) return baseMockRunDto(stored, { status: "queued", periods_done: 0 });
+
+  const perPeriodMs = REPORT_PERIOD_MS[stored.source] || REPORT_PERIOD_MS.api;
+  const cancelled = Boolean(stored.cancelledAtMs);
+  const doneAtCancel = cancelled ? Math.floor((stored.cancelledAtMs - stored.startedAtMs) / perPeriodMs) : Infinity;
+  const doneRaw = Math.floor((now - stored.startedAtMs) / perPeriodMs);
+  const done = Math.max(0, Math.min(stored.period_count, doneRaw, doneAtCancel));
+  const startedIso = new Date(stored.startedAtMs).toISOString();
+
+  if (cancelled && now > stored.cancelledAtMs + 500) {
+    return baseMockRunDto(stored, {
+      status: "cancelled", periods_done: done, started_at: startedIso,
+      finished_at: new Date(stored.cancelledAtMs + 500).toISOString(), cancel_requested: true,
+    });
+  }
+  if (!cancelled && done >= stored.period_count) {
+    const mismatchDemo = new URLSearchParams(location.search).get("demo") === "mismatch";
+    return baseMockRunDto(stored, {
+      status: "succeeded", periods_done: stored.period_count, started_at: startedIso,
+      finished_at: new Date(stored.startedAtMs + stored.period_count * perPeriodMs).toISOString(),
+      cross_check_status: stored.source === "pdf" ? (mismatchDemo ? "mismatch" : "match") : null,
+    });
+  }
+  return baseMockRunDto(stored, {
+    status: "running", periods_done: done, started_at: startedIso, cancel_requested: cancelled,
+  });
+}
+
+function mkMockEvent(seq, level, stage, message, timestamp, details = {}) {
+  return { seq, level, provider: null, stage, percent: null, message, details, timestamp: timestamp || new Date().toISOString() };
+}
+
+// `details.period` mirrors the real backend's `emit(level, stage, message,
+// {"period": period.label})` contract (`app/reports/runner.py`,
+// `app/reports/ninja_browser.py`) — `reports-run.js`'s live progress list
+// derives per-period state entirely from this field, so a mock event without
+// it is invisible to that UI (found live: the fixture's progress rows never
+// left "Waiting" until this was added).
+function mockReportRunEvents(runId, lastSeq) {
+  const stored = readMockReportRuns()[runId];
+  if (!stored) return [];
+  const run = computeMockReportRun(runId);
+  const events = [];
+  let seq = 1;
+  events.push(mkMockEvent(seq++, "info", "queued", `Queued — ${stored.period_count} period(s) via ${stored.source === "pdf" ? "PDF" : "API"}.`, stored.queued_at));
+  if (run.status !== "queued") {
+    events.push(mkMockEvent(seq++, "info", "start", stored.source === "pdf" ? "Signed in to Reporting Ninja — starting downloads." : "Querying Reporting Ninja API.", run.started_at));
+    for (let i = 0; i < run.periods_done; i += 1) {
+      const period = stored.periods[i];
+      events.push(mkMockEvent(seq++, "info", stored.source === "pdf" ? "download" : "fetch", `${period.label} done`, run.started_at, { period: period.label }));
+    }
+    if (run.status === "running" && run.periods_done < stored.periods.length) {
+      const running = stored.periods[run.periods_done];
+      events.push(mkMockEvent(seq++, "info", stored.source === "pdf" ? "download" : "fetch", `Downloading ${running.label}`, run.started_at, { period: running.label }));
+    }
+    if (run.status === "succeeded") {
+      if (run.cross_check_status) {
+        events.push(mkMockEvent(
+          seq++, run.cross_check_status === "mismatch" ? "warning" : "info", "cross_check",
+          run.cross_check_status === "mismatch"
+            ? "Cross-check found differences — see the Cross-check panel below."
+            : "Cross-check passed — API matches the PDF for every value.",
+          run.finished_at,
+        ));
+      }
+      events.push(mkMockEvent(seq++, "info", "complete", "Report finished.", run.finished_at));
+    } else if (run.status === "cancelled") {
+      events.push(mkMockEvent(seq++, "warning", "cancel", "Cancelled by operator — already-downloaded files were kept.", run.finished_at));
+    }
+  }
+  return events.filter((event) => event.seq > lastSeq);
+}
+
+function computeMockReportTable(runId) {
+  const stored = readMockReportRuns()[runId];
+  if (!stored) throw new Error("Report run not found");
+  const run = computeMockReportRun(runId);
+  const noGsc = new URLSearchParams(location.search).get("demo") === "no-gsc";
+  const periods = stored.periods;
+  const byLabel = new Map(periods.map((p, i) => [p.label, i]));
+  const changeDefs = stored.kind === "monthly"
+    ? MONTHLY_CHANGE_DEFS.filter(([, newer, older]) => byLabel.has(newer) && byLabel.has(older))
+    : periods.slice(0, -1).map((p, i) => [`${p.label} vs ${periods[i + 1].label}`, p.label, periods[i + 1].label]);
+
+  const rows = REPORT_METRICS.map(([key, label], metricIndex) => {
+    const values = periods.map((p, i) => {
+      // A period past `periods_done` (e.g. everything after a cancel, or the
+      // failed one in a partial run) was never actually collected — `None`,
+      // never a fabricated number (PLAN §12), matching how the real engine's
+      // `metrics_by_label.get(p.label)` comes back empty for it too.
+      if (i >= run.periods_done) return null;
+      if (REPORT_GSC_KEYS.has(key) && noGsc) return null;
+      const base = 300 + metricIndex * 220 + i * 41;
+      return base + (hashString(`${runId}-${key}-${p.label}`) % 190);
+    });
+    const changes = changeDefs.map(([, newerLabel, olderLabel]) => {
+      const newer = values[byLabel.get(newerLabel)];
+      const older = values[byLabel.get(olderLabel)];
+      if (newer === null || older === null || !older) return null;
+      return (newer - older) / older;
+    });
+    return { key, label, values, changes };
+  });
+
+  const sources = stored.source === "pdf"
+    ? Object.fromEntries(periods.map((p) => [p.label, `${stored.client_id}__${p.label.replace(/\s+/g, "_")}.pdf`]))
+    : {};
+  // Shape matches `CrossCheckResult.to_dict()` (app/reports/verify.py)
+  // exactly — one cell per metric x period, never a pre-filtered list —
+  // real reports.cjs/live gate for how this was found wrong once already.
+  let crossCheck = null;
+  if (run.cross_check_status) {
+    const forcedOffIndex = run.cross_check_status === "mismatch" ? 1 : run.cross_check_status === "within_tolerance" ? 0 : -1;
+    const cells = REPORT_METRICS.flatMap(([key, label], metricIndex) => periods.map((p, periodIndex) => {
+      const pdfValue = rows[metricIndex].values[periodIndex];
+      const isOff = metricIndex === forcedOffIndex && periodIndex === 0;
+      const apiValue = isOff ? Math.max(0, (pdfValue || 0) - 140) : pdfValue;
+      const verdict = !isOff ? "match" : run.cross_check_status;
+      const diffPct = pdfValue === null || apiValue === null || pdfValue === apiValue ? (isOff ? null : 0)
+        : Math.abs(pdfValue - apiValue) / (apiValue || pdfValue || 1);
+      return { period_label: p.label, metric_key: key, metric_label: label, pdf_value: pdfValue, api_value: apiValue, diff_pct: isOff ? diffPct : 0, verdict };
+    }));
+    crossCheck = { status: run.cross_check_status, cells };
+  }
+  return {
+    run_id: runId, kind: stored.kind, source: stored.source, periods,
+    change_labels: changeDefs.map((c) => c[0]), rows, sources, cross_check: crossCheck,
+    history: mockReportHistory(runId, { noGsc }),
+  };
+}
+
+function computeMockReportFiles(runId) {
+  const stored = readMockReportRuns()[runId];
+  if (!stored) throw new Error("Report run not found");
+  const run = computeMockReportRun(runId);
+  const files = [];
+  if (stored.source === "pdf") {
+    stored.periods.slice(0, run.periods_done).forEach((period, i) => {
+      files.push({
+        id: `${runId}-pdf-${i}`, run_id: runId, kind: "pdf", period_label: period.label,
+        date_from: period.date_from, date_to: period.date_to, is_partial_period: period.is_partial,
+        size_bytes: 240_000 + (hashString(`${runId}-${period.label}`) % 500_000), mime: "application/pdf",
+        created_at: run.finished_at || new Date().toISOString(),
+      });
+    });
+  }
+  if (run.status === "succeeded" || run.status === "partial") {
+    files.push({
+      id: `${runId}-xlsx`, run_id: runId, kind: "xlsx", period_label: null,
+      date_from: null, date_to: null, is_partial_period: false,
+      size_bytes: 38_400, mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      created_at: run.finished_at || new Date().toISOString(),
+    });
+    // Auto-generated on every successful/partial `monthly` run (task-47 §5)
+    // — the fixture engine mirrors that so the run detail page's iframe
+    // preview + "Client PDF" download button are exercisable without a
+    // real backend.
+    if (stored.kind === "monthly") {
+      files.push({
+        id: `${runId}-client-pdf`, run_id: runId, kind: "client_pdf", period_label: null,
+        date_from: null, date_to: null, is_partial_period: false,
+        size_bytes: 118_000, mime: "application/pdf",
+        created_at: run.finished_at || new Date().toISOString(),
+      });
+    }
+  }
+  return files;
+}
+
+export async function getReportTypes() {
+  if (!FIXTURE_MODE) return request("/reports/types", {}, "reports-types");
+  await wait(120);
+  return fixture("reports-types");
+}
+
+export async function listReportRuns({
+  clientId, kind, source, status, hasBatch, limit = 50, offset = 0,
+} = {}) {
+  if (!FIXTURE_MODE) {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (clientId) params.set("client_id", clientId);
+    if (kind) params.set("kind", kind);
+    if (source) params.set("source", source);
+    if (status) params.set("status", status);
+    if (hasBatch !== undefined) params.set("has_batch", String(hasBatch));
+    return request(`/reports/runs?${params}`, {}, "reports-history");
+  }
+  if (FIXTURE_MODE === "error") { await wait(400); throw new Error("Fixture connection error"); }
+  await wait(FIXTURE_MODE === "loading" ? 2400 : 180);
+  const seed = await loadReportsHistory();
+  const mockRuns = Object.keys(readMockReportRuns()).map((id) => computeMockReportRun(id));
+  let rows = [...mockRuns, ...(seed.rows || [])];
+  if (clientId) rows = rows.filter((row) => row.client_id === clientId);
+  if (kind) rows = rows.filter((row) => row.kind === kind);
+  if (source) rows = rows.filter((row) => row.source === source);
+  if (status) rows = rows.filter((row) => row.status === status);
+  if (hasBatch !== undefined) rows = rows.filter((row) => Boolean(row.batch_id) === hasBatch);
+  rows = [...rows].sort((a, b) => Date.parse(b.queued_at) - Date.parse(a.queued_at));
+  return { rows: rows.slice(offset, offset + limit), total: rows.length, limit, offset };
+}
+
+const COMPARATOR_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+export async function createReportRun(payload) {
+  if (!FIXTURE_MODE) return request("/reports/runs", { method: "POST", body: JSON.stringify(payload) }, "reports-create-run");
+  await wait(220);
+  if (payload.kind === "comparator") {
+    const months = payload.months || [];
+    if (!months.every((m) => COMPARATOR_MONTH_RE.test(m)) || new Set(months.map((m) => m.slice(5))).size !== 1) {
+      const error = new Error("All comparator months must share the same calendar month — for arbitrary months, use Custom months.");
+      error.status = 422; error.code = "invalid_comparator_months";
+      throw error;
+    }
+  }
+  const periods = computeReportPeriods(payload.kind, payload, new Date());
+  if (!periods.length) {
+    const error = new Error("Could not resolve any period for this configuration.");
+    error.status = 422; error.code = "invalid_period";
+    throw error;
+  }
+  const id = `fixture-report-${Date.now()}`;
+  const runs = readMockReportRuns();
+  const { client_id: _clientId, kind: _kind, source: _source, ...params } = payload;
+  runs[id] = {
+    id, client_id: payload.client_id, kind: payload.kind, source: payload.source,
+    periods, period_count: periods.length, params,
+    queued_at: new Date().toISOString(), startedAtMs: Date.now() + REPORT_QUEUE_MS,
+  };
+  writeMockReportRuns(runs);
+  return { run_id: id, status_url: `/api/v1/reports/runs/${id}`, events_url: `/api/v1/reports/runs/${id}/events` };
+}
+
+export async function getReportRun(runId) {
+  if (!FIXTURE_MODE) return request(`/reports/runs/${runId}`, {}, `reports-run-poll-${runId}`);
+  await wait(100);
+  if (isMockReportRunId(runId)) return computeMockReportRun(runId);
+  const bundle = await loadReportRunBundle();
+  const entry = bundle[runId];
+  if (!entry) throw new Error("Report run not found");
+  return entry.run;
+}
+
+// Real mode never calls this — `reports-run.js` uses a native `EventSource`
+// against `reportRunEventsUrl()` instead (browsers auto-resend
+// `Last-Event-ID` on reconnect, and the backend already reads it). This is
+// fixture mode's substitute, polled on an interval exactly like `sse.js`
+// falls back to `setInterval(refresh, ...)` under `isFixtureMode()`.
+export async function getReportRunEvents(runId, lastSeq = 0) {
+  if (isMockReportRunId(runId)) return mockReportRunEvents(runId, lastSeq);
+  const bundle = await loadReportRunBundle();
+  const events = bundle[runId]?.events || [];
+  return events.filter((event) => event.seq > lastSeq);
+}
+
+export async function cancelReportRun(runId) {
+  if (!FIXTURE_MODE) return request(`/reports/runs/${runId}/cancel`, { method: "POST", body: "{}" });
+  await wait(150);
+  if (!isMockReportRunId(runId)) throw new Error("This run has already finished");
+  const runs = readMockReportRuns();
+  if (runs[runId] && !runs[runId].cancelledAtMs) {
+    runs[runId].cancelledAtMs = Date.now();
+    writeMockReportRuns(runs);
+  }
+  return computeMockReportRun(runId);
+}
+
+export async function getReportTable(runId) {
+  if (!FIXTURE_MODE) return request(`/reports/runs/${runId}/table`, {}, `reports-run-table-${runId}`);
+  await wait(150);
+  if (isMockReportRunId(runId)) return computeMockReportTable(runId);
+  const bundle = await loadReportRunBundle();
+  if (!bundle[runId]?.table) throw new Error("Table not available for this run");
+  return bundle[runId].table;
+}
+
+export async function listReportFiles(runId) {
+  if (!FIXTURE_MODE) return request(`/reports/runs/${runId}/files`, {}, `reports-run-files-${runId}`);
+  await wait(150);
+  if (isMockReportRunId(runId)) return computeMockReportFiles(runId);
+  const bundle = await loadReportRunBundle();
+  return bundle[runId]?.files || [];
+}
+
+// Binary/streaming links: deliberately NOT routed through `request()`, same
+// convention as `techAuditExportUrl`/`monitorExportCsvUrl` above.
+export function reportFileUrl(fileId, { inline = false } = {}) {
+  return `${API_ROOT}/reports/files/${fileId}?disposition=${inline ? "inline" : "attachment"}`;
+}
+
+export function reportRunEventsUrl(runId) {
+  return `${API_ROOT}/reports/runs/${runId}/events`;
+}
+
+// `matches` / `others` mirror the backend split (task-45 §2.2): reports whose
+// name starts with the client's name versus the rest of the account. The
+// fixture always includes `others`, because that is the case the wizard's
+// confirmation gate exists for.
+export async function getNinjaReportName(clientId) {
+  if (!FIXTURE_MODE) return request(`/reports/clients/${clientId}/ninja-report`, {}, `reports-ninja-report-${clientId}`);
+  if (FIXTURE_MODE === "error") { await wait(300); throw new Error("Fixture connection error"); }
+  await wait(220);
+  const configured = clientId === "client-nyc-hearing";
+  const slug = clientId.replace("client-", "").toUpperCase();
+  return {
+    client_id: clientId,
+    client_name: slug,
+    ninja_report_name: configured ? "NYC-HEARING-Internal report" : null,
+    matches: [
+      { name: `${slug}-Internal report`, exact_match: true },
+      { name: `${slug}-client`, exact_match: true },
+    ],
+    others: [
+      { name: "EFFYS-Internal report", exact_match: false },
+      { name: "SAPHNY-client", exact_match: false },
+    ],
+  };
+}
+
+export async function putNinjaReportName(clientId, name, { confirmMismatch = false } = {}) {
+  if (!FIXTURE_MODE) {
+    return request(`/reports/clients/${clientId}/ninja-report`, {
+      method: "PUT",
+      body: JSON.stringify({ ninja_report_name: name, confirm_mismatch: confirmMismatch }),
+    }, `reports-ninja-report-save-${clientId}`);
+  }
+  await wait(260);
+  return { client_id: clientId, ninja_report_name: name, matches: [], others: [] };
+}
+
+// --- Client document + PDF (task-47 §2.1/§3.3) ------------------------------
+
+export function reportDocumentUrl(runId) {
+  return `${API_ROOT}/reports/runs/${runId}/document`;
+}
+
+export async function createClientPdf(runId) {
+  if (!FIXTURE_MODE) {
+    return request(`/reports/runs/${runId}/client-pdf`, { method: "POST", body: "{}" });
+  }
+  await wait(400);
+  return {
+    id: `${runId}-client-pdf`, run_id: runId, kind: "client_pdf", period_label: null,
+    date_from: null, date_to: null, is_partial_period: false,
+    size_bytes: 118_000, mime: "application/pdf", created_at: new Date().toISOString(),
+  };
+}
+
+// --- Batches (task-47 §2.2) --------------------------------------------------
+//
+// Fixture mode composes on top of the existing single-run mock engine
+// (`readMockReportRuns`/`computeMockReportRun`) rather than duplicating it —
+// a batch IS "N ordinary runs + an aggregate" on the real backend too
+// (task-47 §2.2), so the fixture keeps that same shape: every batch child is
+// a perfectly normal mock run, just tagged with `batch_id`.
+
+const REPORTS_BATCH_MOCK_KEY = "yovth:reports-mock-batches";
+const REPORT_BATCH_TERMINAL = new Set(["succeeded", "partial", "failed", "cancelled"]);
+
+function readMockReportBatches() {
+  try { return JSON.parse(sessionStorage.getItem(REPORTS_BATCH_MOCK_KEY)) || {}; }
+  catch { return {}; }
+}
+function writeMockReportBatches(batches) {
+  sessionStorage.setItem(REPORTS_BATCH_MOCK_KEY, JSON.stringify(batches));
+}
+function isMockReportBatchId(batchId) { return batchId.startsWith("fixture-batch-"); }
+
+function computeMockReportBatch(batchId) {
+  const stored = readMockReportBatches()[batchId];
+  if (!stored) throw new Error("Report batch not found");
+  const children = stored.runIds.map((id) => computeMockReportRun(id));
+  const done = children.filter((r) => r.status === "succeeded" || r.status === "partial").length;
+  const failed = children.filter((r) => r.status === "failed").length;
+  const anyRunning = children.some((r) => !REPORT_BATCH_TERMINAL.has(r.status));
+
+  let status = children.every((r) => r.status === "queued") ? "queued" : "running";
+  if (!anyRunning) {
+    status = stored.cancelledAtMs ? "cancelled"
+      : failed === 0 ? "succeeded"
+        : failed >= children.length ? "failed" : "partial";
+  }
+  const startedTimes = children.map((r) => r.started_at).filter(Boolean).sort();
+
+  return {
+    id: batchId, kind: stored.kind, source: stored.source, status,
+    client_count: children.length, clients_done: done, clients_failed: failed,
+    cancel_requested: Boolean(stored.cancelledAtMs), params: stored.params || {},
+    clients: children.map((run) => ({
+      run_id: run.id, client_id: run.client_id, client_name: null, status: run.status,
+      period_count: run.period_count, periods_done: run.periods_done,
+      periods_failed: run.periods_failed, error_message: run.error_message,
+      started_at: run.started_at, finished_at: run.finished_at,
+    })),
+    queued_at: stored.queued_at,
+    started_at: startedTimes[0] || null,
+    finished_at: anyRunning ? null : new Date().toISOString(),
+  };
+}
+
+export async function createReportBatch(payload) {
+  if (!FIXTURE_MODE) {
+    return request("/reports/batches", { method: "POST", body: JSON.stringify(payload) }, "reports-create-batch");
+  }
+  await wait(280);
+  const { client_ids: clientIds, kind, source, ...params } = payload;
+  if (!clientIds || !clientIds.length) {
+    const error = new Error("At least one client must be selected");
+    error.status = 422; error.code = "no_clients_selected";
+    throw error;
+  }
+  const periods = computeReportPeriods(kind, params, new Date());
+  const batchId = `fixture-batch-${Date.now()}`;
+  const runs = readMockReportRuns();
+  const runIds = clientIds.map((clientId, index) => {
+    const id = `fixture-report-${Date.now()}-${index}`;
+    runs[id] = {
+      id, client_id: clientId, kind, source, batch_id: batchId,
+      periods, period_count: periods.length, params,
+      queued_at: new Date().toISOString(),
+      startedAtMs: Date.now() + REPORT_QUEUE_MS + index * 60,
+    };
+    return id;
+  });
+  writeMockReportRuns(runs);
+  const batches = readMockReportBatches();
+  batches[batchId] = { kind, source, params, runIds, queued_at: new Date().toISOString() };
+  writeMockReportBatches(batches);
+  return {
+    batch_id: batchId,
+    status_url: `/api/v1/reports/batches/${batchId}`,
+    events_url: `/api/v1/reports/batches/${batchId}/events`,
+  };
+}
+
+export async function listReportBatches({ clientId, status, limit = 50, offset = 0 } = {}) {
+  if (!FIXTURE_MODE) {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (clientId) params.set("client_id", clientId);
+    if (status) params.set("status", status);
+    return request(`/reports/batches?${params}`, {}, "reports-batches-history");
+  }
+  await wait(180);
+  let rows = Object.keys(readMockReportBatches()).map((id) => computeMockReportBatch(id));
+  if (clientId) rows = rows.filter((batch) => batch.clients.some((c) => c.client_id === clientId));
+  if (status) rows = rows.filter((batch) => batch.status === status);
+  rows = [...rows].sort((a, b) => Date.parse(b.queued_at) - Date.parse(a.queued_at));
+  return { rows: rows.slice(offset, offset + limit), total: rows.length, limit, offset };
+}
+
+export async function getReportBatch(batchId) {
+  if (!FIXTURE_MODE) return request(`/reports/batches/${batchId}`, {}, `reports-batch-poll-${batchId}`);
+  await wait(120);
+  return computeMockReportBatch(batchId);
+}
+
+export async function cancelReportBatch(batchId) {
+  if (!FIXTURE_MODE) return request(`/reports/batches/${batchId}/cancel`, { method: "POST", body: "{}" });
+  await wait(150);
+  if (!isMockReportBatchId(batchId)) throw new Error("This batch has already finished");
+  const batches = readMockReportBatches();
+  const stored = batches[batchId];
+  if (stored && !stored.cancelledAtMs) {
+    stored.cancelledAtMs = Date.now();
+    writeMockReportBatches(batches);
+    const runs = readMockReportRuns();
+    stored.runIds.forEach((id) => {
+      if (runs[id] && !runs[id].cancelledAtMs) runs[id].cancelledAtMs = Date.now();
+    });
+    writeMockReportRuns(runs);
+  }
+  return computeMockReportBatch(batchId);
+}
+
+export function reportBatchEventsUrl(batchId) {
+  return `${API_ROOT}/reports/batches/${batchId}/events`;
+}
+
+export function reportBatchPdfArchiveUrl(batchId) {
+  return `${API_ROOT}/reports/batches/${batchId}/pdf-archive`;
 }

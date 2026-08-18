@@ -7,8 +7,9 @@ Registered in `pyproject.toml` as `[tool.poetry.scripts] yovth-report =
 from __future__ import annotations
 
 import argparse
+import os
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from app.db.session import get_sync_sessionmaker
@@ -86,6 +87,29 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Print the plan (range, clients, estimated requests) without creating a job",
     )
 
+    channels_backfill_cmd = subparsers.add_parser(
+        "backfill-ga4-channels",
+        help=(
+            "One-off backfill of `ga4_daily_channels` (Organic/Direct Conversions, "
+            "task-44): one two-dimension GA4 query per client via Reporting Ninja. "
+            "METERED but cheap (one request per client, ~3s for a 400-day window). "
+            "Idempotent: days already stored for a client are not re-inserted."
+        ),
+    )
+    channels_backfill_cmd.add_argument(
+        "--days", type=int, default=400, help="How many days back to collect (default: 400)"
+    )
+    channels_backfill_cmd.add_argument(
+        "--client",
+        default=None,
+        help="One client ID (default: every client with an enabled Reporting Ninja integration)",
+    )
+    channels_backfill_cmd.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the plan (range, clients) without making requests or writing",
+    )
+
     monitor_run_cmd = subparsers.add_parser(
         "monitor-run",
         help="Run a Site Monitor check now, without waiting for the schedule (task-35)",
@@ -128,6 +152,56 @@ def _build_parser() -> argparse.ArgumentParser:
             "ALSO drop stored bodies for versions older than DAYS whose blob backs no "
             "recent version either (default: keep every body forever, task-35 §3.2.1)"
         ),
+    )
+
+    audit_bindings_cmd = subparsers.add_parser(
+        "audit-ninja-bindings",
+        help=(
+            "Check every client's saved Reporting Ninja report name against "
+            "its own name and the cabinet (task-48 §2.2)"
+        ),
+    )
+    audit_bindings_cmd.add_argument(
+        "--fix", action="store_true",
+        help=(
+            "Clear a binding whose report name belongs to another client "
+            "(never guesses a new one)"
+        ),
+    )
+
+    accuracy_report_cmd = subparsers.add_parser(  # noqa: F841 - no extra arguments
+        "accuracy-report",
+        help=(
+            "Portfolio-wide PDF/API accuracy summary: bindings, cross-check "
+            "verdicts, GSC coverage (task-48 §2.4)"
+        ),
+    )
+
+    reports_run_cmd = subparsers.add_parser(
+        "reports-run",
+        help=(
+            "Generate one client report immediately, without waiting for the "
+            "scheduler (task-42) — manual diagnostics, e.g. the live gate"
+        ),
+    )
+    reports_run_cmd.add_argument("--client-id", required=True, help="Client to report on")
+    reports_run_cmd.add_argument(
+        "--kind", choices=["monthly", "yearly", "custom_months", "comparator"], default="monthly"
+    )
+    reports_run_cmd.add_argument("--source", choices=["api", "pdf"], default="api")
+    reports_run_cmd.add_argument(
+        "--years", default=None, help="Comma-separated years, e.g. 2025,2026 (kind=yearly)"
+    )
+    reports_run_cmd.add_argument(
+        "--span", choices=["ytd", "full"], default="full", help="kind=yearly only"
+    )
+    reports_run_cmd.add_argument(
+        "--months",
+        default=None,
+        help="Comma-separated YYYY-MM, e.g. 2026-07,2025-07 (kind=custom_months/comparator)",
+    )
+    reports_run_cmd.add_argument(
+        "--force-refresh", action="store_true", help="Ignore the closed-period PDF cache (§3.5)"
     )
 
     return parser
@@ -250,6 +324,155 @@ def main(argv: list[str] | None = None) -> int:
         print(f"queued {len(jobs)} job(s); the running worker will collect them")
         return 0
 
+    if args.command == "backfill-ga4-channels":
+        # Imported here, not at module scope: same rationale as the other
+        # backfill commands — this pulls in the DB/adapter layer, which the
+        # import command has no reason to load.
+        from app.db.repositories.analytics_datasets import (
+            AnalyticsDatasetRepository,
+            AnalyticsDatasetRowInput,
+        )
+        from app.db.repositories.clients import ClientRepository
+        from app.db.repositories.jobs import JobRepository
+        from app.db.repositories.snapshots import SnapshotRepository
+        from app.integrations.reporting_ninja import query_daily_channels
+        from app.schemas.enums import PeriodKind, Provider, Quality, SourceMode
+
+        if args.days < 1:
+            print("error: --days must be >= 1", file=sys.stderr)
+            return 2
+
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            clients_repo = ClientRepository(session)
+            if args.client:
+                client = clients_repo.get(args.client)
+                if client is None:
+                    print(f"error: unknown --client: {args.client}", file=sys.stderr)
+                    return 2
+                candidates = [client]
+            else:
+                # Mirrors `backfill-daily-history`'s default (task-34): a
+                # metered live collection should not spend requests on a
+                # paused client unless it is named explicitly via --client.
+                candidates = clients_repo.list_collectable()
+
+            channel_targets = []
+            for candidate in candidates:
+                integration = clients_repo.get_integration(candidate.id, Provider.reporting_ninja)
+                if integration is None or not integration.enabled:
+                    continue
+                cfg = integration.config_json or {}
+                if not cfg.get("connection_key") or not cfg.get("account_id"):
+                    continue
+                channel_targets.append((candidate, cfg))
+
+            if not channel_targets:
+                print(
+                    "error: no clients with an enabled, configured Reporting Ninja integration",
+                    file=sys.stderr,
+                )
+                return 2
+
+            window_end = datetime.now(UTC).date() - timedelta(days=1)
+            window_start = window_end - timedelta(days=args.days - 1)
+
+            print(f"range: {window_start} .. {window_end} ({args.days} day(s))")
+            names = ", ".join(c.name for c, _ in channel_targets)
+            print(f"clients: {len(channel_targets)} ({names})")
+            print(
+                "note: one GA4 query per client — a metered live request, "
+                "not a local computation."
+            )
+            if args.dry_run:
+                print("dry run: no requests made, nothing written")
+                return 0
+
+            from seo_audit.clientreport.api_client import (
+                APIError,
+                RateLimitError,
+                ReportingNinjaClient,
+            )
+
+            analytics_repo = AnalyticsDatasetRepository(session)
+            job_repo = JobRepository(session)
+            snapshot_repo = SnapshotRepository(session)
+            observed_at = datetime.now(UTC)
+            total_written = 0
+            with ReportingNinjaClient() as rn_client:
+                for candidate, cfg in channel_targets:
+                    existing = analytics_repo.daily_series(
+                        [candidate.id],
+                        Provider.reporting_ninja,
+                        "ga4_daily_channels",
+                        window_start,
+                        window_end,
+                    ).get(candidate.id, {})
+                    try:
+                        rows, truncated = query_daily_channels(
+                            rn_client,
+                            connection_key=cfg["connection_key"],
+                            account_id=cfg["account_id"],
+                            start=window_start,
+                            end=window_end,
+                        )
+                    except (APIError, RateLimitError, ValueError) as exc:
+                        print(f"{candidate.name}: failed — {exc}")
+                        continue
+
+                    fresh = [
+                        (day, metrics)
+                        for day, metrics in rows
+                        if date.fromisoformat(day) not in existing
+                    ]
+                    if not fresh:
+                        print(f"{candidate.name}: {len(rows)} day(s) fetched, already up to date")
+                        continue
+
+                    job, _cell = job_repo.create_imported_run(
+                        client_id=candidate.id,
+                        provider=Provider.reporting_ninja,
+                        observed_at=observed_at,
+                        period_kind=PeriodKind.custom,
+                    )
+                    snapshot = snapshot_repo.create_immutable(
+                        job_id=job.id,
+                        client_id=candidate.id,
+                        provider=Provider.reporting_ninja,
+                        source_mode=SourceMode.api,
+                        observed_at=observed_at,
+                        quality=Quality.truncated if truncated else Quality.complete,
+                        data_through=window_end,
+                        provenance={"transport": "reporting_ninja", "cli": "backfill-ga4-channels"},
+                    )
+                    analytics_repo.bulk_insert(
+                        snapshot_id=snapshot.id,
+                        client_id=candidate.id,
+                        provider=Provider.reporting_ninja,
+                        period_start=window_start,
+                        period_end=window_end,
+                        rows=[
+                            AnalyticsDatasetRowInput(
+                                dataset_key="ga4_daily_channels",
+                                dimension_key="date",
+                                dimension_value=day,
+                                metrics=metrics,
+                                quality=Quality.truncated if truncated else Quality.complete,
+                                rank=None,
+                            )
+                            for day, metrics in fresh
+                        ],
+                    )
+                    session.commit()
+                    total_written += len(fresh)
+                    already = len(rows) - len(fresh)
+                    print(
+                        f"{candidate.name}: wrote {len(fresh)} day(s) "
+                        f"({already} already present)"
+                    )
+        print(f"done: {total_written} day(s) written across {len(channel_targets)} client(s)")
+        return 0
+
     if args.command == "monitor-run":
         # Imported here, not at module scope: pulls in the monitor engine
         # (fetch/parse/diff), which the other commands have no reason to load.
@@ -357,6 +580,174 @@ def main(argv: list[str] | None = None) -> int:
             session.commit()
         print(f"pruned {len(targets)} blob(s)")
         return 0
+
+    if args.command == "audit-ninja-bindings":
+        # Imported here, not at module scope: pulls in the reports engine's
+        # browser client, which the other commands have no reason to load.
+        from app.core.config import get_settings
+        from app.db.repositories.clients import ClientRepository
+        from app.reports import ninja_browser
+        from app.schemas.enums import Provider
+
+        settings = get_settings()
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            clients_repo = ClientRepository(session)
+            clients = clients_repo.list_all()
+
+            email = os.environ.get("REPORTING_NINJA_EMAIL", "")
+            password = os.environ.get("REPORTING_NINJA_PASSWORD", "")
+            cabinet_names: list[str] | None = None
+            cabinet_truncated = True
+            if email and password:
+                try:
+                    cabinet_names, cabinet_truncated = ninja_browser.list_report_names(
+                        email=email, password=password, headless=settings.reports_headless,
+                    )
+                except Exception as exc:  # noqa: BLE001 - the audit still reports bindings without cabinet verification
+                    print(
+                        f"warning: could not enumerate the Reporting Ninja cabinet: {exc}",
+                        file=sys.stderr,
+                    )
+            else:
+                print(
+                    "warning: REPORTING_NINJA_EMAIL/PASSWORD not set — bindings are checked "
+                    "by name only, not against the cabinet",
+                    file=sys.stderr,
+                )
+
+            any_unfixed_foreign = False
+            for client in sorted(clients, key=lambda c: c.name):
+                integration = clients_repo.get_integration(client.id, Provider.reporting_ninja)
+                name = integration.config_json.get("ninja_report_name") if integration else None
+                if not name:
+                    print(f"{client.name:20s}  no binding")
+                    continue
+
+                foreign = not name.upper().startswith(client.name.upper())
+                not_in_cabinet = (
+                    cabinet_names is not None
+                    and not cabinet_truncated
+                    and name not in cabinet_names
+                )
+                note = "  [not found in cabinet]" if not_in_cabinet else ""
+
+                if not foreign:
+                    print(f"{client.name:20s}  ok: {name!r}{note}")
+                    continue
+
+                if args.fix:
+                    assert integration is not None
+                    config = dict(integration.config_json)
+                    del config["ninja_report_name"]
+                    clients_repo.upsert_integration(
+                        client.id, Provider.reporting_ninja,
+                        enabled=integration.enabled, source_mode=integration.source_mode,
+                        config=config,
+                    )
+                    session.commit()
+                    print(f"{client.name:20s}  FOREIGN BINDING: {name!r} — cleared{note}")
+                else:
+                    any_unfixed_foreign = True
+                    print(f"{client.name:20s}  FOREIGN BINDING: {name!r}{note}")
+        return 1 if any_unfixed_foreign else 0
+
+    if args.command == "accuracy-report":
+        # Imported here, not at module scope: pulls in the reports API
+        # module (and, transitively, the whole reports engine), which the
+        # other commands have no reason to load.
+        from app.api.reports import list_client_accuracy
+        from app.db.session import worker_session_scope
+
+        with worker_session_scope() as session:
+            accuracy_rows = list_client_accuracy(session)
+
+        any_issue = False
+        for row in sorted(accuracy_rows, key=lambda r: r.client_name):
+            if row.binding_status == "foreign":
+                any_issue = True
+            if row.latest_pdf_run_id is None:
+                cc_text = "no PDF run yet"
+            else:
+                cc_text = (
+                    f"{row.match_count} match · {row.no_data_count} no data · "
+                    f"{row.differ_count} differ"
+                )
+                if row.differ_count:
+                    any_issue = True
+            print(
+                f"{row.client_name:20s}  binding={row.binding_status:14s} "
+                f"gsc={'yes' if row.has_gsc else 'no':3s}  {cc_text}"
+            )
+        return 1 if any_issue else 0
+
+    if args.command == "reports-run":
+        # Imported here, not at module scope: pulls in the reports engine
+        # (periods/API-or-browser fetch/table/xlsx), which the other
+        # commands have no reason to load.
+        from app.core.config import get_settings
+        from app.db.repositories.clients import ClientRepository
+        from app.db.repositories.reports import ReportRepository
+        from app.db.session import worker_session_scope
+        from app.reports.periods import InvalidComparatorMonthsError, InvalidPeriodError
+        from app.reports.runner import build_periods
+        from app.reports.runner import run as run_report
+
+        settings = get_settings()
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            client = ClientRepository(session).get(args.client_id)
+            if client is None:
+                print(f"error: unknown --client-id: {args.client_id}", file=sys.stderr)
+                return 2
+            client_name = client.name
+
+            params: dict[str, object] = {"force_refresh": args.force_refresh}
+            if args.kind == "yearly":
+                if not args.years:
+                    print("error: --years is required for kind=yearly", file=sys.stderr)
+                    return 2
+                params["years"] = [int(y.strip()) for y in args.years.split(",") if y.strip()]
+                params["span"] = args.span
+            if args.kind in ("custom_months", "comparator"):
+                if not args.months:
+                    print(f"error: --months is required for kind={args.kind}", file=sys.stderr)
+                    return 2
+                params["months"] = [m.strip() for m in args.months.split(",") if m.strip()]
+
+            try:
+                periods = build_periods(
+                    args.kind, params,
+                    max_months=settings.reports_max_months,
+                    max_comparator_years=settings.reports_max_comparator_years,
+                )
+            except (InvalidPeriodError, InvalidComparatorMonthsError, ValueError) as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+
+            run = ReportRepository(session).create_run(
+                args.client_id, kind=args.kind, source=args.source,
+                params=params, period_count=len(periods),
+            )
+            session.commit()
+            run_id = run.id
+
+        run_report(worker_session_scope, settings, run_id)
+
+        with session_factory() as session:
+            finished = ReportRepository(session).get(run_id)
+            assert finished is not None
+            print(
+                f"{client_name}: {finished.status} "
+                f"({finished.periods_done}/{finished.period_count} periods, "
+                f"{finished.periods_failed} failed)"
+            )
+            if finished.cross_check_status:
+                print(f"  cross-check: {finished.cross_check_status}")
+            if finished.error_code:
+                print(f"  error: {finished.error_code} — {finished.error_message}")
+            status = finished.status
+        return 0 if status == "succeeded" else 1
 
     parser.error(f"unknown command: {args.command}")
     return 2

@@ -1,9 +1,9 @@
-import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob, startTechAuditBatch } from "./api.js?v=20260812-monitor7";
-import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, humanizeStage, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260812-monitor7";
-import { isPaused } from "./client-status.js?v=20260812-monitor7";
-import { triggerLogin } from "./session-status.js?v=20260812-monitor7";
-import { loadActiveJob, saveActiveJob } from "./store.js?v=20260812-monitor7";
-import { watchJob } from "./sse.js?v=20260812-monitor7";
+import { cancelSyncJob, createSyncJob, getProviderSession, importAISeoToolsHistory, retrySyncJob, startTechAuditBatch } from "./api.js?v=20260817-spin1";
+import { PROVIDERS, PROVIDER_ORDER, STATE_META, STAGE_LABELS, escapeHtml, humanizeStage, icon, isTerminal, percent, stateClass } from "./formatters.js?v=20260817-spin1";
+import { isPaused } from "./client-status.js?v=20260817-spin1";
+import { triggerLogin } from "./session-status.js?v=20260817-spin1";
+import { loadActiveJob, saveActiveJob } from "./store.js?v=20260817-spin1";
+import { watchJob } from "./sse.js?v=20260817-spin1";
 
 // task-22 follow-up: providers backed by a warm-Chrome browser session (mirrors
 // `BROWSER_PROVIDERS` in `app/integrations/browser_session.py`). `reporting_ninja`

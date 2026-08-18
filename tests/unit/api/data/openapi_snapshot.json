@@ -79,6 +79,126 @@
         "title": "AISeoToolsImportResponse",
         "type": "object"
       },
+      "AccuracyClientRowDTO": {
+        "properties": {
+          "binding_status": {
+            "enum": [
+              "ok",
+              "foreign",
+              "missing",
+              "not_configured"
+            ],
+            "title": "Binding Status",
+            "type": "string"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "cross_check_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "match",
+                  "within_tolerance",
+                  "mismatch"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross Check Status"
+          },
+          "differ_count": {
+            "default": 0,
+            "title": "Differ Count",
+            "type": "integer"
+          },
+          "has_gsc": {
+            "title": "Has Gsc",
+            "type": "boolean"
+          },
+          "latest_pdf_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Pdf Run Id"
+          },
+          "match_count": {
+            "default": 0,
+            "title": "Match Count",
+            "type": "integer"
+          },
+          "ninja_report_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ninja Report Name"
+          },
+          "no_data_count": {
+            "default": 0,
+            "title": "No Data Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "binding_status",
+          "has_gsc"
+        ],
+        "title": "AccuracyClientRowDTO",
+        "type": "object"
+      },
+      "AccuracyReportDTO": {
+        "properties": {
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/AccuracyClientRowDTO"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at"
+        ],
+        "title": "AccuracyReportDTO",
+        "type": "object"
+      },
       "AhrefsAffectedUrlDTO": {
         "properties": {
           "details": {
@@ -626,6 +746,104 @@
               }
             ],
             "title": "Verify Status"
+          },
+          "wp_media_admin_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wp Media Admin Url"
+          },
+          "wp_media_alt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wp Media Alt"
+          },
+          "wp_media_candidates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MediaCandidateDTO"
+            },
+            "title": "Wp Media Candidates",
+            "type": "array"
+          },
+          "wp_media_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wp Media Checked At"
+          },
+          "wp_media_confidence": {
+            "anyOf": [
+              {
+                "enum": [
+                  "exact",
+                  "filename"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wp Media Confidence"
+          },
+          "wp_media_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wp Media Detail"
+          },
+          "wp_media_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wp Media Id"
+          },
+          "wp_media_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "resolved",
+                  "ambiguous",
+                  "not_found",
+                  "rest_unavailable",
+                  "not_searchable",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wp Media Status"
           }
         },
         "required": [
@@ -695,6 +913,62 @@
           "rows"
         ],
         "title": "AltTextItemsPageDTO",
+        "type": "object"
+      },
+      "AltTextMediaBatchDTO": {
+        "description": "\u041f\u0456\u0434\u0441\u0443\u043c\u043e\u043a \u043f\u0430\u043a\u0435\u0442\u043d\u043e\u0433\u043e \u043f\u043e\u0448\u0443\u043a\u0443 ID (task-39): \u0441\u043a\u0456\u043b\u044c\u043a\u0438 \u0440\u044f\u0434\u043a\u0456\u0432 \u0443 \u043a\u043e\u0436\u043d\u043e\u043c\u0443 \u0441\u0442\u0430\u043d\u0456.",
+        "properties": {
+          "ambiguous": {
+            "default": 0,
+            "title": "Ambiguous",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "not_found": {
+            "default": 0,
+            "title": "Not Found",
+            "type": "integer"
+          },
+          "remaining": {
+            "default": 0,
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "resolved": {
+            "default": 0,
+            "title": "Resolved",
+            "type": "integer"
+          },
+          "rest_unavailable": {
+            "default": 0,
+            "title": "Rest Unavailable",
+            "type": "integer"
+          },
+          "skipped": {
+            "default": 0,
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "title": "AltTextMediaBatchDTO",
+        "type": "object"
+      },
+      "AltTextMediaBatchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "AltTextMediaBatchRequest",
         "type": "object"
       },
       "AltTextReportCreateRequest": {
@@ -2870,6 +3144,64 @@
         "title": "JobStepDTO",
         "type": "object"
       },
+      "MediaCandidateDTO": {
+        "description": "\u041e\u0434\u0438\u043d \u043a\u0430\u043d\u0434\u0438\u0434\u0430\u0442 \u043f\u0440\u0438 `ambiguous` \u2014 \u0432\u0438\u0431\u0456\u0440 \u043b\u0438\u0448\u0430\u0454\u0442\u044c\u0441\u044f \u0437\u0430 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u043e\u043c.",
+        "properties": {
+          "alt_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alt Text"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "MediaCandidateDTO",
+        "type": "object"
+      },
       "MetricCardValue": {
         "description": "One metric on a client card: fully rendered, no frontend math needed.",
         "properties": {
@@ -3313,6 +3645,17 @@
               }
             ],
             "title": "Old Value"
+          },
+          "related_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Id"
           },
           "resolved_at": {
             "anyOf": [
@@ -4197,6 +4540,17 @@
             ],
             "title": "Base Url Override"
           },
+          "canonical_www": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Www"
+          },
           "client_id": {
             "title": "Client Id",
             "type": "string"
@@ -4287,6 +4641,17 @@
               }
             ],
             "title": "Base Url Override"
+          },
+          "canonical_www": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Www"
           },
           "enabled": {
             "anyOf": [
@@ -4468,6 +4833,98 @@
         "title": "MonitorSummaryDTO",
         "type": "object"
       },
+      "NinjaReportCandidateDTO": {
+        "properties": {
+          "exact_match": {
+            "title": "Exact Match",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "exact_match"
+        ],
+        "title": "NinjaReportCandidateDTO",
+        "type": "object"
+      },
+      "NinjaReportNameDTO": {
+        "description": "`GET/PUT /reports/clients/{id}/ninja-report`.\n\ntask-45 \u00a72.2 splits what task-42 returned as one flat, sortable\n`candidates` list: `matches` are the account's reports whose name starts\nwith the client's name, `others` is the rest of the account. Sorting alone\nstopped nothing \u2014 an operator could bind another client's report to this\nclient and every later PDF run would then parse 8/8 plausible but foreign\nmetrics under this client's name.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/NinjaReportCandidateDTO"
+            },
+            "title": "Matches",
+            "type": "array"
+          },
+          "ninja_report_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ninja Report Name"
+          },
+          "others": {
+            "items": {
+              "$ref": "#/components/schemas/NinjaReportCandidateDTO"
+            },
+            "title": "Others",
+            "type": "array"
+          },
+          "others_truncated": {
+            "default": false,
+            "title": "Others Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_id"
+        ],
+        "title": "NinjaReportNameDTO",
+        "type": "object"
+      },
+      "NinjaReportNameUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_mismatch": {
+            "default": false,
+            "title": "Confirm Mismatch",
+            "type": "boolean"
+          },
+          "ninja_report_name": {
+            "title": "Ninja Report Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ninja_report_name"
+        ],
+        "title": "NinjaReportNameUpdateRequest",
+        "type": "object"
+      },
       "PeriodKind": {
         "description": "Comparison period (PLAN \u00a73.1, \u00a721.1).\n\n`week`/`month` are the dashboard's base periods. `quarter`/`year`/`custom`\nwere added by task-14 and are computed **by aggregating already-stored\nhistory** (zero new collection), so they are only available where the UI\nhonestly shows coverage \u2014 on the client page (\u00a721.1/\u00a721.6), not on the\nmain dashboard.",
         "enum": [
@@ -4624,6 +5081,11 @@
       },
       "PortfolioMetricDTO": {
         "properties": {
+          "additive": {
+            "default": true,
+            "title": "Additive",
+            "type": "boolean"
+          },
           "better_direction": {
             "$ref": "#/components/schemas/BetterDirection"
           },
@@ -5867,6 +6329,1185 @@
           "message"
         ],
         "title": "RejectedUrlDTO",
+        "type": "object"
+      },
+      "ReportBatchAcceptedDTO": {
+        "properties": {
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "events_url": {
+            "title": "Events Url",
+            "type": "string"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id",
+          "status_url",
+          "events_url"
+        ],
+        "title": "ReportBatchAcceptedDTO",
+        "type": "object"
+      },
+      "ReportBatchClientRowDTO": {
+        "description": "One row of the batch progress matrix (task-47 \u00a72.4/\u00a73.4) \u2014 enough to\nrender \"4/6 periods, Running, 0:42\" without a second request per client;\n\"Open document\"/\"Client PDF\" link to the existing run-detail routes.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "period_count": {
+            "title": "Period Count",
+            "type": "integer"
+          },
+          "periods_done": {
+            "title": "Periods Done",
+            "type": "integer"
+          },
+          "periods_failed": {
+            "title": "Periods Failed",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "partial",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "client_id",
+          "status",
+          "period_count",
+          "periods_done",
+          "periods_failed"
+        ],
+        "title": "ReportBatchClientRowDTO",
+        "type": "object"
+      },
+      "ReportBatchCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Client Ids",
+            "type": "array"
+          },
+          "force_refresh": {
+            "default": false,
+            "title": "Force Refresh",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "monthly",
+              "yearly",
+              "custom_months",
+              "comparator"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "months": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months"
+          },
+          "source": {
+            "enum": [
+              "api",
+              "pdf"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "span": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ytd",
+                  "full"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span"
+          },
+          "years": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years"
+          }
+        },
+        "required": [
+          "client_ids",
+          "kind",
+          "source"
+        ],
+        "title": "ReportBatchCreateRequest",
+        "type": "object"
+      },
+      "ReportBatchDTO": {
+        "properties": {
+          "cancel_requested": {
+            "default": false,
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "client_count": {
+            "title": "Client Count",
+            "type": "integer"
+          },
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/ReportBatchClientRowDTO"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "clients_done": {
+            "title": "Clients Done",
+            "type": "integer"
+          },
+          "clients_failed": {
+            "title": "Clients Failed",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "monthly",
+              "yearly",
+              "custom_months",
+              "comparator"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "title": "Queued At",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "api",
+              "pdf"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "partial",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "source",
+          "status",
+          "client_count",
+          "clients_done",
+          "clients_failed",
+          "queued_at"
+        ],
+        "title": "ReportBatchDTO",
+        "type": "object"
+      },
+      "ReportBatchesPageDTO": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReportBatchDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "limit",
+          "offset"
+        ],
+        "title": "ReportBatchesPageDTO",
+        "type": "object"
+      },
+      "ReportFileDTO": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "date_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date From"
+          },
+          "date_to": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date To"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_partial_period": {
+            "default": false,
+            "title": "Is Partial Period",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "pdf",
+              "xlsx",
+              "screenshot",
+              "client_pdf"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "period_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Label"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "size_bytes",
+          "created_at"
+        ],
+        "title": "ReportFileDTO",
+        "type": "object"
+      },
+      "ReportHistoryDTO": {
+        "properties": {
+          "has_ga4": {
+            "default": true,
+            "title": "Has Ga4",
+            "type": "boolean"
+          },
+          "has_gsc": {
+            "default": true,
+            "title": "Has Gsc",
+            "type": "boolean"
+          },
+          "months": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReportHistoryMonthDTO"
+            },
+            "title": "Months",
+            "type": "array"
+          }
+        },
+        "title": "ReportHistoryDTO",
+        "type": "object"
+      },
+      "ReportHistoryMonthDTO": {
+        "description": "One complete calendar month of the Historical Data block (task-45 \u00a72.4).\n\nA month the provider has no data for is `None` across the board \u2014 never a\nrow of zeros with a 0.00% CTR (task-45 \u00a71.6/PLAN \u00a712). `ctr` is derived\n(`clicks / impressions`), matching Reporting Ninja's own `ctr` field.",
+        "properties": {
+          "clicks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks"
+          },
+          "ctr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctr"
+          },
+          "impressions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impressions"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "organic_conversions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organic Conversions"
+          }
+        },
+        "required": [
+          "month",
+          "label"
+        ],
+        "title": "ReportHistoryMonthDTO",
+        "type": "object"
+      },
+      "ReportRunAcceptedDTO": {
+        "properties": {
+          "events_url": {
+            "title": "Events Url",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status_url",
+          "events_url"
+        ],
+        "title": "ReportRunAcceptedDTO",
+        "type": "object"
+      },
+      "ReportRunDTO": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "cancel_requested": {
+            "default": false,
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "cross_check_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "match",
+                  "within_tolerance",
+                  "mismatch"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross Check Status"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "monthly",
+              "yearly",
+              "custom_months",
+              "comparator"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "ninja_report_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ninja Report Name"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "period_count": {
+            "title": "Period Count",
+            "type": "integer"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/ReportRunPeriodDTO"
+            },
+            "title": "Periods",
+            "type": "array"
+          },
+          "periods_done": {
+            "title": "Periods Done",
+            "type": "integer"
+          },
+          "periods_failed": {
+            "title": "Periods Failed",
+            "type": "integer"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "title": "Queued At",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "api",
+              "pdf"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "partial",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "kind",
+          "source",
+          "status",
+          "period_count",
+          "periods_done",
+          "periods_failed",
+          "queued_at"
+        ],
+        "title": "ReportRunDTO",
+        "type": "object"
+      },
+      "ReportRunPeriodDTO": {
+        "description": "One period's own progress (task-45 \u00a72.1), read from\n`ReportRun.periods_json`. `date_from`/`date_to` are known before the run\nstarts, so the UI can label every period from the first second; `state`\nreplaces task-43's log-text heuristic entirely.",
+        "properties": {
+          "date_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date From"
+          },
+          "date_to": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date To"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "from_cache": {
+            "default": false,
+            "title": "From Cache",
+            "type": "boolean"
+          },
+          "is_partial": {
+            "default": false,
+            "title": "Is Partial",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "default": "waiting",
+            "enum": [
+              "waiting",
+              "running",
+              "done",
+              "cached",
+              "failed",
+              "skipped"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "ReportRunPeriodDTO",
+        "type": "object"
+      },
+      "ReportRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "force_refresh": {
+            "default": false,
+            "title": "Force Refresh",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "monthly",
+              "yearly",
+              "custom_months",
+              "comparator"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "months": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months"
+          },
+          "source": {
+            "enum": [
+              "api",
+              "pdf"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "span": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ytd",
+                  "full"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Span"
+          },
+          "years": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years"
+          }
+        },
+        "required": [
+          "client_id",
+          "kind",
+          "source"
+        ],
+        "title": "ReportRunRequest",
+        "type": "object"
+      },
+      "ReportRunsPageDTO": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReportRunDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "limit",
+          "offset"
+        ],
+        "title": "ReportRunsPageDTO",
+        "type": "object"
+      },
+      "ReportTableDTO": {
+        "description": "`GET /reports/runs/{id}/table` (task-42 \u00a75): the finished 8xN table\nplus per-period provenance (\"\u043f\u043e\u0445\u043e\u0434\u0436\u0435\u043d\u043d\u044f \u043a\u043e\u0436\u043d\u043e\u0457 \u043a\u043b\u0456\u0442\u0438\u043d\u043a\u0438\" \u2014 which file a\nwhole column was read from; empty on the API path).",
+        "properties": {
+          "change_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Change Labels",
+            "type": "array"
+          },
+          "cross_check": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross Check"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportHistoryDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "enum": [
+              "monthly",
+              "yearly",
+              "custom_months",
+              "comparator"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/ReportTablePeriodDTO"
+            },
+            "title": "Periods",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ReportTableRowDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "api",
+              "pdf"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Sources",
+            "type": "object"
+          }
+        },
+        "required": [
+          "run_id",
+          "kind",
+          "source",
+          "periods",
+          "change_labels",
+          "rows"
+        ],
+        "title": "ReportTableDTO",
+        "type": "object"
+      },
+      "ReportTablePeriodDTO": {
+        "properties": {
+          "date_from": {
+            "format": "date",
+            "title": "Date From",
+            "type": "string"
+          },
+          "date_to": {
+            "format": "date",
+            "title": "Date To",
+            "type": "string"
+          },
+          "is_partial": {
+            "title": "Is Partial",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "date_from",
+          "date_to",
+          "is_partial"
+        ],
+        "title": "ReportTablePeriodDTO",
+        "type": "object"
+      },
+      "ReportTableRowDTO": {
+        "properties": {
+          "changes": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "values",
+          "changes"
+        ],
+        "title": "ReportTableRowDTO",
+        "type": "object"
+      },
+      "ReportTypeDTO": {
+        "properties": {
+          "estimate": {
+            "$ref": "#/components/schemas/ReportTypeEstimateDTO"
+          },
+          "kind": {
+            "enum": [
+              "monthly",
+              "yearly",
+              "custom_months",
+              "comparator"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "estimate"
+        ],
+        "title": "ReportTypeDTO",
+        "type": "object"
+      },
+      "ReportTypeEstimateDTO": {
+        "properties": {
+          "api_seconds_per_column": {
+            "title": "Api Seconds Per Column",
+            "type": "number"
+          },
+          "pdf_seconds_per_column": {
+            "title": "Pdf Seconds Per Column",
+            "type": "number"
+          }
+        },
+        "required": [
+          "api_seconds_per_column",
+          "pdf_seconds_per_column"
+        ],
+        "title": "ReportTypeEstimateDTO",
+        "type": "object"
+      },
+      "ReportTypesDTO": {
+        "description": "`GET /reports/types` (task-42 \u00a75) \u2014 the frontend never hardcodes\nthese limits or per-column time estimates.",
+        "properties": {
+          "max_comparator_years": {
+            "title": "Max Comparator Years",
+            "type": "integer"
+          },
+          "max_months": {
+            "title": "Max Months",
+            "type": "integer"
+          },
+          "types": {
+            "items": {
+              "$ref": "#/components/schemas/ReportTypeDTO"
+            },
+            "title": "Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "types",
+          "max_months",
+          "max_comparator_years"
+        ],
+        "title": "ReportTypesDTO",
         "type": "object"
       },
       "SheetPreviewDTO": {
@@ -11406,6 +13047,1111 @@
         ]
       }
     },
+    "/api/v1/reports/accuracy": {
+      "get": {
+        "operationId": "get_accuracy_report_api_v1_reports_accuracy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccuracyReportDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Accuracy Report",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/batches": {
+      "get": {
+        "operationId": "list_report_batches_api_v1_reports_batches_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportBatchesPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Report Batches",
+        "tags": [
+          "reports"
+        ]
+      },
+      "post": {
+        "operationId": "create_report_batch_api_v1_reports_batches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportBatchCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportBatchAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Create Report Batch",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/batches/{batch_id}": {
+      "get": {
+        "operationId": "get_report_batch_api_v1_reports_batches__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportBatchDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Report Batch",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/batches/{batch_id}/cancel": {
+      "post": {
+        "operationId": "cancel_report_batch_api_v1_reports_batches__batch_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportBatchDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Report Batch",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/batches/{batch_id}/events": {
+      "get": {
+        "operationId": "report_batch_events_api_v1_reports_batches__batch_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Batch Events",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/batches/{batch_id}/pdf-archive": {
+      "get": {
+        "operationId": "download_batch_pdf_archive_api_v1_reports_batches__batch_id__pdf_archive_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Batch Pdf Archive",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/clients/{client_id}/ninja-report": {
+      "get": {
+        "operationId": "get_ninja_report_name_api_v1_reports_clients__client_id__ninja_report_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NinjaReportNameDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ninja Report Name",
+        "tags": [
+          "reports"
+        ]
+      },
+      "put": {
+        "operationId": "put_ninja_report_name_api_v1_reports_clients__client_id__ninja_report_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NinjaReportNameUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NinjaReportNameDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Put Ninja Report Name",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/files/{file_id}": {
+      "get": {
+        "operationId": "download_report_file_api_v1_reports_files__file_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "disposition",
+            "required": false,
+            "schema": {
+              "default": "attachment",
+              "pattern": "^(inline|attachment)$",
+              "title": "Disposition",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Report File",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/runs": {
+      "get": {
+        "operationId": "list_report_runs_api_v1_reports_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_batch",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Batch"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunsPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Report Runs",
+        "tags": [
+          "reports"
+        ]
+      },
+      "post": {
+        "operationId": "create_report_run_api_v1_reports_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Create Report Run",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/runs/{run_id}": {
+      "get": {
+        "operationId": "get_report_run_api_v1_reports_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Report Run",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_report_run_api_v1_reports_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Report Run",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/runs/{run_id}/client-pdf": {
+      "post": {
+        "operationId": "create_client_pdf_api_v1_reports_runs__run_id__client_pdf_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportFileDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Create Client Pdf",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/runs/{run_id}/document": {
+      "get": {
+        "operationId": "get_report_document_api_v1_reports_runs__run_id__document_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Get Report Document",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/runs/{run_id}/events": {
+      "get": {
+        "operationId": "report_run_events_api_v1_reports_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Run Events",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/runs/{run_id}/files": {
+      "get": {
+        "operationId": "list_report_run_files_api_v1_reports_runs__run_id__files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReportFileDTO"
+                  },
+                  "title": "Response List Report Run Files Api V1 Reports Runs  Run Id  Files Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Report Run Files",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/runs/{run_id}/table": {
+      "get": {
+        "operationId": "get_report_table_api_v1_reports_runs__run_id__table_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportTableDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Report Table",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/types": {
+      "get": {
+        "operationId": "get_report_types_api_v1_reports_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportTypesDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Report Types",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
     "/api/v1/sync-jobs": {
       "get": {
         "operationId": "list_sync_jobs_api_v1_sync_jobs_get",
@@ -12264,6 +15010,22 @@
           },
           {
             "in": "query",
+            "name": "media_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Media Status"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -12396,6 +15158,68 @@
         ]
       }
     },
+    "/api/v1/tools/alt-text/reports/{report_id}/items/{item_id}/resolve-media": {
+      "post": {
+        "description": "\u0417\u043d\u0430\u0439\u0442\u0438 \u0442\u043e\u0447\u043d\u0438\u0439 WordPress media ID \u0434\u043b\u044f \u043e\u0434\u043d\u043e\u0433\u043e \u0440\u044f\u0434\u043a\u0430 \u0439 \u0437\u0431\u0435\u0440\u0435\u0433\u0442\u0438 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442.",
+        "operationId": "resolve_item_media_api_v1_tools_alt_text_reports__report_id__items__item_id__resolve_media_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AltTextItemDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Item Media",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
     "/api/v1/tools/alt-text/reports/{report_id}/items/{item_id}/verify": {
       "post": {
         "description": "\u041f\u0435\u0440\u0435\u0432\u0456\u0440\u0438\u0442\u0438 \u0441\u0442\u043e\u0440\u0456\u043d\u043a\u0443 **\u0431\u0435\u0437 \u043a\u0435\u0448\u0443** \u0439 \u0437\u0431\u0435\u0440\u0435\u0433\u0442\u0438 \u0432\u0435\u0440\u0434\u0438\u043a\u0442.\n\n\u0417\u0430\u043f\u0438\u0442 \u0456\u0434\u0435 \u0437 \u0440\u0430\u043d\u0434\u043e\u043c\u043d\u0438\u043c cache-buster-\u043e\u043c \u0456 `no-cache`-\u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0430\u043c\u0438, \u0431\u043e \u0432\n\u043a\u043b\u0456\u0454\u043d\u0442\u0456\u0432 \u043a\u0456\u043b\u044c\u043a\u0430 \u0448\u0430\u0440\u0456\u0432 \u043a\u0435\u0448\u0443. \u0426\u0435 \u0437\u043c\u0435\u043d\u0448\u0443\u0454, \u0430\u043b\u0435 \u043d\u0435 \u043f\u0440\u0438\u0431\u0438\u0440\u0430\u0454 \u0440\u0438\u0437\u0438\u043a edge-\u043a\u0435\u0448\u0443 \u2014\n\u0442\u043e\u043c\u0443 UI \u043f\u043e\u043a\u0430\u0437\u0443\u0454 \u0447\u0430\u0441 \u043f\u0435\u0440\u0435\u0432\u0456\u0440\u043a\u0438 \u0439 \u043f\u0440\u044f\u043c\u043e \u043f\u0440\u043e \u0446\u0435 \u043f\u043e\u043f\u0435\u0440\u0435\u0434\u0436\u0430\u0454.",
@@ -12463,6 +15287,76 @@
           }
         },
         "summary": "Verify Item",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/alt-text/reports/{report_id}/resolve-media": {
+      "post": {
+        "description": "\u041f\u0430\u043a\u0435\u0442\u043d\u043e \u0437\u043d\u0430\u0439\u0442\u0438 ID \u0434\u043b\u044f \u0440\u044f\u0434\u043a\u0456\u0432, \u044f\u043a\u0456 \u0449\u0435 \u043d\u0435 \u0448\u0443\u043a\u0430\u043b\u0438 \u2014 \u0434\u043e `limit` \u0437\u0430 \u0440\u0430\u0437.\n\n\u041f\u043e\u0441\u043b\u0456\u0434\u043e\u0432\u043d\u043e, \u0440\u044f\u0434\u043e\u043a \u0437\u0430 \u0440\u044f\u0434\u043a\u043e\u043c: \u0446\u0435 \u0440\u0435\u0430\u043b\u044c\u043d\u0456 \u0437\u0430\u043f\u0438\u0442\u0438 \u0434\u043e \u0441\u0430\u0439\u0442\u0443 \u043a\u043b\u0456\u0454\u043d\u0442\u0430, \u0430 \u043d\u0435\n\u043d\u0430\u0448 \u0440\u0435\u0441\u0443\u0440\u0441, \u0442\u043e\u0436 \u043f\u0430\u0440\u0430\u043b\u0435\u043b\u0438\u0442\u0438 \u0457\u0445 \u2014 \u043d\u0430\u0432\u0430\u043d\u0442\u0430\u0436\u0443\u0432\u0430\u043b\u044c\u043d\u0438\u0439 \u0442\u0435\u0441\u0442 \u0447\u0443\u0436\u043e\u0433\u043e \u0441\u0435\u0440\u0432\u0435\u0440\u0430.",
+        "operationId": "resolve_report_media_api_v1_tools_alt_text_reports__report_id__resolve_media_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AltTextMediaBatchRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AltTextMediaBatchDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Report Media",
         "tags": [
           "tools"
         ]
