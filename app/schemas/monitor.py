@@ -29,6 +29,9 @@ class MonitorSettingsDTO(BaseModel):
     client_id: str
     enabled: bool
     base_url_override: str | None = None
+    # `None` = not known whether the site canonically redirects to `www.` or
+    # bare — see `MonitorSettings.canonical_www`.
+    canonical_www: bool | None = None
     light_interval_hours: float | None = None
     full_interval_hours: float | None = None
     max_urls: int | None = None
@@ -46,6 +49,7 @@ class MonitorSettingsUpdateRequest(BaseModel):
 
     enabled: bool | None = None
     base_url_override: str | None = None
+    canonical_www: bool | None = None
     light_interval_hours: float | None = None
     full_interval_hours: float | None = None
     max_urls: int | None = None
@@ -97,6 +101,9 @@ class MonitorChangeDTO(BaseModel):
     change_type: str
     scope: ChangeScope
     subject: str
+    # `MonitorPage.id` for `scope="page"` changes — lets the client link
+    # straight to that page's diff viewer instead of a dead-end row.
+    related_id: str | None = None
     old_value: str | None = None
     new_value: str | None = None
     details: dict[str, Any] = {}

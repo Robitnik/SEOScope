@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -79,7 +80,7 @@ _ROBOTS_TRACKED = frozenset({"robots_blocks_site", "robots_unavailable", "robots
 _PAGE_TRACKED = frozenset(
     {"page_noindex_appeared", "page_status_error", "gsc_verification_lost", "analytics_tag_lost"}
 )
-_SITEMAP_RESOURCE_TRACKED = frozenset({"sitemap_lost"})
+_SITEMAP_RESOURCE_TRACKED = frozenset({"sitemap_lost", "sitemap_unavailable"})
 _SITEMAP_URL_TRACKED = frozenset(
     {"sitemap_url_redirects", "sitemap_url_broken", "sitemap_url_unavailable"}
 )
@@ -135,6 +136,7 @@ def _apply_changes(
             change_type=change.change_type,
             scope=change.scope,
             subject=change.subject,
+            related_id=change.related_id,
             old_value=change.old_value,
             new_value=change.new_value,
             details=change.details,
@@ -175,8 +177,23 @@ def _reconcile(
         )
 
 
-def _base_url(client: Client, override: str | None) -> str:
-    return (override or f"https://{client.domain}").rstrip("/")
+def _base_url(client: Client, override: str | None, canonical_www: bool | None = None) -> str:
+    """`override` wins outright (a whole different URL — e.g. staging). Absent
+    that, `canonical_www` (`MonitorSettings`, operator-set — task-38 follow-up)
+    picks the right host directly instead of relying on the site's own
+    redirect to correct it on every single request: `None` means "not known",
+    so `client.domain` is used exactly as stored, same as before this field
+    existed.
+    """
+    if override:
+        return override.rstrip("/")
+    host = client.domain
+    has_www = host.lower().startswith("www.")
+    if canonical_www is True and not has_www:
+        host = f"www.{host}"
+    elif canonical_www is False and has_www:
+        host = host[len("www.") :]
+    return f"https://{host}".rstrip("/")
 
 
 def _process_robots(
@@ -445,8 +462,10 @@ def _process_sitemaps(
             changes = diffmod.diff_sitemap_resource(
                 resource_url=url,
                 new_status=(None if missing else status),
+                confirmed_gone=missing and fetched.status == 404,
                 is_baseline_run=is_baseline_run,
             )
+            changes = [dataclass_replace(c, related_id=resource.id) for c in changes]
             _apply_changes(repo, client.id, run_id, changes, now=now)
             _reconcile(
                 repo,
@@ -703,6 +722,12 @@ def _persist_page_result(
         new_raw_sha256=raw_sha256,
         is_baseline_run=is_baseline_run,
     )
+    # `related_id` -> `page.id` so the change feed can link straight to this
+    # page's diff viewer (`GET .../pages/{page_id}/diff`) instead of leaving
+    # the operator staring at a bare "Page content changed" row with nothing
+    # to click — the diff viewer already exists (task-36), it was just never
+    # reachable from here.
+    changes = [dataclass_replace(c, related_id=page.id) for c in changes]
     _apply_changes(repo, client.id, run_id, changes, now=now)
     _reconcile(repo, client.id, run_id, url, tracked_types=_PAGE_TRACKED, detected=changes, now=now)
 
@@ -715,7 +740,9 @@ def _persist_page_result(
             is_key_page=is_key_page,
             consecutive_failures=page.consecutive_failures,
         )
-        url_changes = [diffmod.DetectedChange(change_type, severity, "sitemap", url)]
+        url_changes = [
+            diffmod.DetectedChange(change_type, severity, "sitemap", url, related_id=page.id)
+        ]
         _apply_changes(repo, client.id, run_id, url_changes, now=now)
         _reconcile(
             repo,
@@ -949,7 +976,9 @@ def run_client_monitor(
     repo = MonitorRepository(session)
     with _COMMIT_LOCK:
         monitor_settings = repo.get_or_create_settings(client.id)
-        base_url = _base_url(client, monitor_settings.base_url_override)
+        base_url = _base_url(
+            client, monitor_settings.base_url_override, monitor_settings.canonical_www
+        )
         is_baseline_run = repo.latest_finished_run(client.id) is None
 
         if existing_run_id is not None:

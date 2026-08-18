@@ -64,7 +64,7 @@ class MonitorRepository:
     def update_settings(self, client_id: str, **fields: Any) -> MonitorSettings:
         settings = self.get_or_create_settings(client_id)
         for key, value in fields.items():
-            if value is not None or key in {"base_url_override"}:
+            if value is not None or key in {"base_url_override", "canonical_www"}:
                 setattr(settings, key, value)
         settings.updated_at = utcnow()
         self._session.flush()

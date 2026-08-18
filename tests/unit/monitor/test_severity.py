@@ -54,6 +54,7 @@ def test_critical_change_types(change_type):
         "dns_mx_changed",
         "monitor_blocked",
         "dns_unavailable",
+        "sitemap_unavailable",
     ],
 )
 def test_warning_change_types(change_type):

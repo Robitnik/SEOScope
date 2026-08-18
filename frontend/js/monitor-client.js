@@ -64,15 +64,15 @@ import {
   getMonitorSummary, getMonitorSettings, patchMonitorSettings, listMonitorRuns, startMonitorRun,
   listClientMonitorChanges, ackMonitorChange, getMonitorPages, checkMonitorPage, getMonitorDnsRecords,
   monitorExportCsvUrl, monitorExportXlsxUrl, getDashboard, isAbortError,
-} from "./api.js?v=20260812-monitor7";
-import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260812-monitor7";
-import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260812-monitor7";
+} from "./api.js?v=20260817-spin1";
+import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260817-spin1";
+import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260817-spin1";
 import {
   escapeHtml, icon, initials, formatTimestamp, formatDate, MONITOR_SEVERITY_META, changeTypeLabel,
   STATE_META, stateClass,
-} from "./formatters.js?v=20260812-monitor7";
-import { createMonitorDiffViewer } from "./monitor-diff.js?v=20260812-monitor7";
-import { createMonitorContentViewer } from "./monitor-content.js?v=20260812-monitor7";
+} from "./formatters.js?v=20260817-spin1";
+import { createMonitorDiffViewer } from "./monitor-diff.js?v=20260817-spin1";
+import { createMonitorContentViewer } from "./monitor-content.js?v=20260817-spin1";
 
 const PAGES_PAGE_SIZE = 25;
 const CHANGES_PAGE_SIZE = 25;
@@ -476,6 +476,25 @@ function renderHeader(client) {
   header.setAttribute("aria-busy", "false");
 }
 
+// `canonical_www` (task-38 follow-up) is `null` until an operator records
+// it — most redirect-related rows in the change feed are otherwise
+// impossible to read as "expected canonicalization" vs. "something broke"
+// without knowing which host the site is actually supposed to answer on.
+function renderCanonicalHostBadge(client, settings) {
+  const identity = document.querySelector(".client-page__identity > div");
+  if (!identity || !client) return;
+  identity.querySelector(".monitor-canonical-badge")?.remove();
+  if (settings?.canonical_www === null || settings?.canonical_www === undefined) return;
+  const hasWww = client.domain.toLowerCase().startsWith("www.");
+  const host = settings.canonical_www
+    ? (hasWww ? client.domain : `www.${client.domain}`)
+    : (hasWww ? client.domain.slice(4) : client.domain);
+  identity.insertAdjacentHTML(
+    "beforeend",
+    `<span class="monitor-canonical-badge">Canonical host: ${escapeHtml(host)}</span>`
+  );
+}
+
 function renderNotFound() {
   const header = document.querySelector("#mc-header");
   header.setAttribute("aria-busy", "false");
@@ -529,6 +548,7 @@ async function loadClientMonitor() {
     if (token !== requestToken) return;
     monitorSummary = summary;
     monitorSettings = settings;
+    renderCanonicalHostBadge(clientRef, settings);
   } catch (error) {
     if (isAbortError(error)) return;
     renderMonitorLoadError(error);
@@ -1301,11 +1321,20 @@ function changeRow(change) {
   const diffLine = hasDiffValues
     ? `<p class="monitor-change__diff"><span class="monitor-change__old">${escapeHtml(change.old_value ?? "—")}</span> <span aria-hidden="true">→</span> <span class="monitor-change__new">${escapeHtml(change.new_value ?? "—")}</span></p>`
     : "";
+  // Page-scope changes (`content_changed`, `title_changed`, ...) carry
+  // `related_id` = the page's id (`app/monitor/runner.py::_persist_page_result`)
+  // so a bare "Page content changed" row isn't a dead end — it opens the same
+  // page diff viewer the Pages table already links to (task-36), instead of
+  // leaving the operator with no way to see what actually changed.
+  const viewDiffMarkup = change.scope === "page" && change.related_id
+    ? `<button type="button" class="button button--quiet monitor-change__view-diff" data-action="page-open" data-page-id="${escapeHtml(change.related_id)}">${icon("history")}View diff</button>`
+    : "";
   return `<li class="monitor-change">
     <span class="monitor-severity monitor-severity--${escapeHtml(change.severity)}" aria-hidden="true">${icon(meta.icon)}</span>
     <div class="monitor-change__body">
       <p class="monitor-change__headline"><span class="visually-hidden">${meta.label}: </span><strong>${escapeHtml(label)}</strong>${subject ? ` <span class="monitor-change__subject">${escapeHtml(subject)}</span>` : ""}</p>
       ${diffLine}
+      ${viewDiffMarkup}
       <p class="monitor-change__meta">${meta.label} · ${formatTimestamp(change.detected_at)}</p>
     </div>
     ${statusMarkup}

@@ -44,6 +44,10 @@ STATIC_SEVERITY: dict[str, str] = {
     # Both configured DoH resolvers failed to answer — a fetch problem on our
     # side, never treated as "the records are gone" (PLAN §12, risk table).
     "dns_unavailable": WARNING,
+    # Same principle for the sitemap file itself: a fetch/parse failure that
+    # isn't a confirmed 404 is "couldn't check it", not "it's gone" — only
+    # `sitemap_lost` (critical, above) means a confirmed 404.
+    "sitemap_unavailable": WARNING,
     # info
     "page_new": INFO,
     "content_changed": INFO,

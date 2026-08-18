@@ -118,6 +118,7 @@ def _change_dto(change: MonitorChange) -> MonitorChangeDTO:
         change_type=change.change_type,
         scope=change.scope,  # type: ignore[arg-type]
         subject=change.subject,
+        related_id=change.related_id,
         old_value=change.old_value,
         new_value=change.new_value,
         details=change.details_json,
@@ -844,6 +845,7 @@ def _settings_dto(client_id: str) -> MonitorSettingsDTO | None:
             client_id=settings.client_id,
             enabled=settings.enabled,
             base_url_override=settings.base_url_override,
+            canonical_www=settings.canonical_www,
             light_interval_hours=settings.light_interval_hours,
             full_interval_hours=settings.full_interval_hours,
             max_urls=settings.max_urls,
@@ -881,6 +883,7 @@ def _update_settings(client_id: str, fields: dict[str, Any]) -> MonitorSettingsD
             client_id=settings.client_id,
             enabled=settings.enabled,
             base_url_override=settings.base_url_override,
+            canonical_www=settings.canonical_www,
             light_interval_hours=settings.light_interval_hours,
             full_interval_hours=settings.full_interval_hours,
             max_urls=settings.max_urls,

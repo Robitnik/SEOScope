@@ -119,6 +119,26 @@ def test_client_changes_404_for_unknown_client(client):
     assert client.get("/api/v1/clients/nope/monitor/changes").status_code == 404
 
 
+def test_client_change_dto_exposes_related_id(client, db):
+    client_id = _create_client(db)
+    repo = MonitorRepository(db)
+    run = repo.create_run(client_id, kind="full")
+    page = repo.get_or_create_page(client_id, "https://acme.com/")
+    change = repo.record_change(
+        client_id,
+        run_id=run.id,
+        severity="info",
+        change_type="content_changed",
+        scope="page",
+        subject="https://acme.com/",
+        related_id=page.id,
+    )
+    db.commit()
+
+    body = client.get(f"/api/v1/clients/{client_id}/monitor/changes?state=all").json()
+    assert [c["related_id"] for c in body if c["id"] == change.id] == [page.id]
+
+
 def test_client_changes_default_state_is_open_only(client, db):
     client_id = _create_client(db)
     repo = MonitorRepository(db)
@@ -644,6 +664,18 @@ def test_get_settings_defaults(client, db):
     body = client.get(f"/api/v1/clients/{client_id}/monitor/settings").json()
     assert body["enabled"] is True
     assert body["monitor_when_paused"] is False
+    assert body["canonical_www"] is None
+
+
+def test_patch_settings_sets_and_clears_canonical_www(client, db):
+    client_id = _create_client(db)
+    client.patch(f"/api/v1/clients/{client_id}/monitor/settings", json={"canonical_www": True})
+    body = client.get(f"/api/v1/clients/{client_id}/monitor/settings").json()
+    assert body["canonical_www"] is True
+
+    client.patch(f"/api/v1/clients/{client_id}/monitor/settings", json={"canonical_www": None})
+    body = client.get(f"/api/v1/clients/{client_id}/monitor/settings").json()
+    assert body["canonical_www"] is None
 
 
 def test_patch_settings_updates_only_sent_fields(client, db):

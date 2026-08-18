@@ -110,7 +110,14 @@
 .monitor-change-row__severity { flex: 0 0 auto; min-width: 62px; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-muted); }
 .monitor-change-row__client { flex: 0 0 auto; min-width: 130px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 .monitor-change-row__type { flex: 1 1 200px; min-width: 0; }
-.monitor-change-row__subject { flex: 2 1 260px; min-width: 0; overflow-wrap: anywhere; color: var(--ink-muted); font-size: 12px; }
+.monitor-change-row__subject { flex: 2 1 260px; min-width: 0; overflow-wrap: anywhere; color: var(--ink-muted); font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+.monitor-change-row__diff { overflow-wrap: anywhere; }
+.monitor-change-row__old { color: var(--ink-dim); text-decoration: line-through; }
+.monitor-change-row__new { color: var(--ink); font-weight: 700; }
+/* `.icon-button` from app.css is 44px — too wide for this dense row (same
+   override tools.css already applies to its own icon-buttons). */
+.monitor-change-row__subject-actions { flex: 0 0 auto; display: inline-flex; gap: 4px; }
+.monitor-change-row__subject-actions .icon-button { min-width: 28px; min-height: 28px; width: 28px; height: 28px; }
 .monitor-change-row__time { flex: 0 0 auto; color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
 .monitor-change-row__ack { flex: 0 0 auto; margin-left: auto; }
 .monitor-change-row__status { flex: 0 0 auto; margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--ink-muted); font-size: 12px; }
@@ -496,6 +503,7 @@ th[aria-sort]:not([aria-sort="none"]) .monitor-sort-button { color: var(--ink); 
 .monitor-change__old { color: var(--ink-dim); text-decoration: line-through; }
 .monitor-change__new { color: var(--ink); font-weight: 700; }
 .monitor-change__meta { margin: 6px 0 0; color: var(--ink-dim); font-size: 11px; }
+.monitor-change__view-diff { margin: 6px 0 0; }
 .monitor-change-status { flex: 0 0 auto; margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--ink-muted); font-size: 12px; text-align: right; }
 .monitor-change-status .icon { width: 14px; height: 14px; }
 .monitor-change-status--resolved .icon { color: var(--success); }

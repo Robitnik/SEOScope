@@ -17,13 +17,13 @@
 import {
   ackMonitorChange, getDashboard, getMonitorSummary, isAbortError,
   listPortfolioMonitorChanges, startMonitorRun,
-} from "./api.js?v=20260812-monitor7";
-import { buildMonitorClientHash, replaceMonitorHash } from "./router.js?v=20260812-monitor7";
+} from "./api.js?v=20260817-spin1";
+import { buildMonitorClientHash, replaceMonitorHash } from "./router.js?v=20260817-spin1";
 import {
   MONITOR_SEVERITY_META, changeTypeLabel, escapeHtml, formatTimestamp, icon,
-} from "./formatters.js?v=20260812-monitor7";
-import { sectionSkeleton } from "./skeleton.js?v=20260812-monitor7";
-import { isPaused } from "./client-status.js?v=20260812-monitor7";
+} from "./formatters.js?v=20260817-spin1";
+import { sectionSkeleton } from "./skeleton.js?v=20260817-spin1";
+import { isPaused } from "./client-status.js?v=20260817-spin1";
 
 const root = document.querySelector("#monitor-page-root");
 
@@ -138,6 +138,9 @@ function onRootClick(event) {
 
   const ack = event.target.closest("[data-ack]");
   if (ack) { void acknowledge(ack); return; }
+
+  const copyButton = event.target.closest("[data-action='copy']");
+  if (copyButton) { void copyToClipboard(copyButton); return; }
 
   const sortButton = event.target.closest("[data-sort]");
   if (sortButton) {
@@ -279,6 +282,27 @@ async function reloadFeed() {
 }
 
 // --- Actions -------------------------------------------------------------
+
+// Same behavior as `dashboard.js`'s copy button: flips to a check for a
+// moment and confirms via toast, without stealing focus off the row.
+async function copyToClipboard(button) {
+  const value = button.dataset.copy;
+  if (button.dataset.copyState === "done") return;
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    toast("Could not copy — clipboard is unavailable in this browser.");
+    return;
+  }
+  const original = button.innerHTML;
+  button.dataset.copyState = "done";
+  button.innerHTML = icon("copy-check", "icon icon--tiny");
+  toast(`Copied ${value}`);
+  setTimeout(() => {
+    button.innerHTML = original;
+    delete button.dataset.copyState;
+  }, 1400);
+}
 
 async function acknowledge(button) {
   const id = button.dataset.ack;
@@ -424,6 +448,28 @@ function renderChangeRow(change) {
   const label = changeTypeLabel(change.change_type);
   const subject = change.subject || "—";
   const clientName = client ? client.name : change.client_id;
+  // Most subjects are page/sitemap URLs (task-35 §3.4 `subject`) an operator
+  // wants to jump into or paste elsewhere (GSC, a manual curl) without
+  // hand-selecting text out of a dense row — `robots.txt`/DNS subjects have
+  // no scheme, so "Open" only renders for an actual `http(s)://` subject
+  // while "Copy" always does.
+  const subjectUrl = /^https?:\/\//i.test(subject) ? subject : null;
+  // Redirects (and canonical/title/description/... changes) carry the
+  // destination in `new_value` (`app/monitor/diff.py::diff_page`) — without
+  // this, "Page started redirecting" names the page that moved but never
+  // says where it went.
+  const hasDiffValues = (change.old_value ?? null) !== null || (change.new_value ?? null) !== null;
+  const diffLine = hasDiffValues
+    ? `<span class="monitor-change-row__diff"><span class="monitor-change-row__old">${escapeHtml(change.old_value ?? "—")}</span> <span aria-hidden="true">→</span> <span class="monitor-change-row__new">${escapeHtml(change.new_value ?? "—")}</span></span>`
+    : "";
+  const subjectActions = subject && subject !== "—"
+    ? `<span class="monitor-change-row__subject-actions">
+        ${subjectUrl
+          ? `<a class="icon-button" href="${escapeHtml(subjectUrl)}" target="_blank" rel="noreferrer" aria-label="${escapeHtml(`Open ${subject}`)}">${icon("external-link", "icon icon--tiny")}</a>`
+          : ""}
+        <button type="button" class="icon-button" data-action="copy" data-copy="${escapeHtml(subject)}" aria-label="${escapeHtml(`Copy ${subject}`)}">${icon("copy", "icon icon--tiny")}</button>
+      </span>`
+    : "";
   let action;
   if (change.resolved_at) {
     action = `<span class="monitor-change-row__status">${icon("circle-check", "icon icon--tiny")}Resolved ${escapeHtml(formatTimestamp(change.resolved_at))}</span>`;
@@ -440,7 +486,8 @@ function renderChangeRow(change) {
       <span class="monitor-change-row__severity">${escapeHtml(meta.label)}</span>
       <a class="monitor-change-row__client" href="${buildMonitorClientHash(change.client_id)}" translate="no">${escapeHtml(clientName)}</a>
       <span class="monitor-change-row__type">${escapeHtml(label)}</span>
-      <span class="monitor-change-row__subject" translate="no">${escapeHtml(subject)}</span>
+      <span class="monitor-change-row__subject" translate="no">${escapeHtml(subject)}${diffLine}</span>
+      ${subjectActions}
       <span class="monitor-change-row__time">${escapeHtml(formatTimestamp(change.detected_at))}</span>
       ${action}
     </li>`;

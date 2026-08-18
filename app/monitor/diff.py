@@ -28,6 +28,13 @@ class DetectedChange:
     old_value: str | None = None
     new_value: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
+    # `MonitorChange.related_id` (task-35 §3.4 docstring: "a plain, non-FK
+    # pointer ... purely a 'show me more' link"). `diff.py` itself never
+    # knows a row id — the runner stamps this in after the fact, once it has
+    # the `MonitorPage`/`MonitorResource` the change was detected against —
+    # so every function below leaves it at the default and callers use
+    # `dataclasses.replace` to fill it in.
+    related_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -269,14 +276,27 @@ def diff_robots(
 
 
 def diff_sitemap_resource(
-    *, resource_url: str, new_status: int | None, is_baseline_run: bool
+    *, resource_url: str, new_status: int | None, confirmed_gone: bool, is_baseline_run: bool
 ) -> list[DetectedChange]:
-    """Reported every run the sitemap stays gone, not just the run it broke
-    on — `MonitorRepository.open_change` dedups that into one open row.
+    """Reported every run the sitemap stays gone/unreachable, not just the run
+    it broke on — `MonitorRepository.open_change` dedups that into one open row.
+
+    `confirmed_gone` is the HTTP layer actually answering 404 for the file.
+    Every other reason `new_status` can be `None` — timeout, connection
+    error, blocked-as-challenge, or a 200 whose body just didn't parse as
+    XML (e.g. a WAF page mid-redirect) — is a fetch problem on OUR side, not
+    proof the sitemap is gone (same principle as `dns_unavailable`,
+    `app/monitor/dns.py` §"never silently treated as ... gone", PLAN §12):
+    reported as `sitemap_unavailable` (warning), never `sitemap_lost`
+    (critical), so a transient blip on a plugin-redirected `/sitemap.xml`
+    doesn't page anyone.
     """
     if is_baseline_run:
         return []
-    if new_status is None or new_status == 404:
+    if new_status is None:
+        change_type = "sitemap_lost" if confirmed_gone else "sitemap_unavailable"
+        return [DetectedChange(change_type, severity_of(change_type), "sitemap", resource_url)]
+    if new_status == 404:
         return [
             DetectedChange("sitemap_lost", severity_of("sitemap_lost"), "sitemap", resource_url)
         ]

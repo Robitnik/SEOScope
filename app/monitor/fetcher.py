@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import urlsplit
 
 from app.tools.http_safety import (
@@ -37,6 +38,36 @@ _CHALLENGE_MARKERS = (
     b"ddos protection by",
     b"captcha-delivery",
 )
+
+
+class Headers(dict[str, str]):
+    """Response headers with case-insensitive lookup.
+
+    HTTP field names are case-insensitive (RFC 9110 §5.1) and HTTP/2 requires
+    them **lowercase**, so most modern CDNs answer with `content-encoding` /
+    `x-robots-tag`. `urllib`'s own header object handles that; a plain
+    `dict(response.headers.items())` silently throws it away — and every
+    `.get("Content-Encoding")` / `.get("X-Robots-Tag")` in this package then
+    reads `None` on exactly the hosts that matter.
+
+    LIVE 2026-08-12: that is not hypothetical. `alphastyle.store` (Shopify
+    behind Cloudflare) sends lowercase `content-encoding: gzip`; the gzip body
+    was stored and parsed as binary, so **all 355 of its pages had no title,
+    no meta robots and no canonical** — a `noindex` there would have been
+    invisible to the monitor whose whole job is to catch it.
+
+    Original casing is preserved for display; only lookup is case-blind.
+    """
+
+    def __init__(self, items: Any = ()) -> None:
+        super().__init__(items)
+        self._lower = {key.lower(): value for key, value in self.items()}
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._lower.get(key.lower(), default)
+
+    def __contains__(self, key: object) -> bool:
+        return isinstance(key, str) and key.lower() in self._lower
 
 
 @dataclass(frozen=True)
@@ -121,7 +152,7 @@ def fetch(
                 raw = response.read(max_body_bytes + 1)
                 truncated = len(raw) > max_body_bytes
                 raw = raw[:max_body_bytes]
-                response_headers = {k: v for k, v in response.headers.items()}
+                response_headers = Headers(response.headers.items())
                 if response_headers.get("Content-Encoding", "").lower() == "gzip":
                     try:
                         raw = gzip_module.decompress(raw)
@@ -136,7 +167,18 @@ def fetch(
                 hop_count = 0 if final_url == url else 1
         except urllib.error.HTTPError as exc:
             raw = exc.read(max_body_bytes) if exc.fp else b""
-            response_headers = {k: v for k, v in exc.headers.items()} if exc.headers else {}
+            # Error responses carry `X-Robots-Tag` and `Content-Type` too — the
+            # same case-insensitive treatment, or a 4xx page's headers read as
+            # empty on the same hosts.
+            response_headers = Headers(exc.headers.items()) if exc.headers else Headers()
+            # ...and an error body is compressed just like a successful one.
+            # Without this, a gzipped WAF challenge page never matches
+            # `_CHALLENGE_MARKERS` and gets misreported as a plain 4xx.
+            if response_headers.get("Content-Encoding", "").lower() == "gzip":
+                try:
+                    raw = gzip_module.decompress(raw)
+                except OSError:
+                    pass
             status = exc.code
             final_url = exc.geturl() if hasattr(exc, "geturl") else url
             hop_count = 0
