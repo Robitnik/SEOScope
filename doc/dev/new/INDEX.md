@@ -546,6 +546,7 @@ Clicks/Impressions і GA4 Sessions/Users по днях/тижнях/місяця
 | `app/reports/**`, `app/api/reports.py`, `app/schemas/reports.py`, `app/db/repositories/reports.py` + власна міграція | task-42 |
 | `frontend/js/{reports-page,reports-wizard,reports-run}.js`, `frontend/css/reports.css` | task-43 |
 | `app/reports/history.py`, `migrations/versions/a1c58d7e26b4_report_run_periods.py` | task-45 (round-2 доробка зони task-42/43: `app/reports/**`, `app/api/reports.py`, `app/schemas/reports.py`, `app/db/repositories/reports.py`, `frontend/js/reports-{run,wizard}.js`) |
+| `app/reports/{document,svg_charts,client_pdf,batch}.py`, `frontend/css/report-doc.css`, `frontend/js/reports-batch.js`, `migrations/versions/d8f42b9e6c17_report_batches.py` | task-47 (round-3 доробка зони task-42/43/45: `app/reports/{runner,scheduler,ninja_api}.py`, `app/api/reports.py`, `app/schemas/reports.py`, `app/db/models.py`, `app/db/repositories/reports.py`, `app/core/config.py`, `frontend/js/reports-{page,wizard,run}.js`, `frontend/css/reports.css`) |
 
 > **Успадковані зони (v2).** Таски 14–19 доповнюють файли завершених тасок (`app/schemas/`, `app/db/models.py`, `migrations/`, `app/integrations/gsc.py`, `frontend/`). Кожна відповідає **лише за свої додатки** й не змінює наявну поведінку. Спільні фронт-модулі (`formatters.js`, `api.js`, `tokens.css`, `index.html`) — read-only для 18 і 19: правки узгоджуються, не робляться мовчки.
 
