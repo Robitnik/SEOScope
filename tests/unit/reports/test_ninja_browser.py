@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from app.reports import ninja_browser as nb
 from app.reports.periods import ReportPeriod
@@ -101,6 +102,9 @@ class FakeContext:
     def storage_state(self, path: str | None = None) -> None:
         pass
 
+    def add_init_script(self, script: str) -> None:
+        pass
+
     def close(self) -> None:
         self._closed = True
 
@@ -183,18 +187,20 @@ def test_transient_error_is_retried_then_succeeds(monkeypatch):
 
 def test_a_playwright_download_timeout_is_retried_then_succeeds(monkeypatch):
     """task-47: live-found bug — `page.expect_download(timeout=240_000)`
-    raises Playwright's OWN `TimeoutError` (a different class from the
-    builtin `TimeoutError` the test right below this one exercises) when the
-    site is just slow to render a large period's PDF. That used to fail the
-    period on attempt 1/3 despite the config promising 3 retries; it must
-    now be treated as recoverable, same as a transient network error.
+    raises Playwright's OWN `TimeoutError` when the site is just slow to
+    render a large period's PDF. That used to fail the period on attempt
+    1/3 despite the config promising 3 retries; it must now be treated as
+    recoverable, same as a transient network error. Classified by CLASS
+    NAME (`stealth_browser.is_timeout_error`), not `isinstance` against one
+    specific package — `patchright` (task-47 follow-up "stealth" fix) raises
+    its OWN distinct `TimeoutError` class, not playwright's.
     """
     calls = {"n": 0}
 
     def fake_download(page, report_name, period, pdf_path):
         calls["n"] += 1
         if calls["n"] == 1:
-            raise nb.PlaywrightTimeoutError(
+            raise PlaywrightTimeoutError(
                 'Timeout 240000ms exceeded while waiting for event "download"'
             )
 
@@ -210,12 +216,12 @@ def test_a_playwright_download_timeout_is_retried_then_succeeds(monkeypatch):
     assert attempt == 2
 
 
-def test_a_live_selector_timeout_is_not_retried(monkeypatch):
+def test_a_real_bug_like_a_missing_selector_is_not_retried(monkeypatch):
     calls = {"n": 0}
 
     def fake_download(page, report_name, period, pdf_path):
         calls["n"] += 1
-        raise TimeoutError("Timeout 30000ms exceeded")
+        raise RuntimeError("PDF download button not found on the report page")
 
     monkeypatch.setattr(nb, "_download_one_period", fake_download)
     monkeypatch.setattr(nb, "_is_login_page", lambda _page: False)

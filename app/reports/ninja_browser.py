@@ -29,19 +29,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import (
-    Browser,
-    BrowserContext,
-    Page,
-    sync_playwright,
-)
-from playwright.sync_api import (
-    TimeoutError as PlaywrightTimeoutError,
-)
+from playwright.sync_api import Browser, BrowserContext, Page
 
 from app.reports.naming import pdf_filename
 from app.reports.pdf_parse import PdfDownloadIncomplete, assert_pdf_complete
 from app.reports.periods import ReportPeriod
+from app.reports.stealth_browser import (
+    is_timeout_error,
+    new_stealth_context,
+    sync_playwright,
+)
 
 BASE_URL = "https://app.reportingninja.com"
 
@@ -336,9 +333,8 @@ def download_periods(  # noqa: PLR0913 - every argument is load-bearing, see doc
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless)
-        ctx = browser.new_context(
-            storage_state=str(session_path) if session_path.exists() else None,
-            viewport={"width": 1440, "height": 900},
+        ctx = new_stealth_context(
+            browser, storage_state=str(session_path) if session_path.exists() else None,
         )
         page = ctx.new_page()
         ctx, page = _ensure_session(
@@ -437,7 +433,8 @@ def _fetch_period_with_retry(  # noqa: PLR0913 - see download_periods
             # excluded it, contradicting the "3 retries" the config promises.
             recoverable = (
                 _is_transient_net_error(exc)
-                or isinstance(exc, PdfDownloadIncomplete | PlaywrightTimeoutError)
+                or isinstance(exc, PdfDownloadIncomplete)
+                or is_timeout_error(exc)
                 or ctx.is_closed()
                 or not _page_is_usable(page)
             )
@@ -456,9 +453,7 @@ def _fetch_period_with_retry(  # noqa: PLR0913 - see download_periods
             )
             sleep(5.0 * attempt)
             if ctx.is_closed():
-                ctx = browser.new_context(
-                    storage_state=str(session_path), viewport={"width": 1440, "height": 900}
-                )
+                ctx = new_stealth_context(browser, storage_state=str(session_path))
                 page = ctx.new_page()
             elif not _page_is_usable(page):
                 _safe_close(page)
@@ -564,9 +559,8 @@ def search_report_names(
     session_path = session_path or _session_path()
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless)
-        ctx = browser.new_context(
-            storage_state=str(session_path) if session_path.exists() else None,
-            viewport={"width": 1440, "height": 900},
+        ctx = new_stealth_context(
+            browser, storage_state=str(session_path) if session_path.exists() else None,
         )
         page = ctx.new_page()
         try:
@@ -602,9 +596,8 @@ def list_report_names(
     session_path = session_path or _session_path()
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless)
-        ctx = browser.new_context(
-            storage_state=str(session_path) if session_path.exists() else None,
-            viewport={"width": 1440, "height": 900},
+        ctx = new_stealth_context(
+            browser, storage_state=str(session_path) if session_path.exists() else None,
         )
         page = ctx.new_page()
         try:
@@ -638,9 +631,8 @@ def discover_report_names(
     session_path = session_path or _session_path()
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless)
-        ctx = browser.new_context(
-            storage_state=str(session_path) if session_path.exists() else None,
-            viewport={"width": 1440, "height": 900},
+        ctx = new_stealth_context(
+            browser, storage_state=str(session_path) if session_path.exists() else None,
         )
         page = ctx.new_page()
         try:
