@@ -7054,6 +7054,11 @@
       "ReportRunPeriodDTO": {
         "description": "One period's own progress (task-45 \u00a72.1), read from\n`ReportRun.periods_json`. `date_from`/`date_to` are known before the run\nstarts, so the UI can label every period from the first second; `state`\nreplaces task-43's log-text heuristic entirely.",
         "properties": {
+          "attempt": {
+            "default": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
           "date_from": {
             "anyOf": [
               {
@@ -7125,6 +7130,11 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "max_attempts": {
+            "default": 1,
+            "title": "Max Attempts",
+            "type": "integer"
           },
           "started_at": {
             "anyOf": [
@@ -14074,6 +14084,77 @@
           }
         },
         "summary": "List Report Run Files",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/runs/{run_id}/periods/{label}/retry": {
+      "post": {
+        "operationId": "retry_report_period_api_v1_reports_runs__run_id__periods__label__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "label",
+            "required": true,
+            "schema": {
+              "title": "Label",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Report Period",
         "tags": [
           "reports"
         ]

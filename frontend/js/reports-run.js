@@ -13,7 +13,7 @@
 import {
   cancelReportRun, createClientPdf, createReportRun, getDashboard, getReportRun,
   getReportRunEvents, getReportTable, isAbortError, isFixtureMode, listReportFiles,
-  reportDocumentUrl, reportFileUrl, reportRunEventsUrl,
+  reportDocumentUrl, reportFileUrl, reportRunEventsUrl, retryReportPeriod,
 } from "./api.js?v=20260817-spin1";
 import { buildReportsHash, buildReportsRunHash } from "./router.js?v=20260817-spin1";
 import {
@@ -355,18 +355,44 @@ function renderProgressList() {
           <strong translate="no">${escapeHtml(row.label)}</strong>
           ${range ? `<small>${escapeHtml(range)}${row.is_partial ? " · Partial period" : ""}</small>` : ""}
         </div>
-        <span class="status-label ${PERIOD_STATE_CLASS[row.state] || "state-queued"}">${statusIcon(meta.icon)}${escapeHtml(meta.label)}</span>
+        <span class="status-label ${PERIOD_STATE_CLASS[row.state] || "state-queued"}">${statusIcon(meta.icon)}${escapeHtml(periodStatusLabel(row))}</span>
         <span class="reports-progress-row__duration">${escapeHtml(periodDuration(row))}</span>
       </li>`;
   }).join("");
   const failed = rows.filter((row) => row.state === "failed" && row.error);
   if (failed.length) {
+    // Auto-retry (task-47 follow-up) already used up its budget by the time
+    // a period sits here `failed` — this button asks for exactly ONE more,
+    // manual attempt, only once the run itself is done (retrying against a
+    // still-`running` run is rejected server-side: it isn't finished yet).
+    const canRetry = isTerminal(run.status);
     host.insertAdjacentHTML("beforeend", failed.map((row) => `
       <li class="reports-progress-error">
         ${icon("circle-x", "icon icon--tiny")}
         <span><strong translate="no">${escapeHtml(row.label)}</strong> — ${escapeHtml(row.error)}</span>
+        ${canRetry ? `
+          <button type="button" class="button button--quiet" data-retry-period="${escapeHtml(row.label)}">
+            ${icon("refresh", "icon icon--tiny")}Retry this period
+          </button>` : ""}
       </li>`).join(""));
   }
+}
+
+// "Running — retry 2/3" while an auto-retry is in flight, "Failed (3/3
+// attempts)" once the budget is exhausted — a bare "Running"/"Failed" looked
+// identical whether a period succeeded first try or fought through two
+// retries, which is exactly the visibility task-47's own bug report asked
+// for ("покажи їх").
+function periodStatusLabel(row) {
+  const meta = PERIOD_STATE_META[row.state] || PERIOD_STATE_META.waiting;
+  const maxAttempts = row.max_attempts || 1;
+  if (row.state === "running" && row.attempt > 1) {
+    return `Running — retry ${row.attempt}/${maxAttempts}`;
+  }
+  if (row.state === "failed" && maxAttempts > 1) {
+    return `Failed (${row.attempt || maxAttempts}/${maxAttempts} attempts)`;
+  }
+  return meta.label;
 }
 
 function formatLogTime(value) {
@@ -479,6 +505,25 @@ async function onClientPdf(button) {
     if (isAbortError(error)) return;
     toast(`Could not generate the client PDF: ${error.message}`);
   } finally {
+    button.disabled = false;
+    button.innerHTML = original;
+  }
+}
+
+async function onRetryPeriod(label, button) {
+  button.disabled = true;
+  const original = button.innerHTML;
+  button.innerHTML = `${statusIcon("loader-2")}Retrying…`;
+  try {
+    run = await retryReportPeriod(current.runId, label);
+    renderHeader();
+    await loadTerminalData();
+    toast(run.status === "succeeded" || run.status === "partial"
+      ? `${label} retried — report updated.`
+      : `${label} failed again — see the error below.`);
+  } catch (error) {
+    if (isAbortError(error)) return;
+    toast(`Could not retry ${label}: ${error.message}`);
     button.disabled = false;
     button.innerHTML = original;
   }
@@ -873,6 +918,11 @@ function onRootClick(event) {
   if (event.target.closest("#rr-history-copy")) { void copyHistoryTable(); return; }
   const clientPdfButton = event.target.closest("#rr-client-pdf");
   if (clientPdfButton) { void onClientPdf(clientPdfButton); return; }
+  const retryPeriodButton = event.target.closest("[data-retry-period]");
+  if (retryPeriodButton) {
+    void onRetryPeriod(retryPeriodButton.dataset.retryPeriod, retryPeriodButton);
+    return;
+  }
   const viewFile = event.target.closest("[data-view-file]");
   if (viewFile) { openFileDialog(viewFile.dataset.viewFile, viewFile.dataset.viewName); return; }
   const openFile = event.target.closest("[data-open-file]");

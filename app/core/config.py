@@ -140,6 +140,11 @@ class Settings(BaseSettings):
     # Measured 41-67s per column headless; generous ceiling for a slow one.
     reports_pdf_period_timeout_seconds: float = 300.0
     reports_pdf_retries: int = 3
+    # The API path had NO period-level retry at all before this (task-47
+    # follow-up, live-found alongside the PDF path's own retry-classification
+    # bug): one bad response failed the period outright. Mirrors
+    # `reports_pdf_retries`'s shape/default.
+    reports_api_period_retries: int = 3
     reports_cross_check_tolerance_pct: Decimal = Decimal("0.5")
     reports_pdf_cache_enabled: bool = True
     # `False` leaves a hook for local debugging under Xvfb.

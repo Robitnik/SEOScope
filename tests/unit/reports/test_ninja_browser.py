@@ -155,6 +155,8 @@ def _retry_kwargs(**overrides):
         password="secret",
         session_path=Path("/tmp/does-not-exist.json"),
         relogin_budget=[1],
+        emit=lambda *_a, **_k: None,
+        notify=lambda *_a, **_k: None,
     )
     kwargs.update(overrides)
     return kwargs
@@ -177,6 +179,35 @@ def test_transient_error_is_retried_then_succeeds(monkeypatch):
         **_retry_kwargs(),
     )
     assert calls["n"] == 2
+
+
+def test_a_playwright_download_timeout_is_retried_then_succeeds(monkeypatch):
+    """task-47: live-found bug — `page.expect_download(timeout=240_000)`
+    raises Playwright's OWN `TimeoutError` (a different class from the
+    builtin `TimeoutError` the test right below this one exercises) when the
+    site is just slow to render a large period's PDF. That used to fail the
+    period on attempt 1/3 despite the config promising 3 retries; it must
+    now be treated as recoverable, same as a transient network error.
+    """
+    calls = {"n": 0}
+
+    def fake_download(page, report_name, period, pdf_path):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise nb.PlaywrightTimeoutError(
+                'Timeout 240000ms exceeded while waiting for event "download"'
+            )
+
+    monkeypatch.setattr(nb, "_download_one_period", fake_download)
+    monkeypatch.setattr(nb, "_is_login_page", lambda _page: False)
+
+    browser, ctx, page = FakeBrowser(), FakeContext(), FakePage()
+    _ctx, _page, attempt = nb._fetch_period_with_retry(
+        browser, ctx, page, "EFFYS-Internal report", _PERIOD, Path("/tmp/x.pdf"),
+        **_retry_kwargs(),
+    )
+    assert calls["n"] == 2
+    assert attempt == 2
 
 
 def test_a_live_selector_timeout_is_not_retried(monkeypatch):
@@ -309,7 +340,7 @@ def test_one_failed_period_does_not_abort_the_rest(monkeypatch, tmp_path):
         if period.label == "This Month":
             raise RuntimeError("selector drift")
         pdf_path.write_bytes(b"0" * 100)
-        return ctx, page
+        return ctx, page, 1
 
     monkeypatch.setattr(nb, "_fetch_period_with_retry", fake_fetch)
 

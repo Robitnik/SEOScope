@@ -29,7 +29,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
+from playwright.sync_api import (
+    Browser,
+    BrowserContext,
+    Page,
+    sync_playwright,
+)
+from playwright.sync_api import (
+    TimeoutError as PlaywrightTimeoutError,
+)
 
 from app.reports.naming import pdf_filename
 from app.reports.pdf_parse import PdfDownloadIncomplete, assert_pdf_complete
@@ -59,6 +67,12 @@ _REPORT_HOST = "app.reportingninja.com"
 
 _STEP_PAUSE_MS = 800
 Emit = Callable[[str, str, str, dict[str, Any]], None]
+# `(label, state, *, attempt=1, max_attempts=1)` — loosely typed on purpose:
+# the one real implementation (`runner.py::_make_period_marker`) forwards
+# these as keyword args into `ReportRepository.update_period`, and a
+# `Protocol` here would just restate that shape without checking anything
+# `Callable[..., None]` doesn't already rule out (wrong arity/positional use).
+PeriodStateCallback = Callable[..., None]
 
 
 class AuthenticationFailedError(RuntimeError):
@@ -296,7 +310,7 @@ def download_periods(  # noqa: PLR0913 - every argument is load-bearing, see doc
     screenshots_dir: Path | None = None,
     session_path: Path | None = None,
     sleep: Callable[[float], None] = time.sleep,
-    on_period_state: Callable[[str, str], None] | None = None,
+    on_period_state: PeriodStateCallback | None = None,
 ) -> list[DownloadedPeriod]:
     """Download one PDF per period. Returns only the periods that SUCCEEDED —
     a period absent from the result is a failure the caller already saw an
@@ -305,14 +319,16 @@ def download_periods(  # noqa: PLR0913 - every argument is load-bearing, see doc
     (re-)established at all, which DOES end the run early — every remaining
     period would fail at the login wall anyway.
 
-    `on_period_state(label, state)` (additive, task-45 §2.1) is called with
-    `"running"` before a period's download and `"done"`/`"failed"` after it —
-    this loop is the only place that knows when a ~55s download actually
-    starts, and the runner persists that into `report_runs.periods_json`. It
-    is best-effort narration: the caller's implementation swallows its own
-    errors, and omitting the argument keeps the pre-task-45 behaviour.
+    `on_period_state(label, state, attempt=, max_attempts=)` (additive,
+    task-45 §2.1, attempt/max_attempts additive task-47) is called with
+    `"running"` before EACH attempt (not just the first — a retry re-enters
+    `"running"` with a bumped `attempt`, so the operator watches "retry 2/3"
+    happen live instead of the row sitting on the first attempt's timestamp
+    for the whole 3-attempt budget) and `"done"`/`"failed"` after the period
+    settles. Best-effort narration: the caller's implementation swallows its
+    own errors, and omitting the argument keeps the pre-task-47 behaviour.
     """
-    notify = on_period_state or (lambda _label, _state: None)
+    notify: PeriodStateCallback = on_period_state or (lambda *_a, **_k: None)
     session_path = session_path or _session_path()
     out_dir.mkdir(parents=True, exist_ok=True)
     relogin_budget = [1]
@@ -340,21 +356,21 @@ def download_periods(  # noqa: PLR0913 - every argument is load-bearing, see doc
                     report_name, period.label, period.date_from, period.date_to
                 )
                 emit("info", "download", f"Downloading {period.label}", {"period": period.label})
-                notify(period.label, "running")
                 try:
-                    ctx, page = _fetch_period_with_retry(
+                    ctx, page, final_attempt = _fetch_period_with_retry(
                         browser, ctx, page, report_name, period, pdf_path,
                         retries=retries, sleep=sleep, is_cancelled=is_cancelled,
                         email=email, password=password, session_path=session_path,
-                        relogin_budget=relogin_budget,
+                        relogin_budget=relogin_budget, emit=emit, notify=notify,
                     )
                     downloaded.append(DownloadedPeriod(period, pdf_path))
-                    notify(period.label, "done")
+                    notify(period.label, "done", attempt=final_attempt, max_attempts=retries)
                     emit("info", "download", f"{period.label} done", {"period": period.label})
                 except AuthenticationFailedError:
                     raise
                 except Exception as exc:  # noqa: BLE001 - classify, isolate, keep going
-                    notify(period.label, "failed")
+                    failed_attempt = getattr(exc, "attempt", retries)
+                    notify(period.label, "failed", attempt=failed_attempt, max_attempts=retries)
                     screenshot = None
                     if screenshots_dir is not None and _page_is_usable(page):
                         screenshot = _capture_failure_screenshot(
@@ -390,13 +406,19 @@ def _fetch_period_with_retry(  # noqa: PLR0913 - see download_periods
     password: str,
     session_path: Path,
     relogin_budget: list[int],
-) -> tuple[BrowserContext, Page]:
+    emit: Emit,
+    notify: PeriodStateCallback,
+) -> tuple[BrowserContext, Page, int]:
+    """Returns `(ctx, page, attempt)` — `attempt` is the 1-based attempt that
+    finally succeeded, so the caller's `"done"` event/state can say which one.
+    """
     for attempt in range(1, retries + 1):
         if is_cancelled():
             raise RuntimeError(f"Cancelled while downloading {period.label!r}")
+        notify(period.label, "running", attempt=attempt, max_attempts=retries)
         try:
             _download_one_period(page, report_name, period, pdf_path)
-            return ctx, page
+            return ctx, page, attempt
         except Exception as exc:  # noqa: BLE001 - classify, then retry/re-login/raise
             if _is_login_page(page):
                 ctx, page = _ensure_session(
@@ -405,18 +427,33 @@ def _fetch_period_with_retry(  # noqa: PLR0913 - see download_periods
                 )
                 continue  # retry this same attempt slot, now authenticated
 
+            # A `TimeoutError` here is Playwright's own — `_download_pdf`'s
+            # `page.expect_download(timeout=240_000)` waited 4 minutes for a
+            # click to trigger a download and nothing arrived. That is the
+            # single most common transient failure against this site (the
+            # report is just slow to render server-side for a wide date
+            # range) — live-measured 2026-08-18: a quarter column failed on
+            # attempt 1/3 and was never retried because this classification
+            # excluded it, contradicting the "3 retries" the config promises.
             recoverable = (
                 _is_transient_net_error(exc)
-                or isinstance(exc, PdfDownloadIncomplete)
+                or isinstance(exc, PdfDownloadIncomplete | PlaywrightTimeoutError)
                 or ctx.is_closed()
                 or not _page_is_usable(page)
             )
             if not recoverable or attempt == retries:
-                raise RuntimeError(
+                failure = RuntimeError(
                     f"Period {period.label!r} did not download "
                     f"(attempt {attempt}/{retries}): {exc}"
-                ) from exc
+                )
+                failure.attempt = attempt  # type: ignore[attr-defined]
+                raise failure from exc
 
+            emit(
+                "warning", "download",
+                f"{period.label}: attempt {attempt}/{retries} failed ({exc}) — retrying",
+                {"period": period.label, "attempt": attempt, "max_attempts": retries},
+            )
             sleep(5.0 * attempt)
             if ctx.is_closed():
                 ctx = browser.new_context(

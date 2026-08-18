@@ -2217,6 +2217,48 @@ export async function createClientPdf(runId) {
   };
 }
 
+// Manual per-period retry (task-47 follow-up): re-collects ONE failed
+// period in place rather than restarting the whole report. Fixture mode has
+// no live "failed → retried" state machine for a MOCK run (the fixture
+// engine's periods never fail — see `mockReportPeriods`), so this only does
+// something useful against the static `reports-run-bundle` fixture, which
+// is exactly where the pre-baked "failed"/"partial" demo states live.
+export async function retryReportPeriod(runId, label) {
+  if (!FIXTURE_MODE) {
+    return request(
+      `/reports/runs/${runId}/periods/${encodeURIComponent(label)}/retry`,
+      { method: "POST", body: "{}" },
+    );
+  }
+  await wait(500);
+  const bundle = await loadReportRunBundle();
+  const entry = bundle[runId];
+  if (!entry) throw new Error("Report run not found");
+  const period = (entry.run.periods || []).find((p) => p.label === label);
+  if (!period) throw new Error("No such period on this run");
+  if (period.state !== "failed") throw new Error("This period is not in a failed state");
+
+  period.state = "done";
+  period.error = null;
+  period.finished_at = new Date().toISOString();
+  const stillFailed = (entry.run.periods || []).filter((p) => p.state === "failed").length;
+  entry.run.periods_failed = stillFailed;
+  entry.run.periods_done = (entry.run.periods || []).filter((p) => ["done", "cached"].includes(p.state)).length;
+  entry.run.status = stillFailed === 0 ? "succeeded" : "partial";
+
+  if (entry.table) {
+    const periodIndex = (entry.table.periods || []).findIndex((p) => p.label === label);
+    if (periodIndex !== -1) {
+      entry.table.rows.forEach((row) => {
+        if (row.values[periodIndex] === null) {
+          row.values[periodIndex] = 300 + (hashString(`${runId}-${label}-${row.key}-retry`) % 900);
+        }
+      });
+    }
+  }
+  return entry.run;
+}
+
 // --- Batches (task-47 §2.2) --------------------------------------------------
 //
 // Fixture mode composes on top of the existing single-run mock engine

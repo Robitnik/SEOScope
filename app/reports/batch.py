@@ -141,7 +141,7 @@ def _reconcile_one(session_scope: Any, batch_id: str) -> None:
         if not any_running:
             # A cancelled batch is reported as cancelled overall even when
             # some clients finished before the cancel landed — the same
-            # honesty `_aggregate_status` already gives one standalone run
+            # honesty `aggregate_run_status` already gives one standalone run
             # (task-42's own `is_cancelled()` short-circuit).
             status = "cancelled" if batch.cancel_requested else _aggregate_batch_status(
                 len(children), failed

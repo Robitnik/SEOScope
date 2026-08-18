@@ -79,8 +79,13 @@ class ReportTable:
         }
 
 
-def _changes_for(kind: str, periods: list[ReportPeriod]) -> list[tuple[str, str, str]]:
-    """`[(change_label, newer_period_label, older_period_label), ...]`."""
+def changes_for(kind: str, periods: list[ReportPeriod]) -> list[tuple[str, str, str]]:
+    """`[(change_label, newer_period_label, older_period_label), ...]`.
+
+    Public (task-47): `app.reports.period_retry` recomputes just the change
+    columns that reference a retried period, and needs the same pairing this
+    function already derives — no reason to duplicate it.
+    """
     if kind == "monthly":
         present = {p.label for p in periods}
         return [c for c in _MONTHLY_CHANGES if c[1] in present and c[2] in present]
@@ -97,7 +102,7 @@ def build_table(
     *,
     sources: dict[str, str] | None = None,
 ) -> ReportTable:
-    changes = _changes_for(kind, periods)
+    changes = changes_for(kind, periods)
     rows = []
     for key, label in METRICS:
         values = [getattr(metrics_by_label.get(p.label), key, None) for p in periods]

@@ -78,6 +78,12 @@ class ReportRunPeriodDTO(BaseModel):
     duration_seconds: float | None = None
     from_cache: bool = False
     error: str | None = None
+    # Additive (task-47): which attempt this state reflects, and the retry
+    # budget for this period's source — lets the UI show "Running — retry
+    # 2/3" live and "Failed (3/3 attempts)" on exhaustion, instead of a bare
+    # state word that looked identical whether it failed once or three times.
+    attempt: int = 1
+    max_attempts: int = 1
 
 
 class ReportRunDTO(BaseModel):

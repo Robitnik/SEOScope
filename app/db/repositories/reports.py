@@ -207,10 +207,19 @@ class ReportRepository:
         state: str,
         from_cache: bool | None = None,
         error: str | None = None,
+        attempt: int | None = None,
+        max_attempts: int | None = None,
     ) -> None:
         """Move one period to `state`, stamping the timestamps that state
         implies: `running` starts the clock, any terminal state stops it and
         records `duration_seconds`.
+
+        `attempt`/`max_attempts` (additive, task-47) let the UI show "Running
+        — retry 2/3" / "Failed (3/3 attempts)" instead of a bare state word.
+        Only `attempt <= 1` resets `started_at` — a retry re-enters `running`
+        with `attempt > 1` and KEEPS the original start time, so a period
+        that failed after 3 attempts reports how long the whole ordeal took,
+        not just the last one.
         """
         run = self._session.get(ReportRun, run_id)
         if run is None or not run.periods_json:
@@ -222,7 +231,8 @@ class ReportRepository:
                 continue
             row["state"] = state
             if state == "running":
-                row["started_at"] = now.isoformat()
+                if not attempt or attempt <= 1:
+                    row["started_at"] = now.isoformat()
                 row["finished_at"] = None
                 row["duration_seconds"] = None
             elif state in PERIOD_TERMINAL_STATES:
@@ -232,6 +242,10 @@ class ReportRepository:
                 row["from_cache"] = from_cache
             if error is not None:
                 row["error"] = error[:400]
+            if attempt is not None:
+                row["attempt"] = attempt
+            if max_attempts is not None:
+                row["max_attempts"] = max_attempts
         run.periods_json = rows
         self._session.flush()
 

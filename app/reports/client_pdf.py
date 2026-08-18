@@ -97,7 +97,7 @@ def render_client_pdf(
 
     Raises on any failure — the caller (`runner.py`'s tail, or the API's
     `POST .../client-pdf` handler) treats a client PDF as best-effort output,
-    exactly like `_write_xlsx` (task-45): a run that already has a table is
+    exactly like `write_run_xlsx` (task-45): a run that already has a table is
     never failed by a PDF-rendering problem.
     """
     url = f"{settings.reports_internal_base_url}/api/v1/reports/runs/{run_id}/document"

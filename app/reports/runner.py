@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -95,7 +96,7 @@ def build_periods(
     raise ValueError(f"Unknown report kind: {kind!r}")
 
 
-def _sha256_of(path: Path) -> str:
+def sha256_of(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as file:
         for chunk in iter(lambda: file.read(65536), b""):
@@ -103,7 +104,7 @@ def _sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _make_emitter(session_scope: Any, run_id: str) -> Emit:
+def make_emitter(session_scope: Any, run_id: str) -> Emit:
     def _emit(level: str, stage: str, message: str, details: dict[str, Any] | None = None) -> None:
         try:
             with session_scope() as session:
@@ -134,6 +135,11 @@ def period_rows(periods: list[ReportPeriod]) -> list[dict[str, Any]]:
             "duration_seconds": None,
             "from_cache": False,
             "error": None,
+            # Real values land on the first "running" transition (task-47) —
+            # a `waiting` period hasn't attempted anything yet, so `1/1` here
+            # is a neutral placeholder, not a claim about the retry budget.
+            "attempt": 1,
+            "max_attempts": 1,
         }
         for period in periods
     ]
@@ -152,11 +158,14 @@ def _make_period_marker(session_scope: Any, run_id: str) -> Any:
         *,
         from_cache: bool | None = None,
         error: str | None = None,
+        attempt: int | None = None,
+        max_attempts: int | None = None,
     ) -> None:
         try:
             with session_scope() as session:
                 ReportRepository(session).update_period(
-                    run_id, label, state=state, from_cache=from_cache, error=error
+                    run_id, label, state=state, from_cache=from_cache, error=error,
+                    attempt=attempt, max_attempts=max_attempts,
                 )
         except Exception:  # noqa: BLE001 - progress bookkeeping is never fatal
             pass
@@ -184,7 +193,7 @@ def _make_is_cancelled(session_scope: Any, run_id: str) -> Any:
     return _is_cancelled
 
 
-def _aggregate_status(period_count: int, periods_failed: int, *, cancelled: bool) -> str:
+def aggregate_run_status(period_count: int, periods_failed: int, *, cancelled: bool) -> str:
     if cancelled:
         return "cancelled"
     if periods_failed == 0:
@@ -194,7 +203,7 @@ def _aggregate_status(period_count: int, periods_failed: int, *, cancelled: bool
     return "partial"
 
 
-def _parse_and_check(path: Path, label: str, emit: Emit) -> PeriodMetrics | None:
+def parse_and_check(path: Path, label: str, emit: Emit) -> PeriodMetrics | None:
     metrics = parse_pdf(path)
     found, missing = metric_coverage(metrics)
     if not found:
@@ -224,7 +233,7 @@ def run(session_scope: Any, settings: Settings, run_id: str) -> None:
         client = ClientRepository(session).get(report_run.client_id)
         kind, source, params = report_run.kind, report_run.source, dict(report_run.params_json)
 
-    emit = _make_emitter(session_scope, run_id)
+    emit = make_emitter(session_scope, run_id)
     is_cancelled = _make_is_cancelled(session_scope, run_id)
 
     periods: list[ReportPeriod] = []
@@ -283,27 +292,27 @@ def run(session_scope: Any, settings: Settings, run_id: str) -> None:
         fresh = ReportRepository(session).get(run_id)
         periods_done = fresh.periods_done if fresh else 0
         periods_failed = fresh.periods_failed if fresh else len(periods)
-    status = _aggregate_status(len(periods), periods_failed, cancelled=is_cancelled())
+    status = aggregate_run_status(len(periods), periods_failed, cancelled=is_cancelled())
     result = table.to_dict()
     result["periods_done"] = periods_done
     if cc_result is not None:
         result["cross_check"] = cc_result.to_dict()
     if periods_done:
-        _write_xlsx(session_scope, settings, run_id, client, table, cc_result, emit)
+        write_run_xlsx(session_scope, settings, run_id, client, table, cc_result, emit)
         # Client PDF (task-47 §5): automatic on every successful/partial
         # `monthly` run — the type the tile/YOY layout is built for (§1.5).
         # A `yearly`/`custom_months`/`comparator` run has no "This Month"
         # column to key it to, so it is skipped here; the operator can still
         # request one explicitly via `POST .../client-pdf` later.
         if kind == "monthly":
-            _write_client_pdf(session_scope, settings, run_id, client, periods, emit)
+            write_run_client_pdf(session_scope, settings, run_id, client, periods, emit)
     _finish(
         session_scope, run_id, status=status,
         result=result, cross_check_status=cross_check_status,
     )
 
 
-def _write_xlsx(  # noqa: PLR0913 - one call site, every argument is data it needs
+def write_run_xlsx(  # noqa: PLR0913 - one call site, every argument is data it needs
     session_scope: Any,
     settings: Settings,
     run_id: str,
@@ -326,14 +335,14 @@ def _write_xlsx(  # noqa: PLR0913 - one call site, every argument is data it nee
             ReportRepository(session).create_file(
                 client.id, run_id=run_id, kind="xlsx",
                 path=str(xlsx_path.relative_to(settings.artifacts_dir)),
-                sha256=_sha256_of(xlsx_path), size_bytes=xlsx_path.stat().st_size,
+                sha256=sha256_of(xlsx_path), size_bytes=xlsx_path.stat().st_size,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
     except Exception as exc:  # noqa: BLE001 - the workbook is an output, not the result
         emit("warning", "xlsx", f"XLSX could not be written: {exc}", {})
 
 
-def _write_client_pdf(
+def write_run_client_pdf(
     session_scope: Any,
     settings: Settings,
     run_id: str,
@@ -343,7 +352,7 @@ def _write_client_pdf(
 ) -> None:
     """The client-facing PDF (task-47 §2.1/§3.3): Chromium renders
     `GET /runs/{run_id}/document` — the same markup the operator's iframe
-    preview shows — to a vector PDF. Best-effort, exactly like `_write_xlsx`:
+    preview shows — to a vector PDF. Best-effort, exactly like `write_run_xlsx`:
     a run that already has a table and a workbook is never failed by a PDF
     render problem (a Chromium crash, a slow document load).
     """
@@ -360,7 +369,7 @@ def _write_client_pdf(
             ReportRepository(session).create_file(
                 client.id, run_id=run_id, kind="client_pdf",
                 path=str(pdf_path.relative_to(settings.artifacts_dir)),
-                sha256=_sha256_of(pdf_path), size_bytes=pdf_path.stat().st_size,
+                sha256=sha256_of(pdf_path), size_bytes=pdf_path.stat().st_size,
                 mime="application/pdf",
             )
         emit("info", "client_pdf", f"Client PDF written: {filename}", {})
@@ -383,6 +392,57 @@ def _finish(
             run_id, status=status, result=result, cross_check_status=cross_check_status,
             error_code=error_code, error_message=error_message,
         )
+
+
+def _fetch_period_metrics_with_retry(  # noqa: PLR0913 - bounded retry, see docstring
+    ninja: ReportingNinjaClient,
+    *,
+    ga4_connection_key: str,
+    ga4_account_id: str,
+    ga4_fields: dict[str, str],
+    gsc_ref: tuple[str, str] | None,
+    gsc_fields: dict[str, str] | None,
+    date_from: date,
+    date_to: date,
+    label: str,
+    retries: int,
+    mark_period: Any,
+    emit: Emit,
+    is_cancelled: Any,
+    sleep: Any = time.sleep,
+) -> PeriodMetrics:
+    """Up to `retries` attempts (task-47) — the API path used to fail a
+    period on its very first exception, unlike the PDF path's own retry loop
+    (`ninja_browser._fetch_period_with_retry`), which this mirrors: each
+    attempt re-enters `mark_period(..., "running", attempt=N)` so the UI
+    shows "retry 2/3" live, and a mid-run cooperative cancel check between
+    attempts (§3.7.6 on the PDF side).
+    """
+    for attempt in range(1, retries + 1):
+        if is_cancelled():
+            raise RuntimeError(f"Cancelled while fetching {label!r}")
+        mark_period(label, "running", attempt=attempt, max_attempts=retries)
+        try:
+            return fetch_period_metrics(
+                ninja,
+                ga4_connection_key=ga4_connection_key,
+                ga4_account_id=ga4_account_id,
+                ga4_fields=ga4_fields,
+                gsc_ref=gsc_ref,
+                gsc_fields=gsc_fields,
+                date_from=date_from,
+                date_to=date_to,
+            )
+        except Exception as exc:  # noqa: BLE001 - bounded retry, caller isolates the final failure
+            if attempt == retries:
+                raise
+            emit(
+                "warning", "fetch",
+                f"{label}: attempt {attempt}/{retries} failed ({exc}) — retrying",
+                {"period": label, "attempt": attempt, "max_attempts": retries},
+            )
+            sleep(3.0 * attempt)
+    raise AssertionError("unreachable")  # pragma: no cover - loop always returns or raises
 
 
 def _run_api(  # noqa: PLR0913 - orchestrator, see module docstring
@@ -430,10 +490,11 @@ def _run_api(  # noqa: PLR0913 - orchestrator, see module docstring
                 break
             # BEFORE the work, not after it (task-45 §1.1): the API path used
             # to emit only "<label> done", so a period in flight was
-            # indistinguishable from one not started.
-            mark_period(period.label, "running")
+            # indistinguishable from one not started. `mark_period` itself is
+            # now called once per attempt inside the retry helper below
+            # (task-47), including the first one.
             try:
-                metrics_by_label[period.label] = fetch_period_metrics(
+                metrics = _fetch_period_metrics_with_retry(
                     ninja,
                     ga4_connection_key=rn_integration.config_json["connection_key"],
                     ga4_account_id=rn_integration.config_json["account_id"],
@@ -442,8 +503,19 @@ def _run_api(  # noqa: PLR0913 - orchestrator, see module docstring
                     gsc_fields=gsc_fields,
                     date_from=period.date_from,
                     date_to=period.date_to,
+                    label=period.label,
+                    retries=settings.reports_api_period_retries,
+                    mark_period=mark_period,
+                    emit=emit,
+                    is_cancelled=is_cancelled,
                 )
+                metrics_by_label[period.label] = metrics
                 periods_done += 1
+                # `attempt`/`max_attempts` are left as-is: the last "running"
+                # transition inside `_fetch_period_metrics_with_retry` already
+                # stamped the attempt that actually succeeded — no need (and
+                # no easy way, without threading a return value) to repeat it
+                # here, and `update_period` only overwrites when passed.
                 mark_period(period.label, "done")
                 emit("info", "fetch", f"{period.label} done", {"period": period.label})
             except Exception as exc:  # noqa: BLE001 - isolate this period, keep going
@@ -525,7 +597,7 @@ def _run_pdf(  # noqa: PLR0913 - orchestrator, see module docstring
     periods_done = periods_failed = 0
 
     for label, cached_path in cached_by_label.items():
-        parsed = _parse_and_check(cached_path, label, emit)
+        parsed = parse_and_check(cached_path, label, emit)
         if parsed is None:
             periods_failed += 1
             mark_period(label, "failed", error="Cached PDF could not be parsed")
@@ -544,7 +616,7 @@ def _run_pdf(  # noqa: PLR0913 - orchestrator, see module docstring
         if pdf_path is None:
             periods_failed += 1  # ninja_browser already emitted the error event
             continue
-        parsed = _parse_and_check(pdf_path, period.label, emit)
+        parsed = parse_and_check(pdf_path, period.label, emit)
         if parsed is None:
             periods_failed += 1
             mark_period(period.label, "failed", error="PDF parsed 0/8 metrics")
@@ -556,7 +628,7 @@ def _run_pdf(  # noqa: PLR0913 - orchestrator, see module docstring
             ReportRepository(session).create_file(
                 client.id, run_id=run_id, kind="pdf",
                 path=str(pdf_path.relative_to(settings.artifacts_dir)),
-                sha256=_sha256_of(pdf_path), size_bytes=pdf_path.stat().st_size,
+                sha256=sha256_of(pdf_path), size_bytes=pdf_path.stat().st_size,
                 mime="application/pdf",
                 period_label=period.label, date_from=period.date_from, date_to=period.date_to,
                 is_partial_period=period.is_partial, source_report_name=report_name,

@@ -35,6 +35,7 @@ from app.reports import ninja_browser
 from app.reports.batch import NoClientsSelectedError, cancel_batch, create_batch
 from app.reports.client_pdf import client_pdf_filename, render_client_pdf
 from app.reports.document import render_document_html
+from app.reports.period_retry import retry_period
 from app.reports.periods import InvalidComparatorMonthsError, InvalidPeriodError
 from app.reports.runner import build_periods, period_rows
 from app.reports.verify import DIFFER_VERDICTS
@@ -84,6 +85,12 @@ _BATCH_NOT_FOUND = ErrorDTO(
 ).model_dump()
 _BATCH_NOT_CANCELLABLE = ErrorDTO(
     error_code="batch_not_cancellable", message="This batch has already finished"
+).model_dump()
+_PERIOD_NOT_FOUND = ErrorDTO(
+    error_code="period_not_found", message="No such period on this run"
+).model_dump()
+_PERIOD_NOT_RETRYABLE = ErrorDTO(
+    error_code="period_not_retryable", message="This period is not in a failed state"
 ).model_dump()
 _NO_CLIENTS_SELECTED = ErrorDTO(
     error_code="no_clients_selected", message="At least one client must be selected"
@@ -1134,6 +1141,40 @@ def _build_accuracy_report() -> AccuracyReportDTO:
 @router.get("/accuracy")
 async def get_accuracy_report() -> AccuracyReportDTO:
     return await run_in_threadpool(_build_accuracy_report)
+
+
+# --- POST /runs/{id}/periods/{label}/retry (task-47 follow-up) --------------
+#
+# Manual, single-shot retry of exactly ONE failed period on an already-
+# finished run — the automatic 3-attempt budget (`ninja_browser`'s own retry
+# loop / `runner._fetch_period_metrics_with_retry`) is exhausted by the time
+# an operator reaches for this. Re-running the whole report would discard
+# every period that already succeeded.
+
+_PERIOD_RETRY_ERROR_RESPONSES = {
+    "run_not_found": _RUN_NOT_FOUND,
+    "run_not_finished": _RUN_NOT_FINISHED,
+    "period_not_found": _PERIOD_NOT_FOUND,
+    "period_not_retryable": _PERIOD_NOT_RETRYABLE,
+}
+
+
+@router.post(
+    "/runs/{run_id}/periods/{label}/retry",
+    responses={404: {"model": ErrorDTO}, 409: {"model": ErrorDTO}},
+)
+async def retry_report_period(run_id: str, label: str) -> ReportRunDTO:
+    settings = get_settings()
+    error = await run_in_threadpool(
+        retry_period, worker_session_scope, settings, run_id, label
+    )
+    if error is not None:
+        status_code = 404 if error in ("run_not_found", "period_not_found") else 409
+        raise HTTPException(status_code, _PERIOD_RETRY_ERROR_RESPONSES[error])
+    dto = await run_in_threadpool(_get_run, run_id)
+    if dto is None:  # pragma: no cover - can't disappear between the two calls above
+        raise HTTPException(404, _RUN_NOT_FOUND)
+    return dto
 
 
 register_router(router)
