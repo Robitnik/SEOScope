@@ -726,7 +726,12 @@ function renderResultRow(row) {
   // element fires a click from Enter/Space for free, and gets that behavior
   // right in every browser without hand-rolling a keydown handler.
   const valueCells = row.values.map((value, index) => `
-    <td class="${value === null ? "muted" : ""}"><button type="button" class="reports-cell-button" data-cell data-row-label="${escapeHtml(row.label)}" data-period-index="${index}">${formatMetricValue(value)}</button></td>`).join("");
+    <td class="${value === null ? "muted" : ""}">
+      <div class="reports-cell">
+        <button type="button" class="reports-cell-button" data-cell data-row-label="${escapeHtml(row.label)}" data-period-index="${index}">${formatMetricValue(value)}</button>
+        ${value === null ? "" : `<button type="button" class="icon-button reports-cell-copy" data-copy-value="${escapeHtml(String(value))}" aria-label="Copy ${escapeHtml(row.label)} value for ${escapeHtml(table.periods[index].label)}">${icon("copy", "icon icon--tiny")}</button>`}
+      </div>
+    </td>`).join("");
   const changeCells = row.changes.map((change) => {
     if (change === null || change === undefined) return `<td class="muted">—</td>`;
     const pct = (change * 100).toFixed(1);
@@ -751,6 +756,8 @@ function formatShortDate(isoDate) {
 // — every cell in a column opens the same detail, honestly matching that
 // granularity rather than inventing per-cell provenance the API doesn't have.
 function onTableCellClick(event) {
+  const copyButton = event.target.closest("[data-copy-value]");
+  if (copyButton) { void copyCellValue(copyButton); return; }
   const cell = event.target.closest("[data-cell]");
   if (cell) {
     const period = table.periods[Number(cell.dataset.periodIndex)];
@@ -758,6 +765,15 @@ function onTableCellClick(event) {
     return;
   }
   if (event.target.closest("[data-close-detail]")) closeCellDetailRow();
+}
+
+async function copyCellValue(button) {
+  try {
+    await navigator.clipboard.writeText(button.dataset.copyValue);
+    toast("Value copied.");
+  } catch {
+    toast("Could not copy — clipboard is unavailable in this browser.");
+  }
 }
 
 function closeCellDetailRow() {
