@@ -54,9 +54,20 @@ class SeriesSpec:
     unit: MetricUnit
     better_direction: BetterDirection
     lag_days: int
+    # task-44: whether summing daily values into a week/month bucket is
+    # mathematically correct. Event-shaped metrics (clicks, sessions, key
+    # events/conversions) are additive — the sum of daily counts equals the
+    # count for the period. `users` is NOT: it counts unique visitors, and
+    # summing daily uniques double-counts anyone who returns on more than one
+    # day within the bucket (measured +17-23% on a real client, see this
+    # task's plan §1.4). The page must show a note rather than pretend the
+    # bucketed number is a real unique count.
+    additive: bool
 
 
-def _from_catalog(key: str, *, dataset_key: str, field: str, lag_days: int) -> SeriesSpec:
+def _from_catalog(
+    key: str, *, dataset_key: str, field: str, lag_days: int, additive: bool
+) -> SeriesSpec:
     spec = CATALOG[key]
     return SeriesSpec(
         key=key,
@@ -67,6 +78,7 @@ def _from_catalog(key: str, *, dataset_key: str, field: str, lag_days: int) -> S
         unit=spec.unit,
         better_direction=spec.better_direction,
         lag_days=lag_days,
+        additive=additive,
     )
 
 
@@ -74,13 +86,18 @@ PORTFOLIO_SERIES: dict[str, SeriesSpec] = {
     spec.key: spec
     for spec in (
         _from_catalog(
-            "gsc_clicks", dataset_key="gsc_daily", field="clicks", lag_days=GSC_LAG_DAYS
+            "gsc_clicks",
+            dataset_key="gsc_daily",
+            field="clicks",
+            lag_days=GSC_LAG_DAYS,
+            additive=True,
         ),
         _from_catalog(
             "gsc_impressions",
             dataset_key="gsc_daily",
             field="impressions",
             lag_days=GSC_LAG_DAYS,
+            additive=True,
         ),
         SeriesSpec(
             key="rn_sessions",
@@ -91,9 +108,48 @@ PORTFOLIO_SERIES: dict[str, SeriesSpec] = {
             unit=MetricUnit.count,
             better_direction=BetterDirection.up,
             lag_days=GA4_LAG_DAYS,
+            additive=True,
         ),
         _from_catalog(
-            "rn_users", dataset_key="ga4_daily", field="users", lag_days=GA4_LAG_DAYS
+            "rn_users",
+            dataset_key="ga4_daily",
+            field="users",
+            lag_days=GA4_LAG_DAYS,
+            additive=False,
+        ),
+        # task-44: GA4 key events already collected in full by `ga4_daily`
+        # since day one — no new dataset, no backfill (plan §1.1).
+        _from_catalog(
+            "rn_total_conversions",
+            dataset_key="ga4_daily",
+            field="conversions",
+            lag_days=GA4_LAG_DAYS,
+            additive=True,
+        ),
+        # task-44: `firstUserDefaultChannelGroup` breakdown, same attribution
+        # as the client report (task-42) — see plan §1.3 for why NOT
+        # `ga4_channels`'s `sessionDefaultChannelGroup`.
+        _from_catalog(
+            "rn_organic_conversions",
+            dataset_key="ga4_daily_channels",
+            field="conversions_organic",
+            lag_days=GA4_LAG_DAYS,
+            additive=True,
+        ),
+        # No CATALOG entry for `rn_direct_conversions` — same reason as
+        # `rn_sessions` above: no adapter writes a `MetricValue` for it, only
+        # this dataset row, so a catalog entry would put an empty "Direct
+        # Conversions" row on every client card (plan §3.1).
+        SeriesSpec(
+            key="rn_direct_conversions",
+            label="Direct Conversions",
+            provider=Provider.reporting_ninja,
+            dataset_key="ga4_daily_channels",
+            field="conversions_direct",
+            unit=MetricUnit.count,
+            better_direction=BetterDirection.up,
+            lag_days=GA4_LAG_DAYS,
+            additive=True,
         ),
     )
 }

@@ -9,7 +9,7 @@
 // the moment its client drops out, rather than reshuffling everyone still on
 // screen — a filter change must not repaint the survivors.
 
-import { escapeHtml } from "./formatters.js?v=20260812-monitor7";
+import { escapeHtml } from "./formatters.js?v=20260817-spin1";
 
 export const PALETTE = [
   "#3987e5", "#d95926", "#199e70", "#c98500",
@@ -84,6 +84,21 @@ export function destroyTrendsChart() {
   chartInstance = null;
 }
 
+/** task-44: clients excluded from the `series` array right before drawing
+ * because their baseline-bucket value is a real, present `0` — indexing
+ * against a zero baseline is undefined (division by zero), not "the line
+ * happens to be empty". Named in a note by the caller instead of drawn as a
+ * silent blank line in the legend (plan §1.5). */
+export function zeroBaselineClients(series, indexed) {
+  if (!indexed) return [];
+  const baseline = firstCommonBaseline(series);
+  if (baseline === null) return [];
+  return series.filter((item) => {
+    const value = item.points[baseline]?.value;
+    return value !== null && value !== undefined && Number(value) === 0;
+  });
+}
+
 /** First bucket index (in encounter order) where every visible series has a
  * non-null value — the fair baseline for the `Indexed` view, and also the
  * boundary of the "leading sparse" region some clients haven't reached yet
@@ -153,8 +168,14 @@ export function renderLineChart(canvas, { series, buckets, bucketKind, indexed }
   const lastBucketIndex = buckets.length - 1;
   const sparseBand = buildSparseBandPlugin(commonBaselineIndex, buckets.length);
 
+  // A real `0` baseline is excluded here, not drawn as an empty line: dividing
+  // by zero to index against it is undefined, and `0 ? … : null` used to make
+  // the WHOLE line silently vanish while the client stayed checked in the
+  // legend (task-44 plan §1.5) — a common case for a metric like Organic
+  // Conversions, unlike the traffic metrics this view was designed around.
+  const zeroBaselineIds = new Set(zeroBaselineClients(series, indexed).map((item) => item.client_id));
   const datasets = series
-    .filter((item) => !indexed || (baseline !== null && item.points[baseline]?.value !== null))
+    .filter((item) => !indexed || (baseline !== null && item.points[baseline]?.value !== null && !zeroBaselineIds.has(item.client_id)))
     .map((item) => {
       const color = colors.get(item.client_id) || "#77736e";
       const baseValue = baseline !== null ? Number(item.points[baseline].value) : null;

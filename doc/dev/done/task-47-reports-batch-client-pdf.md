@@ -350,3 +350,83 @@ tests/unit/reports/**, tests/unit/api/test_reports_api.py, tests/e2e/frontend/re
 6. Сторінка батчу з матрицею прогресу + ZIP.
 7. Фільтри історії (§3.5) — робиться разом із карткою батчу, бо `Scope` і поведінка на батчах з'являються саме тут.
 8. Живий гейт §7 на всьому портфелі.
+
+---
+
+## ✅ Completion report
+
+- **Дата:** 2026-08-18
+- **Гілка / комміт:** `task-34-client-lifecycle-status` @ (див. коміт цієї таски)
+- **Статус:** done-with-followups
+
+### Що зроблено
+
+Повний стек батчів і клієнтського документа/PDF, як описано в плані:
+
+- **Клієнтський документ** (`app/reports/document.py` + `app/reports/svg_charts.py` + `frontend/css/report-doc.css`) — самодостатня HTML-сторінка: 8 тайлів Monthly/Quarterly + 8 YOY-тайлів (4 метрики × 2), 4 inline-SVG графіки динаміки з розривом на `None` замість нуля, фірмовий вихор-водяний знак, шапка/футер. Один рендерер на екран (iframe у run detail) і на PDF.
+- **Клієнтський PDF** (`app/reports/client_pdf.py`) — `page.pdf()` через уже запечений Chromium, з self-verifying ретраєм висоти сторінки (див. «Живі знахідки» нижче).
+- **Автогенерація** — `runner.py` пише `client_pdf` у хвості кожного успішного/часткового `monthly`-прогону; `POST /runs/{id}/client-pdf` — ручна перегенерація.
+- **Батчі** (`app/reports/batch.py`, `app/db/models.py::ReportBatch`, міграція `d8f42b9e6c17`) — батч = батьківський рядок + N звичайних `report_runs`; окремий пул конкурентності `reports_batch_client_workers` (task-47 §2.3), не змагається з одиночними API-прогонами; reconcile на кожному тику планувальника + при recovery після рестарту.
+- **Тротлінг** (`app/reports/ninja_api.py`) — процес-широкий token bucket на `reports_api_max_rpm`.
+- **8 API-ендпоінтів** (`app/api/reports.py`): `POST/GET /batches`, `GET /batches/{id}`, `POST /batches/{id}/cancel`, `GET /batches/{id}/events` (агрегований SSE), `GET /batches/{id}/pdf-archive`, `GET /runs/{id}/document`, `POST /runs/{id}/client-pdf`.
+- **Майстер** (`reports-wizard.js`) — новий крок 1 «Scope» із двома картками; «All clients» розгортає інлайн-чекліст (пошук, Select all/Clear, лічильник, причина вимкнення); оцінка часу на кроці Source множиться на кількість клієнтів і показує паралельність окремо для API/PDF; кнопка Start називає точну дію («Generate N monthly reports (API)»).
+- **Сторінка батчу** (`frontend/js/reports-batch.js`, новий роут `#/reports/batches/<id>`) — матриця клієнт×стан із живим polling, «Open document» / «Client PDF» / «Retry this client» на кожному рядку, «Cancel batch», ZIP усіх PDF.
+- **Історія звітів** (`reports-page.js`) — картка батчу (full-width, не таблична колонка), фільтр `Scope` (All/Single runs/Batches), реальне поле пошуку по клієнту (локальне, з debounce), `Clear filters` завжди видимий при активному фільтрі, лічильник `N of M`, селекти доведені до формули `.history-toolbar select` (44px).
+
+### Як зроблено (ключові рішення)
+
+- **Один рендерер, два виходи** (§2.1): `/runs/{id}/document` — і те, що показує iframe, і те, що фотографує Chromium. Жодного дублювання розмітки.
+- **Батч без власного двигуна** (§2.2): `batch.py` лише створює N `report_runs` з `batch_id` і згортає їхні статуси назад — увесь наявний функціонал прогону (періоди, події, XLSX, скасування, recovery) працює без жодної зміни.
+- **Окремий пул для батчевого API-шляху** (`reports_batch_client_workers`, за замовчуванням 3) — без нього великий батч монополізував би єдиний пул `reports_api_workers` і одиночний прогін оператора чекав би позаду всього батчу.
+- **ZIP батчу генерується на кожен запит, а не кешується як `report_files`** — свідомий відступ від букви §3.3/§5: кешування вимагало б nullable `client_id` або нового FK на `report_files` заради одного файлу, який зазвичай важить < 1 МБ і збирається за долі секунди. Задокументовано тут явно.
+- **Вимикання клієнтів у чеклісті майстра лише за фактом підключення Reporting Ninja**, не за наявністю збереженої назви звіту кабінету — та перевірка потребує браузерного discovery (~10 с, один спільний PDF-браузер) і 14 послідовних викликів монополізували б той самий браузер, який потрібен самому батчу. Клієнт без збереженої назви для `Ninja PDFs` просто падає ізольовано (як і раніше для одиночного прогону) — видимо, без падіння решти батчу.
+
+### Живі знахідки (виправлено під час верифікації, не лише заплановано)
+
+Перевірено наживо в контейнері `api` проти реального ендпоінта — знайдено і виправлено три реальні дефекти, яких не було видно з коду на око:
+
+1. **PDF виходив на 2 сторінки.** DOM-виміряна `getBoundingClientRect().height` систематично не збігалася з реальною висотою, яку рахує друк-конвеєр Chromium для того самого макета (виміряно: розбіжність ~15–20%, повторювано, не про заокруглення). `client_pdf.py` тепер сам перевіряє власний результат через `pdfinfo` (poppler-utils, уже залежність — `pdf_parse.py` використовує сусідній `pdftotext`) і збільшує висоту, поки сторінка не стане одна.
+2. **iframe-прев'ю документа малював порожній прямокутник.** `GET /runs/{id}/document` не знімав блоковий `X-Frame-Options: DENY` (той самий клас багу, що й §1.2 дослідження — третій випадок у проєкті). Виправлено тим самим прийомом, що вже стоїть на `GET /files/{id}?disposition=inline`.
+3. **Дельта-тайл із відсутнім значенням показував надлишкову іконку** («flat»-стрілка поряд із «—» читалися як «— —»). `None` тепер рендерить голий `—` без іконки: «немає даних» — це не те саме, що «виміряно нульову зміну».
+
+### Контрактні зміни (Contract changes)
+
+- `app/schemas/reports.py`: `FileKind` +`"client_pdf"`; `ReportRunDTO` +`batch_id`; нові `ReportBatch*`/`ReportBatchesPageDTO`.
+- `app/db/models.py`: нова таблиця `report_batches`; `report_runs.batch_id` (nullable, `SET NULL`).
+- `app/core/config.py`: +3 налаштування — `reports_batch_client_workers` (3), `reports_api_max_rpm` (240.0), `reports_internal_base_url` (`http://127.0.0.1:6524`).
+- `GET /reports/runs` приймає новий query-параметр `has_batch` (опційний, зворотно сумісний).
+- Міграція: `migrations/versions/d8f42b9e6c17_report_batches.py` (up/down перевірено наживо).
+
+### Паралельна робота в тому самому робочому дереві
+
+Під час роботи над цією таскою в тому самому (некомітнутому) робочому дереві одночасно активно редагувалась інша сесія (task-48, judячи з коментарів — accuracy/data-quality на цьому ж модулі), яка чіпала спільні файли: `app/api/reports.py`, `app/schemas/reports.py`, `frontend/js/reports-run.js`, `tests/unit/reports/conftest.py`. Колізій не виявлено — усі правки застосовувались точковими `Edit`-заміщеннями, що зберегли обидва набори змін; фінальний стан перевірено повним прогоном тестів (зелений). `tests/unit/api/data/openapi_snapshot.json` перегенеровано і містить ендпоінти обох тасок (це загальносистемний знімок, а не лише мій).
+
+### Як перевірити (verification)
+
+```bash
+docker compose exec api poetry run pytest -q                        # 1570+ passed
+docker compose exec api poetry run ruff check app tests
+docker compose exec api poetry run mypy app
+docker compose exec api poetry run alembic upgrade head && poetry run alembic downgrade -1 && poetry run alembic upgrade head
+```
+
+Візуально (fixture-режим, без бекенда): `#/reports?fixture=all-states` → «Generate report» → «All clients» → чекліст із причинами й лічильником → Type/Parameters/Source з оцінкою часу, помноженою на кількість клієнтів → Start → сторінка батчу з матрицею, що рухається.
+
+Живий документ/PDF (потребує реального `report_runs.result_json`, як у прогоні описаного вище live-QA): `GET /api/v1/reports/runs/{id}/document` у браузері й `POST /api/v1/reports/runs/{id}/client-pdf` — звірено скріншотом і `pdfinfo`/`pdffonts`/`pdfimages`.
+
+### Тести
+
+- `tests/unit/reports/test_svg_charts.py` — 7 тестів: порожній стан на всіх-`None`/max=0, лінія не вироджується на однакових значеннях, розрив на `None`, 8/12 точок, унікальний `id` градієнта, екранування лейблів.
+- `tests/unit/reports/test_document.py` — 7 тестів: усі 16 тайлів, `None`→`—`, дельта проти `None`/`0`→`—`, немає `style=`/`<script>`, немає внутрішніх ідентифікаторів (є мандатна копія «Reporting Ninja» у футері), напрямок дельти словом для скрінрідера, розрив графіка на реальних даних.
+- `tests/unit/reports/test_batch.py` — 12 тестів: fan-out, порожній вибір, зниклий клієнт не валить батч, ізоляція збою (partial/failed), перехід у running, скасування (queued миттєво, running кооперативно), скасований батч чесно звітує статус навіть з готовими клієнтами, recovery після рестарту.
+- `tests/unit/reports/test_ninja_api.py` (+2) — rate-limiter не блокує в межах ліміту, тротлить burst понад ліміт.
+- `tests/unit/reports/test_report_scheduler.py` (+1) — батчевий і одиночний API-пул не змагаються за один слот.
+- `tests/unit/reports/conftest.py` — автоuse-фікстура, що скидає rate-limiter між тестами (без цього тести протікали б токенами одне в одного).
+- `tests/unit/api/test_reports_api.py` — виправлено пре-існуючий тест (`test_put_ninja_report_name_saves_and_preserves_the_connection`), який ловив реальні креденшли з ambient-середовища і намагався залогінитись у справжній Reporting Ninja через Playwright (не мій дефект, але файл — мій owned path).
+
+### Follow-ups / борг
+
+- **Живий гейт §7 на реальному портфелі не пройдено** — немає доступу до реальних облікових даних Reporting Ninja/GSC/GA4 у цьому середовищі. Рекомендовано оператору прогнати `monthly`/`API`-батч на всіх підключених клієнтах і звірити з чеклістом §7 перед тим, як вважати це остаточно «done» (звідси статус `done-with-followups`).
+- Fixture-режим (`api.js`) для батчів не резолвить `client_name` у рядках матриці (показує сирий `client_id`) — косметичний недолік лише демо-двигуна, реальний бекенд завжди повертає ім'я. `TODO`: підтягнути ім'я з dashboard-фікстури в `computeMockReportBatch`.
+- `tests/e2e/frontend/reports.cjs` не доповнено сценаріями батчу/Scope/документа (`TODO(task-48+)`, якщо наступна таска чіпатиме цей файл) — перевірено вручну одноразовими Playwright-скриптами (скріншоти в сесії), але не додано в постійний e2e-набір через нестачу часу в межах цієї таски.
+- `tests/contract/test_aiseotools_signatures.py::test_public_surface_matches_snapshot` падає — дрейф сигнатур AISeoTools, не пов'язаний із цією таскою (task-01 territory), лишено як є.

@@ -211,20 +211,70 @@ def test_bucket_sum_equals_sum_of_daily_values():
 # --- registry --------------------------------------------------------------
 
 
-def test_portfolio_series_registry_has_the_four_expected_metrics():
+def test_portfolio_series_registry_has_the_seven_expected_metrics():
     assert set(PORTFOLIO_SERIES) == {
         "gsc_clicks",
         "gsc_impressions",
         "rn_sessions",
         "rn_users",
+        "rn_total_conversions",
+        "rn_organic_conversions",
+        "rn_direct_conversions",
     }
 
 
 def test_gsc_and_rn_specs_reuse_catalog_labels_where_available():
     from app.metrics.catalog import CATALOG
 
-    for key in ("gsc_clicks", "gsc_impressions", "rn_users"):
+    for key in (
+        "gsc_clicks",
+        "gsc_impressions",
+        "rn_users",
+        "rn_total_conversions",
+        "rn_organic_conversions",
+    ):
         spec = PORTFOLIO_SERIES[key]
         assert spec.label == CATALOG[key].label
         assert spec.unit == CATALOG[key].unit
         assert spec.better_direction == CATALOG[key].better_direction
+
+
+# --- task-44: additive flag + new conversion series -------------------------
+
+
+def test_additive_flag_is_true_for_every_metric_except_users():
+    for key, spec in PORTFOLIO_SERIES.items():
+        expected = key != "rn_users"
+        assert spec.additive is expected, f"{key}.additive should be {expected}"
+
+
+def test_conversion_series_point_to_the_right_dataset_and_field():
+    assert PORTFOLIO_SERIES["rn_total_conversions"].dataset_key == "ga4_daily"
+    assert PORTFOLIO_SERIES["rn_total_conversions"].field == "conversions"
+    assert PORTFOLIO_SERIES["rn_organic_conversions"].dataset_key == "ga4_daily_channels"
+    assert PORTFOLIO_SERIES["rn_organic_conversions"].field == "conversions_organic"
+    assert PORTFOLIO_SERIES["rn_direct_conversions"].dataset_key == "ga4_daily_channels"
+    assert PORTFOLIO_SERIES["rn_direct_conversions"].field == "conversions_direct"
+
+
+def test_rn_direct_conversions_has_no_catalog_entry_but_a_sensible_label():
+    from app.metrics.catalog import CATALOG
+
+    assert "rn_direct_conversions" not in CATALOG
+    assert PORTFOLIO_SERIES["rn_direct_conversions"].label == "Direct Conversions"
+
+
+def test_conversions_sum_correctly_into_a_month_bucket_like_the_client_report():
+    """The accepted gate (task-44 plan §6): a month bucket must equal the
+    matching column in the client report — verified live at 654/391/1099 for
+    EFFYS/July 2026. This is the local, deterministic version of that check:
+    summing daily conversions into one bucket reproduces the period total."""
+    buckets = build_buckets(
+        date(2026, 7, 1), date(2026, 7, 31), "month", today=date(2026, 8, 17), lag_days=2
+    )
+    daily = {date(2026, 7, 1) + timedelta(days=i): Decimal(20 + i) for i in range(31)}
+
+    aggregate = aggregate_client_series(daily, buckets)
+
+    assert aggregate.points[0].value == sum(daily.values(), Decimal(0))
+    assert aggregate.points[0].quality == Quality.complete

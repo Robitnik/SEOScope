@@ -219,6 +219,7 @@ async def get_portfolio_series(
             dataset_key=spec.dataset_key,
             field=spec.field,
             lag_days=spec.lag_days,
+            additive=spec.additive,
         ),
         bucket=bucket,
         range=DateRange(start=window_start, end=window_end),

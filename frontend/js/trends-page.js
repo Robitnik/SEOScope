@@ -8,12 +8,12 @@
 // operator HOW STALE that history is and letting them start the rolling-window
 // collection that fixes it, without leaving the page for a CLI.
 
-import { getPortfolioSeries, isAbortError } from "./api.js?v=20260812-monitor7";
-import { buildTrendsHash, replaceTrendsHash } from "./router.js?v=20260812-monitor7";
-import { STATE_META, escapeHtml, icon, stateClass } from "./formatters.js?v=20260812-monitor7";
-import { sectionSkeleton } from "./skeleton.js?v=20260812-monitor7";
-import { filterByClientGroup } from "./client-groups.js?v=20260812-monitor7";
-import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260812-monitor7";
+import { getPortfolioSeries, isAbortError } from "./api.js?v=20260817-spin1";
+import { buildTrendsHash, replaceTrendsHash } from "./router.js?v=20260817-spin1";
+import { STATE_META, escapeHtml, icon, stateClass } from "./formatters.js?v=20260817-spin1";
+import { sectionSkeleton } from "./skeleton.js?v=20260817-spin1";
+import { filterByClientGroup } from "./client-groups.js?v=20260817-spin1";
+import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260817-spin1";
 import {
   MAX_SERIES,
   buildSummary,
@@ -22,7 +22,8 @@ import {
   destroyTrendsChart,
   renderLineChart,
   renderSparklineGrid,
-} from "./trends-chart.js?v=20260812-monitor7";
+  zeroBaselineClients,
+} from "./trends-chart.js?v=20260817-spin1";
 
 // Both daily datasets behind this page's four metrics (`gsc_daily`,
 // `ga4_daily`) are refreshed together: the operator asks "make this page
@@ -35,11 +36,21 @@ const DAY_MS = 86_400_000;
 
 const root = document.querySelector("#trends-page-root");
 
+// task-44: grouped by provider so 7 buttons read as two short rows instead of
+// one long unlabeled strip (plan §3.4) — `group` only drives rendering here,
+// selection/persistence still works off `key` exactly as before.
 const METRICS = [
-  { key: "gsc_clicks", label: "Clicks" },
-  { key: "gsc_impressions", label: "Impressions" },
-  { key: "rn_sessions", label: "Sessions" },
-  { key: "rn_users", label: "Users" },
+  { key: "gsc_clicks", label: "Clicks", group: "gsc" },
+  { key: "gsc_impressions", label: "Impressions", group: "gsc" },
+  { key: "rn_sessions", label: "Sessions", group: "ga4" },
+  { key: "rn_users", label: "Users", group: "ga4" },
+  { key: "rn_total_conversions", label: "Total Conversions", group: "ga4" },
+  { key: "rn_organic_conversions", label: "Organic Conversions", group: "ga4" },
+  { key: "rn_direct_conversions", label: "Direct Conversions", group: "ga4" },
+];
+const METRIC_GROUPS = [
+  { key: "gsc", label: "Search Console" },
+  { key: "ga4", label: "GA4" },
 ];
 const BUCKETS = [
   { key: "day", label: "Day" },
@@ -111,6 +122,19 @@ function segmented({ name, options, active, }) {
   `).join("");
 }
 
+// task-44: same click-delegation contract as `segmented()` (button.dataset.metric),
+// just grouped into labeled sub-rows instead of one flat row.
+function metricControl(active) {
+  return METRIC_GROUPS.map((group) => `
+    <div class="trends-metric-group">
+      <span class="trends-metric-group__label">${escapeHtml(group.label)}</span>
+      <div class="period-panel__kinds" role="group" aria-label="${escapeHtml(group.label)} metrics">
+        ${segmented({ name: "metric", options: METRICS.filter((m) => m.group === group.key), active })}
+      </div>
+    </div>
+  `).join("");
+}
+
 function shell() {
   return `
     <header class="trends-header">
@@ -123,32 +147,34 @@ function shell() {
     <section class="trends-toolbar" aria-label="Trend controls">
       <div class="trends-control">
         <span class="trends-control__label">Metric</span>
-        <div class="period-panel__kinds" role="group" aria-label="Metric" id="tr-metric">
-          ${segmented({ name: "metric", options: METRICS, active: current.metric })}
+        <div class="trends-metric-groups" id="tr-metric">
+          ${metricControl(current.metric)}
         </div>
       </div>
-      <div class="trends-control">
-        <span class="trends-control__label">Bucket</span>
-        <div class="period-panel__kinds" role="group" aria-label="Bucket size" id="tr-bucket">
-          ${segmented({ name: "bucket", options: BUCKETS, active: current.bucket })}
+      <div class="trends-toolbar__secondary">
+        <div class="trends-control">
+          <span class="trends-control__label">Bucket</span>
+          <div class="period-panel__kinds" role="group" aria-label="Bucket size" id="tr-bucket">
+            ${segmented({ name: "bucket", options: BUCKETS, active: current.bucket })}
+          </div>
         </div>
-      </div>
-      <div class="trends-control">
-        <span class="trends-control__label">Range</span>
-        <div class="period-panel__kinds" role="group" aria-label="Date range" id="tr-days">
-          ${segmented({ name: "days", options: RANGES.map((d) => ({ key: String(d), label: `${d}d` })), active: String(current.days) })}
+        <div class="trends-control">
+          <span class="trends-control__label">Range</span>
+          <div class="period-panel__kinds" role="group" aria-label="Date range" id="tr-days">
+            ${segmented({ name: "days", options: RANGES.map((d) => ({ key: String(d), label: `${d}d` })), active: String(current.days) })}
+          </div>
         </div>
-      </div>
-      <div class="trends-control">
-        <span class="trends-control__label">Portfolio</span>
-        <div class="period-panel__kinds" role="group" aria-label="Portfolio group" id="tr-group">
-          ${segmented({ name: "group", options: GROUPS, active: current.group })}
+        <div class="trends-control">
+          <span class="trends-control__label">Portfolio</span>
+          <div class="period-panel__kinds" role="group" aria-label="Portfolio group" id="tr-group">
+            ${segmented({ name: "group", options: GROUPS, active: current.group })}
+          </div>
         </div>
-      </div>
-      <div class="trends-control">
-        <span class="trends-control__label">View</span>
-        <div class="period-panel__kinds" role="group" aria-label="View" id="tr-view">
-          ${segmented({ name: "view", options: VIEWS, active: current.view })}
+        <div class="trends-control">
+          <span class="trends-control__label">View</span>
+          <div class="period-panel__kinds" role="group" aria-label="View" id="tr-view">
+            ${segmented({ name: "view", options: VIEWS, active: current.view })}
+          </div>
         </div>
       </div>
     </section>
@@ -334,8 +360,33 @@ async function load({ quiet = false } = {}) {
 }
 
 function backfillHint(metric) {
+  // task-44: Organic/Direct Conversions live in `ga4_daily_channels`, which
+  // `backfill-daily-history` never touches (it only drives the normal
+  // job engine's `gsc_daily`/`ga4_daily` datasets) — the dedicated one-off
+  // command is the only thing that fills this dataset's history.
+  if (metric.dataset_key === "ga4_daily_channels") {
+    return "docker compose run --rm api poetry run yovth-report backfill-ga4-channels --days 400";
+  }
   const provider = metric.provider === "gsc" ? "gsc" : "reporting_ninja";
   return `docker compose run --rm api poetry run yovth-report backfill-daily-history --days 90 --providers ${provider}`;
+}
+
+// task-44 §3.3: summing daily UNIQUE counts (e.g. Users) into a week/month
+// bucket overstates the real total — shown as an explicit note rather than a
+// silently-wrong number (plan §1.4, measured +17-23% on a real client).
+function additiveNote(metric, bucket) {
+  if (metric.additive !== false || bucket === "day") return "";
+  return `<p class="trends-note">${icon("info-circle")}${escapeHtml(bucket === "week" ? "Weekly" : "Monthly")} values sum daily unique ${escapeHtml(metric.label.toLowerCase())} and overstate the true unique count.</p>`;
+}
+
+// task-44 §1.5: a client with a real `0` in the Indexed baseline bucket is
+// excluded from the chart rather than drawn as a silent empty line — this
+// names who and why instead of leaving the operator to guess.
+function indexedZeroBaselineNote(series) {
+  const zeroed = zeroBaselineClients(series, true);
+  if (!zeroed.length) return "";
+  const names = zeroed.map((item) => escapeHtml(item.name)).join(", ");
+  return `<p class="trends-note">${icon("info-circle")}${zeroed.length} client(s) had 0 in the baseline period and cannot be indexed: ${names}.</p>`;
 }
 
 function renderContent(content, payload) {
@@ -397,10 +448,14 @@ function renderContent(content, payload) {
     ? `<p class="trends-note">${icon("info-circle")}Showing the top ${MAX_SERIES} of ${eligible.length} clients by total ${escapeHtml(payload.metric.label.toLowerCase())} in ${scopeLabel}.
        <a href="${buildTrendsHash({ ...current, view: "all" })}" data-view-switch="all">See all clients</a> instead.</p>`
     : "";
+  const nonAdditiveNote = additiveNote(payload.metric, current.bucket);
+  const indexedNote = current.view === "indexed" ? indexedZeroBaselineNote(capped) : "";
 
   content.innerHTML = `
     ${renderPicker({ sorted, excluded: excludedByGroup, manualMode, manualSet, capped })}
     ${truncationNote}
+    ${nonAdditiveNote}
+    ${indexedNote}
     <div class="chart-section trends-chart-section">
       <div id="tr-chart-wrap"></div>
       <p class="chart-summary" id="tr-summary"></p>
@@ -492,14 +547,23 @@ function renderPicker({ sorted, excluded, manualMode, manualSet, capped }) {
       </li>`;
   }).join("");
 
-  const excludedRows = excluded.map((item) => `
+  // task-44 §1.6: `no_data` (integration connected, nothing collected yet —
+  // fixed by "Refresh data") and `not_configured` (integration never set up)
+  // are different problems with different fixes; collapsing both into "not
+  // connected" sent operators to fix an integration that was never broken.
+  // Same state vocabulary `renderExcludedList` uses below, via `stateClass`.
+  const excludedRows = excluded.map((item) => {
+    const label = item.state === "not_configured" ? "not connected" : "no data yet";
+    const stateKey = item.state === "not_configured" ? "not_configured" : "unavailable";
+    return `
       <li class="trends-picker__row is-disabled" title="${escapeHtml(item.reason)}">
       <label>
         <input type="checkbox" value="${escapeHtml(item.client_id)}" disabled>
         <span class="trends-picker__name">${escapeHtml(item.name)}</span>
-        <span class="trends-picker__reason">not connected</span>
+        <span class="trends-picker__reason ${stateClass(stateKey)}">${label}</span>
       </label>
-    </li>`).join("");
+    </li>`;
+  }).join("");
 
   // The count is the thing an operator reads first, so it is a badge, not part
   // of a sentence; the mode (automatic vs hand-picked) sits next to it because
@@ -556,12 +620,21 @@ function renderTableRow(item, lastFinished) {
   const delta = currentValue !== null && previousValue !== null ? currentValue - previousValue : null;
   const deltaPct = delta !== null && previousValue ? (delta / previousValue) * 100 : null;
   const trend = delta === null ? "neutral" : delta >= 0 ? "good" : "bad";
+  // task-44 §1.5: a 0 -> N move has an undefined percent (division by zero),
+  // but it is not "no change" — showing the absolute delta instead of "—"
+  // keeps a real jump from 0 conversions visible, which matters far more for
+  // a small-numbers metric than for Clicks/Impressions this table was built for.
+  const deltaLabel = delta === null
+    ? "—"
+    : deltaPct !== null
+      ? `${deltaPct > 0 ? "+" : ""}${deltaPct.toFixed(1)}%`
+      : `${delta > 0 ? "+" : ""}${numberFormatter.format(delta)}`;
   return `
     <tr>
       <td class="analytics-row__value">${escapeHtml(item.name)}<br><small class="muted">${escapeHtml(item.domain)}</small></td>
       <td>${currentValue !== null ? numberFormatter.format(currentValue) : "—"}</td>
       <td>${previousValue !== null ? numberFormatter.format(previousValue) : "—"}</td>
-      <td class="delta" data-trend="${trend}">${deltaPct !== null ? `${deltaPct > 0 ? "+" : ""}${deltaPct.toFixed(1)}%` : "—"}</td>
+      <td class="delta" data-trend="${trend}">${deltaLabel}</td>
       <td>${numberFormatter.format(totalOf(item))}</td>
       <td>${item.days_with_data} / ${item.days_expected} days</td>
       <td>${item.last_day ? escapeHtml(item.last_day) : "—"}</td>

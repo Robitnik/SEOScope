@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
@@ -117,6 +117,75 @@ _GA4_DATASETS: dict[str, dict[str, Any]] = {
         "limit": 250,
     },
 }
+
+# task-44: `ga4_daily_channels` is NOT one more entry in `_GA4_DATASETS`
+# above — that dict is built for a single dimension (`[dimension, *metrics]`
+# -> one row per dimension value). Organic/Direct Conversions need TWO
+# dimensions pivoted into metric keys (one row per DAY, with a column per
+# channel), which the generic loop cannot express, so it gets its own branch
+# in `_collect_datasets` — same precedent as the GBP branch below it (plan §2.4).
+_CHANNEL_DIMENSION = "firstUserDefaultChannelGroup"
+_CHANNEL_CONVERSIONS_FIELD = "keyEvents"
+# GA4's own channel group labels, mapped onto this app's canonical field
+# names — same `keyEvents` field id `ga4_daily` uses for `Total Conversions`,
+# so total and its channel parts share one definition (plan §3.2).
+_CHANNEL_METRIC_FIELDS: dict[str, str] = {
+    "Organic Search": "conversions_organic",
+    "Direct": "conversions_direct",
+}
+
+
+def query_daily_channels(
+    client: Any,
+    *,
+    connection_key: str,
+    account_id: str,
+    start: date,
+    end: date,
+) -> tuple[list[tuple[str, dict[str, Decimal | None]]], bool]:
+    """One two-dimension GA4 query -> one row per day of `{conversions_organic,
+    conversions_direct}`, shared by the adapter's per-period collection below
+    and the `backfill-ga4-channels` CLI (one definition everywhere, plan §1.3).
+
+    A channel absent from a day's response is `None`, never `0` — but a day
+    entirely absent from the response gets no row at all (PLAN §12: absence
+    is never a fabricated zero, and never a fabricated presence either).
+    """
+    page = client.query_all(
+        "ga4",
+        connection_key,
+        account_id,
+        ["date", _CHANNEL_DIMENSION, _CHANNEL_CONVERSIONS_FIELD],
+        start.isoformat(),
+        end.isoformat(),
+        page_size=10000,
+        max_rows=50000,
+    )
+    by_day: dict[str, dict[str, Decimal | None]] = {}
+    seen_days: set[str] = set()
+    for row in page.get("rows", []):
+        day = _normalize_dimension("date", row.get("date"))
+        if not day:
+            continue
+        seen_days.add(day)
+        channel = str(row.get(_CHANNEL_DIMENSION) or "").strip()
+        field = _CHANNEL_METRIC_FIELDS.get(channel)
+        if field is None:
+            continue
+        by_day.setdefault(day, {})[field] = _decimal(row.get(_CHANNEL_CONVERSIONS_FIELD))
+
+    rows = [
+        (
+            day,
+            {
+                field: by_day.get(day, {}).get(field)
+                for field in _CHANNEL_METRIC_FIELDS.values()
+            },
+        )
+        for day in sorted(seen_days)
+    ]
+    return rows, bool(page.get("truncated"))
+
 
 _GBP_PERFORMANCE_METRICS = {
     "impressions": "business_impressions_total_calc",
@@ -286,7 +355,9 @@ class ReportingNinjaAdapter:
         # цієї фази вимірюваний, а не вигаданий (task-32): кожен GA4-датасет на
         # два періоди, плюс два періоди GBP і один прохід по відгуках.
         gbp_planned = bool(cfg.get("gbp_locations"))
-        dataset_steps = len(_GA4_DATASETS) * 2 + (3 if gbp_planned else 0)
+        # task-44: `+1` dataset (`ga4_daily_channels`), `*2` for current+previous
+        # like every other GA4 dataset here (plan §2.4).
+        dataset_steps = (len(_GA4_DATASETS) + 1) * 2 + (3 if gbp_planned else 0)
         step = 0
         tracker = PhaseTracker(self.provider, emit, "datasets")
         tracker.begin(
@@ -409,6 +480,55 @@ class ReportingNinjaAdapter:
                     )
                     if page.get("truncated"):
                         truncated_any = True
+
+                # task-44: Organic/Direct Conversions — one two-dimension
+                # query per period, its own branch (plan §2.4/§3.2).
+                step += 1
+                stage = f"fetch_{role.value}_ga4_daily_channels"
+                if (
+                    _CHANNEL_DIMENSION not in available
+                    or _CHANNEL_CONVERSIONS_FIELD not in available
+                ):
+                    warnings.append("ga4_daily_channels: required GA4 fields unavailable")
+                    tracker.step(
+                        stage,
+                        completed=step,
+                        total=dataset_steps,
+                        level="warning",
+                        message=f"GA4 daily channels ({role.value}): fields unavailable",
+                    )
+                else:
+                    tracker.step(
+                        stage,
+                        completed=step,
+                        total=dataset_steps,
+                        message=(
+                            f"GA4 daily channels · {role.value} · "
+                            f"{period.start} → {period.end}"
+                        ),
+                    )
+                    try:
+                        normalized, truncated = query_daily_channels(
+                            client,
+                            connection_key=cfg["connection_key"],
+                            account_id=cfg["account_id"],
+                            start=period.start,
+                            end=period.end,
+                        )
+                    except (APIError, RateLimitError, ValueError) as exc:
+                        warnings.append(f"ga4_daily_channels {role.value} failed: {exc}")
+                    else:
+                        append_dataset(
+                            dataset_key="ga4_daily_channels",
+                            dimension_key="date",
+                            role=role,
+                            period=period,
+                            rows=normalized,
+                            sort_key="date",
+                            limit=1000,
+                        )
+                        if truncated:
+                            truncated_any = True
 
             gbp_locations = cfg.get("gbp_locations") or []
             if gbp_locations:
@@ -580,7 +700,7 @@ class ReportingNinjaAdapter:
 
         tracker.done("datasets_complete", message=f"Collected {completed} GA4 datasets")
 
-        expected = len(_GA4_DATASETS) * 2
+        expected = (len(_GA4_DATASETS) + 1) * 2
         if cfg.get("gbp_locations"):
             expected += 7
         if completed == 0:
@@ -600,7 +720,7 @@ class ReportingNinjaAdapter:
             provenance={
                 "transport": "reporting_ninja",
                 "integration": "ga4",
-                "datasets": [*list(_GA4_DATASETS), *_GBP_DATASET_KEYS],
+                "datasets": [*list(_GA4_DATASETS), "ga4_daily_channels", *_GBP_DATASET_KEYS],
             },
         )
 

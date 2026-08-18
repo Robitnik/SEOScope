@@ -42,12 +42,29 @@
   .trends-refresh .button { flex: 1 1 auto; justify-content: center; }
 }
 
+/* Metric drives the whole page — every other control only refines what is
+   already on screen — so it gets its own full-width row and the rest sit
+   together underneath a divider as one clearly secondary group. Before this,
+   a plain flex-wrap row let Metric's two-line block and Bucket's short one
+   share row one by accident while Range/Portfolio/View spilled to row two,
+   which read as an unplanned wrap rather than a deliberate hierarchy. */
 .trends-toolbar {
-  display: flex; flex-wrap: wrap; gap: 18px; padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 16px; padding: 16px 18px;
   border: 1px solid var(--line); background: var(--canvas-raised);
 }
 .trends-control { display: grid; gap: 6px; }
 .trends-control__label { color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+.trends-toolbar__secondary {
+  display: flex; flex-wrap: wrap; gap: 18px; padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* task-44: 7 metric buttons read as two short, labeled rows (Search Console
+   | GA4) instead of one long unlabeled strip — `.period-panel__kinds` below
+   already wraps on its own via `flex-wrap`, this just groups + labels it. */
+.trends-metric-groups { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.trends-metric-group { display: grid; gap: 4px; }
+.trends-metric-group__label { color: var(--ink-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
 
 .trends-section { display: grid; gap: 18px; min-width: 0; }
 
@@ -113,7 +130,7 @@
 .trends-picker__row.is-disabled label { cursor: default; opacity: .5; }
 .trends-picker__name { color: var(--ink); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trends-picker__domain { margin-left: auto; color: var(--ink-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trends-picker__reason { margin-left: auto; flex: 0 0 auto; color: var(--ink-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.trends-picker__reason { margin-left: auto; flex: 0 0 auto; color: var(--state-color, var(--ink-dim)); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .trends-note a { color: var(--info); font-weight: 700; }
 
 .trends-chart-section .chart-wrap { height: 380px; }
@@ -171,7 +188,7 @@
 }
 
 @media (max-width: 720px) {
-  .trends-toolbar { flex-direction: column; align-items: stretch; }
+  .trends-toolbar__secondary { flex-direction: column; }
   .trends-toolbar .period-panel__kinds { width: 100%; }
   .trends-toolbar .period-panel__kinds button { flex: 1; }
   .trend-grid { grid-template-columns: 1fr; }

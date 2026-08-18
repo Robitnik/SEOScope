@@ -207,6 +207,105 @@ def test_metric_reports_source_lag_days(client, db):
     assert ga4["metric"]["lag_days"] == 2
 
 
+# --- task-44: additive flag + ga4_daily_channels-backed metrics -------------
+
+
+def test_metric_reports_additive_flag(client, db):
+    """`rn_users` sums daily UNIQUE counts, so bucketing overstates the real
+    total (plan §1.4) — every other metric is event-shaped and additive."""
+    client_id = _seed_client_with_days(db, configure=True, days={"2026-07-20": 5})
+
+    clicks = client.get(
+        "/api/v1/analytics/portfolio-series"
+        f"?metric=gsc_clicks&client_ids={client_id}&start=2026-07-20&end=2026-07-20"
+    ).json()
+    users = client.get(
+        "/api/v1/analytics/portfolio-series"
+        f"?metric=rn_users&client_ids={client_id}&start=2026-07-20&end=2026-07-20"
+    ).json()
+
+    assert clicks["metric"]["additive"] is True
+    assert users["metric"]["additive"] is False
+
+
+def _seed_ga4_channels(db, *, slug="effys", rows: dict[str, dict[str, str]]):
+    clients = ClientRepository(db)
+    client = clients.create(name=slug.upper(), slug=slug, domain=f"{slug}.com")
+    clients.upsert_integration(client.id, Provider.reporting_ninja, source_mode=SourceMode.api)
+    job = JobRepository(db).create_run(
+        client_ids=[client.id],
+        providers=[Provider.reporting_ninja],
+        period_kind=PeriodKind.month,
+        comparison_mode=ComparisonMode.closed,
+        anchor_date=date(2026, 7, 31),
+    )[0]
+    snapshot = SnapshotRepository(db).create_immutable(
+        job_id=job.id,
+        client_id=client.id,
+        provider=Provider.reporting_ninja,
+        source_mode=SourceMode.api,
+        observed_at=datetime.now(UTC),
+        quality=Quality.complete,
+    )
+    AnalyticsDatasetRepository(db).bulk_insert(
+        snapshot_id=snapshot.id,
+        client_id=client.id,
+        provider=Provider.reporting_ninja,
+        period_start=date(2026, 7, 1),
+        period_end=date(2026, 7, 31),
+        rows=[
+            AnalyticsDatasetRowInput(
+                dataset_key="ga4_daily_channels",
+                dimension_key="date",
+                dimension_value=day,
+                metrics=metrics,
+                quality=Quality.complete,
+                rank=None,
+            )
+            for day, metrics in rows.items()
+        ],
+    )
+    db.commit()
+    return client.id
+
+
+def test_organic_and_direct_conversions_read_the_channels_dataset_and_sum_correctly(client, db):
+    """Accepted gate (task-44 plan §6): the month bucket must equal the exact
+    per-day sum, matching what the client report shows for the same period."""
+    client_id = _seed_ga4_channels(
+        db,
+        rows={
+            "2026-07-01": {"conversions_organic": Decimal(10), "conversions_direct": Decimal(6)},
+            "2026-07-02": {"conversions_organic": Decimal(8), "conversions_direct": None},
+        },
+    )
+
+    organic = client.get(
+        "/api/v1/analytics/portfolio-series"
+        f"?metric=rn_organic_conversions&client_ids={client_id}&bucket=month"
+        "&start=2026-07-01&end=2026-07-02"
+    ).json()
+    direct = client.get(
+        "/api/v1/analytics/portfolio-series"
+        f"?metric=rn_direct_conversions&client_ids={client_id}&bucket=month"
+        "&start=2026-07-01&end=2026-07-02"
+    ).json()
+
+    assert organic["metric"]["dataset_key"] == "ga4_daily_channels"
+    assert organic["metric"]["additive"] is True
+    assert organic["series"][0]["points"][0]["value"] == "18"  # 10 + 8
+    # 07-02 has no Direct row at all (channel absent that day) -> only 07-01's
+    # 6 counts, never fabricated as 6+0.
+    assert direct["series"][0]["points"][0]["value"] == "6"
+    assert direct["series"][0]["points"][0]["days_with_data"] == 1
+
+
+def test_rn_direct_conversions_is_selectable_despite_no_catalog_entry(client, db):
+    response = client.get("/api/v1/analytics/portfolio-series?metric=rn_direct_conversions")
+    assert response.status_code == 200
+    assert response.json()["metric"]["label"] == "Direct Conversions"
+
+
 def test_series_last_day_is_the_last_day_with_data(client, db):
     """The freshness chip reads `last_day` per client; a gap at the end of the
     window must move it back, not be papered over by the window's own end."""

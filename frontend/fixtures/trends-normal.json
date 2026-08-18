@@ -8,7 +8,8 @@
       "better_direction": "up",
       "dataset_key": "gsc_daily",
       "field": "clicks",
-      "lag_days": 3
+      "lag_days": 3,
+      "additive": true
     },
     "bucket": "week",
     "range": {
@@ -246,7 +247,8 @@
       "better_direction": "up",
       "dataset_key": "gsc_daily",
       "field": "impressions",
-      "lag_days": 3
+      "lag_days": 3,
+      "additive": true
     },
     "bucket": "week",
     "range": {
@@ -484,7 +486,8 @@
       "better_direction": "up",
       "dataset_key": "ga4_daily",
       "field": "sessions",
-      "lag_days": 2
+      "lag_days": 2,
+      "additive": true
     },
     "bucket": "week",
     "range": {
@@ -722,7 +725,8 @@
       "better_direction": "up",
       "dataset_key": "ga4_daily",
       "field": "users",
-      "lag_days": 2
+      "lag_days": 2,
+      "additive": false
     },
     "bucket": "week",
     "range": {
@@ -923,6 +927,723 @@
           },
           {
             "value": "660",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      }
+    ],
+    "excluded": [
+      {
+        "client_id": "c-nychearing",
+        "name": "NYCHEARING",
+        "domain": "nychearing.com",
+        "state": "no_data",
+        "reason": "No daily history collected yet for this range."
+      },
+      {
+        "client_id": "c-pjc",
+        "name": "PJC",
+        "domain": "pjclarkes.com",
+        "state": "not_configured",
+        "reason": "gsc integration is not set up for this client."
+      }
+    ],
+    "generated_at": "2026-07-27T10:00:00Z"
+  },
+  "rn_total_conversions": {
+    "metric": {
+      "key": "rn_total_conversions",
+      "label": "Total Conversions",
+      "provider": "reporting_ninja",
+      "unit": "count",
+      "better_direction": "up",
+      "dataset_key": "ga4_daily",
+      "field": "conversions",
+      "lag_days": 2,
+      "additive": true
+    },
+    "bucket": "week",
+    "range": {
+      "start": "2026-06-08",
+      "end": "2026-07-19"
+    },
+    "buckets": [
+      {
+        "start": "2026-06-08",
+        "end": "2026-06-14",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-15",
+        "end": "2026-06-21",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-22",
+        "end": "2026-06-28",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-29",
+        "end": "2026-07-05",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-06",
+        "end": "2026-07-12",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-13",
+        "end": "2026-07-19",
+        "days_expected": 7,
+        "provisional": false
+      }
+    ],
+    "series": [
+      {
+        "client_id": "c-cleveland",
+        "name": "19CLEVELAND",
+        "domain": "19cleveland.com",
+        "points": [
+          {
+            "value": "306",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "291",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "270",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "249",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "231",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "207",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-3xe",
+        "name": "3XE",
+        "domain": "exxxoticaexpo.com",
+        "points": [
+          {
+            "value": "16",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "17",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "16",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "19",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "21",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "23",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-goreport",
+        "name": "GOREPORT",
+        "domain": "goreport.com",
+        "points": [
+          {
+            "value": "120",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "114",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "69",
+            "days_with_data": 4,
+            "quality": "partial"
+          },
+          {
+            "value": "132",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "138",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "117",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 39,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-laxton",
+        "name": "LAXTON",
+        "domain": "laxton.se",
+        "points": [
+          {
+            "value": "162",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "177",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "189",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "210",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "234",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "249",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      }
+    ],
+    "excluded": [
+      {
+        "client_id": "c-nychearing",
+        "name": "NYCHEARING",
+        "domain": "nychearing.com",
+        "state": "no_data",
+        "reason": "No daily history collected yet for this range."
+      },
+      {
+        "client_id": "c-pjc",
+        "name": "PJC",
+        "domain": "pjclarkes.com",
+        "state": "not_configured",
+        "reason": "gsc integration is not set up for this client."
+      }
+    ],
+    "generated_at": "2026-07-27T10:00:00Z"
+  },
+  "rn_organic_conversions": {
+    "metric": {
+      "key": "rn_organic_conversions",
+      "label": "Organic Conversions",
+      "provider": "reporting_ninja",
+      "unit": "count",
+      "better_direction": "up",
+      "dataset_key": "ga4_daily_channels",
+      "field": "conversions_organic",
+      "lag_days": 2,
+      "additive": true
+    },
+    "bucket": "week",
+    "range": {
+      "start": "2026-06-08",
+      "end": "2026-07-19"
+    },
+    "buckets": [
+      {
+        "start": "2026-06-08",
+        "end": "2026-06-14",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-15",
+        "end": "2026-06-21",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-22",
+        "end": "2026-06-28",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-29",
+        "end": "2026-07-05",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-06",
+        "end": "2026-07-12",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-13",
+        "end": "2026-07-19",
+        "days_expected": 7,
+        "provisional": false
+      }
+    ],
+    "series": [
+      {
+        "client_id": "c-cleveland",
+        "name": "19CLEVELAND",
+        "domain": "19cleveland.com",
+        "points": [
+          {
+            "value": "184",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "175",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "162",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "149",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "139",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "124",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-3xe",
+        "name": "3XE",
+        "domain": "exxxoticaexpo.com",
+        "points": [
+          {
+            "value": "0",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "10",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "10",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "12",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "13",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "14",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-goreport",
+        "name": "GOREPORT",
+        "domain": "goreport.com",
+        "points": [
+          {
+            "value": "72",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "68",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "41",
+            "days_with_data": 4,
+            "quality": "partial"
+          },
+          {
+            "value": "79",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "83",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "70",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 39,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-laxton",
+        "name": "LAXTON",
+        "domain": "laxton.se",
+        "points": [
+          {
+            "value": "97",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "106",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "113",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "126",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "140",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "149",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      }
+    ],
+    "excluded": [
+      {
+        "client_id": "c-nychearing",
+        "name": "NYCHEARING",
+        "domain": "nychearing.com",
+        "state": "no_data",
+        "reason": "No daily history collected yet for this range."
+      },
+      {
+        "client_id": "c-pjc",
+        "name": "PJC",
+        "domain": "pjclarkes.com",
+        "state": "not_configured",
+        "reason": "gsc integration is not set up for this client."
+      }
+    ],
+    "generated_at": "2026-07-27T10:00:00Z"
+  },
+  "rn_direct_conversions": {
+    "metric": {
+      "key": "rn_direct_conversions",
+      "label": "Direct Conversions",
+      "provider": "reporting_ninja",
+      "unit": "count",
+      "better_direction": "up",
+      "dataset_key": "ga4_daily_channels",
+      "field": "conversions_direct",
+      "lag_days": 2,
+      "additive": true
+    },
+    "bucket": "week",
+    "range": {
+      "start": "2026-06-08",
+      "end": "2026-07-19"
+    },
+    "buckets": [
+      {
+        "start": "2026-06-08",
+        "end": "2026-06-14",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-15",
+        "end": "2026-06-21",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-22",
+        "end": "2026-06-28",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-06-29",
+        "end": "2026-07-05",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-06",
+        "end": "2026-07-12",
+        "days_expected": 7,
+        "provisional": false
+      },
+      {
+        "start": "2026-07-13",
+        "end": "2026-07-19",
+        "days_expected": 7,
+        "provisional": false
+      }
+    ],
+    "series": [
+      {
+        "client_id": "c-cleveland",
+        "name": "19CLEVELAND",
+        "domain": "19cleveland.com",
+        "points": [
+          {
+            "value": "102",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "97",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "90",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "83",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "77",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "69",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-3xe",
+        "name": "3XE",
+        "domain": "exxxoticaexpo.com",
+        "points": [
+          {
+            "value": "6",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "6",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "5",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "6",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "7",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "8",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 42,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-goreport",
+        "name": "GOREPORT",
+        "domain": "goreport.com",
+        "points": [
+          {
+            "value": "40",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "38",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "23",
+            "days_with_data": 4,
+            "quality": "partial"
+          },
+          {
+            "value": "44",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "0",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "6",
+            "days_with_data": 7,
+            "quality": "complete"
+          }
+        ],
+        "first_day": "2026-06-08",
+        "last_day": "2026-07-19",
+        "days_with_data": 39,
+        "days_expected": 42
+      },
+      {
+        "client_id": "c-laxton",
+        "name": "LAXTON",
+        "domain": "laxton.se",
+        "points": [
+          {
+            "value": "54",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "59",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "63",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "70",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "78",
+            "days_with_data": 7,
+            "quality": "complete"
+          },
+          {
+            "value": "83",
             "days_with_data": 7,
             "quality": "complete"
           }

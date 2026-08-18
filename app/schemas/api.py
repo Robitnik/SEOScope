@@ -932,6 +932,12 @@ class PortfolioMetricDTO(BaseModel):
     # say "up to date" vs "N days behind" honestly — the trends page's
     # freshness chip — cannot derive this number from the payload otherwise.
     lag_days: int = 0
+    # Added by task-44: whether summing this metric's daily values into a
+    # week/month bucket is mathematically correct (event counts) or an
+    # overstatement (unique counts, e.g. `rn_users` — plan §1.4). Defaults to
+    # `True` since every metric before task-44 was event-shaped; the one
+    # exception (`rn_users`) is always passed explicitly.
+    additive: bool = True
 
 
 class PortfolioBucketDTO(BaseModel):

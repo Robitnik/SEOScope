@@ -219,6 +219,7 @@ def test_collect_datasets_fetches_daily_and_breakdowns(monkeypatch):
                 for definition in adapter_module._GA4_DATASETS.values()
                 for field in definition["metrics"].values()
             )
+            fields.add(adapter_module._CHANNEL_DIMENSION)
             return [{"field_id": field} for field in fields]
 
         def query_all(
@@ -244,11 +245,19 @@ def test_collect_datasets_fetches_daily_and_breakdowns(monkeypatch):
     )
 
     assert result.quality == Quality.complete
-    assert len(result.rows) == len(adapter_module._GA4_DATASETS) * 2
+    # +2 (task-44): one `ga4_daily_channels` row per role, on top of the
+    # single-dimension datasets in `_GA4_DATASETS`.
+    assert len(result.rows) == len(adapter_module._GA4_DATASETS) * 2 + 2
     daily = next(row for row in result.rows if row.dataset_key == "ga4_daily")
     assert daily.dimension_value == "2026-06-15"
     assert daily.metrics["users"] == Decimal("10.5")
-    assert len(FakeClient.calls) == 12
+    channels = [row for row in result.rows if row.dataset_key == "ga4_daily_channels"]
+    assert len(channels) == 2
+    assert channels[0].dimension_value == "2026-06-15"
+    # This fake never returns a real "Organic Search"/"Direct" label, so
+    # neither field matches — both stay `None`, never a fabricated `0`.
+    assert channels[0].metrics == {"conversions_organic": None, "conversions_direct": None}
+    assert len(FakeClient.calls) == 14
 
 
 def test_collect_datasets_aggregates_business_profile_locations(monkeypatch):
@@ -271,6 +280,7 @@ def test_collect_datasets_aggregates_business_profile_locations(monkeypatch):
                 for definition in adapter_module._GA4_DATASETS.values()
                 for field in definition["metrics"].values()
             )
+            fields.add(adapter_module._CHANNEL_DIMENSION)
             return [{"field_id": field} for field in fields]
 
         def query_all(
@@ -333,6 +343,184 @@ def test_collect_datasets_aggregates_business_profile_locations(monkeypatch):
     assert location.metrics["interactions"] == Decimal(2)
     assert term.metrics["impressions"] == Decimal(9)
     assert review.metrics["average_rating"] == Decimal("4.7")
+
+
+# ── ga4_daily_channels (task-44) ─────────────────────────────────────────────
+def test_query_daily_channels_none_for_absent_channel_real_zero_stays_zero():
+    """The core PLAN §12 rule for this dataset: a channel missing from a
+    day's response is `None`; a channel present with `keyEvents=0` is a real,
+    preserved `0`; a day entirely absent from the response gets no row."""
+
+    class FakeClient:
+        def query_all(self, *args, **kwargs):
+            return {
+                "rows": [
+                    {"date": "20260701", "firstUserDefaultChannelGroup": "Organic Search",
+                     "keyEvents": "12"},
+                    # Direct is absent on 07-01 -> None, not 0.
+                    {"date": "20260702", "firstUserDefaultChannelGroup": "Organic Search",
+                     "keyEvents": "5"},
+                    {"date": "20260702", "firstUserDefaultChannelGroup": "Direct",
+                     "keyEvents": "0"},
+                    # Paid Search is not one of the two tracked channels -> ignored.
+                    {"date": "20260702", "firstUserDefaultChannelGroup": "Paid Search",
+                     "keyEvents": "99"},
+                ],
+                "truncated": False,
+            }
+
+    rows, truncated = adapter_module.query_daily_channels(
+        FakeClient(),
+        connection_key="seo@example.com",
+        account_id="properties/1",
+        start=date(2026, 7, 1),
+        end=date(2026, 7, 2),
+    )
+
+    assert truncated is False
+    by_day = dict(rows)
+    assert by_day["2026-07-01"] == {
+        "conversions_organic": Decimal(12),
+        "conversions_direct": None,
+    }
+    assert by_day["2026-07-02"] == {
+        "conversions_organic": Decimal(5),
+        "conversions_direct": Decimal(0),
+    }
+    # A day never returned by the API (e.g. 07-03) simply never appears.
+    assert "2026-07-03" not in by_day
+
+
+def test_query_daily_channels_organic_plus_direct_never_exceeds_total():
+    """Accepted-gate invariant (task-44 plan §6):
+    conversions_organic + conversions_direct <= conversions (keyEvents total)
+    for every day, since Organic Search and Direct are two of several channels."""
+
+    class FakeClient:
+        def query_all(self, *args, **kwargs):
+            return {
+                "rows": [
+                    {"date": "20260701", "firstUserDefaultChannelGroup": "Organic Search",
+                     "keyEvents": "6"},
+                    {"date": "20260701", "firstUserDefaultChannelGroup": "Direct",
+                     "keyEvents": "3"},
+                    {"date": "20260701", "firstUserDefaultChannelGroup": "Referral",
+                     "keyEvents": "4"},
+                ],
+                "truncated": False,
+            }
+
+    rows, _truncated = adapter_module.query_daily_channels(
+        FakeClient(),
+        connection_key="seo@example.com",
+        account_id="properties/1",
+        start=date(2026, 7, 1),
+        end=date(2026, 7, 1),
+    )
+
+    day, metrics = rows[0]
+    total_keyevents = Decimal(6) + Decimal(3) + Decimal(4)  # organic + direct + referral
+    assert metrics["conversions_organic"] + metrics["conversions_direct"] <= total_keyevents
+
+
+def test_collect_datasets_ga4_daily_channels_failure_does_not_fail_the_rest(monkeypatch):
+    from seo_audit.clientreport import api_client
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def list_fields(self, integration_id):
+            fields = {
+                definition["dimension"]
+                for definition in adapter_module._GA4_DATASETS.values()
+            }
+            fields.update(
+                field
+                for definition in adapter_module._GA4_DATASETS.values()
+                for field in definition["metrics"].values()
+            )
+            fields.add(adapter_module._CHANNEL_DIMENSION)
+            return [{"field_id": field} for field in fields]
+
+        def query_all(
+            self, integration_id, connection_key, account_id, fields, start, end, **kwargs
+        ):
+            if adapter_module._CHANNEL_DIMENSION in fields:
+                raise api_client.APIError("adapter_error", "ga4 channel query failed")
+            dimension = fields[0]
+            dimension_value = "20260615" if dimension == "date" else f"value-{dimension}"
+            return {
+                "rows": [
+                    {dimension: dimension_value, **{field: "10.5" for field in fields[1:]}}
+                ],
+                "truncated": False,
+            }
+
+    monkeypatch.setattr(api_client, "ReportingNinjaClient", FakeClient)
+
+    result = adapter_module.ReportingNinjaAdapter().collect_datasets(
+        _context(), lambda event: None
+    )
+
+    assert not any(row.dataset_key == "ga4_daily_channels" for row in result.rows)
+    assert any("ga4_daily_channels" in warning for warning in result.warnings)
+    # The other six single-dimension datasets still succeeded for both periods.
+    assert len(result.rows) == len(adapter_module._GA4_DATASETS) * 2
+
+
+def test_collect_datasets_dataset_steps_account_for_ga4_daily_channels(monkeypatch):
+    from seo_audit.clientreport import api_client
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def list_fields(self, integration_id):
+            fields = {
+                definition["dimension"]
+                for definition in adapter_module._GA4_DATASETS.values()
+            }
+            fields.update(
+                field
+                for definition in adapter_module._GA4_DATASETS.values()
+                for field in definition["metrics"].values()
+            )
+            fields.add(adapter_module._CHANNEL_DIMENSION)
+            return [{"field_id": field} for field in fields]
+
+        def query_all(
+            self, integration_id, connection_key, account_id, fields, start, end, **kwargs
+        ):
+            dimension = fields[0]
+            dimension_value = "20260615" if dimension == "date" else f"value-{dimension}"
+            return {
+                "rows": [
+                    {dimension: dimension_value, **{field: "10.5" for field in fields[1:]}}
+                ],
+                "truncated": False,
+            }
+
+    monkeypatch.setattr(api_client, "ReportingNinjaClient", FakeClient)
+    totals: list[int] = []
+    original_step = adapter_module.PhaseTracker.step
+
+    def _capturing_step(self, stage, *, completed, total, **kwargs):
+        totals.append(total)
+        return original_step(self, stage, completed=completed, total=total, **kwargs)
+
+    monkeypatch.setattr(adapter_module.PhaseTracker, "step", _capturing_step)
+
+    adapter_module.ReportingNinjaAdapter().collect_datasets(_context(), lambda event: None)
+
+    # (6 datasets + 1 new ga4_daily_channels) * 2 periods = 14 (plan §2.4).
+    assert totals and all(total == (len(adapter_module._GA4_DATASETS) + 1) * 2 for total in totals)
 
 
 # ── event bridging ───────────────────────────────────────────────────────────
