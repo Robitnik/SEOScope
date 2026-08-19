@@ -87,9 +87,7 @@ class ReportScheduler:
 
     def _recover_stale_runs(self) -> None:
         with self._session_scope() as session:
-            recovered = ReportRepository(session).recover_stale_running(
-                stale_minutes=self._settings.reports_run_stale_minutes
-            )
+            recovered = ReportRepository(session).recover_stale_running()
         if recovered:
             logger.warning("report_scheduler_recovered_stale_runs count=%d", recovered)
         # A batch whose children all finished (or were recovered above) while

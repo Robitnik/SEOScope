@@ -1454,6 +1454,29 @@
         "title": "AnalyticsDatasetRowDTO",
         "type": "object"
       },
+      "BackupTierCountsDTO": {
+        "properties": {
+          "daily": {
+            "title": "Daily",
+            "type": "integer"
+          },
+          "monthly": {
+            "title": "Monthly",
+            "type": "integer"
+          },
+          "weekly": {
+            "title": "Weekly",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "daily",
+          "weekly",
+          "monthly"
+        ],
+        "title": "BackupTierCountsDTO",
+        "type": "object"
+      },
       "BatchClientRetryRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2410,6 +2433,90 @@
         "title": "ClientUpdateRequest",
         "type": "object"
       },
+      "CloudQueueDTO": {
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "uploaded": {
+            "title": "Uploaded",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pending",
+          "failed",
+          "uploaded"
+        ],
+        "title": "CloudQueueDTO",
+        "type": "object"
+      },
+      "CloudStatusDTO": {
+        "properties": {
+          "archive_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Since"
+          },
+          "backups": {
+            "$ref": "#/components/schemas/BackupTierCountsDTO"
+          },
+          "bucket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bucket"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "last_backup": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastBackupDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "queue": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CloudQueueDTO"
+            },
+            "title": "Queue",
+            "type": "object"
+          }
+        },
+        "required": [
+          "enabled",
+          "bucket",
+          "last_backup",
+          "backups",
+          "queue",
+          "archive_since"
+        ],
+        "title": "CloudStatusDTO",
+        "type": "object"
+      },
       "ComparisonMode": {
         "enum": [
           "closed",
@@ -3190,6 +3297,49 @@
           "status"
         ],
         "title": "JobStepDTO",
+        "type": "object"
+      },
+      "LastBackupDTO": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "uploaded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded At"
+          }
+        },
+        "required": [
+          "key",
+          "uploaded_at",
+          "size_bytes",
+          "status"
+        ],
+        "title": "LastBackupDTO",
         "type": "object"
       },
       "MediaCandidateDTO": {
@@ -4204,6 +4354,267 @@
         "title": "MonitorPagesPageDTO",
         "type": "object"
       },
+      "MonitorRedirectDTO": {
+        "properties": {
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "first_seen_window_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seen Window Start"
+          },
+          "group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Name"
+          },
+          "http_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Code"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "match_type": {
+            "title": "Match Type",
+            "type": "string"
+          },
+          "regex": {
+            "title": "Regex",
+            "type": "boolean"
+          },
+          "removed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed At"
+          },
+          "source": {
+            "enum": [
+              "redirection",
+              "probe"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "enabled",
+              "disabled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "version_seq": {
+            "title": "Version Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "source_url",
+          "match_type",
+          "regex",
+          "status",
+          "first_seen_at",
+          "last_seen_at",
+          "version_seq"
+        ],
+        "title": "MonitorRedirectDTO",
+        "type": "object"
+      },
+      "MonitorRedirectsPageDTO": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "redirects": {
+            "items": {
+              "$ref": "#/components/schemas/MonitorRedirectDTO"
+            },
+            "title": "Redirects",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "redirects",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "MonitorRedirectsPageDTO",
+        "type": "object"
+      },
+      "MonitorRedirectsStatusDTO": {
+        "description": "`GET /clients/{id}/monitor/redirects/status` \u2014 deliberately never\n\ncarries the Application Password itself (task-51 \u00a73.3): `credentials_status`\nis the only thing this DTO says about it.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "credentials_status": {
+            "enum": [
+              "configured",
+              "missing",
+              "invalid"
+            ],
+            "title": "Credentials Status",
+            "type": "string"
+          },
+          "effective_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "redirection",
+                  "probe"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Source"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "last_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Unavailable Reason"
+          },
+          "redirect_source": {
+            "enum": [
+              "auto",
+              "redirection",
+              "probe",
+              "off"
+            ],
+            "title": "Redirect Source",
+            "type": "string"
+          },
+          "rules_disabled": {
+            "title": "Rules Disabled",
+            "type": "integer"
+          },
+          "rules_enabled": {
+            "title": "Rules Enabled",
+            "type": "integer"
+          },
+          "rules_total": {
+            "title": "Rules Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_id",
+          "redirect_source",
+          "credentials_status",
+          "rules_total",
+          "rules_enabled",
+          "rules_disabled"
+        ],
+        "title": "MonitorRedirectsStatusDTO",
+        "type": "object"
+      },
       "MonitorResourceDTO": {
         "properties": {
           "content_sha256": {
@@ -4235,7 +4646,8 @@
           "kind": {
             "enum": [
               "robots",
-              "sitemap"
+              "sitemap",
+              "redirects"
             ],
             "title": "Kind",
             "type": "string"
@@ -4693,6 +5105,34 @@
             "title": "Muted Change Types",
             "type": "array"
           },
+          "redirect_source": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "redirection",
+              "probe",
+              "off"
+            ],
+            "title": "Redirect Source",
+            "type": "string"
+          },
+          "redirects_enabled": {
+            "default": true,
+            "title": "Redirects Enabled",
+            "type": "boolean"
+          },
+          "redirects_last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirects Last Checked At"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -4832,6 +5272,34 @@
               }
             ],
             "title": "Muted Change Types"
+          },
+          "redirect_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "redirection",
+                  "probe",
+                  "off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Source"
+          },
+          "redirects_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirects Enabled"
           }
         },
         "title": "MonitorSettingsUpdateRequest",
@@ -11774,6 +12242,235 @@
         ]
       }
     },
+    "/api/v1/clients/{client_id}/monitor/redirects": {
+      "get": {
+        "operationId": "list_monitor_redirects_api_v1_clients__client_id__monitor_redirects_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "active",
+              "enum": [
+                "active",
+                "removed",
+                "all"
+              ],
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-first_seen_at",
+              "enum": [
+                "first_seen_at",
+                "-first_seen_at",
+                "last_seen_at",
+                "-last_seen_at",
+                "source_url",
+                "-source_url"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorRedirectsPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Monitor Redirects",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/redirects/check": {
+      "post": {
+        "description": "Synchronous re-check (mirrors `check_monitor_page`, task-38 \u00a72) \u2014\n\nruns inline against the client's site right now instead of waiting for\nthe next scheduled light/full run, then returns the same status shape\n`GET .../redirects/status` does.",
+        "operationId": "check_monitor_redirects_api_v1_clients__client_id__monitor_redirects_check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorRedirectsStatusDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Monitor Redirects",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/redirects/status": {
+      "get": {
+        "operationId": "get_monitor_redirects_status_api_v1_clients__client_id__monitor_redirects_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorRedirectsStatusDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Monitor Redirects Status",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
     "/api/v1/clients/{client_id}/monitor/resources/{kind}": {
       "get": {
         "description": "Every tracked robots.txt / sitemap file of one client.\n\nThe versions endpoint below answers \"how did THIS file change\"; this one\nanswers \"which files are there at all\" \u2014 a sitemap tree is routinely a\ndozen files, and until now the UI could only ever reach the first one.",
@@ -11795,7 +12492,8 @@
             "schema": {
               "enum": [
                 "robots",
-                "sitemap"
+                "sitemap",
+                "redirects"
               ],
               "title": "Kind",
               "type": "string"
@@ -11864,7 +12562,8 @@
             "schema": {
               "enum": [
                 "robots",
-                "sitemap"
+                "sitemap",
+                "redirects"
               ],
               "title": "Kind",
               "type": "string"
@@ -11977,7 +12676,8 @@
             "schema": {
               "enum": [
                 "robots",
-                "sitemap"
+                "sitemap",
+                "redirects"
               ],
               "title": "Kind",
               "type": "string"
@@ -12713,6 +13413,27 @@
         "summary": "Start Tech Audit",
         "tags": [
           "tech-audit"
+        ]
+      }
+    },
+    "/api/v1/cloud/status": {
+      "get": {
+        "operationId": "get_cloud_status_api_v1_cloud_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudStatusDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Cloud Status",
+        "tags": [
+          "cloud"
         ]
       }
     },

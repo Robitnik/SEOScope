@@ -131,6 +131,70 @@ def test_recovery_fails_a_running_run_with_no_live_owner(temp_db, scheduler):
     assert run.error_code == "interrupted"
 
 
+def test_recovery_fails_a_running_run_even_with_a_fresh_heartbeat(temp_db, scheduler):
+    """Live bug (2026-08-19): `recover_stale_running` used to require a
+    `running` row's heartbeat to be older than `reports_run_stale_minutes`
+    (60 by default) before touching it. `_recover_stale_runs` runs exactly
+    once, at process boot, before the dispatcher claims anything new — every
+    `running` row it finds predates THIS process (PLAN §5.1: one worker
+    instance), no matter how recent its heartbeat, so a worker restarted
+    seconds after a period started left that run stuck `running` forever:
+    no live loop was polling `cancel_requested` any more, so its own Cancel
+    button did nothing either.
+    """
+    client_id = _seed_client(temp_db)
+    run_id = _queue_run(temp_db, client_id, source="pdf")
+    with temp_db.session_scope() as session:
+        run = ReportRepository(session).get(run_id)
+        run.status = "running"
+        run.started_at = datetime.now(UTC)
+        run.heartbeat_at = datetime.now(UTC)  # seconds old, not stale by any clock
+
+    scheduler._recover_stale_runs()
+
+    with temp_db.session_scope() as session:
+        run = ReportRepository(session).get(run_id)
+    assert run.status == "failed"
+    assert run.error_code == "interrupted"
+
+
+def test_recovery_marks_the_in_flight_period_skipped_not_stuck_running(temp_db, scheduler):
+    """The run reaching a terminal status is only half of it — its
+    `periods_json` must stop claiming a period is still `running`/`waiting`
+    too, or the UI's progress list shows a permanently spinning row under a
+    run that's already `Failed`.
+    """
+    client_id = _seed_client(temp_db)
+    with temp_db.session_scope() as session:
+        run = ReportRepository(session).create_run(
+            client_id, kind="monthly", source="pdf", params={}, period_count=2,
+            periods=[
+                {
+                    "label": "This Month", "date_from": "2026-07-01", "date_to": "2026-07-31",
+                    "is_partial": False, "state": "running", "started_at": None,
+                    "finished_at": None, "duration_seconds": None, "from_cache": False,
+                    "error": None,
+                },
+                {
+                    "label": "Last Month", "date_from": "2026-06-01", "date_to": "2026-06-30",
+                    "is_partial": False, "state": "waiting", "started_at": None,
+                    "finished_at": None, "duration_seconds": None, "from_cache": False,
+                    "error": None,
+                },
+            ],
+        )
+        run_id = run.id
+        run.status = "running"
+        run.heartbeat_at = datetime.now(UTC)
+
+    scheduler._recover_stale_runs()
+
+    with temp_db.session_scope() as session:
+        run = ReportRepository(session).get(run_id)
+    states = {p["label"]: p["state"] for p in run.periods_json}
+    assert states == {"This Month": "skipped", "Last Month": "skipped"}
+
+
 def test_batch_and_standalone_api_pools_never_compete_for_the_same_slot(temp_db, scheduler):
     """task-47 §2.3: a batch monopolizing every `reports_api_workers` slot
     must not queue an unrelated ad-hoc single-client report behind it.

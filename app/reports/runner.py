@@ -44,7 +44,7 @@ from app.reports.client_pdf import client_pdf_filename, render_client_pdf
 from app.reports.history import ReportHistory, fetch_history
 from app.reports.models import PeriodMetrics
 from app.reports.ninja_api import ReportingNinjaClient
-from app.reports.pdf_parse import metric_coverage, parse_pdf
+from app.reports.pdf_parse import looks_like_a_report_pdf, metric_coverage, parse_pdf
 from app.reports.periods import (
     ReportPeriod,
     build_comparator_periods,
@@ -211,6 +211,22 @@ def parse_and_check(path: Path, label: str, emit: Emit) -> PeriodMetrics | None:
     metrics = parse_pdf(path)
     found, missing = metric_coverage(metrics)
     if not found:
+        # Live regression (2026-08-19): "0 found" used to always mean the
+        # download was garbage/mismatched and fail the period outright — but
+        # it's also exactly what a genuinely empty period looks like once
+        # `parse_pdf` nulls every metric (task-48 §2.3's no-data
+        # normalization). Real case: EFFYS's Month YOY/Quarterly YOY (before
+        # the GA4 property existed) were being discarded as parse failures,
+        # even though the PDF was a perfectly good, complete report saying
+        # "nothing happened here" — `looks_like_a_report_pdf` tells the two
+        # apart by checking the report's own page chrome, independent of
+        # which metrics parsed.
+        if looks_like_a_report_pdf(path):
+            emit(
+                "info", "parse", f"{label}: no data in this period (0/8 metrics, valid report)",
+                {"period": label},
+            )
+            return metrics
         emit(
             "error", "parse", f"{label}: parsed 0/8 metrics — treating as failed",
             {"period": label},
@@ -314,18 +330,31 @@ def run(session_scope: Any, settings: Settings, run_id: str) -> None:
         result["cached_periods"] = [row["label"] for row in cached_rows]
         result["oldest_cached_at"] = min(row["cached_at"] for row in cached_rows)
     if periods_done:
+        # The workbook is built from the in-memory `table`, so it does not
+        # care whether the result has been stored yet.
         write_run_xlsx(session_scope, settings, run_id, client, table, cc_result, emit)
-        # Client PDF (task-47 §5): automatic on every successful/partial
-        # `monthly` run — the type the tile/YOY layout is built for (§1.5).
-        # A `yearly`/`custom_months`/`comparator` run has no "This Month"
-        # column to key it to, so it is skipped here; the operator can still
-        # request one explicitly via `POST .../client-pdf` later.
-        if kind == "monthly":
-            write_run_client_pdf(session_scope, settings, run_id, client, periods, emit)
     _finish(
         session_scope, run_id, status=status,
         result=result, cross_check_status=cross_check_status,
     )
+    # Client PDF (task-47 §5): automatic on every successful/partial
+    # `monthly` run — the type the tile/YOY layout is built for (§1.5).
+    # A `yearly`/`custom_months`/`comparator` run has no "This Month"
+    # column to key it to, so it is skipped here; the operator can still
+    # request one explicitly via `POST .../client-pdf` later.
+    #
+    # STRICTLY AFTER `_finish` (live 2026-08-19): `render_client_pdf` drives
+    # Chromium against `GET /runs/{id}/document`, and that endpoint answers
+    # `422 run_not_finished` until `_finish` has stored `result_json` — so
+    # rendering here before it could only ever fail. It did, silently, on
+    # every automatic run: each of a 9-client batch's children logged
+    # "Failed to find element matching selector .report-doc__page" as a
+    # best-effort warning, no `client_pdf` row was ever written, and the
+    # batch's "Download all PDFs" archive came out empty. The manual
+    # `POST .../client-pdf` always worked precisely because it runs after
+    # the run is finished.
+    if periods_done and kind == "monthly":
+        write_run_client_pdf(session_scope, settings, run_id, client, periods, emit)
 
 
 def write_run_xlsx(  # noqa: PLR0913 - one call site, every argument is data it needs

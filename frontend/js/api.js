@@ -1589,6 +1589,44 @@ export function getMonitorDocumentUrl(sha256) {
   return `${API_ROOT}/monitor/documents/${encodeURIComponent(sha256)}`;
 }
 
+// --- redirects (task-51) ----------------------------------------------------
+
+export async function getMonitorRedirects(clientId, { state = "active", q, sort = "-first_seen_at", limit = 100, offset = 0 } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(180);
+    return { redirects: [], total: 0, limit, offset };
+  }
+  const params = new URLSearchParams({ state, sort, limit: String(limit), offset: String(offset) });
+  if (q) params.set("q", q);
+  return request(`/clients/${clientId}/monitor/redirects?${params}`, {}, `monitor-redirects-${clientId}`);
+}
+
+export async function getMonitorRedirectsStatus(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    return {
+      client_id: clientId, redirect_source: "auto", effective_source: null,
+      credentials_status: "missing", last_checked_at: null,
+      rules_total: 0, rules_enabled: 0, rules_disabled: 0, last_unavailable_reason: null,
+    };
+  }
+  return request(`/clients/${clientId}/monitor/redirects/status`, {}, `monitor-redirects-status-${clientId}`);
+}
+
+// Synchronous re-check (mirrors `checkMonitorPage`) — one HTTP round trip,
+// the response IS the updated status.
+export async function checkMonitorRedirects(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(700);
+    return getMonitorRedirectsStatus(clientId);
+  }
+  return request(
+    `/clients/${clientId}/monitor/redirects/check`,
+    { method: "POST", body: "{}" },
+    `monitor-redirects-check-${clientId}`,
+  );
+}
+
 export async function getMonitorSettings(clientId) {
   if (FIXTURE_MODE) {
     await wait(160);
@@ -2528,4 +2566,28 @@ export function reportBatchEventsUrl(batchId) {
 
 export function reportBatchPdfArchiveUrl(batchId) {
   return `${API_ROOT}/reports/batches/${batchId}/pdf-archive`;
+}
+
+// One combined PDF (all clients, one file) / one XLSX (one sheet per
+// client) across the whole batch — task-50, siblings of the ZIP above.
+export function reportBatchPortfolioPdfUrl(batchId, { inline = false } = {}) {
+  return `${API_ROOT}/reports/batches/${batchId}/portfolio.pdf?disposition=${inline ? "inline" : "attachment"}`;
+}
+
+export function reportBatchPortfolioXlsxUrl(batchId) {
+  return `${API_ROOT}/reports/batches/${batchId}/portfolio.xlsx`;
+}
+
+// On-page table preview (task-50): the XLSX itself has no browser-native
+// inline viewer the way the PDF above does, so this is the renderable
+// substitute — one `ReportTableDTO` per client, same shape `getReportTable`
+// already returns for a single run.
+export async function getBatchPortfolioTable(batchId) {
+  if (!FIXTURE_MODE) {
+    return request(
+      `/reports/batches/${batchId}/portfolio-table`, {}, `reports-batch-portfolio-table-${batchId}`
+    );
+  }
+  await wait(150);
+  return { clients: [] };
 }

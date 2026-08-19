@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import tempfile
 import zipfile
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -39,11 +40,14 @@ from app.reports.batch import (
     latest_runs_by_client,
     rebuild_run,
 )
+from app.reports.batch_pdf import NoClientPdfsError, build_portfolio_pdf
+from app.reports.batch_xlsx import NoClientDataError, build_portfolio_xlsx
 from app.reports.client_pdf import client_pdf_filename, render_client_pdf
 from app.reports.document import render_document_html
 from app.reports.period_retry import retry_period
 from app.reports.periods import InvalidComparatorMonthsError, InvalidPeriodError
 from app.reports.runner import build_periods, period_rows
+from app.reports.table import ReportTable
 from app.reports.verify import DIFFER_VERDICTS
 from app.schemas.api import ErrorDTO
 from app.schemas.enums import Provider
@@ -51,6 +55,8 @@ from app.schemas.reports import (
     AccuracyClientRowDTO,
     AccuracyReportDTO,
     BatchClientRetryRequest,
+    BatchPortfolioTableDTO,
+    BatchPortfolioTableRowDTO,
     BindingStatus,
     CrossCheckStatus,
     NinjaBindingRowDTO,
@@ -1250,24 +1256,221 @@ def _build_batch_archive(batch_id: str) -> tuple[str, bytes] | None:
                     pdf_files.append((Path(file.path).name, settings.artifacts_dir / file.path))
 
     buffer = io.BytesIO()
+    written = 0
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, path in pdf_files:
             if path.is_file():
                 archive.write(path, arcname=name)
+                written += 1
+    # An archive with nothing in it is a failure wearing a success costume:
+    # the browser saves a valid, empty .zip and the operator has no idea why
+    # (live 2026-08-19 — a 9-client batch downloaded 0 bytes of report
+    # because no `client_pdf` had ever been rendered, see the ordering fix in
+    # `app/reports/runner.py`). Say so instead of shipping the emptiness.
+    if written == 0:
+        return None
     filename = f"TheYovth_Monthly_{month_stamp or date.today().strftime('%Y-%m')}.zip"
     return filename, buffer.getvalue()
 
 
+def _batch_exists(batch_id: str) -> bool:
+    with worker_session_scope() as session:
+        return ReportRepository(session).get_batch(batch_id) is not None
+
+
+_NO_CLIENT_PDFS = ErrorDTO(
+    error_code="no_client_pdfs",
+    message=(
+        "No client PDFs have been generated for this batch yet. "
+        "Open a client's report and use Generate PDF, or rebuild the batch."
+    ),
+).model_dump()
+
+
 @router.get("/batches/{batch_id}/pdf-archive", responses={404: {"model": ErrorDTO}})
 async def download_batch_pdf_archive(batch_id: str) -> StreamingResponse:
+    exists = await run_in_threadpool(_batch_exists, batch_id)
+    if not exists:
+        raise HTTPException(404, _BATCH_NOT_FOUND)
     result = await run_in_threadpool(_build_batch_archive, batch_id)
     if result is None:
-        raise HTTPException(404, _BATCH_NOT_FOUND)
+        raise HTTPException(404, _NO_CLIENT_PDFS)
     filename, data = result
     return StreamingResponse(
         iter([data]), media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# --- GET /batches/{id}/portfolio.pdf, /batches/{id}/portfolio.xlsx (task-50) -
+#
+# One combined document across the whole batch, instead of the ZIP's N
+# separate files above — same "built fresh on every request, nothing to
+# cache" reasoning (§pdf-archive comment): concatenating already-rendered
+# PDFs with `pdfunite` and writing an XLSX with `openpyxl` are both
+# sub-second, no browser involved. Uses `latest_runs_by_client` (not
+# `list_runs_for_batch` directly, unlike the ZIP above) so a client retried
+# mid-batch contributes only its newest result — never a stale page/tab
+# alongside the fresh one.
+
+
+def _batch_month_stamp(children: list[ReportRun]) -> str | None:
+    for child in children:
+        if not child.result_json:
+            continue
+        for period in child.result_json.get("periods", []):
+            if period.get("label") == "This Month" and period.get("date_from"):
+                return str(period["date_from"])[:7]
+    return None
+
+
+def _latest_children_by_name(
+    batch_id: str,
+) -> tuple[list[tuple[str, ReportRun]], str | None] | None:
+    """`[(client_name, run), ...]` sorted by name, and the batch's own month
+    stamp — or `None` if the batch itself does not exist.
+    """
+    with worker_session_scope() as session:
+        repo = ReportRepository(session)
+        if repo.get_batch(batch_id) is None:
+            return None
+        client_repo = ClientRepository(session)
+        children = list(latest_runs_by_client(repo.list_runs_for_batch(batch_id)).values())
+        month_stamp = _batch_month_stamp(children)
+        named = []
+        for child in children:
+            client = client_repo.get(child.client_id)
+            named.append((client.name if client else child.client_id, child))
+    named.sort(key=lambda item: item[0].upper())
+    return named, month_stamp
+
+
+def _build_portfolio_pdf(batch_id: str) -> tuple[str, bytes] | None:
+    found = _latest_children_by_name(batch_id)
+    if found is None:
+        return None
+    named, month_stamp = found
+
+    settings = get_settings()
+    paths: list[Path] = []
+    with worker_session_scope() as session:
+        repo = ReportRepository(session)
+        for _name, child in named:
+            for file in repo.list_files_for_run(child.id):
+                if file.kind == "client_pdf":
+                    path = settings.artifacts_dir / file.path
+                    if path.is_file():
+                        paths.append(path)
+                    break
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = build_portfolio_pdf(paths, Path(tmp) / "portfolio.pdf")
+            data = out_path.read_bytes()
+    except NoClientPdfsError:
+        return None
+    filename = f"TheYovth_Portfolio_{month_stamp or date.today().strftime('%Y-%m')}.pdf"
+    return filename, data
+
+
+def _build_portfolio_xlsx(batch_id: str) -> tuple[str, bytes] | None:
+    found = _latest_children_by_name(batch_id)
+    if found is None:
+        return None
+    named, month_stamp = found
+
+    rows: list[tuple[str, ReportTable]] = []
+    for name, child in named:
+        if not child.result_json:
+            continue
+        rows.append((name, ReportTable.from_dict(child.result_json, kind=child.kind)))
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = build_portfolio_xlsx(rows, Path(tmp) / "portfolio.xlsx")
+            data = out_path.read_bytes()
+    except NoClientDataError:
+        return None
+    filename = f"TheYovth_Portfolio_{month_stamp or date.today().strftime('%Y-%m')}.xlsx"
+    return filename, data
+
+
+@router.get("/batches/{batch_id}/portfolio.pdf", responses={404: {"model": ErrorDTO}})
+async def download_batch_portfolio_pdf(
+    batch_id: str,
+    disposition: str = Query("attachment", pattern="^(inline|attachment)$"),
+) -> StreamingResponse:
+    exists = await run_in_threadpool(_batch_exists, batch_id)
+    if not exists:
+        raise HTTPException(404, _BATCH_NOT_FOUND)
+    result = await run_in_threadpool(_build_portfolio_pdf, batch_id)
+    if result is None:
+        raise HTTPException(404, _NO_CLIENT_PDFS)
+    filename, data = result
+    headers = {"Content-Disposition": f'{disposition}; filename="{filename}"'}
+    if disposition == "inline":
+        # Same override `GET /files/{id}` uses (see its own comment) — the
+        # blanket `X-Frame-Options: DENY`/default CSP otherwise makes the
+        # in-page preview iframe render nothing.
+        headers["X-Frame-Options"] = "SAMEORIGIN"
+        headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data: https: http:; frame-ancestors 'self'"
+        )
+    return StreamingResponse(iter([data]), media_type="application/pdf", headers=headers)
+
+
+_NO_CLIENT_RESULTS = ErrorDTO(
+    error_code="no_client_results",
+    message="No client in this batch has a finished result to export yet.",
+).model_dump()
+
+
+@router.get("/batches/{batch_id}/portfolio.xlsx", responses={404: {"model": ErrorDTO}})
+async def download_batch_portfolio_xlsx(batch_id: str) -> StreamingResponse:
+    exists = await run_in_threadpool(_batch_exists, batch_id)
+    if not exists:
+        raise HTTPException(404, _BATCH_NOT_FOUND)
+    result = await run_in_threadpool(_build_portfolio_xlsx, batch_id)
+    if result is None:
+        raise HTTPException(404, _NO_CLIENT_RESULTS)
+    filename, data = result
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# --- GET /batches/{id}/portfolio-table (task-50) -----------------------------
+#
+# On-page table preview, no download: the JSON `ReportTableDTO` `GET
+# /runs/{id}/table` already returns per run, one per client — an XLSX has no
+# browser-native inline viewer the way a PDF does (the portfolio PDF above
+# gets `?disposition=inline`), so the table is the actual, renderable
+# on-page substitute for opening the portfolio XLSX.
+
+
+def _batch_portfolio_table(batch_id: str) -> list[BatchPortfolioTableRowDTO] | None:
+    found = _latest_children_by_name(batch_id)
+    if found is None:
+        return None
+    named, _month_stamp = found
+    rows: list[BatchPortfolioTableRowDTO] = []
+    for name, child in named:
+        dto = _get_table(child.id)
+        if dto is not None:
+            rows.append(
+                BatchPortfolioTableRowDTO(client_id=child.client_id, client_name=name, table=dto)
+            )
+    return rows
+
+
+@router.get("/batches/{batch_id}/portfolio-table", responses={404: {"model": ErrorDTO}})
+async def get_batch_portfolio_table(batch_id: str) -> BatchPortfolioTableDTO:
+    rows = await run_in_threadpool(_batch_portfolio_table, batch_id)
+    if rows is None:
+        raise HTTPException(404, _BATCH_NOT_FOUND)
+    return BatchPortfolioTableDTO(clients=rows)
 
 
 # --- GET /accuracy (task-48 §2.4) ----------------------------------------

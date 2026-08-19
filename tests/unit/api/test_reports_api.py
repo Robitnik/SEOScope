@@ -820,6 +820,239 @@ def test_retry_batch_client_leaves_every_other_client_untouched(client, db):
     assert after[b_id] == before[b_id], "the client outside the selection was not touched"
 
 
+def test_pdf_archive_says_so_instead_of_returning_an_empty_zip(client, db):
+    # Live 2026-08-19: a 9-client batch downloaded a valid but EMPTY .zip
+    # because no `client_pdf` had ever been rendered (see the ordering fix in
+    # app/reports/runner.py). Empty-but-successful is the one answer this
+    # endpoint must never give.
+    client_id = _create_client(db)
+    batch_id = _create_batch(client, [client_id])
+
+    response = client.get(f"/api/v1/reports/batches/{batch_id}/pdf-archive")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "no_client_pdfs"
+
+
+def test_pdf_archive_404_for_an_unknown_batch_is_still_batch_not_found(client):
+    response = client.get("/api/v1/reports/batches/does-not-exist/pdf-archive")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "batch_not_found"
+
+
+# --- GET /batches/{id}/portfolio.pdf, /batches/{id}/portfolio.xlsx (task-50) -
+
+
+def _seed_client_pdf(db, client_id: str, run_id: str, name: str) -> None:
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    pdf_path = settings.artifacts_dir / "reports" / run_id / f"{name}.pdf"
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_path.write_bytes(b"%PDF-1.4 fake" + b"0" * 100)
+    ReportRepository(db).create_file(
+        client_id, run_id=run_id, kind="client_pdf",
+        path=str(pdf_path.relative_to(settings.artifacts_dir)),
+        sha256="x" * 64, size_bytes=pdf_path.stat().st_size, mime="application/pdf",
+    )
+
+
+def test_portfolio_pdf_merges_every_clients_pdf_alphabetically(client, db, monkeypatch):
+    from app.api import reports as reports_api
+
+    calls = []
+
+    def fake_build(paths, out_path):
+        calls.append(list(paths))
+        out_path.write_bytes(b"%PDF-merged")
+        return out_path
+
+    monkeypatch.setattr(reports_api, "build_portfolio_pdf", fake_build)
+
+    zzz_id = _create_client(db, slug="zzz", name="ZZZ")
+    aaa_id = _create_client(db, slug="aaa", name="AAA")
+    batch_id = _create_batch(client, [zzz_id, aaa_id])
+    repo = ReportRepository(db)
+    for child in repo.list_runs_for_batch(batch_id):
+        name = "zzz" if child.client_id == zzz_id else "aaa"
+        _seed_client_pdf(db, child.client_id, child.id, name)
+    db.commit()
+
+    response = client.get(f"/api/v1/reports/batches/{batch_id}/portfolio.pdf")
+    assert response.status_code == 200
+    assert response.content == b"%PDF-merged"
+    assert "TheYovth_Portfolio" in response.headers["content-disposition"]
+    [paths] = calls
+    assert [p.name for p in paths] == ["aaa.pdf", "zzz.pdf"]  # alphabetical by CLIENT name
+
+
+def test_portfolio_pdf_uses_only_the_retried_clients_newest_pdf(client, db, monkeypatch):
+    # A retried client gets a brand-new `ReportRun` with the same `batch_id`
+    # (task-49 §2.4) — the portfolio PDF must contribute that client's page
+    # exactly once, from the newest run, never the stale one too.
+    from app.api import reports as reports_api
+
+    calls = []
+
+    def fake_build(paths, out_path):
+        calls.append(list(paths))
+        out_path.write_bytes(b"x")
+        return out_path
+
+    monkeypatch.setattr(reports_api, "build_portfolio_pdf", fake_build)
+
+    client_id = _create_client(db)
+    batch_id = _create_batch(client, [client_id])
+    repo = ReportRepository(db)
+    [old_run] = repo.list_runs_for_batch(batch_id)
+    old_run.status = "failed"  # a run must be terminal before it is retryable
+    _seed_client_pdf(db, client_id, old_run.id, "old")
+    db.commit()
+
+    retry_response = client.post(
+        f"/api/v1/reports/batches/{batch_id}/clients/{client_id}/retry",
+        json={"force_refresh": False},
+    )
+    assert retry_response.status_code == 200
+    [new_run] = [c for c in repo.list_runs_for_batch(batch_id) if c.id != old_run.id]
+    _seed_client_pdf(db, client_id, new_run.id, "new")
+    db.commit()
+
+    client.get(f"/api/v1/reports/batches/{batch_id}/portfolio.pdf")
+    [paths] = calls
+    assert [p.name for p in paths] == ["new.pdf"]
+
+
+def test_portfolio_pdf_404s_with_no_client_pdfs_instead_of_an_empty_file(client, db):
+    client_id = _create_client(db)
+    batch_id = _create_batch(client, [client_id])
+    response = client.get(f"/api/v1/reports/batches/{batch_id}/portfolio.pdf")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "no_client_pdfs"
+
+
+def test_portfolio_pdf_404_for_an_unknown_batch(client):
+    response = client.get("/api/v1/reports/batches/does-not-exist/portfolio.pdf")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "batch_not_found"
+
+
+def test_portfolio_pdf_inline_relaxes_frame_headers_for_the_preview_iframe(
+    client, db, monkeypatch
+):
+    from app.api import reports as reports_api
+
+    monkeypatch.setattr(
+        reports_api, "build_portfolio_pdf",
+        lambda paths, out_path: (out_path.write_bytes(b"%PDF-merged"), out_path)[-1],
+    )
+    client_id = _create_client(db)
+    batch_id = _create_batch(client, [client_id])
+    run = next(iter(ReportRepository(db).list_runs_for_batch(batch_id)))
+    _seed_client_pdf(db, client_id, run.id, "one")
+    db.commit()
+
+    attachment = client.get(f"/api/v1/reports/batches/{batch_id}/portfolio.pdf")
+    assert "attachment" in attachment.headers["content-disposition"]
+    # The blanket `SecurityHeadersMiddleware` default (DENY) stands — only
+    # the inline preview route relaxes it.
+    assert attachment.headers.get("x-frame-options") == "DENY"
+
+    inline = client.get(f"/api/v1/reports/batches/{batch_id}/portfolio.pdf?disposition=inline")
+    assert inline.status_code == 200
+    assert "inline" in inline.headers["content-disposition"]
+    assert inline.headers["x-frame-options"] == "SAMEORIGIN"
+    assert "frame-ancestors 'self'" in inline.headers["content-security-policy"]
+
+
+def test_portfolio_xlsx_has_one_sheet_per_client_with_a_finished_result(client, db):
+    from openpyxl import load_workbook
+
+    with_result_id = _create_client(db, slug="ok", name="OK")
+    still_running_id = _create_client(db, slug="pending", name="PENDING")
+    batch_id = _create_batch(client, [with_result_id, still_running_id])
+    repo = ReportRepository(db)
+    for child in repo.list_runs_for_batch(batch_id):
+        if child.client_id == with_result_id:
+            repo.finish(
+                child.id, status="succeeded",
+                result={
+                    "periods": [{
+                        "label": "This Month", "date_from": "2026-07-01",
+                        "date_to": "2026-07-31", "is_partial": False,
+                    }],
+                    "change_labels": [], "rows": [
+                        {"key": "users", "label": "Users", "values": [10], "changes": []}
+                    ],
+                    "sources": {}, "history": None,
+                },
+            )
+    db.commit()
+
+    response = client.get(f"/api/v1/reports/batches/{batch_id}/portfolio.xlsx")
+    assert response.status_code == 200
+    import io as _io
+    wb = load_workbook(_io.BytesIO(response.content))
+    # PENDING never finished (`result_json` is still None) — it is skipped,
+    # not shipped as a blank/broken sheet.
+    assert wb.sheetnames == ["OK"]
+    assert wb["OK"]["B3"].value == 10
+
+
+def test_portfolio_xlsx_404s_when_nothing_has_finished_yet(client, db):
+    client_id = _create_client(db)
+    batch_id = _create_batch(client, [client_id])
+    response = client.get(f"/api/v1/reports/batches/{batch_id}/portfolio.xlsx")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "no_client_results"
+
+
+def test_portfolio_xlsx_404_for_an_unknown_batch(client):
+    response = client.get("/api/v1/reports/batches/does-not-exist/portfolio.xlsx")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "batch_not_found"
+
+
+def test_portfolio_table_returns_one_row_per_finished_client(client, db):
+    with_result_id = _create_client(db, slug="ok", name="OK")
+    still_running_id = _create_client(db, slug="pending", name="PENDING")
+    batch_id = _create_batch(client, [with_result_id, still_running_id])
+    repo = ReportRepository(db)
+    for child in repo.list_runs_for_batch(batch_id):
+        if child.client_id == with_result_id:
+            repo.finish(
+                child.id, status="succeeded",
+                result={
+                    "periods": [{
+                        "label": "This Month", "date_from": "2026-07-01",
+                        "date_to": "2026-07-31", "is_partial": False,
+                    }],
+                    "change_labels": [], "rows": [
+                        {"key": "users", "label": "Users", "values": [10], "changes": []}
+                    ],
+                    "sources": {}, "history": None,
+                },
+            )
+    db.commit()
+
+    body = client.get(f"/api/v1/reports/batches/{batch_id}/portfolio-table").json()
+    assert [row["client_name"] for row in body["clients"]] == ["OK"]
+    assert body["clients"][0]["table"]["rows"][0]["values"] == [10]
+
+
+def test_portfolio_table_is_an_empty_list_not_a_404_when_nothing_has_finished(client, db):
+    client_id = _create_client(db)
+    batch_id = _create_batch(client, [client_id])
+    response = client.get(f"/api/v1/reports/batches/{batch_id}/portfolio-table")
+    assert response.status_code == 200
+    assert response.json()["clients"] == []
+
+
+def test_portfolio_table_404_for_an_unknown_batch(client):
+    response = client.get("/api/v1/reports/batches/does-not-exist/portfolio-table")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "batch_not_found"
+
+
 def test_retry_batch_client_404_for_unknown_batch(client, db):
     client_id = _create_client(db)
     response = client.post(

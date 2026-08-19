@@ -59,6 +59,14 @@ class HistoryMonth:
             "organic_conversions": self.organic_conversions,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> HistoryMonth:
+        return cls(
+            month=data["month"], label=data["label"], clicks=data.get("clicks"),
+            impressions=data.get("impressions"), ctr=data.get("ctr"),
+            organic_conversions=data.get("organic_conversions"),
+        )
+
 
 @dataclass(frozen=True)
 class ReportHistory:
@@ -76,6 +84,18 @@ class ReportHistory:
             "has_gsc": self.has_gsc,
             "has_ga4": self.has_ga4,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ReportHistory:
+        """Inverse of `to_dict` (task-50): reconstructs a `ReportHistory`
+        from `ReportRun.result_json["history"]` so the portfolio XLSX can
+        reuse `write_historical_table` unchanged instead of re-deriving the
+        sheet layout from a raw dict.
+        """
+        return cls(
+            months=[HistoryMonth.from_dict(m) for m in data.get("months", [])],
+            has_gsc=data.get("has_gsc", True), has_ga4=data.get("has_ga4", True),
+        )
 
 
 def month_keys(*, count: int, today: date | None = None) -> list[str]:

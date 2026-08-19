@@ -256,20 +256,38 @@ def _configure_dates(page: Page, date_from: Any, date_to: Any) -> None:
     page.wait_for_timeout(_STEP_PAUSE_MS * 2)
 
 
+# Font Awesome "file-pdf-o" glyph (U+F1C1, private-use area) — the toolbar
+# button carries no other stable attribute, only this icon's text content.
+_PDF_GLYPH = ""
+
+_FIND_PDF_BUTTON_JS = f"""() => {{
+    const glyph = {_PDF_GLYPH!r};
+    for (const span of document.querySelectorAll('span.v-icon.FontAwesome')) {{
+        if (span.textContent === glyph) return span.closest('[role="button"]');
+    }}
+    return null;
+}}"""
+
+
 def _download_pdf(page: Page, out_path: Path) -> None:
+    # Live measurement 2026-08-19: "Last Month" failed attempt 1/3 with
+    # "PDF download button not found on the report page" and was never
+    # retried (the error matched no recoverable classification below) —
+    # the toolbar icon simply hadn't rendered yet when the one-shot
+    # `evaluate` ran (a report-page render race, not a genuinely missing
+    # button). Waiting for the button to actually exist removes the race
+    # instead of just hoping the classification below catches it.
+    page.wait_for_function(_FIND_PDF_BUTTON_JS, timeout=15_000)
     with page.expect_download(timeout=240_000) as download_info:
-        page.evaluate(
-            r"""() => {
-            const PDF_GLYPH = '';
-            for (const span of document.querySelectorAll('span.v-icon.FontAwesome')) {
-                if (span.textContent === PDF_GLYPH) {
-                    const btn = span.closest('[role="button"]');
-                    if (btn) { btn.click(); return; }
-                }
-            }
-            throw new Error('PDF download button not found on the report page');
-        }"""
+        clicked = page.evaluate(
+            f"""() => {{
+            const btn = ({_FIND_PDF_BUTTON_JS})();
+            if (btn) {{ btn.click(); return true; }}
+            return false;
+        }}"""
         )
+        if not clicked:
+            raise RuntimeError("PDF download button not found on the report page")
     download_info.value.save_as(str(out_path))
     assert_pdf_complete(out_path)
 
@@ -435,6 +453,12 @@ def _fetch_period_with_retry(  # noqa: PLR0913 - see download_periods
                 _is_transient_net_error(exc)
                 or isinstance(exc, PdfDownloadIncomplete)
                 or is_timeout_error(exc)
+                # `_download_pdf`'s own button-not-found `RuntimeError` — the
+                # `wait_for_function` before it already absorbs the common
+                # render-race case (as a `TimeoutError`, already covered
+                # above); this is the rarer case where the button vanished
+                # again between that wait and the click itself.
+                or "PDF download button not found" in str(exc)
                 or ctx.is_closed()
                 or not _page_is_usable(page)
             )

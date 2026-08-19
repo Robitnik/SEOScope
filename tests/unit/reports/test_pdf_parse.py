@@ -96,6 +96,37 @@ def test_a_period_with_no_channel_rows_and_zero_overall_parses_as_all_none():
     assert metrics.impressions is None
 
 
+# --- looks_like_a_report_pdf: telling "no data" apart from "broken PDF" -----
+
+
+def test_a_genuinely_empty_period_still_looks_like_a_real_report():
+    # Live regression (2026-08-19): EFFYS's real Month YOY/Quarterly YOY
+    # periods parse to all-`None` (the no-data fixture above) — but the PDF
+    # itself is a perfectly good, complete Reporting Ninja report, not a
+    # broken download. `runner.parse_and_check` needs this signal to avoid
+    # discarding the period as a parse failure.
+    from app.reports.pdf_parse import looks_like_a_report_pdf
+
+    assert looks_like_a_report_pdf(_NO_DATA_FIXTURE) is True
+
+
+def test_a_real_period_with_data_also_looks_like_a_real_report():
+    from app.reports.pdf_parse import looks_like_a_report_pdf
+
+    assert looks_like_a_report_pdf(_FIXTURE) is True
+
+
+def test_a_pdf_missing_the_report_chrome_does_not_look_like_a_real_report(monkeypatch):
+    # The genuine failure case `parse_and_check` must still catch loudly:
+    # a PDF that never had the report's own page structure at all (wrong
+    # file, totally different layout) — as opposed to a real report page
+    # that simply had nothing to show.
+    from app.reports import pdf_parse
+
+    monkeypatch.setattr(pdf_parse, "_pdf_text", lambda _path: "This is not a report at all.")
+    assert pdf_parse.looks_like_a_report_pdf(Path("irrelevant.pdf")) is False
+
+
 def test_a_real_nonzero_period_is_never_touched_by_the_no_data_rule():
     # The existing "This Month" fixture has real channel rows and real
     # non-zero Overall performance — `_period_has_no_data` must not fire,

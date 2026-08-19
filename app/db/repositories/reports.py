@@ -8,7 +8,7 @@ API's own `worker_session_scope()`).
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -301,22 +301,30 @@ class ReportRepository:
         self._session.flush()
         return run
 
-    def recover_stale_running(self, *, stale_minutes: float) -> int:
+    def recover_stale_running(self) -> int:
         """Startup recovery (task-42 §9 DoD): a `running` row with no live
-        owner is, by definition, orphaned in a single-writer worker. Mirrors
-        `MonitorScheduler._recover_stale_runs`.
+        owner is, by definition, orphaned in a single-writer worker (PLAN
+        §5.1 — exactly one `worker` instance ever runs). Called ONCE, before
+        the scheduler's dispatcher claims any new work, so every `running`
+        row found here predates this process — there is no "maybe it's still
+        legitimately in progress" case to protect with a staleness window.
+
+        Live bug (2026-08-19): this used to gate on `stale_minutes` (default
+        60) before recovering a row, so a run whose worker died seconds after
+        writing `heartbeat_at` sat "running" — and its `Cancel` button
+        inert, since nothing was polling `cancel_requested` any more — for
+        up to an hour. Mirrors `MonitorScheduler._recover_stale_runs`, which
+        never had this gate.
         """
-        cutoff = utcnow() - timedelta(minutes=stale_minutes)
         stmt = select(ReportRun).where(ReportRun.status == "running")
         recovered = 0
         for run in self._session.scalars(stmt):
-            reference = run.heartbeat_at or run.started_at or run.queued_at
-            if reference is not None and reference < cutoff:
-                run.status = "failed"
-                run.error_code = "interrupted"
-                run.error_message = "Worker restarted while this run was in progress"
-                run.finished_at = utcnow()
-                recovered += 1
+            run.status = "failed"
+            run.error_code = "interrupted"
+            run.error_message = "Worker restarted while this run was in progress"
+            run.finished_at = utcnow()
+            self.mark_pending_periods(run.id, state="skipped")
+            recovered += 1
         self._session.flush()
         return recovered
 

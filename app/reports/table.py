@@ -6,6 +6,7 @@ shape (`{period_label: PeriodMetrics}`) and get the same table back.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from app.reports.history import ReportHistory
@@ -77,6 +78,47 @@ class ReportTable:
             "sources": self.sources,
             "history": self.history.to_dict() if self.history is not None else None,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], *, kind: str) -> ReportTable:
+        """Inverse of `to_dict` (task-50): reconstructs a `ReportTable` from
+        `ReportRun.result_json` so a consumer that only has the STORED run
+        (the portfolio XLSX, building one workbook from N already-finished
+        batch children) can reuse `write_metrics_table` unchanged instead of
+        a second, drifting copy of its layout logic.
+
+        `to_dict` never serializes `change_pairs` — it doesn't need to, the
+        column-letter formulas in `xlsx.py` are the only consumer, and they
+        are computed fresh here anyway. `kind` (the run's own `ReportRun.kind`,
+        not stored ON the table) is required to re-derive the same pairing
+        `changes_for` produced originally — the stored `change_labels` alone
+        don't say which two periods each one compares.
+        """
+        periods = [
+            ReportPeriod(
+                label=p["label"],
+                date_from=date.fromisoformat(p["date_from"]),
+                date_to=date.fromisoformat(p["date_to"]),
+                is_partial=p.get("is_partial", False),
+            )
+            for p in data.get("periods", [])
+        ]
+        change_pairs = [(c[1], c[2]) for c in changes_for(kind, periods)]
+        rows = [
+            MetricRowResult(
+                key=r["key"], label=r["label"], values=r["values"], changes=r["changes"]
+            )
+            for r in data.get("rows", [])
+        ]
+        history_data = data.get("history")
+        return cls(
+            periods=periods,
+            change_labels=data.get("change_labels", []),
+            change_pairs=change_pairs,
+            rows=rows,
+            sources=dict(data.get("sources") or {}),
+            history=ReportHistory.from_dict(history_data) if history_data else None,
+        )
 
 
 def changes_for(kind: str, periods: list[ReportPeriod]) -> list[tuple[str, str, str]]:

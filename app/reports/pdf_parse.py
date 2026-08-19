@@ -147,6 +147,28 @@ def parse_pdf(pdf_path: Path) -> PeriodMetrics:
     )
 
 
+# Present on every real Reporting Ninja report page regardless of whether
+# any WIDGET on it actually had data — the GA4 section header always
+# renders, and one of the GSC page markers always renders. Distinguishes a
+# genuinely-empty period (task-48 §2.3: `parse_pdf` correctly nulled every
+# metric) from a broken/mismatched PDF that never had real report pages to
+# read in the first place — `metric_coverage` alone cannot tell these apart,
+# since both produce "0 metrics found" (live regression, 2026-08-19: EFFYS's
+# real Month YOY/Quarterly YOY periods — genuinely no GA4/GSC data before the
+# property existed — were being discarded as parse FAILURES).
+_REPORT_PAGE_MARKER = "Google Analytics"
+
+
+def looks_like_a_report_pdf(pdf_path: Path) -> bool:
+    """True if this PDF has the Reporting Ninja report's own page chrome —
+    proof the download/render succeeded, independent of whether the metrics
+    on it parsed to real numbers, `None` (task-45 §1.6 "no rows"), or `None`
+    via the no-data normalization above (task-48 §2.3).
+    """
+    text = _pdf_text(pdf_path)
+    return _REPORT_PAGE_MARKER in text and any(marker in text for marker in _GSC_PAGE_MARKERS)
+
+
 def metric_coverage(metrics: PeriodMetrics) -> tuple[list[str], list[str]]:
     """`(found, missing)` human labels — the QA gate's evidence (task-42
     §3.7.8): a period with an empty `missing` parsed clean; a period whose

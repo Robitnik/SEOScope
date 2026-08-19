@@ -73,13 +73,13 @@ def _fill(hex_color: str) -> PatternFill:
     return PatternFill("solid", fgColor=hex_color)
 
 
-def _title_row(ws: Worksheet, text: str, total_cols: int) -> None:
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
-    cell = ws.cell(1, 1, text)
+def _title_row(ws: Worksheet, text: str, total_cols: int, *, row: int = 1) -> None:
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=total_cols)
+    cell = ws.cell(row, 1, text)
     cell.font = Font(name="Calibri", bold=True, size=13, color=_HEADER_FG)
     cell.fill = _fill(_HEADER_BG)
     cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 22
+    ws.row_dimensions[row].height = 22
 
 
 def _header_row(ws: Worksheet, row: int, headers: list[str]) -> None:
@@ -93,18 +93,29 @@ def _header_row(ws: Worksheet, row: int, headers: list[str]) -> None:
     ws.row_dimensions[row].height = 30
 
 
-def _build_report_sheet(ws: Worksheet, client_name: str, table: ReportTable) -> None:
-    ws.title = "Report"
+def write_metrics_table(
+    ws: Worksheet, client_name: str, table: ReportTable, *, start_row: int = 1
+) -> int:
+    """The 8-metric x N-period table (title row + header + data), starting at
+    `start_row`. Returns the first free row after it, so a caller stacking
+    more than one table on the same sheet (the portfolio workbook, task-50)
+    never has to hardcode a row offset by hand.
+    """
     n_periods = len(table.periods)
     n_changes = len(table.change_labels)
     total_cols = 1 + n_periods + n_changes
 
-    _title_row(ws, client_name, total_cols)
-    _header_row(ws, 2, ["Metric", *(p.label for p in table.periods), *table.change_labels])
+    _title_row(ws, client_name, total_cols, row=start_row)
+    header_row = start_row + 1
+    _header_row(
+        ws, header_row, ["Metric", *(p.label for p in table.periods), *table.change_labels]
+    )
 
     column_of = {p.label: 2 + i for i, p in enumerate(table.periods)}
-    for row_i, row in enumerate(table.rows, start=3):
-        alt = row_i % 2 == 1
+    first_data_row = header_row + 1
+    for offset, row in enumerate(table.rows):
+        row_i = first_data_row + offset
+        alt = offset % 2 == 0
         bg = _fill(_ALT_ROW_BG) if alt else None
 
         label_cell = ws.cell(row_i, 1, row.label)
@@ -136,6 +147,12 @@ def _build_report_sheet(ws: Worksheet, client_name: str, table: ReportTable) -> 
     ws.column_dimensions["A"].width = 24
     for c in range(2, total_cols + 1):
         ws.column_dimensions[get_column_letter(c)].width = 14
+    return first_data_row + len(table.rows)
+
+
+def _build_report_sheet(ws: Worksheet, client_name: str, table: ReportTable) -> None:
+    ws.title = "Report"
+    write_metrics_table(ws, client_name, table, start_row=1)
     ws.freeze_panes = "B3"
 
 
@@ -207,10 +224,12 @@ def _build_cross_check_sheet(
     ws.freeze_panes = "A3"
 
 
-def _build_history_sheet(
-    ws: Worksheet, client_name: str, history: ReportHistory | None
-) -> None:
-    """`Date · Clicks · Impressions · CTR · Conversions`, oldest month first.
+def write_historical_table(
+    ws: Worksheet, client_name: str, history: ReportHistory | None, *, start_row: int = 1
+) -> int:
+    """`Date · Clicks · Impressions · CTR · Conversions`, oldest month first,
+    starting at `start_row`. Returns the first free row after it (see
+    `write_metrics_table`'s own docstring for why).
 
     `CTR` is a live `=IFERROR(clicks/impressions,"")` formula, not a computed
     number: this sheet's whole purpose is to be pasted into the operator's
@@ -218,21 +237,23 @@ def _build_history_sheet(
     §2.4). `Conversions` is ORGANIC key events — the column header says so,
     because that is what the hand-kept history tracked.
     """
-    ws.title = "Historical Data"
     headers = ["Date", "Clicks", "Impressions", "CTR", "Conversions (Organic)"]
     total_cols = len(headers)
 
-    _title_row(ws, f"{client_name} — Historical Data (complete months)", total_cols)
-    _header_row(ws, 2, headers)
+    _title_row(ws, f"{client_name} — Historical Data (complete months)", total_cols, row=start_row)
+    header_row = start_row + 1
+    _header_row(ws, header_row, headers)
+    first_data_row = header_row + 1
 
     if history is None or not history.months:
-        note = ws.cell(3, 1, "Historical data could not be collected for this run.")
+        note = ws.cell(first_data_row, 1, "Historical data could not be collected for this run.")
         note.font = _cell_font()
         ws.column_dimensions["A"].width = 24
-        return
+        return first_data_row + 1
 
-    for row_i, month in enumerate(history.months, start=3):
-        bg = _fill(_ALT_ROW_BG) if row_i % 2 == 1 else None
+    for offset, month in enumerate(history.months):
+        row_i = first_data_row + offset
+        bg = _fill(_ALT_ROW_BG) if offset % 2 == 0 else None
         label_cell = ws.cell(row_i, 1, month.label)
         label_cell.font = _cell_font()
 
@@ -257,7 +278,7 @@ def _build_history_sheet(
             for col_i in range(1, total_cols + 1):
                 ws.cell(row_i, col_i).fill = bg
 
-    footnote_row = 3 + len(history.months) + 1
+    footnote_row = first_data_row + len(history.months) + 1
     notes = []
     if not history.has_gsc:
         notes.append("Clicks/Impressions/CTR unavailable — Google Search Console is not connected.")
@@ -270,6 +291,14 @@ def _build_history_sheet(
     ws.column_dimensions["A"].width = 20
     for letter in ("B", "C", "D", "E"):
         ws.column_dimensions[letter].width = 16
+    return footnote_row + len(notes)
+
+
+def _build_history_sheet(
+    ws: Worksheet, client_name: str, history: ReportHistory | None
+) -> None:
+    ws.title = "Historical Data"
+    write_historical_table(ws, client_name, history, start_row=1)
     ws.freeze_panes = "A3"
 
 

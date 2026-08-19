@@ -183,6 +183,14 @@ const CHANGE_TYPE_LABELS = {
   sitemap_url_broken: "Sitemap URL is broken",
   sitemap_url_unavailable: "Sitemap URL unavailable",
   sitemap_broken_urls: "Sitemap has broken URLs",
+  redirect_offsite_added: "Redirect added to an external domain",
+  redirect_added_on_live_url: "Redirect added on a live page",
+  redirect_added: "New redirect added",
+  redirect_target_changed: "Redirect target changed",
+  redirect_removed: "Redirect removed",
+  redirect_status_changed: "Redirect enabled/disabled",
+  redirects_bulk_added: "Multiple redirects added",
+  redirects_unavailable: "Redirects could not be checked",
 };
 
 function humanizeChangeType(value) {
@@ -307,6 +315,13 @@ export function formatDelta(metric) {
     return `${value > 0 ? "+" : ""}${numberFormatter.format(value)}`;
   }
   return metric.delta_reason ? "N/A" : "—";
+}
+
+// A `ReportTableRowDTO` cell — `null` means "no data" (PLAN §12), never `0`
+// (task-42/task-50: shared by the run-detail table and the batch portfolio
+// table preview).
+export function formatMetricValue(value) {
+  return value === null || value === undefined ? "—" : numberFormatter.format(value);
 }
 
 export function trend(metric) {

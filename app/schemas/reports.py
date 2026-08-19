@@ -381,6 +381,22 @@ class ReportBatchesPageDTO(BaseModel):
     offset: int
 
 
+class BatchPortfolioTableRowDTO(BaseModel):
+    """One client's table, for the on-page portfolio table preview
+    (task-50): the exact same `ReportTableDTO` `GET /runs/{id}/table`
+    already returns for a single run, so the frontend's per-metric table
+    renderer needs no client-name-specific shape.
+    """
+
+    client_id: str
+    client_name: str
+    table: ReportTableDTO
+
+
+class BatchPortfolioTableDTO(BaseModel):
+    clients: list[BatchPortfolioTableRowDTO] = Field(default_factory=list)
+
+
 # --- Accuracy (task-48 §2.4) --------------------------------------------
 #
 # `GET /reports/accuracy` machine-builds the same table task-48 §1 had to

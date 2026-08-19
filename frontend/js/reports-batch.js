@@ -6,19 +6,24 @@
 // is still running" at a glance while the rest keeps going.
 
 import {
-  cancelReportBatch, createClientPdf, getReportBatch, getReportTypes, isAbortError,
-  isFixtureMode, reportBatchPdfArchiveUrl, reportDocumentUrl, reportFileUrl, retryReportBatchClient,
+  cancelReportBatch, createClientPdf, getBatchPortfolioTable, getReportBatch, getReportTypes,
+  isAbortError, isFixtureMode, reportBatchPdfArchiveUrl, reportBatchPortfolioPdfUrl,
+  reportBatchPortfolioXlsxUrl, reportDocumentUrl, reportFileUrl, retryReportBatchClient,
 } from "./api.js?v=20260819-spin3";
 import { openReportsWizard } from "./reports-wizard.js?v=20260819-spin3";
 import { buildReportsHash, buildReportsRunHash } from "./router.js?v=20260819-spin3";
 import {
   REPORT_KIND_META, REPORT_RUN_STATUS_META, REPORT_SOURCE_META,
-  escapeHtml, formatDuration, formatDurationSeconds, formatTimestamp, icon, isTerminal, stateClass,
-  statusIcon,
+  escapeHtml, formatDateRange, formatDuration, formatDurationSeconds, formatMetricValue,
+  formatTimestamp, icon, isTerminal, stateClass, statusIcon,
 } from "./formatters.js?v=20260819-spin3";
 import { sectionSkeleton } from "./skeleton.js?v=20260819-spin3";
 
 const root = document.querySelector("#reports-batch-page-root");
+const fileDialog = document.querySelector("#reports-file-dialog");
+const fileDialogTitle = document.querySelector("#reports-file-title");
+const fileDialogSubtitle = document.querySelector("#reports-file-subtitle");
+const fileDialogBody = document.querySelector("#reports-file-body");
 const POLL_MS = 2500;
 const FIXTURE_POLL_MS = 700;
 
@@ -27,6 +32,11 @@ let requestToken = 0;
 let batch = null;
 let pollTimer = null;
 let pendingClientPdf = new Set();
+// Portfolio table preview state (task-50): fetched once, on demand, then
+// kept around so switching the client `<select>` never re-fetches.
+let portfolioTable = null; // BatchPortfolioTableDTO | null
+let portfolioTableOpen = false;
+let portfolioTableClientId = null;
 
 function toast(message) {
   const region = document.querySelector("#toast-region");
@@ -55,6 +65,7 @@ function shell() {
 
 function bindDelegatedEvents() {
   root.addEventListener("click", onRootClick);
+  root.addEventListener("change", onRootChange);
 }
 
 async function load() {
@@ -124,6 +135,19 @@ function statusSummaryLine() {
     .join(" · ") || "—";
 }
 
+// A total `failed` OR a `partial` (some periods failed, not all — e.g. one
+// flaky PDF download) can both be retried server-side
+// (`_RETRYABLE_RUN_STATUSES` in app/reports/batch.py includes `partial`) —
+// except a missing Reporting Ninja binding, which a retry cannot fix
+// (`Connect Reporting Ninja` replaces it instead, task-49 §2.3/§2.4). One
+// predicate shared by the per-row button, the header's "has anything to
+// retry" check, and the bulk "Rebuild failed clients" action, so the three
+// never drift out of sync the way the per-row-only fix once did.
+function isRetryable(client) {
+  const nameMissing = client.status === "failed" && client.error_code === "report_name_missing";
+  return (client.status === "failed" || client.status === "partial") && !nameMissing;
+}
+
 function renderHeader() {
   const host = root.querySelector("#rb-header");
   const kindMeta = REPORT_KIND_META[batch.kind];
@@ -136,7 +160,7 @@ function renderHeader() {
   // and rebuilding a client while a sibling is still running isn't a choice
   // that means anything yet.
   const canRebuild = isTerminal(batch.status) && batch.source === "pdf";
-  const hasFailed = batch.clients.some((c) => c.status === "failed");
+  const hasFailed = batch.clients.some(isRetryable);
   host.innerHTML = `
     <header class="reports-run-header reports-batch-header">
       <div class="reports-run-header__identity">
@@ -152,7 +176,11 @@ function renderHeader() {
       </div>
       <div class="reports-run-header__actions">
         ${hasClientPdfs ? `<a class="button button--quiet" href="${reportBatchPdfArchiveUrl(batch.id)}">${icon("download", "icon icon--tiny")}Download all PDFs</a>` : ""}
-        ${canRebuild && hasFailed ? `<button type="button" class="button button--quiet" id="rb-rebuild-failed">${icon("refresh", "icon icon--tiny")}Rebuild failed clients</button>` : ""}
+        ${hasClientPdfs ? `<button type="button" class="button button--quiet" id="rb-preview-pdf">${icon("eye", "icon icon--tiny")}Preview PDF</button>` : ""}
+        ${hasClientPdfs ? `<a class="button button--quiet" href="${reportBatchPortfolioPdfUrl(batch.id)}">${icon("file-text", "icon icon--tiny")}Portfolio PDF</a>` : ""}
+        ${hasClientPdfs ? `<button type="button" class="button button--quiet" id="rb-preview-table" aria-expanded="${portfolioTableOpen}">${icon("table", "icon icon--tiny")}${portfolioTableOpen ? "Hide table" : "Preview table"}</button>` : ""}
+        ${hasClientPdfs ? `<a class="button button--quiet" href="${reportBatchPortfolioXlsxUrl(batch.id)}">${icon("download", "icon icon--tiny")}Portfolio XLSX</a>` : ""}
+        ${canRebuild && hasFailed ? `<button type="button" class="button button--quiet" id="rb-rebuild-failed">${icon("refresh", "icon icon--tiny")}Rebuild failed/partial clients</button>` : ""}
         ${canRebuild ? `<button type="button" class="button button--quiet" id="rb-rebuild-all">${icon("refresh", "icon icon--tiny")}Rebuild all</button>` : ""}
         ${canCancel ? `
           <button type="button" class="button button--quiet" id="rb-cancel" ${batch.cancel_requested ? "disabled" : ""}>
@@ -178,7 +206,82 @@ function renderBody() {
       <ul class="reports-batch-matrix">
         ${rows.map(renderClientRow).join("")}
       </ul>
+    </section>
+    ${renderPortfolioTableSection()}`;
+}
+
+// --- Portfolio table preview (task-50) --------------------------------------
+//
+// The XLSX has no browser-native inline viewer the way the PDF gets via
+// `?disposition=inline` — this is the renderable substitute: the same
+// `ReportTableDTO` shape `reports-run.js`'s own result table already
+// renders for one client, here with a client `<select>` swapping which
+// one is shown (mirrors the agency's own hand-kept workbook's `Overview`
+// dropdown + `DATA` sheet — see task-50's plan — without the live-formula
+// machinery a static preview has no use for).
+
+function renderPortfolioTableSection() {
+  if (!portfolioTableOpen) return "";
+  if (portfolioTable === null) {
+    return `
+    <section class="reports-run-section" id="rb-portfolio-table-section">
+      <div class="section-heading"><div><p class="eyebrow">Portfolio</p><h2>Table preview</h2></div></div>
+      ${sectionSkeleton({ label: "portfolio table", rows: 8, columns: 6 })}
     </section>`;
+  }
+  const clients = portfolioTable.clients || [];
+  if (!clients.length) {
+    return `
+    <section class="reports-run-section" id="rb-portfolio-table-section">
+      <div class="section-heading"><div><p class="eyebrow">Portfolio</p><h2>Table preview</h2></div></div>
+      <div class="state-panel"><p>No client in this batch has a finished result yet.</p></div>
+    </section>`;
+  }
+  const activeId = clients.some((c) => c.client_id === portfolioTableClientId)
+    ? portfolioTableClientId
+    : clients[0].client_id;
+  const active = clients.find((c) => c.client_id === activeId);
+  return `
+    <section class="reports-run-section" id="rb-portfolio-table-section">
+      <div class="section-heading">
+        <div><p class="eyebrow">Portfolio</p><h2>Table preview</h2></div>
+        <select id="rb-portfolio-table-client" aria-label="Client">
+          ${clients.map((c) => `<option value="${escapeHtml(c.client_id)}" ${c.client_id === activeId ? "selected" : ""} translate="no">${escapeHtml(c.client_name)}</option>`).join("")}
+        </select>
+      </div>
+      ${renderPortfolioClientTable(active.table)}
+    </section>`;
+}
+
+function renderPortfolioClientTable(table) {
+  const periods = table.periods || [];
+  const changeLabels = table.change_labels || [];
+  return `
+    <div class="table-scroll">
+      <table class="analytics-table reports-result-table">
+        <thead><tr>
+          <th>Metric</th>
+          ${periods.map((p) => `
+            <th>
+              <span class="reports-period-head__label" translate="no">${escapeHtml(p.label)}</span>
+              <small class="reports-period-head__range">${escapeHtml(formatDateRange(p.date_from, p.date_to))}</small>
+            </th>`).join("")}
+          ${changeLabels.map((label) => `<th class="muted">${escapeHtml(label)}</th>`).join("")}
+        </tr></thead>
+        <tbody>${(table.rows || []).map(renderPortfolioTableRow).join("")}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderPortfolioTableRow(row) {
+  const valueCells = row.values.map((value) => `<td class="${value === null ? "muted" : ""}">${formatMetricValue(value)}</td>`).join("");
+  const changeCells = (row.changes || []).map((change) => {
+    if (change === null || change === undefined) return `<td class="muted">—</td>`;
+    const pct = (change * 100).toFixed(1);
+    const cls = change > 0 ? "reports-change--good" : change < 0 ? "reports-change--bad" : "";
+    return `<td class="${cls}">${change > 0 ? "+" : ""}${pct}%</td>`;
+  }).join("");
+  return `<tr><td class="analytics-row__value">${escapeHtml(row.label)}</td>${valueCells}${changeCells}</tr>`;
 }
 
 // task-49 §2.6: the matrix's own composition line — `cached_count` comes
@@ -200,15 +303,8 @@ function renderClientRow(client) {
   const isLive = !isTerminal(client.status);
   const succeeded = client.status === "succeeded" || client.status === "partial";
   const pdfPending = pendingClientPdf.has(client.run_id);
-  // task-49 §2.3/§2.4: a retry cannot fix a missing binding, so it isn't
-  // offered for this one failure — `Connect Reporting Ninja` replaces it.
   const nameMissing = client.status === "failed" && client.error_code === "report_name_missing";
-  // `partial` (some periods failed, not all — e.g. one flaky PDF download)
-  // is retryable server-side already (`_RETRYABLE_RUN_STATUSES` in
-  // app/reports/batch.py includes it); the matrix used to only offer Retry
-  // for a total `failed`, so a partial client's missing period had no way
-  // back to complete without leaving the batch page entirely.
-  const retryable = (client.status === "failed" || client.status === "partial") && !nameMissing;
+  const retryable = isRetryable(client);
   return `
     <li class="reports-batch-matrix-row" data-state="${escapeHtml(client.status)}">
       <div class="reports-batch-matrix-row__label">
@@ -354,9 +450,45 @@ function onRootClick(event) {
   if (pdfButton) { void onClientPdf(pdfButton.dataset.clientPdf, pdfButton); return; }
   const rebuildFailed = event.target.closest("#rb-rebuild-failed");
   if (rebuildFailed) {
-    void onRebuildSelection(batch.clients.filter((c) => c.status === "failed").map((c) => c.client_id), rebuildFailed);
+    void onRebuildSelection(batch.clients.filter(isRetryable).map((c) => c.client_id), rebuildFailed);
     return;
   }
   const rebuildAll = event.target.closest("#rb-rebuild-all");
-  if (rebuildAll) { void onRebuildSelection(batch.clients.map((c) => c.client_id), rebuildAll); }
+  if (rebuildAll) { void onRebuildSelection(batch.clients.map((c) => c.client_id), rebuildAll); return; }
+  const previewPdf = event.target.closest("#rb-preview-pdf");
+  if (previewPdf) { openPortfolioPdfPreview(); return; }
+  const previewTable = event.target.closest("#rb-preview-table");
+  if (previewTable) { void onTogglePortfolioTable(); }
+}
+
+function onRootChange(event) {
+  if (event.target.id === "rb-portfolio-table-client") {
+    portfolioTableClientId = event.target.value;
+    renderBody();
+  }
+}
+
+function openPortfolioPdfPreview() {
+  fileDialogTitle.textContent = "Portfolio PDF";
+  fileDialogSubtitle.textContent = `${batch.client_count} client${batch.client_count === 1 ? "" : "s"}`;
+  fileDialogBody.innerHTML = `<iframe src="${reportBatchPortfolioPdfUrl(batch.id, { inline: true })}" title="Portfolio PDF"></iframe>`;
+  fileDialog.showModal();
+}
+
+fileDialog?.addEventListener("close", () => { fileDialogBody.innerHTML = ""; });
+
+async function onTogglePortfolioTable() {
+  portfolioTableOpen = !portfolioTableOpen;
+  if (portfolioTableOpen && portfolioTable === null) {
+    renderBody(); // shows the skeleton immediately while the fetch is in flight
+    try {
+      portfolioTable = await getBatchPortfolioTable(batch.id);
+    } catch (error) {
+      if (isAbortError(error)) return;
+      toast(`Could not load the table preview: ${error.message}`);
+      portfolioTableOpen = false;
+      portfolioTable = null;
+    }
+  }
+  renderBody();
 }

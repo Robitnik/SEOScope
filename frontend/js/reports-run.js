@@ -19,7 +19,7 @@ import { buildReportsHash, buildReportsRunHash } from "./router.js?v=20260819-sp
 import {
   REPORT_CROSS_CHECK_META, REPORT_KIND_META, REPORT_RUN_STATUS_META, REPORT_SOURCE_META,
   escapeHtml, formatDateRange, formatDuration, formatDurationSeconds, formatFileSize,
-  formatTimestamp, icon, isTerminal, stateClass, statusIcon,
+  formatMetricValue, formatTimestamp, icon, isTerminal, stateClass, statusIcon,
 } from "./formatters.js?v=20260819-spin3";
 import { sectionSkeleton } from "./skeleton.js?v=20260819-spin3";
 
@@ -59,7 +59,6 @@ const LOG_LEVEL_META = {
 
 const logTimeFormatter = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 const shortDateFormatter = new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" });
-const numberFormatter = new Intl.NumberFormat("en-US");
 const ctrFormatter = new Intl.NumberFormat("en-US", { style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 let current = null; // { runId }
@@ -751,10 +750,6 @@ function renderMismatchTable(cells) {
         }).join("")}</tbody>
       </table>
     </div>`;
-}
-
-function formatMetricValue(value) {
-  return value === null || value === undefined ? "—" : numberFormatter.format(value);
 }
 
 function renderResultTable() {

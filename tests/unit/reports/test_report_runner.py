@@ -41,6 +41,43 @@ def _seed_client(temp_db, *, with_gsc: bool = True, report_name: str | None = No
         return client.id
 
 
+# --- parse_and_check: "no data" is not a parse failure -----------------------
+
+
+def test_parse_and_check_keeps_a_genuinely_empty_period(monkeypatch):
+    # Live regression (2026-08-19): a period whose PDF is a complete, valid
+    # Reporting Ninja report that legitimately has no data (task-48 §2.3's
+    # no-data normalization nulls all 8 metrics) used to be discarded as a
+    # parse FAILURE, the same as a broken/mismatched PDF — EFFYS's real
+    # Month YOY/Quarterly YOY periods lost their whole column over this.
+    empty_metrics = PeriodMetrics()
+    monkeypatch.setattr(runner, "parse_pdf", lambda _path: empty_metrics)
+    monkeypatch.setattr(runner, "looks_like_a_report_pdf", lambda _path: True)
+
+    events = []
+    result = runner.parse_and_check(
+        Path("irrelevant.pdf"), "Month YOY", lambda *a, **k: events.append(a)
+    )
+    assert result is empty_metrics
+    assert events[0][0] == "info"  # not "error" — this is not a failure
+
+
+def test_parse_and_check_still_fails_a_pdf_with_no_report_chrome(monkeypatch):
+    # The genuine failure case this must keep catching: 0 metrics found AND
+    # the PDF never had the report's own page structure — a real broken
+    # download or a wrong file, not an empty period.
+    empty_metrics = PeriodMetrics()
+    monkeypatch.setattr(runner, "parse_pdf", lambda _path: empty_metrics)
+    monkeypatch.setattr(runner, "looks_like_a_report_pdf", lambda _path: False)
+
+    events = []
+    result = runner.parse_and_check(
+        Path("irrelevant.pdf"), "This Month", lambda *a, **k: events.append(a)
+    )
+    assert result is None
+    assert events[0][0] == "error"
+
+
 def _create_run(temp_db, client_id: str, *, kind="monthly", source="api", params=None) -> str:
     periods = build_monthly_periods(today=_TODAY)
     with temp_db.session_scope() as session:
@@ -454,6 +491,47 @@ def test_api_run_also_produces_a_downloadable_xlsx(temp_db, monkeypatch):
     assert len(xlsx) == 1
     assert (get_settings().artifacts_dir / xlsx[0].path).is_file()
     assert xlsx[0].size_bytes > 0
+
+
+def test_client_pdf_renders_only_after_the_result_is_stored(temp_db, monkeypatch):
+    """Live regression (2026-08-19): the client PDF was rendered BEFORE
+    `_finish` stored `result_json`, and `GET /runs/{id}/document` — the very
+    URL Chromium is pointed at — answers `422 run_not_finished` until then.
+    So every automatic run failed with "Failed to find element matching
+    selector .report-doc__page", wrote no `client_pdf`, and left the batch's
+    "Download all PDFs" archive empty. Only the manual `POST .../client-pdf`
+    worked, because it necessarily runs after the run has finished.
+
+    Pins the ordering rather than the symptom: at render time the run must
+    already be readable as a finished report.
+    """
+    client_id = _seed_client(temp_db)
+    run_id = _create_run(temp_db, client_id, kind="monthly")
+    _fake_ga4_gsc(monkeypatch, metrics=PeriodMetrics(users=10, clicks=5, impressions=100))
+
+    seen: dict[str, object] = {}
+
+    def _fake_render(*, settings, run_id: str, out_path, headless):  # noqa: ARG001
+        with temp_db.session_scope() as session:
+            fresh = ReportRepository(session).get(run_id)
+            seen["result_json"] = fresh.result_json
+            seen["status"] = fresh.status
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"%PDF-1.4 fake")
+
+    monkeypatch.setattr(runner, "render_client_pdf", _fake_render)
+
+    runner.run(temp_db.session_scope, get_settings(), run_id)
+
+    assert seen, "the client PDF was never rendered at all"
+    assert seen["result_json"] is not None, (
+        "rendered before the result was stored — /document would answer 422"
+    )
+    assert seen["status"] == "succeeded"
+
+    with temp_db.session_scope() as session:
+        files = ReportRepository(session).list_files_for_run(run_id)
+    assert [f.kind for f in files].count("client_pdf") == 1
 
 
 def test_a_run_with_no_collected_period_writes_no_xlsx(temp_db, monkeypatch):
