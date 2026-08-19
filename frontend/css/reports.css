@@ -19,6 +19,13 @@
    (task-34) — a paused client is neither succeeding nor failing, so it
    borrows the same neutral-warning tone the checklist otherwise uses. */
 .state-paused { --state-color: var(--warning); }
+/* task-49 §2.2: the four `NinjaBindingState` values — `ready` reads as
+   success, `not_connected` is a plain fact (nothing to fix from this form),
+   the other two are the two flavours of "fixable from here, but not yet". */
+.state-ready { --state-color: var(--success); }
+.state-no_report_name { --state-color: var(--warning); }
+.state-not_connected { --state-color: var(--ink-dim); }
+.state-foreign_binding { --state-color: var(--danger); }
 
 #reports-page-root .muted,
 #reports-run-page-root .muted,
@@ -132,17 +139,48 @@ tr:has(.reports-cross-check.state-mismatch) { border-left: 3px solid var(--dange
 .reports-scope-toolbar .search-field { flex: 1 1 220px; min-width: 180px; }
 .reports-scope-count { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-muted); font-size: 12px; }
 
-.reports-scope-list { display: grid; gap: 6px; max-height: 320px; overflow-y: auto; }
-.reports-scope-client {
-  display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px;
-  border: 1px solid var(--line); cursor: pointer;
+/* task-49 §2.2: a genuine `<table>` (AGENTS §7 — tabular data belongs in one),
+   replacing the plain checkbox list — the binding state and the report name
+   are columns now, not a single label's worth of text. Scrolls internally
+   like the list it replaces (`max-height`/`overflow-y`), same dialog-body
+   constraint. */
+.reports-bindings-table-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--line); }
+.reports-bindings-table { width: 100%; min-width: 560px; border-collapse: collapse; }
+.reports-bindings-table thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface); text-align: left;
+  padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-muted);
+  border-bottom: 1px solid var(--line);
 }
-.reports-scope-client:has(:checked) { border-color: var(--accent); background: rgb(255 74 23 / 8%); }
-.reports-scope-client input { accent-color: var(--accent); }
-.reports-scope-client__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.reports-scope-client__reason { display: inline-flex; align-items: center; gap: 5px; color: var(--warning); font-size: 12px; }
-.reports-scope-client--disabled { cursor: not-allowed; opacity: .6; }
-.reports-scope-client--disabled:has(:checked) { background: transparent; }
+.reports-binding-row { border-top: 1px solid var(--line-soft); }
+.reports-binding-row:first-child { border-top: 0; }
+.reports-binding-row td { padding: 8px 12px; vertical-align: middle; }
+.reports-binding-row:has(input:checked) { background: rgb(255 74 23 / 8%); }
+/* Narrow viewports scroll this table horizontally (AGENTS §11 — wide
+   content scrolls inside its own container, never the page) — checkbox +
+   name stay pinned so a client is still identifiable once scrolled over to
+   reach its Connect/Exclude buttons. */
+.reports-binding-row td:first-child,
+.reports-binding-row td:nth-child(2),
+.reports-bindings-table thead th:first-child,
+.reports-bindings-table thead th:nth-child(2) {
+  position: sticky; left: 0; background: var(--surface); z-index: 1;
+}
+.reports-binding-row td:first-child { left: 0; width: 36px; }
+.reports-binding-row td:nth-child(2) { left: 36px; }
+.reports-bindings-table thead th:nth-child(2) { left: 36px; }
+.reports-binding-row input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px; }
+.reports-binding-row__name { font-weight: 700; margin-right: 8px; }
+.reports-binding-row__report { color: var(--ink-muted); font-size: 13px; overflow-wrap: anywhere; }
+.reports-binding-row__actions { display: flex; gap: 8px; justify-content: flex-end; white-space: nowrap; }
+/* `.button` itself doesn't reset `text-decoration` (same convention already
+   applied to `.blogs-export-actions a.button`/`.audit-actions a.button` in
+   this codebase) — needed here for "Open client page", the one action in
+   this table that's a real navigation link, not a button. */
+.reports-binding-row__actions a.button { text-decoration: none; }
+.reports-binding-row--excluded { opacity: .55; }
+.reports-binding-row--excluded:has(input:checked) { background: transparent; }
+.reports-binding-row__connect td { padding: 0 12px 14px; border-top: 0; }
+.reports-binding-row__connect .reports-ninja-discovery { margin-top: 8px; }
 
 .reports-kind-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .reports-kind-card {
@@ -246,6 +284,10 @@ tr:has(.reports-cross-check.state-mismatch) { border-left: 3px solid var(--dange
 
 .reports-wizard-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .reports-wizard-reason { color: var(--ink-muted); font-size: 12px; }
+/* task-49 §2.2: the Start button's own "N will fail" notice — never a
+   blocking `.form-error` (Start stays enabled; this is an informed choice,
+   not a validation failure), just a warning tone on the same line. */
+.reports-wizard-reason--warning { color: var(--warning); font-weight: 700; }
 .reports-wizard-actions { display: flex; gap: 10px; margin-left: auto; }
 
 /* ------------------------------------------------------------------ */
@@ -272,8 +314,10 @@ tr:has(.reports-cross-check.state-mismatch) { border-left: 3px solid var(--dange
 .reports-progress-row {
   /* 172px (was 140px): "Failed (3/3 attempts)"/"Running — retry 2/3"
      (task-47 follow-up) are longer than the plain state words this column
-     was sized for. */
-  display: grid; grid-template-columns: minmax(0, 1fr) 172px 76px; align-items: center; gap: 12px;
+     was sized for. Trailing 28px (task-49 §2.5): the optional per-period
+     "Re-download" icon-button — empty and harmless on every row that
+     doesn't have one. */
+  display: grid; grid-template-columns: minmax(0, 1fr) 172px 76px 28px; align-items: center; gap: 12px;
   padding: 11px 20px; border-top: 1px solid var(--line-soft);
 }
 .reports-progress-list > li:first-child .reports-progress-row { border-top: 0; }
@@ -298,6 +342,10 @@ tr:has(.reports-cross-check.state-mismatch) { border-left: 3px solid var(--dange
 .reports-progress-row[data-state="waiting"] .reports-progress-row__label strong { color: var(--ink-muted); }
 .reports-progress-row[data-state="skipped"] .reports-progress-row__label { opacity: .6; }
 .reports-progress-row__duration { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-muted); font-size: 12px; }
+/* task-49 §2.5: a light icon-button, not a full labelled button — this is a
+   rare, secondary action (re-download an already-good period) and must not
+   compete with the row's own status word for attention. */
+.reports-progress-row__rebuild { width: 28px; height: 28px; min-width: 0; padding: 0; justify-self: end; }
 
 .reports-progress-error {
   display: flex; flex-wrap: wrap; align-items: start; gap: 8px 12px; padding: 10px 20px;
@@ -462,6 +510,11 @@ tr:has(.reports-cross-check.state-mismatch) { border-left: 3px solid var(--dange
 .reports-batch-matrix-row__label a { color: var(--ink); font-weight: 700; text-decoration: none; }
 .reports-batch-matrix-row__label a:hover, .reports-batch-matrix-row__label a:focus-visible { color: var(--accent); }
 .reports-batch-matrix-row__label small { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+/* task-49 §2.6: the status label and its cache-composition note share this
+   column instead of fighting the grid for a 5th slot. */
+.reports-batch-matrix-row__status { display: flex; flex-direction: column; align-items: start; gap: 3px; }
+.reports-batch-matrix-row__cache { margin: 0; }
+.reports-batch-matrix-row__cache-note { color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
 .reports-batch-matrix-row__duration { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-muted); font-size: 12px; }
 .reports-batch-matrix-row__actions { display: flex; gap: 8px; justify-content: flex-end; }
 .reports-batch-matrix-row__error {

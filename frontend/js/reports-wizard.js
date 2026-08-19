@@ -10,13 +10,14 @@
 // one place that logic lives; this file only calls it.
 
 import {
-  computeReportPeriods, createReportBatch, createReportRun, getNinjaReportName, getReportTypes,
-  isAbortError, putNinjaReportName,
-} from "./api.js?v=20260817-spin1";
-import { isPaused } from "./client-status.js?v=20260817-spin1";
+  computeReportPeriods, createReportBatch, createReportRun, getNinjaBindings, getNinjaReportName,
+  getReportTypes, isAbortError, putNinjaReportName,
+} from "./api.js?v=20260819-spin3";
+import { isPaused } from "./client-status.js?v=20260819-spin3";
+import { buildClientHash } from "./router.js?v=20260819-spin3";
 import {
   REPORT_KIND_META, escapeHtml, formatDateRange, formatDurationSeconds, icon, statusIcon,
-} from "./formatters.js?v=20260817-spin1";
+} from "./formatters.js?v=20260819-spin3";
 
 const dialog = document.querySelector("#reports-wizard-dialog");
 const stepsNav = document.querySelector("#reports-wizard-steps");
@@ -55,6 +56,26 @@ function defaultState() {
     // later PDF run report another client's numbers under this client's name.
     ninjaMatches: [], ninjaOthers: [], ninjaSelectedCandidate: "", ninjaConfirmed: false,
     error: null,
+    // task-49 §2.1: `null` until `getNinjaBindings()` resolves — the
+    // checklist shows a short loading line rather than treating "not loaded
+    // yet" as "not connected". Keyed by `client_id` once loaded.
+    bindings: null,
+    // task-49 §2.2: a client removed from the batch stays visible with an
+    // `Excluded` mark instead of disappearing — "12 of 14" must never turn
+    // into a guess about who is missing.
+    excludedClientIds: new Set(),
+    // task-49 §2.2: per-client inline discovery state for the bindings
+    // table (a client can be reconnected without leaving the wizard). Keyed
+    // by `client_id`, shape mirrors the single-client `ninja*` fields above:
+    // `{ open, status: "idle"|"checking"|"known"|"error", name, matches,
+    // others, selectedCandidate, confirmed, message }`.
+    inlineConnect: {},
+  };
+}
+
+function bindingFor(clientId) {
+  return (state.bindings && state.bindings[clientId]) || {
+    connected: false, ninja_report_name: null, state: "not_connected",
   };
 }
 
@@ -76,20 +97,20 @@ function clientNinjaConfigured(client) {
   return Boolean(rn && rn.state !== "not_configured");
 }
 
-// --- Scope step: "All clients" checklist (task-47 §3.1) --------------------
+// --- Scope step: "All clients" bindings table (task-47 §3.1, task-49 §2.1-2.2) --
 //
 // The account's saved Reporting Ninja report NAME per client is not on the
 // dashboard card, and reading it cheaply (task-45's `_client_identity`) is
-// fine — but *discovering* it when unset launches the one shared PDF
-// browser session for ~10s (task-42 §1.1), which 14 sequential lookups
-// would monopolize before the batch itself even starts. So the checklist
-// disables a client only for the source-independent reason it can check for
-// free (no Reporting Ninja connection at all); a client connected but
-// missing a saved PDF report name simply fails that one child in isolation
-// at run time, exactly like every other per-client failure in this engine
-// (task-42 §3.7.5) — noted to the operator in the Source step instead.
+// fine — `GET /reports/ninja-bindings` (task-49) is exactly this cheap DB
+// read, one call for the whole portfolio. A client stays disabled only for
+// the one thing the form genuinely cannot fix from here: no Reporting Ninja
+// connection at all. `no_report_name`/`foreign_binding` are fixable INLINE
+// (Connect) or via Exclude, so they are selectable-with-a-warning instead —
+// the live incident this closes was 9 clients the wizard silently let
+// through with no warning at all, not 9 clients that needed blocking.
 function clientDisabledReason(client) {
-  if (!clientNinjaConfigured(client)) return "Reporting Ninja isn't connected";
+  const binding = bindingFor(client.client_id);
+  if (binding.state === "not_connected") return "Reporting Ninja isn't connected";
   return null;
 }
 
@@ -105,7 +126,9 @@ function filteredScopeClients() {
 }
 
 function selectableClientIds() {
-  return context.clients.filter((client) => !clientDisabledReason(client)).map((client) => client.client_id);
+  return context.clients
+    .filter((client) => !clientDisabledReason(client) && !state.excludedClientIds.has(client.client_id))
+    .map((client) => client.client_id);
 }
 
 function toggleClientSelected(clientId) {
@@ -115,8 +138,14 @@ function toggleClientSelected(clientId) {
   rerenderScopeStep();
 }
 
+// task-49 §2.2: "Select all" answers the live incident directly — a mass
+// selection must never silently include a client that is guaranteed to fail.
+// Only `ready` (never `no_report_name`/`foreign_binding`, even though those
+// ARE individually selectable) and never something already excluded.
 function selectAllScopeClients() {
-  state.selectedClientIds = selectableClientIds();
+  state.selectedClientIds = context.clients
+    .filter((client) => bindingFor(client.client_id).state === "ready" && !state.excludedClientIds.has(client.client_id))
+    .map((client) => client.client_id);
   rerenderScopeStep();
 }
 
@@ -125,18 +154,48 @@ function clearScopeClients() {
   rerenderScopeStep();
 }
 
-function rerenderScopeStep() {
-  body.innerHTML = renderStep1();
-  renderFooter();
+function excludeScopeClient(clientId) {
+  state.excludedClientIds.add(clientId);
+  state.selectedClientIds = state.selectedClientIds.filter((id) => id !== clientId);
+  rerenderScopeStep();
 }
 
-// Default selection is every `collectable` client (task-47 §3.1) — enabled
-// and not paused. A paused client stays visible and addable, just unchecked
-// by default, matching task-34's own "paused stays visible, drops out of
-// mass operations unless named explicitly" rule.
+function includeScopeClient(clientId) {
+  state.excludedClientIds.delete(clientId);
+  rerenderScopeStep();
+}
+
+// Every inline action (pick a candidate, check confirm, save) re-renders the
+// WHOLE step-1 body, same as every other render path in this file — but
+// unlike those, this one fires from deep inside a long, scrolled table, and
+// resetting scroll to the top on each click reads as the interaction fighting
+// the operator. Both scroll positions that matter — the table's own internal
+// scroll and the dialog body around it — are captured and restored around
+// the re-render, so nothing visibly jumps.
+function rerenderScopeStep() {
+  const tableScroll = body.querySelector(".reports-bindings-table-scroll");
+  const savedTableScroll = tableScroll ? { top: tableScroll.scrollTop, left: tableScroll.scrollLeft } : null;
+  const savedBodyScrollTop = body.scrollTop;
+  body.innerHTML = renderStep1();
+  renderFooter();
+  const restoredTableScroll = body.querySelector(".reports-bindings-table-scroll");
+  if (restoredTableScroll && savedTableScroll) {
+    restoredTableScroll.scrollTop = savedTableScroll.top;
+    restoredTableScroll.scrollLeft = savedTableScroll.left;
+  }
+  body.scrollTop = savedBodyScrollTop;
+}
+
+// Default selection is every `ready` client (task-47 §3.1, tightened by
+// task-49 §2.2 for the same reason as `selectAllScopeClients` — the very
+// first thing shown when "All clients" is chosen must not already contain a
+// guaranteed failure) that's enabled and not paused. A paused client stays
+// visible and addable, just unchecked by default, matching task-34's own
+// "paused stays visible, drops out of mass operations unless named
+// explicitly" rule.
 function defaultSelectedClientIds() {
   return context.clients
-    .filter((client) => !clientDisabledReason(client) && !isPaused(client))
+    .filter((client) => bindingFor(client.client_id).state === "ready" && !isPaused(client))
     .map((client) => client.client_id);
 }
 
@@ -148,15 +207,43 @@ function selectScope(scope) {
   renderStep();
 }
 
-export function openReportsWizard({ clients, trigger, onCreated, onBatchCreated }) {
+// `focusClientId`/`focusKind` (task-49 §2.3): the batch matrix's `Connect
+// Reporting Ninja` action (`reports-batch.js`) jumps straight to this
+// client's step-4 discovery block instead of making the operator re-pick
+// scope/type/parameters just to fix a binding — reuses the exact single-
+// client mechanic task-45 built, only entered at a different step.
+export function openReportsWizard({ clients, trigger, onCreated, onBatchCreated, focusClientId, focusKind }) {
   context = { clients, trigger, onCreated, onBatchCreated };
   state = defaultState();
+  if (focusClientId) {
+    state.scope = "one";
+    state.clientId = focusClientId;
+    state.kind = focusKind || "monthly";
+    state.source = "pdf";
+    state.step = 4;
+  }
   types = null;
   submitting = false;
-  subtitle.textContent = "Choose a report type, its parameters, then how to collect it.";
+  subtitle.textContent = focusClientId
+    ? "Connect this client's Reporting Ninja report, then generate."
+    : "Choose a report type, its parameters, then how to collect it.";
   render();
   dialog.showModal();
   getReportTypes().then((result) => { types = result; if (state.step === 3) renderStep(); }).catch(() => {});
+  // task-49 §2.1: fetched once per wizard open, alongside `types` — cheap
+  // (no browser call, see `getNinjaBindings`) and needed before Start can be
+  // pressed, not only after "All clients" is chosen.
+  getNinjaBindings({ requestKey: "reports-wizard-ninja-bindings" }).then((result) => {
+    if (!state) return;
+    state.bindings = Object.fromEntries(result.rows.map((row) => [row.client_id, row]));
+    if (state.scope === "all" && state.selectedClientIds.length === 0) {
+      state.selectedClientIds = defaultSelectedClientIds();
+    }
+    if (state.step === 1) renderStep();
+  }).catch(() => {
+    if (state) state.bindings = {};
+  });
+  if (focusClientId) void checkNinjaReport();
 }
 
 dialog?.addEventListener("close", () => {
@@ -213,6 +300,22 @@ function reasonForCurrentStep() {
   return step4Reason();
 }
 
+// task-49 §2.2: a `no_report_name`/`foreign_binding` client is selectable on
+// purpose (the operator's own informed choice, not a form bug) — but the
+// Start button still has to say exactly what that choice costs, not stay
+// silent about it. Non-blocking: `renderFooter` never disables Start for this.
+function notReadySelectedCount() {
+  if (state.scope !== "all" || !state.bindings) return 0;
+  return state.selectedClientIds.filter((id) => bindingFor(id).state !== "ready").length;
+}
+
+function step4Notice() {
+  if (state.source !== "pdf") return "";
+  const atRisk = notReadySelectedCount();
+  if (!atRisk) return "";
+  return `${atRisk} of ${state.selectedClientIds.length} client${state.selectedClientIds.length === 1 ? "" : "s"} will fail — connect or exclude them.`;
+}
+
 // --- Rendering: chrome -------------------------------------------------
 
 function render() {
@@ -245,7 +348,9 @@ function renderStep() {
 
 function renderFooter() {
   const reason = submitting ? "" : reasonForCurrentStep();
-  reasonLine.textContent = reason;
+  const notice = !reason && state.step === 4 && !submitting ? step4Notice() : "";
+  reasonLine.textContent = reason || notice;
+  reasonLine.classList.toggle("reports-wizard-reason--warning", !reason && Boolean(notice));
   const backButton = state.step > 1 ? `<button type="button" class="button button--quiet" id="rw-back">${icon("chevron-left")}Back</button>` : "";
   const primaryLabel = state.step < 4 ? "Next" : (submitting ? "Starting…" : startButtonLabel());
   const primaryDisabled = submitting || Boolean(reason);
@@ -299,22 +404,39 @@ function renderStep1() {
     ${showChecklist ? renderScopeChecklist() : ""}`;
 }
 
+// task-49 §2.2: labels/icons for the four binding states — named after the
+// exact `NinjaBindingState` values so the class is always `state-${value}`,
+// the same one-class-per-literal-value convention `.state-cached`/
+// `.state-mismatch` already use elsewhere in this stylesheet.
+const BINDING_STATE_META = {
+  ready: { label: "Ready", icon: "circle-check" },
+  no_report_name: { label: "No report name", icon: "alert-triangle" },
+  not_connected: { label: "Not connected", icon: "plug-off" },
+  foreign_binding: { label: "Foreign binding", icon: "alert-triangle" },
+};
+
 function renderScopeChecklist() {
   const clients = filteredScopeClients();
   const selected = new Set(state.selectedClientIds);
   const total = context.clients.length;
-  const rows = clients.map((client) => {
-    const reason = clientDisabledReason(client);
-    const disabled = Boolean(reason);
-    const paused = isPaused(client);
-    return `
-      <label class="reports-scope-client${disabled ? " reports-scope-client--disabled" : ""}">
-        <input type="checkbox" data-scope-client="${escapeHtml(client.client_id)}" ${selected.has(client.client_id) ? "checked" : ""} ${disabled ? "disabled" : ""}>
-        <span class="reports-scope-client__name" translate="no">${escapeHtml(client.name)}</span>
-        ${paused ? `<span class="status-label state-paused">${icon("player-pause", "icon icon--tiny")}Paused</span>` : ""}
-        ${reason ? `<span class="reports-scope-client__reason">${icon("alert-triangle", "icon icon--tiny")}${escapeHtml(reason)}</span>` : ""}
-      </label>`;
-  }).join("");
+
+  const tableOrLoading = state.bindings === null
+    ? `<p class="field-help">${statusIcon("loader-2")}Loading Reporting Ninja bindings…</p>`
+    : `<div class="reports-bindings-table-scroll"><table class="reports-bindings-table">
+        <thead>
+          <tr>
+            <th class="visually-hidden">Select</th>
+            <th>Client</th>
+            <th>Reporting Ninja report</th>
+            <th>State</th>
+            <th class="visually-hidden">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${clients.map((client) => renderBindingRow(client, selected)).join("")
+            || `<tr><td colspan="5"><p class="field-help">No client matches "${escapeHtml(state.clientQuery)}".</p></td></tr>`}
+        </tbody>
+      </table></div>`;
 
   return `
     <div class="reports-step-section reports-scope-checklist">
@@ -327,10 +449,163 @@ function renderScopeChecklist() {
         <button type="button" class="button button--quiet" id="rw-clear-clients">Clear</button>
         <span class="reports-scope-count">${state.selectedClientIds.length} of ${total} selected</span>
       </div>
-      <div class="reports-scope-list" role="group" aria-label="Clients">
-        ${rows || `<p class="field-help">No client matches "${escapeHtml(state.clientQuery)}".</p>`}
-      </div>
+      ${tableOrLoading}
     </div>`;
+}
+
+function renderBindingRow(client, selected) {
+  const binding = bindingFor(client.client_id);
+  const excluded = state.excludedClientIds.has(client.client_id);
+  const paused = isPaused(client);
+  const meta = BINDING_STATE_META[binding.state];
+  const inline = state.inlineConnect[client.client_id];
+
+  let action = "";
+  if (excluded) {
+    action = `<button type="button" class="button button--quiet" data-scope-include="${escapeHtml(client.client_id)}">Include</button>`;
+  } else if (binding.state === "not_connected") {
+    action = `<a class="button button--quiet" href="${buildClientHash(client.client_id)}">Open client page</a>`;
+  } else if (binding.state === "no_report_name" || binding.state === "foreign_binding") {
+    action = `
+      <button type="button" class="button button--quiet" data-scope-connect="${escapeHtml(client.client_id)}" aria-expanded="${Boolean(inline?.open)}">Connect</button>
+      <button type="button" class="button button--quiet" data-scope-exclude="${escapeHtml(client.client_id)}">Exclude</button>`;
+  }
+
+  const row = `
+    <tr class="reports-binding-row${excluded ? " reports-binding-row--excluded" : ""}" data-state="${binding.state}">
+      <td>
+        <input type="checkbox" data-scope-client="${escapeHtml(client.client_id)}"
+          ${selected.has(client.client_id) && !excluded ? "checked" : ""}
+          ${binding.state === "not_connected" || excluded ? "disabled" : ""}
+          aria-label="Select ${escapeHtml(client.name)}">
+      </td>
+      <td>
+        <span class="reports-binding-row__name" translate="no">${escapeHtml(client.name)}</span>
+        ${paused ? `<span class="status-label state-paused">${icon("player-pause", "icon icon--tiny")}Paused</span>` : ""}
+        ${excluded ? `<span class="status-label state-not_connected">Excluded</span>` : ""}
+      </td>
+      <td class="reports-binding-row__report" translate="no">${binding.ninja_report_name ? escapeHtml(binding.ninja_report_name) : "—"}</td>
+      <td><span class="status-label state-${binding.state}">${icon(meta.icon, "icon icon--tiny")}${meta.label}</span></td>
+      <td class="reports-binding-row__actions">${action}</td>
+    </tr>
+    ${inline?.open ? `<tr class="reports-binding-row__connect"><td></td><td colspan="4">${renderInlineConnect(client)}</td></tr>` : ""}`;
+  return row;
+}
+
+// --- Inline Connect (task-49 §2.2) ------------------------------------------
+//
+// Reuses the exact discovery/save mechanic task-45 built for the single-
+// client step-4 flow (`matches`/`others`/`confirm_mismatch`) — just keyed by
+// `client_id` instead of one global slot, so more than one row can be open.
+
+function renderInlineConnect(client) {
+  const entry = state.inlineConnect[client.client_id];
+  const found = entry.matches.length + entry.others.length;
+  if (entry.status === "checking") {
+    return `<p class="field-help">${statusIcon("loader-2")}Searching the Reporting Ninja account for this client's report…</p>`;
+  }
+  if (entry.status === "error") {
+    return `<p class="form-error" role="alert">${escapeHtml(entry.message)}</p>`;
+  }
+  if (entry.status !== "known") return "";
+  if (!found) {
+    return `<p class="form-error" role="alert">No reports found in the Reporting Ninja account for this client. Create the client's report in Reporting Ninja first.</p>`;
+  }
+  const foreign = inlineCandidateIsForeign(entry);
+  const saveBlocked = entry.saving || !entry.selectedCandidate || (foreign && !entry.confirmed);
+  return `
+    ${entry.saveError ? `<p class="form-error" role="alert">${escapeHtml(entry.saveError)}</p>` : ""}
+    ${entry.matches.length ? `
+      <fieldset class="reports-ninja-candidates">
+        <legend>Reports for <span translate="no">${escapeHtml(client.name)}</span></legend>
+        ${entry.matches.map((c) => renderInlineCandidateRow(client, c)).join("")}
+      </fieldset>`
+      : `<p class="reports-ninja-empty">${icon("alert-triangle", "icon icon--tiny")}No report in the account starts with <strong translate="no">${escapeHtml(client.name)}</strong>.</p>`}
+    ${entry.others.length ? `
+      <details class="reports-ninja-others" ${foreign ? "open" : ""}>
+        <summary>Other reports in the account (${entry.others.length}) — belong to different clients</summary>
+        <fieldset class="reports-ninja-candidates">
+          <legend class="visually-hidden">Reports belonging to other clients</legend>
+          ${entry.others.map((c) => renderInlineCandidateRow(client, c)).join("")}
+        </fieldset>
+      </details>`
+      : ""}
+    ${foreign ? `
+      <label class="reports-force-refresh reports-ninja-confirm" for="rw-inline-confirm-${escapeHtml(client.client_id)}">
+        <input type="checkbox" id="rw-inline-confirm-${escapeHtml(client.client_id)}" data-inline-confirm="${escapeHtml(client.client_id)}" ${entry.confirmed ? "checked" : ""}>
+        <span><strong>I confirm «<span translate="no">${escapeHtml(entry.selectedCandidate)}</span>» is the report for <span translate="no">${escapeHtml(client.name)}</span></strong><small>Its name belongs to a different client.</small></span>
+      </label>` : ""}
+    <button type="button" class="button button--primary" data-inline-save="${escapeHtml(client.client_id)}" ${saveBlocked ? "disabled" : ""}>
+      ${entry.saving ? statusIcon("loader-2") : ""}${entry.saving ? "Saving…" : "Save this report name"}
+    </button>`;
+}
+
+function renderInlineCandidateRow(client, candidate) {
+  const entry = state.inlineConnect[client.client_id];
+  return `
+    <label class="reports-ninja-candidate">
+      <input type="radio" name="rw-inline-candidate-${escapeHtml(client.client_id)}" value="${escapeHtml(candidate.name)}" data-inline-candidate="${escapeHtml(client.client_id)}" ${entry.selectedCandidate === candidate.name ? "checked" : ""}>
+      <strong translate="no">${escapeHtml(candidate.name)}</strong>
+      ${candidate.exact_match ? `<span class="status-label state-succeeded">${icon("check", "icon icon--tiny")}This client</span>` : ""}
+    </label>`;
+}
+
+function inlineCandidateIsForeign(entry) {
+  return Boolean(entry.selectedCandidate) && !entry.matches.some((c) => c.name === entry.selectedCandidate);
+}
+
+function openInlineConnect(clientId) {
+  const existing = state.inlineConnect[clientId];
+  if (existing?.open) { existing.open = false; rerenderScopeStep(); return; }
+  state.inlineConnect[clientId] = {
+    open: true, status: "checking", name: null, matches: [], others: [],
+    selectedCandidate: "", confirmed: false, message: "", saving: false, saveError: null,
+  };
+  rerenderScopeStep();
+  getNinjaReportName(clientId).then((result) => {
+    if (!state) return;
+    const entry = state.inlineConnect[clientId];
+    if (!entry) return;
+    entry.status = "known";
+    entry.name = result.ninja_report_name || null;
+    entry.matches = result.matches || [];
+    entry.others = result.others || [];
+    entry.selectedCandidate = entry.matches[0]?.name || "";
+    rerenderScopeStep();
+  }).catch((error) => {
+    if (isAbortError(error) || !state) return;
+    const entry = state.inlineConnect[clientId];
+    if (!entry) return;
+    entry.status = "error";
+    entry.message = `Could not search Reporting Ninja: ${error.message}`;
+    rerenderScopeStep();
+  });
+}
+
+function saveInlineConnect(clientId) {
+  const entry = state.inlineConnect[clientId];
+  const name = entry?.selectedCandidate;
+  if (!name || entry.saving || (inlineCandidateIsForeign(entry) && !entry.confirmed)) return;
+  entry.saving = true;
+  entry.saveError = null;
+  rerenderScopeStep();
+  putNinjaReportName(clientId, name, { confirmMismatch: inlineCandidateIsForeign(entry) }).then(() => {
+    if (!state) return;
+    // task-49 §2.2: the row flips to `Ready` in place — no wizard reload.
+    if (state.bindings) {
+      state.bindings[clientId] = { ...bindingFor(clientId), ninja_report_name: name, state: "ready" };
+    }
+    delete state.inlineConnect[clientId];
+    rerenderScopeStep();
+  }).catch((error) => {
+    if (isAbortError(error) || !state) return;
+    const live = state.inlineConnect[clientId];
+    // A failed SAVE keeps the candidate list and Save button in place (status
+    // stays "known") — losing them meant the only way to try again was to
+    // close and reopen Connect, re-running discovery for nothing.
+    if (live) { live.saving = false; live.saveError = `Could not save the report name: ${error.message}`; }
+    rerenderScopeStep();
+  });
 }
 
 // --- Step 2: type ----------------------------------------------------------
@@ -487,6 +762,20 @@ function renderStep4() {
       : `~${formatDurationSeconds(apiSeconds)}`;
   const pdfEstimate = pdfSeconds === null ? "…" : `~${formatDurationSeconds(pdfSeconds)}`;
 
+  // The caveat has to stop promising cache reuse once the operator has asked
+  // for a full re-download — the estimate is computed as
+  // `perColumn × periods × clients` either way, i.e. it always assumed no
+  // cache, so with Force re-download on it becomes the honest number rather
+  // than a pessimistic ceiling.
+  const pdfCaveat = [
+    state.forceRefresh
+      ? "Force re-download is on — nothing is reused from cache, so expect the full estimate."
+      : "Closed periods already downloaded before are reused from cache — actual time can be lower.",
+    clientCount > 1
+      ? "One browser, shared across the whole batch — clients go one at a time, not in parallel."
+      : "",
+  ].filter(Boolean).join(" ");
+
   return `
     <div class="reports-source-grid" role="group" aria-label="Collection source">
       <button type="button" class="reports-source-card" data-source="api" aria-pressed="${state.source === "api"}" data-autofocus>
@@ -498,28 +787,40 @@ function renderStep4() {
         <strong>PDF — evidence</strong>
         <span class="reports-source-card__estimate">${pdfEstimate}</span>
         <p>Downloads the actual client-facing PDFs and cross-checks them against the API.</p>
-        <small class="reports-source-card__caveat">${clientCount > 1
-          ? "One browser, shared across the whole batch — clients go one at a time, not in parallel."
-          : "Closed periods already downloaded before are reused from cache — actual time can be lower."}</small>
+        <small class="reports-source-card__caveat">${escapeHtml(pdfCaveat)}</small>
       </button>
     </div>
     ${state.source === "pdf" ? (state.scope === "one" ? renderPdfExtras() : renderBatchPdfNote()) : ""}`;
 }
 
+// task-49: a batch had NO force-refresh control at all — `force_refresh`
+// silently went out as `false` even though `ReportBatchCreateRequest` accepts
+// it, so "run the portfolio, ignoring yesterday's PDFs" was simply not
+// expressible. Same control for both scopes now; unchecked stays the default
+// (task-49 §2.7: the cache is a correct optimisation, not something to
+// disable by default).
+function renderForceRefreshToggle() {
+  return `
+    <label class="reports-force-refresh" for="rw-force-refresh">
+      <input type="checkbox" id="rw-force-refresh" ${state.forceRefresh ? "checked" : ""}>
+      <span><strong>Force re-download</strong><small>Ignore cached PDFs for closed periods and download every column again.${
+        state.scope === "all" ? " The estimate above already assumes a full download." : ""
+      }</small></span>
+    </label>`;
+}
+
 function renderBatchPdfNote() {
   return `
+    ${renderForceRefreshToggle()}
     <p class="reports-client-hint">${icon("info-circle")}
       A client with no saved Reporting Ninja report name fails on its own — the rest of the batch keeps going.
-      Save a missing report name from that client's own page first.
+      Connect or exclude it in the Scope step above.
     </p>`;
 }
 
 function renderPdfExtras() {
   return `
-    <label class="reports-force-refresh" for="rw-force-refresh">
-      <input type="checkbox" id="rw-force-refresh" ${state.forceRefresh ? "checked" : ""}>
-      <span><strong>Force re-download</strong><small>Ignore cached PDFs for closed periods and download every column again.</small></span>
-    </label>
+    ${renderForceRefreshToggle()}
     ${renderNinjaReportBlock()}`;
 }
 
@@ -606,6 +907,22 @@ function onBodyClick(event) {
   if (event.target.closest("#rw-select-all")) { selectAllScopeClients(); return; }
   if (event.target.closest("#rw-clear-clients")) { clearScopeClients(); return; }
 
+  const connectButton = event.target.closest("[data-scope-connect]");
+  if (connectButton) { openInlineConnect(connectButton.dataset.scopeConnect); return; }
+
+  const excludeButton = event.target.closest("[data-scope-exclude]");
+  if (excludeButton) { excludeScopeClient(excludeButton.dataset.scopeExclude); return; }
+
+  const includeButton = event.target.closest("[data-scope-include]");
+  if (includeButton) { includeScopeClient(includeButton.dataset.scopeInclude); return; }
+
+  // "Open client page" navigates away — close the modal so it doesn't sit
+  // open behind/in front of the page the operator just asked to see.
+  if (event.target.closest(".reports-binding-row__actions a")) { dialog.close(); return; }
+
+  const inlineSave = event.target.closest("[data-inline-save]");
+  if (inlineSave) { saveInlineConnect(inlineSave.dataset.inlineSave); return; }
+
   const kindCard = event.target.closest("[data-kind]");
   if (kindCard) { state.kind = kindCard.dataset.kind; renderStep(); return; }
 
@@ -645,6 +962,10 @@ function onBodyChange(event) {
     renderFooter();
   } else if (event.target.id === "rw-force-refresh") {
     state.forceRefresh = event.target.checked;
+    // Re-render so the PDF card's caveat stops/starts promising cache reuse
+    // — `rerenderSourceStep` keeps focus on the checkbox that was just
+    // toggled instead of jumping to the top of the step.
+    rerenderSourceStep("#rw-force-refresh");
   } else if (event.target.name === "rw-ninja-candidate") {
     state.ninjaSelectedCandidate = event.target.value;
     // A fresh choice always re-arms the guard: confirming one foreign report
@@ -654,6 +975,18 @@ function onBodyChange(event) {
   } else if (event.target.id === "rw-ninja-confirm") {
     state.ninjaConfirmed = event.target.checked;
     rerenderSourceStep("#rw-ninja-confirm");
+  } else if (event.target.dataset.inlineCandidate) {
+    const entry = state.inlineConnect[event.target.dataset.inlineCandidate];
+    if (!entry) return;
+    entry.selectedCandidate = event.target.value;
+    entry.confirmed = false; // a fresh choice always re-arms the foreign-binding guard
+    entry.saveError = null; // and clears a stale error from a previous, different attempt
+    rerenderScopeStep();
+  } else if (event.target.dataset.inlineConfirm) {
+    const entry = state.inlineConnect[event.target.dataset.inlineConfirm];
+    if (!entry) return;
+    entry.confirmed = event.target.checked;
+    rerenderScopeStep();
   }
 }
 

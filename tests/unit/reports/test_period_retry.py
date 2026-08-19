@@ -113,12 +113,106 @@ def test_rejects_an_unknown_period_label(temp_db):
     assert error == "period_not_found"
 
 
-def test_rejects_a_period_that_is_not_failed(temp_db):
+def test_rejects_a_period_that_is_still_pending(temp_db):
+    # task-49 §2.5: `done`/`cached` are retryable now ("Rebuild"), but a period
+    # that hasn't reached a terminal state yet still can't be manually retried.
     client_id = _seed_client(temp_db)
     run_id = _seed_partial_run(temp_db, client_id)
+    with temp_db.session_scope() as session:
+        repo = ReportRepository(session)
+        run = repo.get(run_id)
+        # A fresh dict per changed row, not an in-place mutation of the
+        # existing one — reassigning the SAME (mutated) dict objects back
+        # onto a plain `JSON` column doesn't register as a change for
+        # SQLAlchemy's flush to persist; a brand new dict does.
+        new_rows = [
+            {**row, "state": "waiting"} if row["label"] == "Last Month" else row
+            for row in run.periods_json
+        ]
+        run.periods_json = new_rows
+        session.flush()
     settings = get_settings()
     error = period_retry.retry_period(temp_db.session_scope, settings, run_id, "Last Month")
-    assert error == "period_not_retryable"  # "Last Month" is "done" in the seed
+    assert error == "period_not_retryable"
+
+
+def test_a_done_period_can_be_rebuilt(temp_db, monkeypatch):
+    # task-49 §2.5: "Re-download this period" is now available for an
+    # already-`done` period, not only a `failed` one — this is what makes a
+    # period-level "Rebuild" possible.
+    client_id = _seed_client(temp_db)
+    run_id = _seed_partial_run(temp_db, client_id, failed_label="This Month")
+
+    monkeypatch.setattr(period_retry, "discover_ga4_fields", lambda _ninja: {})
+    monkeypatch.setattr(period_retry, "discover_gsc_fields", lambda _ninja: {})
+    monkeypatch.setattr(
+        period_retry, "fetch_period_metrics",
+        lambda *a, **k: PeriodMetrics(clicks=99, impressions=200),
+    )
+
+    class FakeNinja:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    monkeypatch.setattr(period_retry, "ReportingNinjaClient", lambda *a, **k: FakeNinja())
+    monkeypatch.setattr(period_retry, "write_run_xlsx", lambda *a, **k: None)
+    monkeypatch.setattr(period_retry, "write_run_client_pdf", lambda *a, **k: None)
+
+    settings = get_settings()
+    error = period_retry.retry_period(temp_db.session_scope, settings, run_id, "Last Month")
+    assert error is None
+
+    with temp_db.session_scope() as session:
+        run = ReportRepository(session).get(run_id)
+        row = next(p for p in run.periods_json if p["label"] == "Last Month")
+    assert row["state"] == "done"
+
+
+def test_a_cached_period_can_be_rebuilt(temp_db, monkeypatch):
+    # task-49 §1.5/§2.5: a `cached` period had no retry path at all before —
+    # `_refetch_pdf` already bypasses the cache, so only the gate needed to
+    # change to make this reachable from the UI.
+    client_id = _seed_client(temp_db)
+    run_id = _seed_partial_run(temp_db, client_id, failed_label="This Month")
+    with temp_db.session_scope() as session:
+        repo = ReportRepository(session)
+        run = repo.get(run_id)
+        new_rows = [
+            {**row, "state": "cached"} if row["label"] == "Last Month" else row
+            for row in run.periods_json
+        ]
+        run.periods_json = new_rows
+        session.flush()
+
+    monkeypatch.setattr(period_retry, "discover_ga4_fields", lambda _ninja: {})
+    monkeypatch.setattr(period_retry, "discover_gsc_fields", lambda _ninja: {})
+    monkeypatch.setattr(
+        period_retry, "fetch_period_metrics",
+        lambda *a, **k: PeriodMetrics(clicks=99, impressions=200),
+    )
+
+    class FakeNinja:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    monkeypatch.setattr(period_retry, "ReportingNinjaClient", lambda *a, **k: FakeNinja())
+    monkeypatch.setattr(period_retry, "write_run_xlsx", lambda *a, **k: None)
+    monkeypatch.setattr(period_retry, "write_run_client_pdf", lambda *a, **k: None)
+
+    settings = get_settings()
+    error = period_retry.retry_period(temp_db.session_scope, settings, run_id, "Last Month")
+    assert error is None
+
+    with temp_db.session_scope() as session:
+        run = ReportRepository(session).get(run_id)
+        row = next(p for p in run.periods_json if p["label"] == "Last Month")
+    assert row["state"] == "done"  # a successful manual retry always lands on "done"
 
 
 def test_successful_api_retry_patches_the_cell_and_flips_status_to_succeeded(

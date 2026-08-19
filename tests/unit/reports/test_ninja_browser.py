@@ -216,24 +216,104 @@ def test_a_playwright_download_timeout_is_retried_then_succeeds(monkeypatch):
     assert attempt == 2
 
 
-def test_a_real_bug_like_a_missing_selector_is_not_retried(monkeypatch):
+def test_a_missing_pdf_button_is_now_retried_not_treated_as_a_permanent_bug(monkeypatch):
+    """task-48 follow-up: live-found bug — "Last Month" failed attempt 1/3
+    with "PDF download button not found on the report page" and was never
+    retried, burning the whole period on what turned out to be a one-off
+    report-page render race (the toolbar icon hadn't painted yet when
+    `_download_pdf`'s one-shot `evaluate` ran), not a genuine selector-drift
+    bug. `_download_pdf` itself now waits for the button before clicking
+    (`page.wait_for_function`); this test covers the belt-and-braces case —
+    the same message reaching `_fetch_period_with_retry` directly must be
+    retried, same as every other transient failure here.
+    """
     calls = {"n": 0}
 
     def fake_download(page, report_name, period, pdf_path):
         calls["n"] += 1
-        raise RuntimeError("PDF download button not found on the report page")
+        if calls["n"] == 1:
+            raise RuntimeError("PDF download button not found on the report page")
 
     monkeypatch.setattr(nb, "_download_one_period", fake_download)
     monkeypatch.setattr(nb, "_is_login_page", lambda _page: False)
     monkeypatch.setattr(nb, "_page_is_usable", lambda _page: True)
 
     browser, ctx, page = FakeBrowser(), FakeContext(), FakePage()
-    with pytest.raises(RuntimeError, match="did not download"):
-        nb._fetch_period_with_retry(
-            browser, ctx, page, "EFFYS-Internal report", _PERIOD, Path("/tmp/x.pdf"),
-            **_retry_kwargs(),
-        )
-    assert calls["n"] == 1  # never retried
+    nb._fetch_period_with_retry(
+        browser, ctx, page, "EFFYS-Internal report", _PERIOD, Path("/tmp/x.pdf"),
+        **_retry_kwargs(),
+    )
+    assert calls["n"] == 2
+
+
+# --- _download_pdf: waits for the button instead of a one-shot lookup ---------
+
+
+class _DownloadPage:
+    """Fake `Page` covering exactly the calls `_download_pdf` makes, in
+    order — the assertion is on `calls`, not on Playwright's own behavior.
+    """
+
+    class _DownloadHandle:
+        def __init__(self, path: Path) -> None:
+            self._path = path
+
+        def save_as(self, dest: str) -> None:
+            Path(dest).write_bytes(b"0" * 100_000)  # > MIN_PDF_BYTES
+
+    class _ExpectDownload:
+        def __init__(self, page: _DownloadPage) -> None:
+            self._page = page
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        @property
+        def value(self):
+            return _DownloadPage._DownloadHandle(self._page._out_path)
+
+    def __init__(self, *, button_found: bool = True) -> None:
+        self.calls: list[str] = []
+        self._button_found = button_found
+        self._out_path = Path()
+
+    def wait_for_function(self, *_args, **_kwargs) -> None:
+        self.calls.append("wait_for_function")
+
+    def expect_download(self, *_args, **_kwargs):
+        self.calls.append("expect_download")
+        return self._ExpectDownload(self)
+
+    def evaluate(self, *_args, **_kwargs) -> bool:
+        self.calls.append("evaluate")
+        return self._button_found
+
+
+def test_download_pdf_waits_for_the_button_before_clicking(tmp_path):
+    # task-48 follow-up: a live period ("Last Month") failed because the
+    # toolbar's PDF icon hadn't rendered yet when a one-shot `evaluate` ran
+    # right after opening the report — `wait_for_function` must run BEFORE
+    # `expect_download`/`evaluate`, not after.
+    page = _DownloadPage()
+    page._out_path = tmp_path / "out.pdf"
+    nb._download_pdf(page, page._out_path)
+    assert page.calls == ["wait_for_function", "expect_download", "evaluate"]
+    assert page._out_path.exists()
+
+
+def test_download_pdf_raises_when_the_button_vanishes_after_the_wait(tmp_path):
+    # The rare edge case `wait_for_function` itself doesn't cover: the
+    # button existed when checked, then the click-time `evaluate` still came
+    # up empty. Must raise (not silently produce an empty/missing file) —
+    # and `_fetch_period_with_retry` already treats this message as
+    # recoverable (see the button-retry test above).
+    page = _DownloadPage(button_found=False)
+    page._out_path = tmp_path / "out.pdf"
+    with pytest.raises(RuntimeError, match="PDF download button not found"):
+        nb._download_pdf(page, page._out_path)
 
 
 def test_a_truncated_download_is_retried(monkeypatch):

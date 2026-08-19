@@ -1,12 +1,12 @@
-import { discoverIntegration, getDashboard, listPortfolioMonitorChanges, updateIntegration } from "./api.js?v=20260817-spin1";
-import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260817-spin1";
-import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260817-spin1";
-import { isPaused, openClientStatusDialog } from "./client-status.js?v=20260817-spin1";
-import { createDetailDrawer } from "./detail-drawer.js?v=20260817-spin1";
-import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260817-spin1";
-import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260817-spin1";
-import { getState, setState } from "./store.js?v=20260817-spin1";
-import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260817-spin1";
+import { discoverIntegration, getDashboard, listPortfolioMonitorChanges, updateIntegration } from "./api.js?v=20260819-spin3";
+import { clientGroup, filterByClientGroup } from "./client-groups.js?v=20260819-spin3";
+import { renderClientCard, renderSkeletons } from "./client-card.js?v=20260819-spin3";
+import { isPaused, openClientStatusDialog } from "./client-status.js?v=20260819-spin3";
+import { createDetailDrawer } from "./detail-drawer.js?v=20260819-spin3";
+import { PROVIDERS, escapeHtml, formatRange, formatTimestamp, icon } from "./formatters.js?v=20260819-spin3";
+import { triggerLogin, watchProviderSession } from "./session-status.js?v=20260819-spin3";
+import { getState, setState } from "./store.js?v=20260819-spin3";
+import { configureJobProgress, getJobProgress, showToast } from "./job-progress.js?v=20260819-spin3";
 
 const grid = document.querySelector("#client-grid");
 const dashboardState = document.querySelector("#dashboard-state");

@@ -39,8 +39,8 @@ import {
   getMonitorResourceDiff,
   getMonitorDnsVersions,
   getMonitorDocumentUrl,
-} from "./api.js?v=20260817-spin1";
-import { escapeHtml, icon, formatTimestamp } from "./formatters.js?v=20260817-spin1";
+} from "./api.js?v=20260819-spin3";
+import { escapeHtml, icon, formatTimestamp } from "./formatters.js?v=20260819-spin3";
 
 // ---------------------------------------------------------------------------
 // Pure data helpers (exported — consumed directly by tests and by this

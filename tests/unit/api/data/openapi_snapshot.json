@@ -1454,6 +1454,18 @@
         "title": "AnalyticsDatasetRowDTO",
         "type": "object"
       },
+      "BatchClientRetryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "force_refresh": {
+            "default": false,
+            "title": "Force Refresh",
+            "type": "boolean"
+          }
+        },
+        "title": "BatchClientRetryRequest",
+        "type": "object"
+      },
       "BatchProgressDTO": {
         "description": "Aggregates cells for the frontend's progress matrix (task-12).",
         "properties": {
@@ -4833,6 +4845,75 @@
         "title": "MonitorSummaryDTO",
         "type": "object"
       },
+      "NinjaBindingRowDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ninja_report_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ninja Report Name"
+          },
+          "state": {
+            "enum": [
+              "ready",
+              "no_report_name",
+              "not_connected",
+              "foreign_binding"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "name",
+          "connected",
+          "state"
+        ],
+        "title": "NinjaBindingRowDTO",
+        "type": "object"
+      },
+      "NinjaBindingsDTO": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/NinjaBindingRowDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "title": "NinjaBindingsDTO",
+        "type": "object"
+      },
       "NinjaReportCandidateDTO": {
         "properties": {
           "exact_match": {
@@ -6357,6 +6438,11 @@
       "ReportBatchClientRowDTO": {
         "description": "One row of the batch progress matrix (task-47 \u00a72.4/\u00a73.4) \u2014 enough to\nrender \"4/6 periods, Running, 0:42\" without a second request per client;\n\"Open document\"/\"Client PDF\" link to the existing run-detail routes.",
         "properties": {
+          "cached_count": {
+            "default": 0,
+            "title": "Cached Count",
+            "type": "integer"
+          },
           "client_id": {
             "title": "Client Id",
             "type": "string"
@@ -6371,6 +6457,17 @@
               }
             ],
             "title": "Client Name"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
           },
           "error_message": {
             "anyOf": [
@@ -7059,6 +7156,18 @@
             "title": "Attempt",
             "type": "integer"
           },
+          "cached_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached At"
+          },
           "date_from": {
             "anyOf": [
               {
@@ -7284,6 +7393,13 @@
       "ReportTableDTO": {
         "description": "`GET /reports/runs/{id}/table` (task-42 \u00a75): the finished 8xN table\nplus per-period provenance (\"\u043f\u043e\u0445\u043e\u0434\u0436\u0435\u043d\u043d\u044f \u043a\u043e\u0436\u043d\u043e\u0457 \u043a\u043b\u0456\u0442\u0438\u043d\u043a\u0438\" \u2014 which file a\nwhole column was read from; empty on the API path).",
         "properties": {
+          "cached_periods": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cached Periods",
+            "type": "array"
+          },
           "change_labels": {
             "items": {
               "type": "string"
@@ -7322,6 +7438,18 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "oldest_cached_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Cached At"
           },
           "periods": {
             "items": {
@@ -7518,6 +7646,18 @@
           "max_comparator_years"
         ],
         "title": "ReportTypesDTO",
+        "type": "object"
+      },
+      "RunRebuildRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "force_refresh": {
+            "default": true,
+            "title": "Force Refresh",
+            "type": "boolean"
+          }
+        },
+        "title": "RunRebuildRequest",
         "type": "object"
       },
       "SheetPreviewDTO": {
@@ -13329,6 +13469,87 @@
         ]
       }
     },
+    "/api/v1/reports/batches/{batch_id}/clients/{client_id}/retry": {
+      "post": {
+        "operationId": "retry_batch_client_api_v1_reports_batches__batch_id__clients__client_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchClientRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportBatchDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Batch Client",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
     "/api/v1/reports/batches/{batch_id}/events": {
       "get": {
         "operationId": "report_batch_events_api_v1_reports_batches__batch_id__events_get",
@@ -13587,6 +13808,27 @@
           }
         },
         "summary": "Download Report File",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/ninja-bindings": {
+      "get": {
+        "operationId": "get_ninja_bindings_api_v1_reports_ninja_bindings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NinjaBindingsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Ninja Bindings",
         "tags": [
           "reports"
         ]
@@ -14155,6 +14397,78 @@
           }
         },
         "summary": "Retry Report Period",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/runs/{run_id}/rebuild": {
+      "post": {
+        "operationId": "rebuild_report_run_api_v1_reports_runs__run_id__rebuild_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRebuildRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rebuild Report Run",
         "tags": [
           "reports"
         ]

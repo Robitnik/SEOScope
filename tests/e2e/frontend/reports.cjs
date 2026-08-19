@@ -336,6 +336,159 @@ async function main() {
   await page.waitForFunction(() => document.querySelector(".status-label")?.textContent.includes("Cancelled"), { timeout: 8000 });
   await page.locator("#rr-body .reports-run-section, #rr-body .state-panel").first().waitFor({ timeout: 5000 });
 
+  // --- Wizard: "All clients" bindings table (task-49 §2.1/§2.2) -----------
+  // The live incident this task closes: 9/12 clients failed at 0s because the
+  // form had no way to know a report name was never saved. `dashboard-all-
+  // states.json`'s 4 clients are fixed to one of each binding state
+  // (`getNinjaBindings`'s fixture in api.js) so every state is exercised here.
+  await page.goto(`${baseUrl}/?fixture=all-states#/reports`, { waitUntil: "networkidle" });
+  await page.locator(".reports-table").waitFor();
+  await generateButton.click();
+  await page.locator('[data-scope="all"]').click();
+  await page.locator(".reports-bindings-table").waitFor({ timeout: 5000 });
+  assert.equal(await page.locator(".reports-binding-row").count(), 4, "one row per portfolio client");
+  assert.equal(await page.locator(".status-label.state-ready").count(), 1);
+  assert.equal(await page.locator(".status-label.state-no_report_name").count(), 1);
+  assert.equal(await page.locator(".status-label.state-foreign_binding").count(), 1);
+  assert.equal(await page.locator(".status-label.state-not_connected").count(), 1);
+  await page.screenshot({ path: path.join(screenshots, "reports-wizard-bindings-1440.png") });
+  await assertNoOverflow(page, "wizard bindings table");
+
+  // `Select all` never re-creates the live incident: only the Ready client.
+  await page.locator("#rw-select-all").click();
+  assert.equal(await page.locator(".reports-binding-row input[type=checkbox]:checked").count(), 1, "Select all picks only Ready clients");
+  assert.match(await page.locator(".reports-scope-count").innerText(), /1 of 4 selected/);
+
+  // A `no_report_name` row is still manually selectable — an informed choice,
+  // not a form bug — and the Start step names the exact cost, without
+  // disabling Start (task-49 §2.2's "стартувати все одно можна").
+  await page.locator(".reports-binding-row[data-state='no_report_name'] input[type=checkbox]").check({ force: true });
+  await page.locator("#rw-primary").click(); // -> Type
+  await page.locator('[data-kind="monthly"]').click();
+  await page.locator("#rw-primary").click(); // -> Parameters
+  await page.locator("#rw-primary").click(); // -> Source
+  await page.locator('[data-source="pdf"]').click();
+  await page.waitForFunction(
+    () => document.getElementById("reports-wizard-reason")?.textContent.includes("will fail"),
+    { timeout: 3000 },
+  );
+  assert.match(await page.locator("#reports-wizard-reason").innerText(), /1 of 2 clients will fail/);
+  assert.equal(await page.locator("#reports-wizard-reason").evaluate((el) => el.classList.contains("reports-wizard-reason--warning")), true);
+  assert.equal(await page.locator("#rw-primary").isDisabled(), false, "Start stays enabled — the operator chose this deliberately");
+  // Navigating to the identical URL (same hash) below is a same-document
+  // no-op in Chromium — it would leave THIS dialog open underneath the next
+  // section's own `openReportsWizard` call, so close it explicitly first.
+  await page.keyboard.press("Escape");
+  await page.locator("#reports-wizard-dialog[open]").waitFor({ state: "hidden" });
+
+  // Inline Connect resolves a row to Ready without a full wizard reload, and
+  // Exclude keeps a row visible (never a silent "12 of 14" guessing game).
+  await page.goto(`${baseUrl}/?fixture=all-states#/reports`, { waitUntil: "networkidle" });
+  await page.locator(".reports-table").waitFor();
+  await generateButton.click();
+  await page.locator('[data-scope="all"]').click();
+  await page.locator(".reports-bindings-table").waitFor({ timeout: 5000 });
+  await page.locator(".reports-binding-row[data-state='no_report_name'] [data-scope-connect]").click();
+  await page.locator(".reports-binding-row__connect").waitFor({ timeout: 5000 });
+  await page.locator(".reports-binding-row__connect .reports-ninja-candidate").first().locator("input").check();
+  await page.locator(".reports-binding-row__connect [data-inline-save]").click();
+  await page.waitForFunction(() => document.querySelectorAll(".reports-binding-row[data-state='ready']").length === 2, { timeout: 5000 });
+  assert.equal(await page.locator(".reports-binding-row__connect").count(), 0, "the inline panel closes once bound");
+
+  // Exclude is driven by keyboard alone here (AGENTS §7): focus the row's own
+  // button and press Enter, never a synthetic click — the bindings table is
+  // new UI, so its actions have to be proven reachable without a pointer.
+  const excludeButton = page.locator(".reports-binding-row[data-state='foreign_binding'] [data-scope-exclude]");
+  await excludeButton.focus();
+  await page.keyboard.press("Enter");
+  await page.locator(".reports-binding-row--excluded").waitFor({ timeout: 3000 });
+  assert.equal(await page.locator(".reports-binding-row--excluded").count(), 1, "an excluded client stays visible, marked, not hidden");
+
+  // The same for Connect: focus + Enter must open the inline discovery panel.
+  const connectByKeyboard = page.locator(".reports-binding-row[data-state='no_report_name'] [data-scope-connect]").first();
+  if (await connectByKeyboard.count()) {
+    await connectByKeyboard.focus();
+    await page.keyboard.press("Enter");
+    await page.locator(".reports-binding-row__connect").waitFor({ timeout: 5000 });
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("#reports-wizard-dialog[open]").waitFor({ state: "hidden" });
+
+  // --- Batch matrix: report_name_missing offers Connect, never a doomed Retry
+  // (task-49 §2.3/§2.4) — `?demo=report_name_missing` mirrors the live batch
+  // `c9c6665a` where 9/12 clients failed in 0s with an unusable error message.
+  await page.goto(`${baseUrl}/?fixture=all-states&demo=report_name_missing#/reports`, { waitUntil: "networkidle" });
+  await page.locator(".reports-table").waitFor();
+  await generateButton.click();
+  await page.locator('[data-scope="all"]').click();
+  await page.locator(".reports-bindings-table").waitFor({ timeout: 5000 });
+  const allCheckboxes = page.locator(".reports-binding-row input[type=checkbox]:not(:disabled)");
+  const checkableCount = await allCheckboxes.count();
+  for (let i = 0; i < checkableCount; i += 1) await allCheckboxes.nth(i).check({ force: true });
+  await page.locator("#rw-primary").click();
+  await page.locator('[data-kind="monthly"]').click();
+  await page.locator("#rw-primary").click();
+  await page.locator("#rw-primary").click();
+  await page.locator('[data-source="pdf"]').click();
+  await page.waitForFunction(() => document.getElementById("rw-primary")?.textContent.includes("Generate"), { timeout: 3000 });
+  await page.locator("#rw-primary").click();
+  await page.waitForFunction(() => location.hash.includes("/reports/batches/"), { timeout: 5000 });
+  await page.locator(".reports-batch-matrix").waitFor({ timeout: 5000 });
+  await page.waitForFunction(
+    () => document.querySelectorAll(".reports-batch-matrix-row[data-state='failed']").length > 0,
+    { timeout: 5000 },
+  );
+  assert.equal(await page.locator("[data-connect-client]").count() > 0, true, "Connect Reporting Ninja offered for report_name_missing");
+  assert.equal(await page.locator("[data-retry-client]").count(), 0, "no Retry/Rebuild for a failure a retry cannot fix");
+  assert.doesNotMatch(
+    await page.locator(".reports-batch-matrix-row__error").first().innerText(),
+    /\/clients\//,
+    "the error text never names a REST path (task-49 §1.3/§2.3)",
+  );
+  await page.screenshot({ path: path.join(screenshots, "reports-batch-name-missing-1440.png"), fullPage: true });
+
+  // `Rebuild all` asks for confirmation naming the count AND a time estimate
+  // before doing anything (task-49 §2.5: the ~70min number for a 12-client
+  // PDF batch has to be in front of the operator BEFORE they confirm).
+  // The confirm() fires only AFTER an async estimate lookup, so the prompt has
+  // to be waited for — asserting inside the dialog handler instead would pass
+  // silently on a run where the dialog never appeared at all.
+  let rebuildPrompt = "";
+  page.once("dialog", (dialog) => { rebuildPrompt = dialog.message(); void dialog.dismiss(); });
+  await page.locator("#rb-rebuild-all").click();
+  for (let i = 0; i < 50 && !rebuildPrompt; i += 1) await page.waitForTimeout(100);
+  assert.match(rebuildPrompt, /Rebuild 3 clients/, "the confirmation names how many clients");
+  assert.match(rebuildPrompt, /about ~\d/, "the confirmation carries a time estimate");
+  assert.match(rebuildPrompt, /ignoring the PDF cache/, "and says the cache will be bypassed");
+
+  // --- Run detail: cache visibility + per-period rebuild (task-49 §2.5/§2.6) -
+  await page.goto(`${baseUrl}/?fixture=all-states&demo=cache#/reports`, { waitUntil: "networkidle" });
+  await page.locator(".reports-table").waitFor();
+  await generateButton.click();
+  await page.locator('[data-scope="one"]').click();
+  await page.locator("#rw-primary").click();
+  await page.locator('[data-kind="monthly"]').click();
+  await page.locator("#rw-primary").click();
+  await page.selectOption("#rw-client", "client-nyc-hearing");
+  await page.locator("#rw-primary").click();
+  await page.locator('[data-source="pdf"]').click();
+  await page.waitForTimeout(400);
+  await page.locator("#rw-primary").click();
+  await page.waitForFunction(() => /#\/reports\/[^/]+$/.test(location.hash), { timeout: 5000 });
+  await page.locator(".reports-progress-list").waitFor();
+  await page.waitForFunction(
+    () => [...document.querySelectorAll("#rr-progress .reports-progress-row")].every((r) => r.dataset.state === "cached"),
+    { timeout: 8000 },
+  );
+  assert.match(await page.locator(".state-cached p").first().innerText(), /Data: 6 of 6 periods reused from PDFs downloaded/);
+  assert.equal(await page.locator(".reports-progress-row__rebuild").count(), 6, "every reused period offers a re-download action");
+  await page.screenshot({ path: path.join(screenshots, "reports-run-cache-1440.png"), fullPage: true });
+  // The client-document iframe (task-47 §2.1) 404s in fixture mode against
+  // whatever real backend BASE_URL points at — same pre-existing, expected
+  // noise the file-viewer dialog's own iframe produces above; unrelated to
+  // task-49's own changes, cleared here for the same reason.
+  browserErrors.length = 0;
+
   // --- Network error --------------------------------------------------
   await page.goto(`${baseUrl}/?fixture=error#/reports`, { waitUntil: "networkidle" });
   await page.locator(".state-panel.state-failed").waitFor();

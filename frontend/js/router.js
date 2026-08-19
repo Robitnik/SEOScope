@@ -184,76 +184,76 @@ async function activate() {
     allRoots.filter((el) => el !== toolsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     toolsRoot?.removeAttribute("hidden");
-    const { initToolsRoute } = await import("./tools-page.js?v=20260817-spin1");
+    const { initToolsRoute } = await import("./tools-page.js?v=20260819-spin3");
     await initToolsRoute(route);
   } else if (route.name === "trends") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== trendsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     trendsRoot?.removeAttribute("hidden");
-    const { initTrendsPage } = await import("./trends-page.js?v=20260817-spin1");
+    const { initTrendsPage } = await import("./trends-page.js?v=20260819-spin3");
     await initTrendsPage(route.query);
   } else if (route.name === "monitor") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== monitorRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     monitorRoot?.removeAttribute("hidden");
-    const { initMonitorPage } = await import("./monitor-page.js?v=20260817-spin1");
+    const { initMonitorPage } = await import("./monitor-page.js?v=20260819-spin3");
     await initMonitorPage(route.query);
   } else if (route.name === "reports") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== reportsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     reportsRoot?.removeAttribute("hidden");
-    const { initReportsPage } = await import("./reports-page.js?v=20260817-spin1");
+    const { initReportsPage } = await import("./reports-page.js?v=20260819-spin3");
     await initReportsPage(route.query);
   } else if (route.name === "reports-run") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== reportsRunRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     reportsRunRoot?.removeAttribute("hidden");
-    const { initReportsRunPage } = await import("./reports-run.js?v=20260817-spin1");
+    const { initReportsRunPage } = await import("./reports-run.js?v=20260819-spin3");
     await initReportsRunPage(route.runId, route.query);
   } else if (route.name === "reports-batch") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== reportsBatchRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     reportsBatchRoot?.removeAttribute("hidden");
-    const { initReportsBatchPage } = await import("./reports-batch.js?v=20260817-spin1");
+    const { initReportsBatchPage } = await import("./reports-batch.js?v=20260819-spin3");
     await initReportsBatchPage(route.batchId);
   } else if (route.name === "ahrefs") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== ahrefsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     ahrefsRoot?.removeAttribute("hidden");
-    const { initAhrefsPage } = await import("./ahrefs-page.js?v=20260817-spin1");
+    const { initAhrefsPage } = await import("./ahrefs-page.js?v=20260819-spin3");
     initAhrefsPage(route.clientId, route.query);
   } else if (route.name === "blogs") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== blogsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     blogsRoot?.removeAttribute("hidden");
-    const { initBlogsPage } = await import("./blogs-page.js?v=20260817-spin1");
+    const { initBlogsPage } = await import("./blogs-page.js?v=20260819-spin3");
     initBlogsPage(route.clientId, route.query);
   } else if (route.name === "monitor-client") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== monitorClientRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     monitorClientRoot?.removeAttribute("hidden");
-    const { initMonitorClientPage } = await import("./monitor-client.js?v=20260817-spin1");
+    const { initMonitorClientPage } = await import("./monitor-client.js?v=20260819-spin3");
     initMonitorClientPage(route.clientId, route.query);
   } else if (route.name === "client") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== clientRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     clientRoot?.removeAttribute("hidden");
-    const { initClientPage } = await import("./client-page.js?v=20260817-spin1");
+    const { initClientPage } = await import("./client-page.js?v=20260819-spin3");
     initClientPage(route.clientId, route.query);
   } else {
     allRoots.forEach((el) => el?.setAttribute("hidden", ""));
     dashboardView?.removeAttribute("hidden");
     dashboardChrome.forEach((el) => el?.removeAttribute("hidden"));
-    await import("./dashboard.js?v=20260817-spin1");
+    await import("./dashboard.js?v=20260819-spin3");
   }
 }
 

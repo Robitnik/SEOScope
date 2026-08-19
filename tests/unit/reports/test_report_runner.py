@@ -168,6 +168,12 @@ def test_pdf_run_without_report_name_is_report_name_missing(temp_db):
         run = ReportRepository(session).get(run_id)
     assert run.status == "failed"
     assert run.error_code == "report_name_missing"
+    # task-49 §1.3/§2.3: the operator can't call a REST endpoint from the
+    # error banner — the message must name the client and the two actual
+    # recovery actions, not a path this run's own client will never invoke.
+    assert "/clients/" not in run.error_message
+    assert "EFFYS" in run.error_message
+    assert "Connect" in run.error_message
 
 
 def test_pdf_run_reuses_a_cached_closed_period_without_touching_the_browser(temp_db, monkeypatch):
@@ -223,6 +229,48 @@ def test_pdf_run_reuses_a_cached_closed_period_without_touching_the_browser(temp
     assert run.status == "succeeded"
     assert run.periods_done == 6
     assert any("Reused cached PDF" in e.message for e in events)
+
+    # task-49 §2.6: the run's own result records which periods were reused
+    # and the oldest of their original download dates — the two "successful"
+    # clients in the live incident this closes had 6/6 from yesterday's PDFs
+    # with nothing in the matrix to show it.
+    with temp_db.session_scope() as session:
+        run = ReportRepository(session).get(run_id)
+        periods_json = run.periods_json
+    assert sorted(run.result_json["cached_periods"]) == sorted(p.label for p in periods)
+    assert run.result_json["oldest_cached_at"] is not None
+    assert all(row.get("cached_at") for row in periods_json if row["state"] == "cached")
+
+
+def test_pdf_run_without_any_cache_has_no_cache_fields_in_the_result(temp_db, monkeypatch):
+    settings = get_settings()
+    client_id = _seed_client(temp_db, report_name="EFFYS-Internal report")
+    run_id = _create_run(
+        temp_db, client_id, kind="monthly", source="pdf", params={"force_refresh": True}
+    )
+
+    from app.reports.ninja_browser import DownloadedPeriod
+
+    def _fake_download(report_name, periods, artifacts_root, **kwargs):
+        pdf_path = artifacts_root / "fresh.pdf"
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        pdf_path.write_bytes(b"0" * 900_000)
+        return [DownloadedPeriod(period=p, pdf_path=pdf_path) for p in periods]
+
+    monkeypatch.setattr(runner.ninja_browser, "download_periods", _fake_download)
+    monkeypatch.setattr(
+        runner, "parse_pdf", lambda _path: PeriodMetrics(users=42, clicks=7, impressions=100)
+    )
+    monkeypatch.setattr(runner, "_try_cross_check", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_try_history", lambda *a, **k: None)
+
+    runner.run(temp_db.session_scope, settings, run_id)
+
+    with temp_db.session_scope() as session:
+        run = ReportRepository(session).get(run_id)
+    assert run.status == "succeeded"
+    assert "cached_periods" not in run.result_json
+    assert "oldest_cached_at" not in run.result_json
 
 
 def test_pdf_run_persists_cross_check_details_in_result_json(temp_db, monkeypatch):

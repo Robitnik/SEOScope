@@ -15,7 +15,9 @@ from datetime import date
 from app.db.models import ReportFile
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.reports import ReportRepository
+from app.db.session import worker_session_scope
 from app.reports import ninja_browser
+from app.reports.batch import reconcile_batches
 from app.schemas.enums import Provider, SourceMode
 
 
@@ -397,17 +399,26 @@ def test_get_ninja_report_name_skips_the_browser_without_credentials(client, db,
     assert body["others"] == []
 
 
-def _fake_account(monkeypatch, names: list[str], *, truncated: bool = False) -> None:
+def _fake_account(
+    monkeypatch, names: list[str], *, truncated: bool = False, searchable: list[str] | None = None
+) -> None:
+    """`names` is what the SCROLL pass sees; `searchable` (default: the same)
+    is what the cabinet's own SEARCH can find. They differ in reality — a name
+    past the virtualized table's cutoff is invisible to the scroll pass but
+    always findable by search (task-48 §1.6, re-measured live in task-49) —
+    so the two are separate knobs here.
+    """
+    searchable = names if searchable is None else searchable
     monkeypatch.setenv("REPORTING_NINJA_EMAIL", "ops@example.com")
     monkeypatch.setenv("REPORTING_NINJA_PASSWORD", "secret")
     monkeypatch.setattr(
-        "app.api.reports.ninja_browser.list_report_names",
-        lambda **_kwargs: (names, truncated),
+        "app.api.reports.ninja_browser.search_report_names",
+        lambda *, query, **_kwargs: [n for n in searchable if query.upper() in n.upper()],
     )
 
     def fake_discover(*, client_name: str, **_kwargs):
         return ninja_browser.ReportDiscovery(
-            matches=[n for n in names if _name_matches(n, client_name)],
+            matches=[n for n in searchable if _name_matches(n, client_name)],
             all_names=names,
             truncated=truncated,
         )
@@ -485,6 +496,25 @@ def test_discovery_marks_a_truncated_full_list(client, db, monkeypatch):
     assert body["others_truncated"] is True
 
 
+def test_discovery_marks_a_scroll_list_that_search_proves_incomplete(client, db, monkeypatch):
+    """task-49: the scroll pass claimed `truncated=False` over a list that
+    demonstrably lacked a name search had just found (measured live: 16 names
+    ending at "G"). A list proven partial must never be reported as complete,
+    or the operator reads a name's absence from `others` as "does not exist".
+    """
+    client_id = _create_client(db)  # client name is EFFYS
+    _fake_account(
+        monkeypatch,
+        ["ADA-client"],  # what the scroll pass saw…
+        truncated=False,  # …and wrongly called complete
+        searchable=["ADA-client", "EFFYS-Internal report"],
+    )
+
+    body = client.get(f"/api/v1/reports/clients/{client_id}/ninja-report").json()
+    assert [c["name"] for c in body["matches"]] == ["EFFYS-Internal report"]
+    assert body["others_truncated"] is True
+
+
 def test_discovery_finds_a_match_the_full_list_missed(client, db, monkeypatch):
     # task-48 §1.6 live case: a client's report sorts past the cabinet
     # table's cutoff, so a full scroll pass never lists it. The targeted
@@ -505,12 +535,22 @@ def test_discovery_finds_a_match_the_full_list_missed(client, db, monkeypatch):
     assert body["others_truncated"] is True
 
 
-def test_put_never_rejects_a_name_from_a_truncated_cabinet_list(client, db, monkeypatch):
-    # task-48 §1.7/DoD: an unproven absence from a truncated scroll must
-    # never become `report_name_unknown` — this is exactly the SWM-style
-    # trap (task-48 §1.6): a real client whose name sorts past the cutoff.
+def test_put_saves_a_name_the_scroll_list_never_listed(client, db, monkeypatch):
+    """The live task-49 defect: `list_report_names` returned 16 names ending
+    at `GRP-Internal report` while claiming `truncated=False`, so validating
+    a save against it rejected every client sorting past "G" (SWM, SAPHNY,
+    SDS, SHB, …) as `report_name_unknown` — the exact clients inline Connect
+    exists for. Validation now asks the cabinet's own search, which found the
+    name every time, so a save must succeed even when the scroll pass never
+    listed it AND wrongly believed itself complete.
+    """
     client_id = _create_client(db)
-    _fake_account(monkeypatch, ["ADA-client"], truncated=True)
+    _fake_account(
+        monkeypatch,
+        ["ADA-client", "GRP-Internal report"],  # the scroll pass's stunted view…
+        truncated=False,  # …which even claims to be complete
+        searchable=["ADA-client", "GRP-Internal report", "EFFYS-Internal report"],
+    )
 
     response = client.put(
         f"/api/v1/reports/clients/{client_id}/ninja-report",
@@ -518,6 +558,20 @@ def test_put_never_rejects_a_name_from_a_truncated_cabinet_list(client, db, monk
     )
     assert response.status_code == 200
     assert response.json()["ninja_report_name"] == "EFFYS-Internal report"
+
+
+def test_put_without_credentials_cannot_verify_and_does_not_reject(client, db, monkeypatch):
+    # No credentials means no browser, so the existence question cannot be
+    # asked at all — "could not verify" is never a rejection (task-48 §1.7).
+    client_id = _create_client(db)
+    monkeypatch.delenv("REPORTING_NINJA_EMAIL", raising=False)
+    monkeypatch.delenv("REPORTING_NINJA_PASSWORD", raising=False)
+
+    response = client.put(
+        f"/api/v1/reports/clients/{client_id}/ninja-report",
+        json={"ninja_report_name": "EFFYS-Internal report"},
+    )
+    assert response.status_code == 200
 
 
 def test_put_ninja_report_name_saves_and_preserves_the_connection(client, db, monkeypatch):
@@ -645,3 +699,224 @@ def test_accuracy_report_reflects_gsc_coverage(client, db):
     by_id = {row["client_id"]: row for row in body["clients"]}
     assert by_id[with_gsc]["has_gsc"] is True
     assert by_id[without_gsc]["has_gsc"] is False
+
+
+# --- GET /ninja-bindings (task-49 §2.1) -------------------------------------
+
+
+def _explode(*_a, **_k):
+    raise AssertionError("must not touch the Reporting Ninja browser")
+
+
+def test_ninja_bindings_reports_all_four_states_with_zero_browser_calls(client, db, monkeypatch):
+    monkeypatch.setattr(ninja_browser, "list_report_names", _explode)
+    monkeypatch.setattr(ninja_browser, "search_report_names", _explode)
+    monkeypatch.setattr(ninja_browser, "discover_report_names", _explode)
+
+    ready_id = _create_client(db, slug="grp", name="GRP")
+    ClientRepository(db).upsert_integration(
+        ready_id, Provider.reporting_ninja, source_mode=SourceMode.api,
+        config={"connection_key": "seo@x", "account_id": "properties/1",
+                "ninja_report_name": "GRP-Internal report"},
+    )
+    _create_client(db, slug="saphny", name="SAPHNY")  # connected, no report name saved
+    foreign_id = _create_client(db, slug="swm", name="SWM")
+    ClientRepository(db).upsert_integration(
+        foreign_id, Provider.reporting_ninja, source_mode=SourceMode.api,
+        config={"connection_key": "seo@x", "account_id": "properties/1",
+                "ninja_report_name": "EFFYS-Internal report"},
+    )
+    ClientRepository(db).create(
+        name="ALPHA", slug="alpha", domain="alpha.example.com", timezone="America/New_York"
+    )
+    db.commit()
+
+    body = client.get("/api/v1/reports/ninja-bindings").json()
+    by_name = {row["name"]: row for row in body["rows"]}
+    assert by_name["GRP"]["state"] == "ready"
+    assert by_name["GRP"]["domain"] == "grp.example.com"
+    assert by_name["SAPHNY"]["state"] == "no_report_name"
+    assert by_name["SWM"]["state"] == "foreign_binding"
+    assert by_name["ALPHA"]["state"] == "not_connected"
+
+
+# --- POST /batches/{id}/clients/{id}/retry (task-49 §2.4) -------------------
+
+
+def _create_batch(client, client_ids: list[str]) -> str:
+    response = client.post(
+        "/api/v1/reports/batches",
+        json={"client_ids": client_ids, "kind": "monthly", "source": "api"},
+    )
+    assert response.status_code == 202
+    return response.json()["batch_id"]
+
+
+def test_retry_batch_client_stays_in_the_batch_and_the_batch_can_reach_succeeded(client, db):
+    ok_id = _create_client(db, slug="ok", name="OK")
+    fails_id = _create_client(db, slug="fails", name="FAILS")
+    batch_id = _create_batch(client, [ok_id, fails_id])
+
+    repo = ReportRepository(db)
+    children = repo.list_runs_for_batch(batch_id)
+    original_failed = next(c for c in children if c.client_id == fails_id)
+    original_ok = next(c for c in children if c.client_id == ok_id)
+    original_failed.status = "failed"
+    original_ok.status = "succeeded"
+    db.commit()
+
+    response = client.post(
+        f"/api/v1/reports/batches/{batch_id}/clients/{fails_id}/retry",
+        json={"force_refresh": False},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["clients"]) == 2  # never 3 — no orphan row for the old failed run
+    retried_row = next(r for r in body["clients"] if r["client_id"] == fails_id)
+    assert retried_row["run_id"] != original_failed.id
+    assert retried_row["status"] == "queued"
+
+    # ... and once the new child succeeds, the batch itself reaches succeeded.
+    # No scheduler runs in these tests (module docstring) — `reconcile_batches`
+    # is what the scheduler's own tick would normally call.
+    with_new_run_id = retried_row["run_id"]
+    new_run = ReportRepository(db).get(with_new_run_id)
+    new_run.status = "succeeded"
+    db.commit()
+    reconcile_batches(worker_session_scope)
+    final = client.get(f"/api/v1/reports/batches/{batch_id}").json()
+    assert final["status"] == "succeeded"
+    assert final["clients_done"] == 2
+    assert final["clients_failed"] == 0
+
+
+def test_retry_batch_client_leaves_every_other_client_untouched(client, db):
+    # task-49 §4: "батчевий `Rebuild all` не чіпає клієнтів поза вибіркою" —
+    # the bulk action is this endpoint applied per selected client, so the
+    # guarantee that matters is that one client's retry never disturbs a
+    # sibling's run.
+    a_id = _create_client(db, slug="aaa", name="AAA")
+    b_id = _create_client(db, slug="bbb", name="BBB")
+    batch_id = _create_batch(client, [a_id, b_id])
+    repo = ReportRepository(db)
+    for child in repo.list_runs_for_batch(batch_id):
+        child.status = "failed"
+    db.commit()
+    before = {
+        row["client_id"]: row["run_id"]
+        for row in client.get(f"/api/v1/reports/batches/{batch_id}").json()["clients"]
+    }
+
+    client.post(
+        f"/api/v1/reports/batches/{batch_id}/clients/{a_id}/retry",
+        json={"force_refresh": True},
+    )
+
+    after = {
+        row["client_id"]: row["run_id"]
+        for row in client.get(f"/api/v1/reports/batches/{batch_id}").json()["clients"]
+    }
+    assert after[a_id] != before[a_id], "the retried client got a fresh run"
+    assert after[b_id] == before[b_id], "the client outside the selection was not touched"
+
+
+def test_retry_batch_client_404_for_unknown_batch(client, db):
+    client_id = _create_client(db)
+    response = client.post(
+        f"/api/v1/reports/batches/does-not-exist/clients/{client_id}/retry",
+        json={"force_refresh": False},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "batch_not_found"
+
+
+def test_retry_batch_client_404_for_a_client_not_in_the_batch(client, db):
+    in_batch_id = _create_client(db, slug="inbatch", name="InBatch")
+    other_id = _create_client(db, slug="other", name="Other")
+    batch_id = _create_batch(client, [in_batch_id])
+
+    response = client.post(
+        f"/api/v1/reports/batches/{batch_id}/clients/{other_id}/retry",
+        json={"force_refresh": False},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "client_not_in_batch"
+
+
+def test_retry_batch_client_409_while_still_running(client, db):
+    client_id = _create_client(db)
+    batch_id = _create_batch(client, [client_id])
+    repo = ReportRepository(db)
+    child = repo.list_runs_for_batch(batch_id)[0]
+    child.status = "running"
+    db.commit()
+
+    response = client.post(
+        f"/api/v1/reports/batches/{batch_id}/clients/{client_id}/retry",
+        json={"force_refresh": True},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["error_code"] == "client_not_retryable"
+
+
+# --- POST /runs/{id}/rebuild (task-49 §2.5) ---------------------------------
+
+
+def test_rebuild_run_creates_a_new_run_with_force_refresh_true(client, db):
+    client_id = _create_client(db)
+    run = ReportRepository(db).create_run(
+        client_id, kind="monthly", source="pdf",
+        params={"force_refresh": False}, period_count=6,
+    )
+    ReportRepository(db).finish(run.id, status="failed")
+    db.commit()
+
+    response = client.post(
+        f"/api/v1/reports/runs/{run.id}/rebuild", json={"force_refresh": True}
+    )
+    assert response.status_code == 202
+    new_run_id = response.json()["run_id"]
+    assert new_run_id != run.id
+
+    new_run = client.get(f"/api/v1/reports/runs/{new_run_id}").json()
+    assert new_run["params"]["force_refresh"] is True
+    assert new_run["status"] == "queued"
+    assert new_run["batch_id"] is None  # this run was standalone
+
+
+def test_rebuild_run_preserves_the_batch_link(client, db):
+    client_id = _create_client(db)
+    batch_id = _create_batch(client, [client_id])
+    repo = ReportRepository(db)
+    child = repo.list_runs_for_batch(batch_id)[0]
+    child.status = "failed"
+    db.commit()
+
+    response = client.post(
+        f"/api/v1/reports/runs/{child.id}/rebuild", json={"force_refresh": False}
+    )
+    assert response.status_code == 202
+    new_run = client.get(f"/api/v1/reports/runs/{response.json()['run_id']}").json()
+    assert new_run["batch_id"] == batch_id
+
+
+def test_rebuild_run_404_for_unknown_run(client):
+    response = client.post(
+        "/api/v1/reports/runs/does-not-exist/rebuild", json={"force_refresh": True}
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "run_not_found"
+
+
+def test_rebuild_run_409_while_still_queued(client, db):
+    client_id = _create_client(db)
+    run = ReportRepository(db).create_run(
+        client_id, kind="monthly", source="pdf", params={}, period_count=6,
+    )
+    db.commit()
+
+    response = client.post(
+        f"/api/v1/reports/runs/{run.id}/rebuild", json={"force_refresh": True}
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["error_code"] == "run_not_retryable"

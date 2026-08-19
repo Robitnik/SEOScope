@@ -8,16 +8,16 @@
 
 import {
   getDashboard, isAbortError, listReportBatches, listReportRuns, reportBatchPdfArchiveUrl,
-} from "./api.js?v=20260817-spin1";
+} from "./api.js?v=20260819-spin3";
 import {
   buildReportsBatchHash, buildReportsRunHash, replaceReportsHash,
-} from "./router.js?v=20260817-spin1";
+} from "./router.js?v=20260819-spin3";
 import {
   REPORT_CROSS_CHECK_META, REPORT_KIND_META, REPORT_RUN_STATUS_META, REPORT_SOURCE_META,
   escapeHtml, formatDuration, formatTimestamp, icon, isTerminal, stateClass, statusIcon,
-} from "./formatters.js?v=20260817-spin1";
-import { sectionSkeleton } from "./skeleton.js?v=20260817-spin1";
-import { openReportsWizard } from "./reports-wizard.js?v=20260817-spin1";
+} from "./formatters.js?v=20260819-spin3";
+import { sectionSkeleton } from "./skeleton.js?v=20260819-spin3";
+import { openReportsWizard } from "./reports-wizard.js?v=20260819-spin3";
 
 const root = document.querySelector("#reports-page-root");
 const PAGE_SIZE = 25;

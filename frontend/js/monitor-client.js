@@ -64,15 +64,15 @@ import {
   getMonitorSummary, getMonitorSettings, patchMonitorSettings, listMonitorRuns, startMonitorRun,
   listClientMonitorChanges, ackMonitorChange, getMonitorPages, checkMonitorPage, getMonitorDnsRecords,
   monitorExportCsvUrl, monitorExportXlsxUrl, getDashboard, isAbortError,
-} from "./api.js?v=20260817-spin1";
-import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260817-spin1";
-import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260817-spin1";
+} from "./api.js?v=20260819-spin3";
+import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260819-spin3";
+import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260819-spin3";
 import {
   escapeHtml, icon, initials, formatTimestamp, formatDate, MONITOR_SEVERITY_META, changeTypeLabel,
   STATE_META, stateClass,
-} from "./formatters.js?v=20260817-spin1";
-import { createMonitorDiffViewer } from "./monitor-diff.js?v=20260817-spin1";
-import { createMonitorContentViewer } from "./monitor-content.js?v=20260817-spin1";
+} from "./formatters.js?v=20260819-spin3";
+import { createMonitorDiffViewer } from "./monitor-diff.js?v=20260819-spin3";
+import { createMonitorContentViewer } from "./monitor-content.js?v=20260819-spin3";
 
 const PAGES_PAGE_SIZE = 25;
 const CHANGES_PAGE_SIZE = 25;

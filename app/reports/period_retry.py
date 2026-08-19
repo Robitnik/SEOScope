@@ -249,7 +249,11 @@ def retry_period(session_scope: Any, settings: Settings, run_id: str, label: str
     period_row = next((row for row in periods_json if row.get("label") == label), None)
     if period_row is None:
         return "period_not_found"
-    if period_row.get("state") != "failed":
+    # task-49 §2.5: a `cached`/`done` period is now retryable too — this is
+    # what makes "Rebuild" possible at the period level, not just "Retry a
+    # failure". `_refetch_pdf` below already re-downloads unconditionally
+    # regardless of the period's prior state.
+    if period_row.get("state") not in ("failed", "cached", "done"):
         return "period_not_retryable"
 
     periods = _periods_from_json(periods_json)

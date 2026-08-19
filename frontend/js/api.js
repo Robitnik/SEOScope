@@ -1807,23 +1807,34 @@ function baseMockRunDto(stored, overrides) {
 // `ReportRunDTO.periods` (task-45 §2.1) — the real engine writes these states;
 // the fixture engine has to produce the same shape or the progress list has
 // nothing to read (task-43 learned the same lesson about `details.period`).
+// `?demo=cache` (task-49 §2.6): every finished period on a PDF run reports
+// as reused from a PDF downloaded yesterday — the fixture-mode way to
+// exercise the "From cache" chip / freshness banner without a real cache.
+function mockCacheDemoDate() {
+  if (new URLSearchParams(location.search).get("demo") !== "cache") return null;
+  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 function mockReportPeriods(stored, dto) {
   const perPeriodMs = REPORT_PERIOD_MS[stored.source] || REPORT_PERIOD_MS.api;
   const terminal = ["succeeded", "partial", "failed", "cancelled"].includes(dto.status);
+  const cachedAt = stored.source === "pdf" ? mockCacheDemoDate() : null;
   return (stored.periods || []).map((period, index) => {
     const done = index < dto.periods_done;
     const running = dto.status === "running" && index === dto.periods_done;
     const startedAtMs = stored.startedAtMs + index * perPeriodMs;
+    const cached = done && Boolean(cachedAt);
     return {
       label: period.label,
       date_from: period.date_from,
       date_to: period.date_to,
       is_partial: period.is_partial,
-      state: done ? "done" : running ? "running" : terminal ? "skipped" : "waiting",
+      state: cached ? "cached" : done ? "done" : running ? "running" : terminal ? "skipped" : "waiting",
       started_at: done || running ? new Date(startedAtMs).toISOString() : null,
       finished_at: done ? new Date(startedAtMs + perPeriodMs).toISOString() : null,
       duration_seconds: done ? perPeriodMs / 1000 : null,
-      from_cache: false,
+      from_cache: cached,
+      cached_at: cached ? cachedAt : null,
       error: null,
     };
   });
@@ -1871,6 +1882,22 @@ function computeMockReportRun(runId) {
     });
   }
   if (now < stored.startedAtMs) return baseMockRunDto(stored, { status: "queued", periods_done: 0 });
+
+  // `?demo=report_name_missing` (task-49 §1.2/§2.3): mirrors the live
+  // incident — a PDF run for a client with no saved report name fails in 0
+  // seconds, before any period even starts.
+  if (
+    stored.source === "pdf" && !stored.cancelledAtMs
+    && new URLSearchParams(location.search).get("demo") === "report_name_missing"
+  ) {
+    return baseMockRunDto(stored, {
+      status: "failed", periods_done: 0, started_at: new Date(stored.startedAtMs).toISOString(),
+      finished_at: new Date(stored.startedAtMs).toISOString(),
+      error_code: "report_name_missing",
+      error_message: "Reporting Ninja report not set. Open the report wizard and use "
+        + "Connect next to this client, or exclude it from the batch.",
+    });
+  }
 
   const perPeriodMs = REPORT_PERIOD_MS[stored.source] || REPORT_PERIOD_MS.api;
   const cancelled = Boolean(stored.cancelledAtMs);
@@ -2199,6 +2226,43 @@ export async function putNinjaReportName(clientId, name, { confirmMismatch = fal
   return { client_id: clientId, ninja_report_name: name, matches: [], others: [] };
 }
 
+// task-49 §2.1: one cheap pass over every client's binding state, read
+// BEFORE the batch wizard's Start button — the fixture mirrors the exact
+// mix the task doc's own example table shows (one of each state), keyed to
+// the four clients `dashboard-all-states.json` already defines, so the
+// wizard's client list and this call always agree on which client is which.
+const NINJA_BINDINGS_FIXTURE = {
+  "client-nyc-hearing": {
+    connected: true, ninja_report_name: "NYC-HEARING-Internal report", state: "ready",
+  },
+  "client-cleveland": { connected: true, ninja_report_name: null, state: "no_report_name" },
+  "client-long-name": {
+    connected: true, ninja_report_name: "EFFYS-Internal report", state: "foreign_binding",
+  },
+  "client-onboarding": { connected: false, ninja_report_name: null, state: "not_connected" },
+};
+
+export async function getNinjaBindings({ requestKey } = {}) {
+  if (!FIXTURE_MODE) {
+    return request("/reports/ninja-bindings", {}, requestKey || "reports-ninja-bindings");
+  }
+  if (FIXTURE_MODE === "error") { await wait(300); throw new Error("Fixture connection error"); }
+  await wait(200);
+  const payload = await fixture(FIXTURE_MODE === "empty" ? "dashboard-empty" : "dashboard-all-states");
+  return {
+    rows: payload.clients.map((c) => {
+      const binding = NINJA_BINDINGS_FIXTURE[c.client_id] || {
+        connected: false, ninja_report_name: null, state: "not_connected",
+      };
+      return {
+        client_id: c.client_id, name: c.name, domain: c.domain,
+        connected: binding.connected, ninja_report_name: binding.ninja_report_name,
+        state: binding.state,
+      };
+    }),
+  };
+}
+
 // --- Client document + PDF (task-47 §2.1/§3.3) ------------------------------
 
 export function reportDocumentUrl(runId) {
@@ -2236,10 +2300,15 @@ export async function retryReportPeriod(runId, label) {
   if (!entry) throw new Error("Report run not found");
   const period = (entry.run.periods || []).find((p) => p.label === label);
   if (!period) throw new Error("No such period on this run");
-  if (period.state !== "failed") throw new Error("This period is not in a failed state");
+  // task-49 §2.5: `cached`/`done` are retryable too now ("Rebuild"), not
+  // only `failed` — mirrors the relaxed backend gate in `period_retry.py`.
+  if (!["failed", "cached", "done"].includes(period.state)) {
+    throw new Error("This period is not retryable yet");
+  }
 
   period.state = "done";
   period.error = null;
+  period.cached_at = null;
   period.finished_at = new Date().toISOString();
   const stillFailed = (entry.run.periods || []).filter((p) => p.state === "failed").length;
   entry.run.periods_failed = stillFailed;
@@ -2257,6 +2326,49 @@ export async function retryReportPeriod(runId, label) {
     }
   }
   return entry.run;
+}
+
+// task-49 §2.4/§2.5: clones a mock run with an explicit `force_refresh`,
+// preserving its `batch_id` — the fixture-mode mirror of `rebuild_run`
+// (`app/reports/batch.py`). Replaces the source run's slot in its parent
+// batch's `runIds` (same index) so the matrix shows the new attempt in
+// place of the old one, never both.
+function rebuildMockRun(sourceRunId, forceRefresh) {
+  const runs = readMockReportRuns();
+  const source = runs[sourceRunId];
+  if (!source) throw new Error("Report run not found");
+  const newId = `fixture-report-${Date.now()}-rebuild`;
+  runs[newId] = {
+    id: newId, client_id: source.client_id, kind: source.kind, source: source.source,
+    batch_id: source.batch_id || null, periods: source.periods, period_count: source.period_count,
+    params: { ...source.params, force_refresh: forceRefresh },
+    queued_at: new Date().toISOString(), startedAtMs: Date.now() + REPORT_QUEUE_MS,
+  };
+  writeMockReportRuns(runs);
+  if (source.batch_id) {
+    const batches = readMockReportBatches();
+    const stored = batches[source.batch_id];
+    if (stored) {
+      stored.runIds = stored.runIds.map((id) => (id === sourceRunId ? newId : id));
+      writeMockReportBatches(batches);
+    }
+  }
+  return newId;
+}
+
+export async function rebuildReportRun(runId, { forceRefresh = true } = {}) {
+  if (!FIXTURE_MODE) {
+    return request(`/reports/runs/${runId}/rebuild`, {
+      method: "POST", body: JSON.stringify({ force_refresh: forceRefresh }),
+    }, `reports-rebuild-run-${runId}`);
+  }
+  await wait(280);
+  const newRunId = rebuildMockRun(runId, forceRefresh);
+  return {
+    run_id: newRunId,
+    status_url: `/api/v1/reports/runs/${newRunId}`,
+    events_url: `/api/v1/reports/runs/${newRunId}/events`,
+  };
 }
 
 // --- Batches (task-47 §2.2) --------------------------------------------------
@@ -2303,6 +2415,8 @@ function computeMockReportBatch(batchId) {
       run_id: run.id, client_id: run.client_id, client_name: null, status: run.status,
       period_count: run.period_count, periods_done: run.periods_done,
       periods_failed: run.periods_failed, error_message: run.error_message,
+      error_code: run.error_code,
+      cached_count: (run.periods || []).filter((p) => p.state === "cached").length,
       started_at: run.started_at, finished_at: run.finished_at,
     })),
     queued_at: stored.queued_at,
@@ -2382,6 +2496,29 @@ export async function cancelReportBatch(batchId) {
     });
     writeMockReportRuns(runs);
   }
+  return computeMockReportBatch(batchId);
+}
+
+// task-49 §2.4: retries/rebuilds a batch client WITHOUT leaving the batch —
+// the old `Retry this client` button called `createReportRun` directly,
+// creating a standalone run outside the batch that the matrix never saw
+// again (task-49 §1.4). This stays inside the batch (`rebuildMockRun`
+// replaces the child's slot in `runIds`) and the caller states
+// `force_refresh` explicitly every time, never inheriting it silently.
+export async function retryReportBatchClient(batchId, clientId, { forceRefresh = false } = {}) {
+  if (!FIXTURE_MODE) {
+    return request(`/reports/batches/${batchId}/clients/${clientId}/retry`, {
+      method: "POST", body: JSON.stringify({ force_refresh: forceRefresh }),
+    }, `reports-batch-retry-${batchId}-${clientId}`);
+  }
+  await wait(280);
+  const batches = readMockReportBatches();
+  const stored = batches[batchId];
+  if (!stored) throw new Error("Report batch not found");
+  const runs = readMockReportRuns();
+  const currentRunId = stored.runIds.find((id) => runs[id]?.client_id === clientId);
+  if (!currentRunId) throw new Error("This client has no run in this batch");
+  rebuildMockRun(currentRunId, forceRefresh);
   return computeMockReportBatch(batchId);
 }
 

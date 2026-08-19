@@ -8,6 +8,8 @@ from app.reports.batch import (
     NoClientsSelectedError,
     cancel_batch,
     create_batch,
+    latest_runs_by_client,
+    rebuild_run,
     reconcile_batches,
 )
 
@@ -201,3 +203,106 @@ def test_recovery_reconciles_a_batch_stuck_running_after_a_restart(temp_db):
         refreshed = ReportRepository(session).get_batch(batch.id)
     assert refreshed.status == "failed"
     assert refreshed.finished_at is not None
+
+
+# --- task-49: batch-internal retry/rebuild without an orphan ----------------
+
+
+def test_latest_runs_by_client_keeps_only_the_newest_row_per_client(temp_db):
+    client_ids = _seed_clients(temp_db, 2)
+    batch = _make_batch(temp_db, client_ids)
+    with temp_db.session_scope() as session:
+        original = ReportRepository(session).list_runs_for_batch(batch.id)
+    _set_status(temp_db, original[0].id, "failed")
+
+    error, new_run_id = rebuild_run(
+        temp_db.session_scope, original[0].id, force_refresh=False,
+        max_months=24, max_comparator_years=4,
+    )
+    assert error is None
+
+    with temp_db.session_scope() as session:
+        children = ReportRepository(session).list_runs_for_batch(batch.id)
+    latest = latest_runs_by_client(children)
+    assert len(latest) == 2  # never 3, even though there are 3 rows in the DB
+    assert latest[original[0].client_id].id == new_run_id
+    assert latest[original[1].client_id].id == original[1].id
+
+
+def test_rebuild_run_preserves_batch_id_and_overrides_force_refresh(temp_db):
+    client_ids = _seed_clients(temp_db, 1)
+    batch = _make_batch(temp_db, client_ids)
+    with temp_db.session_scope() as session:
+        original = ReportRepository(session).list_runs_for_batch(batch.id)[0]
+    _set_status(temp_db, original.id, "failed")
+
+    error, new_run_id = rebuild_run(
+        temp_db.session_scope, original.id, force_refresh=True,
+        max_months=24, max_comparator_years=4,
+    )
+    assert error is None
+
+    with temp_db.session_scope() as session:
+        new_run = ReportRepository(session).get(new_run_id)
+    assert new_run.batch_id == batch.id
+    assert new_run.params_json["force_refresh"] is True
+    assert new_run.status == "queued"
+
+
+def test_rebuild_run_reopens_a_finished_batch(temp_db):
+    client_ids = _seed_clients(temp_db, 2)
+    batch = _make_batch(temp_db, client_ids)
+    with temp_db.session_scope() as session:
+        children = ReportRepository(session).list_runs_for_batch(batch.id)
+    _set_status(temp_db, children[0].id, "succeeded")
+    _set_status(temp_db, children[1].id, "failed")
+    reconcile_batches(temp_db.session_scope)
+    with temp_db.session_scope() as session:
+        finished = ReportRepository(session).get_batch(batch.id)
+    assert finished.status == "partial"
+    assert finished.finished_at is not None
+
+    error, new_run_id = rebuild_run(
+        temp_db.session_scope, children[1].id, force_refresh=False,
+        max_months=24, max_comparator_years=4,
+    )
+    assert error is None
+
+    with temp_db.session_scope() as session:
+        reopened = ReportRepository(session).get_batch(batch.id)
+    assert reopened.status == "running"
+    assert reopened.finished_at is None
+
+    # ... and the retried client can bring the batch all the way to succeeded,
+    # with no orphan run left dangling outside it (task-49 §2.4).
+    _set_status(temp_db, new_run_id, "succeeded")
+    reconcile_batches(temp_db.session_scope)
+    with temp_db.session_scope() as session:
+        final = ReportRepository(session).get_batch(batch.id)
+    assert final.status == "succeeded"
+    assert final.clients_done == 2
+    assert final.clients_failed == 0
+
+
+def test_rebuild_run_rejects_an_unknown_run(temp_db):
+    error, new_run_id = rebuild_run(
+        temp_db.session_scope, "does-not-exist", force_refresh=False,
+        max_months=24, max_comparator_years=4,
+    )
+    assert error == "run_not_found"
+    assert new_run_id is None
+
+
+def test_rebuild_run_rejects_a_run_still_in_progress(temp_db):
+    client_ids = _seed_clients(temp_db, 1)
+    batch = _make_batch(temp_db, client_ids)
+    with temp_db.session_scope() as session:
+        run_id = ReportRepository(session).list_runs_for_batch(batch.id)[0].id
+    _set_status(temp_db, run_id, "running")
+
+    error, new_run_id = rebuild_run(
+        temp_db.session_scope, run_id, force_refresh=False,
+        max_months=24, max_comparator_years=4,
+    )
+    assert error == "run_not_retryable"
+    assert new_run_id is None

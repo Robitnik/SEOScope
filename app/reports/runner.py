@@ -67,10 +67,14 @@ class NotConfiguredError(RuntimeError):
 
 
 class ReportNameMissingError(NotConfiguredError):
-    def __init__(self) -> None:
+    def __init__(self, client_name: str | None = None) -> None:
+        # task-49 §1.3/§2.3: the old message named a REST endpoint the
+        # operator has no way to call. This one names the client and the
+        # two actual recovery actions available from the wizard.
+        who = f" for {client_name}" if client_name else ""
         super().__init__(
-            "No Reporting Ninja report name saved for this client — "
-            "discover and save one via PUT /clients/{id}/ninja-report",
+            f"Reporting Ninja report not set{who}. Open the report wizard "
+            "and use Connect next to this client, or exclude it from the batch.",
             error_code="report_name_missing",
         )
 
@@ -292,11 +296,23 @@ def run(session_scope: Any, settings: Settings, run_id: str) -> None:
         fresh = ReportRepository(session).get(run_id)
         periods_done = fresh.periods_done if fresh else 0
         periods_failed = fresh.periods_failed if fresh else len(periods)
+        fresh_periods_json = fresh.periods_json if fresh else None
     status = aggregate_run_status(len(periods), periods_failed, cancelled=is_cancelled())
     result = table.to_dict()
     result["periods_done"] = periods_done
     if cc_result is not None:
         result["cross_check"] = cc_result.to_dict()
+    # task-49 §2.6: which periods this run actually reused from cache, and
+    # the oldest of their download dates — the incident this closes had two
+    # "successful" clients whose whole 6/6 came from yesterday's PDFs with
+    # nothing in the matrix to tell an operator that.
+    cached_rows = [
+        row for row in (fresh_periods_json or [])
+        if row.get("state") == "cached" and row.get("cached_at")
+    ]
+    if cached_rows:
+        result["cached_periods"] = [row["label"] for row in cached_rows]
+        result["oldest_cached_at"] = min(row["cached_at"] for row in cached_rows)
     if periods_done:
         write_run_xlsx(session_scope, settings, run_id, client, table, cc_result, emit)
         # Client PDF (task-47 §5): automatic on every successful/partial
@@ -561,7 +577,7 @@ def _run_pdf(  # noqa: PLR0913 - orchestrator, see module docstring
         raise NotConfiguredError("Reporting Ninja is not configured for this client")
     report_name = rn_integration.config_json.get("ninja_report_name")
     if not report_name:
-        raise ReportNameMissingError()
+        raise ReportNameMissingError(client.name)
 
     email = os.environ.get("REPORTING_NINJA_EMAIL", "")
     password = os.environ.get("REPORTING_NINJA_PASSWORD", "")
@@ -571,7 +587,7 @@ def _run_pdf(  # noqa: PLR0913 - orchestrator, see module docstring
     emit("info", "preflight", f"Reporting Ninja report: {report_name}", {})
 
     to_download, cached_by_label = _split_cached(
-        session_scope, settings, client.id, report_name, periods, emit,
+        session_scope, settings, run_id, client.id, report_name, periods, emit,
         mark_period, force_refresh=force_refresh,
     )
 
@@ -658,6 +674,7 @@ def _run_pdf(  # noqa: PLR0913 - orchestrator, see module docstring
 def _split_cached(  # noqa: PLR0913 - see `_run_pdf`
     session_scope: Any,
     settings: Settings,
+    run_id: str,
     client_id: str,
     report_name: str,
     periods: list[ReportPeriod],
@@ -672,6 +689,7 @@ def _split_cached(  # noqa: PLR0913 - see `_run_pdf`
 
     to_download: list[ReportPeriod] = []
     cached_by_label: dict[str, Path] = {}
+    cached_at_by_label: dict[str, str] = {}
     with session_scope() as session:
         repo = ReportRepository(session)
         for period in periods:
@@ -683,6 +701,7 @@ def _split_cached(  # noqa: PLR0913 - see `_run_pdf`
                 to_download.append(period)
             else:
                 cached_by_label[period.label] = settings.artifacts_dir / cached.path
+                cached_at_by_label[period.label] = cached.created_at.date().isoformat()
                 mark_period(period.label, "cached", from_cache=True)
                 emit(
                     "info", "download",
@@ -690,6 +709,22 @@ def _split_cached(  # noqa: PLR0913 - see `_run_pdf`
                     f"(downloaded {cached.created_at.date().isoformat()})",
                     {"period": period.label},
                 )
+        # task-49 §2.6: the original download date, stamped directly onto the
+        # `periods_json` row so the run/document footer can show it without
+        # re-deriving it from event log text (task-45 §1.1 already rejected
+        # that approach once). No repository setter for this — `update_period`
+        # is owned by a file this task does not touch — so the whole list is
+        # re-read and reassigned here, the same convention `set_periods` uses.
+        if cached_at_by_label:
+            run = repo.get(run_id)
+            if run is not None and run.periods_json:
+                run.periods_json = [
+                    {**row, "cached_at": cached_at_by_label[row["label"]]}
+                    if row.get("label") in cached_at_by_label
+                    else row
+                    for row in run.periods_json
+                ]
+                session.flush()
     return to_download, cached_by_label
 
 

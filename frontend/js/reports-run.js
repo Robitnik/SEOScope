@@ -11,17 +11,17 @@
 // log line would silently break. That heuristic is gone.
 
 import {
-  cancelReportRun, createClientPdf, createReportRun, getDashboard, getReportRun,
+  cancelReportRun, createClientPdf, getDashboard, getReportRun,
   getReportRunEvents, getReportTable, isAbortError, isFixtureMode, listReportFiles,
-  reportDocumentUrl, reportFileUrl, reportRunEventsUrl, retryReportPeriod,
-} from "./api.js?v=20260817-spin1";
-import { buildReportsHash, buildReportsRunHash } from "./router.js?v=20260817-spin1";
+  rebuildReportRun, reportDocumentUrl, reportFileUrl, reportRunEventsUrl, retryReportPeriod,
+} from "./api.js?v=20260819-spin3";
+import { buildReportsHash, buildReportsRunHash } from "./router.js?v=20260819-spin3";
 import {
   REPORT_CROSS_CHECK_META, REPORT_KIND_META, REPORT_RUN_STATUS_META, REPORT_SOURCE_META,
   escapeHtml, formatDateRange, formatDuration, formatDurationSeconds, formatFileSize,
   formatTimestamp, icon, isTerminal, stateClass, statusIcon,
-} from "./formatters.js?v=20260817-spin1";
-import { sectionSkeleton } from "./skeleton.js?v=20260817-spin1";
+} from "./formatters.js?v=20260819-spin3";
+import { sectionSkeleton } from "./skeleton.js?v=20260819-spin3";
 
 const root = document.querySelector("#reports-run-page-root");
 const fileDialog = document.querySelector("#reports-file-dialog");
@@ -247,6 +247,15 @@ function renderHeader() {
   const sourceMeta = REPORT_SOURCE_META[run.source];
   const canCancel = !isTerminal(run.status);
   const foreign = run.source === "pdf" && isForeignBinding(run.ninja_report_name, client?.name);
+  // task-49 §2.5 wants Rebuild at the RUN level for any finished run, not
+  // only a failed one — the whole point of the incident was a `succeeded`
+  // run whose 6/6 periods came from yesterday's PDFs, which has no failure
+  // panel to hang the action off. A failed run keeps its own Retry/Rebuild
+  // pair in `renderFailurePanel()`, so this stays out of that case to avoid
+  // offering the same action twice. `force_refresh` is meaningless on the
+  // API path (`_run_api` never reads it), hence PDF only.
+  const showsFailurePanel = run.status === "failed" || !table;
+  const canRebuild = isTerminal(run.status) && run.source === "pdf" && !showsFailurePanel;
   host.innerHTML = `
     <header class="reports-run-header">
       <div class="reports-run-header__identity">
@@ -264,6 +273,10 @@ function renderHeader() {
         </div>
       </div>
       <div class="reports-run-header__actions">
+        ${canRebuild ? `
+          <button type="button" class="button button--quiet" id="rr-rebuild-run">
+            ${icon("refresh", "icon icon--tiny")}Rebuild (re-download)
+          </button>` : ""}
         ${canCancel ? `
           <button type="button" class="button button--quiet" id="rr-cancel" ${run.cancel_requested ? "disabled" : ""}>
             ${icon("player-stop", "icon icon--tiny")}${run.cancel_requested ? "Stopping…" : "Cancel"}
@@ -346,9 +359,14 @@ function renderProgressList() {
     host.innerHTML = `<li class="reports-progress-row reports-progress-row--empty"><span class="muted">No per-period detail was recorded for this run.</span></li>`;
     return;
   }
+  const canRetryPeriod = isTerminal(run.status);
   host.innerHTML = rows.map((row) => {
     const meta = PERIOD_STATE_META[row.state] || PERIOD_STATE_META.waiting;
     const range = formatDateRange(row.date_from, row.date_to);
+    // task-49 §2.5: a `done`/`cached` period is retryable now too ("Rebuild")
+    // — `failed` keeps its own dedicated row with the error text below
+    // instead, so this stays a light icon-button, not a second alarming row.
+    const canRebuild = canRetryPeriod && (row.state === "done" || row.state === "cached");
     return `
       <li class="reports-progress-row" data-state="${escapeHtml(row.state || "waiting")}">
         <div class="reports-progress-row__label">
@@ -357,6 +375,10 @@ function renderProgressList() {
         </div>
         <span class="status-label ${PERIOD_STATE_CLASS[row.state] || "state-queued"}">${statusIcon(meta.icon)}${escapeHtml(periodStatusLabel(row))}</span>
         <span class="reports-progress-row__duration">${escapeHtml(periodDuration(row))}</span>
+        ${canRebuild ? `
+          <button type="button" class="icon-button reports-progress-row__rebuild" data-retry-period="${escapeHtml(row.label)}" aria-label="Re-download ${escapeHtml(row.label)}">
+            ${icon("refresh", "icon icon--tiny")}
+          </button>` : ""}
       </li>`;
   }).join("");
   const failed = rows.filter((row) => row.state === "failed" && row.error);
@@ -365,12 +387,11 @@ function renderProgressList() {
     // a period sits here `failed` — this button asks for exactly ONE more,
     // manual attempt, only once the run itself is done (retrying against a
     // still-`running` run is rejected server-side: it isn't finished yet).
-    const canRetry = isTerminal(run.status);
     host.insertAdjacentHTML("beforeend", failed.map((row) => `
       <li class="reports-progress-error">
         ${icon("circle-x", "icon icon--tiny")}
         <span><strong translate="no">${escapeHtml(row.label)}</strong> — ${escapeHtml(row.error)}</span>
-        ${canRetry ? `
+        ${canRetryPeriod ? `
           <button type="button" class="button button--quiet" data-retry-period="${escapeHtml(row.label)}">
             ${icon("refresh", "icon icon--tiny")}Retry this period
           </button>` : ""}
@@ -438,6 +459,11 @@ async function loadTerminalData() {
     table = tableResult;
     files = filesResult;
     bodyEl.setAttribute("aria-busy", "false");
+    // The header renders once before this (`loadInitial`), when `table` is
+    // still null — and the run-level Rebuild action depends on knowing
+    // whether the failure panel will own that action instead, which is only
+    // decidable now. Cheap re-render, no flicker: same markup otherwise.
+    renderHeader();
     renderTerminalSections(bodyEl);
   } catch (error) {
     if (isAbortError(error)) return;
@@ -455,6 +481,8 @@ function renderTerminalSections(bodyEl) {
   const sections = [];
   if (run.status === "failed" || !table) sections.push(renderFailurePanel());
   if (run.status === "partial") sections.push(renderPartialBanner());
+  const cacheBanner = renderCacheFreshnessBanner();
+  if (cacheBanner) sections.push(cacheBanner);
   if (table?.cross_check) sections.push(renderCrossCheckBanner(table.cross_check));
   if (table) sections.push(`<section class="reports-run-section"><div class="section-heading"><div><p class="eyebrow">Result</p><h2>Metrics</h2></div></div>${renderResultTable()}</section>`);
   // Document/client PDF (task-47 §2.1) — `monthly` only: the tile/YOY layout
@@ -602,11 +630,41 @@ async function copyHistoryTable() {
 }
 
 function renderFailurePanel() {
+  // task-49 §2.4/§2.5: the whole-run Retry used to silently keep
+  // `force_refresh: false` no matter WHY the operator retried (task-49 §1.4)
+  // — now the choice is explicit, and (PDF only — `force_refresh` has no
+  // effect on the API path) offered as two plain buttons rather than a menu,
+  // matching the pair already used on the batch matrix for the same reason.
+  const showRebuildChoice = run.source === "pdf";
   return `
     <div class="reports-run-error state-panel state-failed">
       ${icon("circle-x")}
       <p><strong>This report failed.</strong><br>${escapeHtml(run.error_message || "Unknown error.")}</p>
-      <button type="button" class="button button--primary" id="rr-retry">${icon("refresh")}Retry</button>
+      ${showRebuildChoice ? `
+        <div class="reports-wizard-actions">
+          <button type="button" class="button button--primary" id="rr-retry">${icon("refresh")}Retry (use cached PDFs)</button>
+          <button type="button" class="button button--quiet" id="rr-rebuild">${icon("refresh")}Rebuild (re-download)</button>
+        </div>`
+        : `<button type="button" class="button button--primary" id="rr-retry">${icon("refresh")}Retry</button>`}
+    </div>`;
+}
+
+// task-49 §2.6: computed client-side from `run.periods` (`from_cache` +
+// `cached_at`) rather than a new run-level DTO field — the same "derive it
+// from data the page already has" precedent `isForeignBinding()` set above.
+function renderCacheFreshnessBanner() {
+  if (run.source !== "pdf") return "";
+  const rows = periodRows();
+  const cachedRows = rows.filter((row) => row.from_cache && row.cached_at);
+  if (!cachedRows.length) return "";
+  const oldest = [...cachedRows].sort((a, b) => a.cached_at.localeCompare(b.cached_at))[0].cached_at;
+  // Reuses the `state-cached`/`--info` tone already defined for the per-
+  // period "Reused" chip (task-45 §3.1) — the same neutral, not-an-error
+  // meaning applies at the whole-run level here.
+  return `
+    <div class="state-panel state-cached">
+      ${icon("database")}
+      <p>Data: <strong>${cachedRows.length} of ${rows.length}</strong> period${rows.length === 1 ? "" : "s"} reused from PDFs downloaded <strong>${escapeHtml(formatShortDate(oldest))}</strong>.</p>
     </div>`;
 }
 
@@ -890,15 +948,14 @@ async function onCancel(button) {
   }
 }
 
-async function onRetry(button) {
+async function onRetry(forceRefresh, button) {
   button.disabled = true;
   try {
-    const payload = { client_id: run.client_id, kind: run.kind, source: run.source, ...run.params, force_refresh: false };
-    const result = await createReportRun(payload);
+    const result = await rebuildReportRun(current.runId, { forceRefresh });
     location.hash = buildReportsRunHash(result.run_id);
   } catch (error) {
     if (isAbortError(error)) return;
-    toast(`Could not retry: ${error.message}`);
+    toast(`Could not ${forceRefresh ? "rebuild" : "retry"}: ${error.message}`);
     button.disabled = false;
   }
 }
@@ -919,7 +976,9 @@ function onRootClick(event) {
   const cancelButton = event.target.closest("#rr-cancel");
   if (cancelButton) { void onCancel(cancelButton); return; }
   const retryButton = event.target.closest("#rr-retry");
-  if (retryButton) { void onRetry(retryButton); return; }
+  if (retryButton) { void onRetry(false, retryButton); return; }
+  const rebuildButton = event.target.closest("#rr-rebuild, #rr-rebuild-run");
+  if (rebuildButton) { void onRetry(true, rebuildButton); return; }
   const retryLoad = event.target.closest("[data-retry-load]");
   if (retryLoad) { void loadTerminalData(); return; }
   const pauseButton = event.target.closest("#rr-log-pause");

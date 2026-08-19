@@ -77,6 +77,11 @@ class ReportRunPeriodDTO(BaseModel):
     finished_at: datetime | None = None
     duration_seconds: float | None = None
     from_cache: bool = False
+    # Additive (task-49 §2.6): the date the reused PDF was ORIGINALLY
+    # downloaded, distinct from this run's own `finished_at` — the whole point
+    # is showing the operator how stale the source file is, not when the
+    # cache lookup happened.
+    cached_at: date | None = None
     error: str | None = None
     # Additive (task-47): which attempt this state reflects, and the retry
     # budget for this period's source — lets the UI show "Running — retry
@@ -190,6 +195,13 @@ class ReportTableDTO(BaseModel):
     # table and written as its own XLSX sheet. `None` when the history query
     # could not run at all — the main table still stands on its own.
     history: ReportHistoryDTO | None = None
+    # Additive (task-49 §2.6): which periods (by label) were served from a
+    # cached PDF rather than freshly downloaded, and the oldest of their
+    # original download dates — empty/`None` for an API-source run or a PDF
+    # run where nothing was reused. The oldest date is what determines the
+    # report's real freshness, not the run's own `finished_at`.
+    cached_periods: list[str] = Field(default_factory=list)
+    oldest_cached_at: date | None = None
 
 
 class ReportFileDTO(BaseModel):
@@ -245,6 +257,53 @@ class NinjaReportNameUpdateRequest(BaseModel):
     confirm_mismatch: bool = False
 
 
+# --- GET /ninja-bindings (task-49 §2.1) ---------------------------------
+#
+# One cheap, DB-only pass over every client so the wizard can show who is
+# ready for a `source=pdf` batch BEFORE Start is pressed — the live incident
+# this task closes was 9/12 clients failing at 0 seconds for a reason that
+# was sitting in the database the whole time. Deliberately a NEW, separately
+# named state set from task-48's `BindingStatus` (`ok|foreign|missing|
+# not_configured`): that one serves the accuracy/audit report, this one
+# gates the Start button, and the task doc's own contract names these four
+# values.
+
+NinjaBindingState = Literal["ready", "no_report_name", "not_connected", "foreign_binding"]
+
+
+class NinjaBindingRowDTO(BaseModel):
+    client_id: str
+    name: str
+    domain: str | None = None
+    connected: bool
+    ninja_report_name: str | None = None
+    state: NinjaBindingState
+
+
+class NinjaBindingsDTO(BaseModel):
+    rows: list[NinjaBindingRowDTO] = Field(default_factory=list)
+
+
+# --- Rebuild (task-49 §2.4/§2.5) -----------------------------------------
+#
+# `force_refresh` used to be inherited silently from the original run's own
+# params whenever an operator hit "Retry" (task-49 §1.4) — including for the
+# exact client being retried BECAUSE the data was wrong. Both request bodies
+# below make the caller state it explicitly every time.
+
+
+class RunRebuildRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    force_refresh: bool = True
+
+
+class BatchClientRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    force_refresh: bool = False
+
+
 # --- Batches (task-47 §4/§5) --------------------------------------------
 #
 # A batch is a parent row over N ordinary `ReportRun`s (task-47 §2.2) — every
@@ -286,6 +345,15 @@ class ReportBatchClientRowDTO(BaseModel):
     periods_done: int
     periods_failed: int
     error_message: str | None = None
+    # Additive (task-49 §2.3/§2.4): lets the matrix show `Connect Reporting
+    # Ninja` instead of `Retry` for exactly this failure, and nothing else —
+    # a retry cannot fix a missing binding, so offering it is a guaranteed
+    # second failure.
+    error_code: str | None = None
+    # Additive (task-49 §2.6): how many of this client's periods were served
+    # from a cached PDF — `cached_count == period_count` is the `From cache`
+    # chip; anything in between is `N cached / M downloaded`.
+    cached_count: int = 0
     started_at: datetime | None = None
     finished_at: datetime | None = None
 

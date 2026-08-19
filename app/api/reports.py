@@ -32,7 +32,13 @@ from app.db.repositories.reports import ReportRepository
 from app.db.session import worker_session_scope
 from app.jobs.events import event_stream
 from app.reports import ninja_browser
-from app.reports.batch import NoClientsSelectedError, cancel_batch, create_batch
+from app.reports.batch import (
+    NoClientsSelectedError,
+    cancel_batch,
+    create_batch,
+    latest_runs_by_client,
+    rebuild_run,
+)
 from app.reports.client_pdf import client_pdf_filename, render_client_pdf
 from app.reports.document import render_document_html
 from app.reports.period_retry import retry_period
@@ -44,8 +50,12 @@ from app.schemas.enums import Provider
 from app.schemas.reports import (
     AccuracyClientRowDTO,
     AccuracyReportDTO,
+    BatchClientRetryRequest,
     BindingStatus,
     CrossCheckStatus,
+    NinjaBindingRowDTO,
+    NinjaBindingsDTO,
+    NinjaBindingState,
     NinjaReportCandidateDTO,
     NinjaReportNameDTO,
     NinjaReportNameUpdateRequest,
@@ -67,6 +77,7 @@ from app.schemas.reports import (
     ReportTypeDTO,
     ReportTypeEstimateDTO,
     ReportTypesDTO,
+    RunRebuildRequest,
 )
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
@@ -94,6 +105,15 @@ _PERIOD_NOT_RETRYABLE = ErrorDTO(
 ).model_dump()
 _NO_CLIENTS_SELECTED = ErrorDTO(
     error_code="no_clients_selected", message="At least one client must be selected"
+).model_dump()
+_RUN_NOT_RETRYABLE = ErrorDTO(
+    error_code="run_not_retryable", message="This run has not finished yet"
+).model_dump()
+_CLIENT_NOT_IN_BATCH = ErrorDTO(
+    error_code="client_not_in_batch", message="This client has no run in this batch"
+).model_dump()
+_CLIENT_NOT_RETRYABLE = ErrorDTO(
+    error_code="client_not_retryable", message="This client's run has not finished yet"
 ).model_dump()
 
 _TERMINAL_STATUSES = ("succeeded", "partial", "failed", "cancelled")
@@ -381,6 +401,47 @@ async def cancel_report_run(run_id: str) -> ReportRunDTO:
     return dto
 
 
+# --- POST /runs/{id}/rebuild (task-49 §2.5) ---------------------------------
+#
+# The whole-run "Retry" button used to call `POST /runs` with the source
+# run's own params spread in, silently keeping `force_refresh: false` even
+# when an operator retried BECAUSE the data was wrong (task-49 §1.4/§2.4
+# point 3). This makes `force_refresh` an explicit choice every time, and —
+# unlike the old behaviour — preserves the source run's `batch_id`, so a
+# rebuilt batch child stays inside its batch instead of becoming an orphan.
+
+
+def _rebuild_run(run_id: str, *, force_refresh: bool) -> tuple[str | None, str | None]:
+    settings = get_settings()
+    return rebuild_run(
+        worker_session_scope, run_id, force_refresh=force_refresh,
+        max_months=settings.reports_max_months,
+        max_comparator_years=settings.reports_max_comparator_years,
+    )
+
+
+@router.post(
+    "/runs/{run_id}/rebuild",
+    status_code=202,
+    responses={404: {"model": ErrorDTO}, 409: {"model": ErrorDTO}},
+)
+async def rebuild_report_run(run_id: str, body: RunRebuildRequest) -> ReportRunAcceptedDTO:
+    error, new_run_id = await run_in_threadpool(
+        _rebuild_run, run_id, force_refresh=body.force_refresh
+    )
+    if error == "run_not_found":
+        raise HTTPException(404, _RUN_NOT_FOUND)
+    if error == "run_not_retryable":
+        raise HTTPException(409, _RUN_NOT_RETRYABLE)
+    if new_run_id is None:  # pragma: no cover - exhaustive with the checks above
+        raise HTTPException(404, _RUN_NOT_FOUND)
+    return ReportRunAcceptedDTO(
+        run_id=new_run_id,
+        status_url=f"/api/v1/reports/runs/{new_run_id}",
+        events_url=f"/api/v1/reports/runs/{new_run_id}/events",
+    )
+
+
 # --- GET /runs/{id}/table ------------------------------------------------------
 
 
@@ -400,6 +461,10 @@ def _get_table(run_id: str) -> ReportTableDTO | None:
         sources=data.get("sources", {}),
         cross_check=data.get("cross_check"),
         history=ReportHistoryDTO(**data["history"]) if data.get("history") else None,
+        cached_periods=data.get("cached_periods", []),
+        oldest_cached_at=(
+            date.fromisoformat(data["oldest_cached_at"]) if data.get("oldest_cached_at") else None
+        ),
     )
 
 
@@ -508,21 +573,35 @@ def _name_matches_client(report_name: str, client_name: str) -> bool:
     return report_name.upper().startswith(client_name.upper())
 
 
-def _list_account_report_names() -> tuple[list[str], bool]:
-    """Every report name in the Reporting Ninja cabinet, or `([], True)` when
-    the browser cannot run (no credentials configured) or the scroll never
-    stabilized (task-48 §2.1) — either way the caller must treat this as
-    "could not verify", never as "the cabinet is empty" or "this name does
-    not exist" (task-48 §1.7).
+def _cabinet_has_report_name(name: str) -> bool | None:
+    """Does the Reporting Ninja cabinet actually hold this exact report name?
+
+    Asked through the cabinet's OWN search (task-48 §2.1 point 1), never
+    through the scroll-until-stable full list. Measured live on this account
+    (2026-08-19, task-49): `list_report_names` returned 16 names ending at
+    `GRP-Internal report` while reporting `truncated=False` — a silently
+    INCOMPLETE list claiming to be complete, because "the visible set stopped
+    growing" cannot tell a finished scroll from a stalled one. Validating
+    against it rejected every real client sorting past "G" (SWM, SAPHNY, SDS,
+    SHB, HWELL, LAXTON, NYCHA, PJC) as `report_name_unknown` — i.e. exactly
+    the clients task-49's inline Connect exists to fix, and the same
+    past-the-cutoff trap task-48 §1.6 already found once.
+
+    Search has no such failure mode: the server does the filtering, so
+    virtualization cannot hide a row from it, and an empty result for one
+    exact name IS evidence of absence (unlike an unproven absence from a
+    truncated scroll, task-48 §1.7). `None` means the question could not be
+    asked at all — no credentials, hence no browser — never "absent".
     """
     email = os.environ.get("REPORTING_NINJA_EMAIL", "")
     password = os.environ.get("REPORTING_NINJA_PASSWORD", "")
     if not email or not password:
-        return [], True
+        return None
     settings = get_settings()
-    return ninja_browser.list_report_names(
-        email=email, password=password, headless=settings.reports_headless
+    found = ninja_browser.search_report_names(
+        email=email, password=password, headless=settings.reports_headless, query=name
     )
+    return name in found
 
 
 def _client_identity(client_id: str) -> tuple[str, str | None, bool] | None:
@@ -591,13 +670,24 @@ def _discover_ninja_report(client_id: str) -> NinjaReportNameDTO | None:
             name=name, exact_match=_name_matches_client(name, client_name)
         )
         (matches if candidate.exact_match else others).append(candidate)
+    # task-49: `discovery.truncated` alone cannot be trusted to mean "this
+    # list is complete" — measured live (2026-08-19) it reported `False` over
+    # a list of 16 names that stopped at `GRP-Internal report`, because
+    # `_scroll_all_names`' "stopped growing" heuristic reads a STALLED scroll
+    # exactly like a finished one. Search is the ground truth here, so a match
+    # it found that the scroll list lacks PROVES the list is partial no matter
+    # what the flag says. Never present a truncated list as an exact total
+    # (PLAN §12 / AGENTS §5) — the operator must not read a name's absence
+    # from `others` as "this report does not exist".
+    scrolled = set(discovery.all_names)
+    provably_partial = any(name not in scrolled for name in discovery.matches)
     return NinjaReportNameDTO(
         client_id=client_id,
         client_name=client_name,
         ninja_report_name=current,
         matches=matches,
         others=others,
-        others_truncated=discovery.truncated,
+        others_truncated=discovery.truncated or provably_partial,
     )
 
 
@@ -616,11 +706,13 @@ def _save_ninja_report_name(client_id: str, name: str, *, confirm_mismatch: bool
     another client's report is permanent and silently poisons every later PDF
     run), so both checks live here too:
 
-    1. the name must be one the cabinet actually has — when the cabinet can be
-       enumerated at all. No credentials configured means no browser, hence no
-       list; that is reported as "could not verify", not as "rejected", so a
-       credential-less environment stays usable and never silently downgrades
-       to a weaker check that LOOKS like it verified something;
+    1. the name must be one the cabinet actually has — asked via the cabinet's
+       own search (`_cabinet_has_report_name`), which no amount of table
+       virtualization can hide a row from. No credentials configured means no
+       browser, hence nothing to ask; that is reported as "could not verify",
+       not as "rejected", so a credential-less environment stays usable and
+       never silently downgrades to a weaker check that LOOKS like it
+       verified something;
     2. a name that does not start with the client's name requires an explicit
        `confirm_mismatch`.
     """
@@ -631,13 +723,10 @@ def _save_ninja_report_name(client_id: str, name: str, *, confirm_mismatch: bool
     if not has_integration:
         return "not_configured"
 
-    # task-48 §1.7/§2.1: `truncated` (no credentials, OR the scroll never
-    # stabilized) means "could not verify" — the same as the old empty-list
-    # sentinel, but explicit, so a truncated-but-non-empty list can never be
-    # mistaken for a complete one and used to reject a real, past-the-cutoff
-    # report name.
-    known_names, truncated = _list_account_report_names()
-    if not truncated and name not in known_names:
+    # `None` = could not ask (no credentials), which is never a rejection
+    # (task-48 §1.7). `False` = the cabinet's own search, which the operator's
+    # candidate list came from in the first place, does not have this name.
+    if _cabinet_has_report_name(name) is False:
         return "report_name_unknown"
     if not _name_matches_client(name, client_name) and not confirm_mismatch:
         return "report_name_mismatch"
@@ -690,6 +779,48 @@ async def put_ninja_report_name(
     if dto is None:  # pragma: no cover - can't disappear between the two calls above
         raise HTTPException(404, _CLIENT_NOT_FOUND)
     return dto
+
+
+# --- GET /ninja-bindings (task-49 §2.1) -------------------------------------
+#
+# One DB-only pass over every client, no browser call — the live incident this
+# closes was 9/12 clients failing at 0 seconds for a reason (`report_name_missing`)
+# that was sitting in `client_integrations` the whole time; the wizard just
+# never had a way to read it before starting a batch.
+
+
+def _binding_row(client_repo: ClientRepository, client: Any) -> NinjaBindingRowDTO:
+    integration = client_repo.get_integration(client.id, Provider.reporting_ninja)
+    connected = bool(integration and integration.config_json.get("connection_key"))
+    ninja_report_name = integration.config_json.get("ninja_report_name") if integration else None
+
+    state: NinjaBindingState
+    if not connected:
+        state = "not_connected"
+    elif not ninja_report_name:
+        state = "no_report_name"
+    elif not _name_matches_client(ninja_report_name, client.name):
+        state = "foreign_binding"
+    else:
+        state = "ready"
+
+    return NinjaBindingRowDTO(
+        client_id=client.id, name=client.name, domain=client.domain,
+        connected=connected, ninja_report_name=ninja_report_name, state=state,
+    )
+
+
+def _build_ninja_bindings() -> NinjaBindingsDTO:
+    with worker_session_scope() as session:
+        client_repo = ClientRepository(session)
+        clients = client_repo.list_all()
+        rows = [_binding_row(client_repo, client) for client in clients]
+    return NinjaBindingsDTO(rows=rows)
+
+
+@router.get("/ninja-bindings")
+async def get_ninja_bindings() -> NinjaBindingsDTO:
+    return await run_in_threadpool(_build_ninja_bindings)
 
 
 # --- GET /runs/{id}/document, POST /runs/{id}/client-pdf (task-47 §2.1/§5) --
@@ -807,11 +938,17 @@ async def create_client_pdf(run_id: str) -> ReportFileDTO:
 
 
 def _batch_row_dto(run: ReportRun, client_name: str | None) -> ReportBatchClientRowDTO:
+    # task-49 §2.6: how many of this client's periods were served from cache
+    # — the matrix chip (`6 cached` / `From cache`) reads straight off this,
+    # no new collection or repository query needed since `periods_json`
+    # already carries each period's `state`.
+    cached_count = sum(1 for row in (run.periods_json or []) if row.get("state") == "cached")
     return ReportBatchClientRowDTO(
         run_id=run.id, client_id=run.client_id, client_name=client_name,
         status=run.status,  # type: ignore[arg-type]
         period_count=run.period_count, periods_done=run.periods_done,
         periods_failed=run.periods_failed, error_message=run.error_message,
+        error_code=run.error_code, cached_count=cached_count,
         started_at=run.started_at, finished_at=run.finished_at,
     )
 
@@ -819,8 +956,11 @@ def _batch_row_dto(run: ReportRun, client_name: str | None) -> ReportBatchClient
 def _batch_dto(
     batch: ReportBatch, children: list[ReportRun], client_repo: ClientRepository
 ) -> ReportBatchDTO:
+    # task-49 §2.4: a retried/rebuilt client shows its LATEST run only — the
+    # superseded one (same `client_id`, same `batch_id`) simply isn't in this
+    # view any more, with no schema change (see `latest_runs_by_client`).
     rows = []
-    for child in children:
+    for child in latest_runs_by_client(children).values():
         client = client_repo.get(child.client_id)
         rows.append(_batch_row_dto(child, client.name if client else None))
     return ReportBatchDTO(
@@ -944,6 +1084,65 @@ async def cancel_report_batch(batch_id: str) -> ReportBatchDTO:
         raise HTTPException(404, _BATCH_NOT_FOUND)
     if error == "batch_not_cancellable":
         raise HTTPException(409, _BATCH_NOT_CANCELLABLE)
+    dto = await run_in_threadpool(_get_batch_dto, batch_id)
+    if dto is None:  # pragma: no cover - can't disappear between the two calls above
+        raise HTTPException(404, _BATCH_NOT_FOUND)
+    return dto
+
+
+# --- POST /batches/{id}/clients/{id}/retry (task-49 §2.4) -------------------
+#
+# Replaces the old "Retry this client" behaviour (`createReportRun` with the
+# batch's own params, spread with a silent `force_refresh: false`), which
+# created a standalone run OUTSIDE the batch — the batch itself could then
+# never reach `succeeded` even once every client was actually done. This one
+# stays inside the batch (`rebuild_run` preserves `batch_id`) and requires the
+# caller to state `force_refresh` explicitly.
+
+
+def _retry_batch_client(
+    batch_id: str, client_id: str, *, force_refresh: bool
+) -> tuple[str | None, str | None]:
+    settings = get_settings()
+    with worker_session_scope() as session:
+        repo = ReportRepository(session)
+        if repo.get_batch(batch_id) is None:
+            return "batch_not_found", None
+        children = repo.list_runs_for_batch(batch_id)
+        current = latest_runs_by_client(children).get(client_id)
+        if current is None:
+            return "client_not_in_batch", None
+        source_run_id = current.id
+    error, _new_run_id = rebuild_run(
+        worker_session_scope, source_run_id, force_refresh=force_refresh,
+        max_months=settings.reports_max_months,
+        max_comparator_years=settings.reports_max_comparator_years,
+    )
+    if error == "run_not_retryable":
+        return "client_not_retryable", None
+    return error, batch_id
+
+
+_BATCH_CLIENT_RETRY_ERROR_RESPONSES = {
+    "batch_not_found": _BATCH_NOT_FOUND,
+    "client_not_in_batch": _CLIENT_NOT_IN_BATCH,
+    "client_not_retryable": _CLIENT_NOT_RETRYABLE,
+}
+
+
+@router.post(
+    "/batches/{batch_id}/clients/{client_id}/retry",
+    responses={404: {"model": ErrorDTO}, 409: {"model": ErrorDTO}},
+)
+async def retry_batch_client(
+    batch_id: str, client_id: str, body: BatchClientRetryRequest
+) -> ReportBatchDTO:
+    error, _batch_id = await run_in_threadpool(
+        _retry_batch_client, batch_id, client_id, force_refresh=body.force_refresh
+    )
+    if error is not None:
+        status_code = 404 if error in ("batch_not_found", "client_not_in_batch") else 409
+        raise HTTPException(status_code, _BATCH_CLIENT_RETRY_ERROR_RESPONSES[error])
     dto = await run_in_threadpool(_get_batch_dto, batch_id)
     if dto is None:  # pragma: no cover - can't disappear between the two calls above
         raise HTTPException(404, _BATCH_NOT_FOUND)

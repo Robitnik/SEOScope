@@ -130,3 +130,20 @@ def test_chart_gap_becomes_a_line_break_not_a_zero():
     clicks_chart = html.split('data-chart-id="chart-clicks"')[1].split("</svg>")[0]
     line_segments = clicks_chart.count('fill="none" stroke="#ff4a17"')
     assert line_segments == 2
+
+
+def test_footer_names_the_cache_date_when_a_period_was_reused():
+    # task-49 §2.6: the client sees the same data-truth requirement every
+    # other metric already gets — a report built on a reused PDF is not the
+    # same thing as a fresh collection.
+    html = render_document_html(
+        client_name="SAPPHIRE NEW YORK",
+        table={**_table(), "oldest_cached_at": "2026-08-18"},
+        generated_at=datetime(2026, 8, 19, 12, 0, tzinfo=UTC),
+    )
+    assert "Source PDFs downloaded August 18, 2026" in html
+
+
+def test_footer_has_no_cache_line_when_nothing_was_reused():
+    html = _render()
+    assert "Source PDFs downloaded" not in html

@@ -1,14 +1,14 @@
-import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, getMonitorSummary, isAbortError, isFixtureMode } from "./api.js?v=20260817-spin1";
-import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260817-spin1";
-import { clientStatusBadge, clientStatusNote, isPaused, openClientStatusDialog } from "./client-status.js?v=20260817-spin1";
-import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260817-spin1";
-import { buildAhrefsHash, buildBlogsHash, buildMonitorClientHash, replaceClientHash } from "./router.js?v=20260817-spin1";
-import { escapeHtml, formatTimestamp, icon, initials, isTerminal, MONITOR_SEVERITY_META, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260817-spin1";
-import { createAnalyticsTab } from "./analytics-tabs.js?v=20260817-spin1";
-import { renderAlertsBlock } from "./alerts-block.js?v=20260817-spin1";
-import { renderChart, destroyChart } from "./charts.js?v=20260817-spin1";
-import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260817-spin1";
-import { watchJob } from "./sse.js?v=20260817-spin1";
+import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, getMonitorSummary, isAbortError, isFixtureMode } from "./api.js?v=20260819-spin3";
+import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260819-spin3";
+import { clientStatusBadge, clientStatusNote, isPaused, openClientStatusDialog } from "./client-status.js?v=20260819-spin3";
+import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260819-spin3";
+import { buildAhrefsHash, buildBlogsHash, buildMonitorClientHash, replaceClientHash } from "./router.js?v=20260819-spin3";
+import { escapeHtml, formatTimestamp, icon, initials, isTerminal, MONITOR_SEVERITY_META, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260819-spin3";
+import { createAnalyticsTab } from "./analytics-tabs.js?v=20260819-spin3";
+import { renderAlertsBlock } from "./alerts-block.js?v=20260819-spin3";
+import { renderChart, destroyChart } from "./charts.js?v=20260819-spin3";
+import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260819-spin3";
+import { watchJob } from "./sse.js?v=20260819-spin3";
 
 const PERIODS = [
   { key: "week", label: "Week" },
