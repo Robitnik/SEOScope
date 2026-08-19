@@ -29,6 +29,20 @@ _CSRF_VALUE_RE = re.compile(
 _CSRF_META_RE = re.compile(
     rb'(name=["\']csrf-token["\']\s+content=["\'])[^"\']*(["\'])', re.IGNORECASE
 )
+# Shopify per-request/per-session identifiers (task-50 §0.9 — live 2026-08-19,
+# alphastyle.store): `<meta name="shopify-y"/"shopify-s" content="...">`
+# carry a fresh UUID on every single request, not just every session. Two
+# `urllib` fetches of the same page 2 seconds apart disagreed only here (and
+# in the JWT below), which fired `content_changed` on effectively every
+# monitor pass for this client regardless of whether anything real changed.
+_SHOPIFY_META_RE = re.compile(
+    rb'(name=["\']shopify-[ys]["\']\s+content=["\'])[^"\']*(["\'])', re.IGNORECASE
+)
+# A storefront customer/session JWT embedded inline (observed inside an
+# account-link `href`) — three base64url segments, header always starting
+# `eyJ` (base64 of `{"`). Anchoring on that prefix keeps this specific to
+# actual JWTs rather than any arbitrary dotted token.
+_JWT_RE = re.compile(rb"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")
 
 
 def mask_known_noise(raw: bytes) -> bytes:
@@ -36,6 +50,8 @@ def mask_known_noise(raw: bytes) -> bytes:
     masked = _NONCE_ATTR_RE.sub(b'nonce="MASKED"', masked)
     masked = _CSRF_VALUE_RE.sub(rb"\1MASKED\2", masked)
     masked = _CSRF_META_RE.sub(rb"\1MASKED\2", masked)
+    masked = _SHOPIFY_META_RE.sub(rb"\1MASKED\2", masked)
+    masked = _JWT_RE.sub(b"MASKED.JWT.MASKED", masked)
     return masked
 
 

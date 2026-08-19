@@ -23,6 +23,10 @@ ChangeScope = Literal["site", "page", "dns", "robots", "sitemap"]
 # change misattributed to the wrong run; this avoids reintroducing that).
 RunKind = Literal["light", "full", "page"]
 ChangeState = Literal["open", "all"]
+# "auto" self-escalates from the cheap HTTP lane to the slow Playwright/
+# patchright lane once a run confirms a block; "http"/"browser" are an
+# explicit operator override that always wins (task-50 §B4).
+FetchMode = Literal["auto", "http", "browser"]
 
 
 class MonitorSettingsDTO(BaseModel):
@@ -38,6 +42,11 @@ class MonitorSettingsDTO(BaseModel):
     monitor_when_paused: bool
     ignore_patterns: list[str] = []
     muted_change_types: list[str] = []
+    fetch_mode: FetchMode = "auto"
+    # Read-only — when `fetch_mode="auto"` last self-escalated to the
+    # browser lane. `None` if never blocked, or an explicit mode overrides
+    # the escalation entirely.
+    blocked_detected_at: datetime | None = None
     updated_at: datetime
 
 
@@ -56,6 +65,7 @@ class MonitorSettingsUpdateRequest(BaseModel):
     monitor_when_paused: bool | None = None
     ignore_patterns: list[str] | None = None
     muted_change_types: list[str] | None = None
+    fetch_mode: FetchMode | None = None
 
 
 class MonitorRunDTO(BaseModel):
@@ -82,6 +92,11 @@ class MonitorRunDTO(BaseModel):
     remaining_count: int | None = None
     error_code: str | None = None
     error_message: str | None = None
+    # `None` for a run that never hit the antibot lane at all (nothing was
+    # ever attempted, so there is nothing to say "0 blocked" about — the
+    # same `None` != `0` invariant as `urls_total`) vs. `0` for a run that
+    # ran the block-detection path and found nothing (task-50 §4).
+    blocked_count: int | None = None
 
 
 class MonitorRunAcceptedDTO(BaseModel):

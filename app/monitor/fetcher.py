@@ -29,6 +29,13 @@ from app.tools.http_safety import (
 # page — a fair guess from a handful of live vendors, not an exhaustive list.
 # Reported as the honest `blocked` state (task-35 risk table) instead of a
 # false `site_down`.
+#
+# LIVE 2026-08-19 (task-50): alphastyle.store's actual Cloudflare/Shopify
+# interstitial ("Verifying your connection...") matched NONE of the original
+# seven — it uses `_cf_chl` (underscore, not the `cf-chl` hyphen form here)
+# and `cf-injected-html`, and the page carries `429`, a status this list
+# never even considered a challenge candidate. 304 of 355 pages on that
+# client got recorded as real content because of this gap.
 _CHALLENGE_MARKERS = (
     b"cf-chl",
     b"cf-please-wait",
@@ -37,6 +44,10 @@ _CHALLENGE_MARKERS = (
     b"attention required! | cloudflare",
     b"ddos protection by",
     b"captcha-delivery",
+    b"verifying your connection",
+    b"cf-injected-html",
+    b"_cf_chl",
+    b"enable javascript and cookies",
 )
 
 
@@ -82,6 +93,12 @@ class FetchResult:
     elapsed_ms: int
     error: str | None  # None | "timeout" | "connection_error" | "blocked" | "unsafe_url"
     error_detail: str | None = None
+    # Populated only when `error == "blocked"` and the response carried a
+    # usable `Retry-After` (task-50 §B3) — seconds until it is worth trying
+    # this host again. `None` when absent or unparseable (HTTP-date form is
+    # not handled: every live bot-mitigation vendor seen so far uses the
+    # delta-seconds form).
+    retry_after_seconds: float | None = None
 
     @property
     def ok(self) -> bool:
@@ -98,11 +115,52 @@ class FetchStats:
     hosts_seen: set[str] = field(default_factory=set)
 
 
-def _looks_blocked(status: int, body: bytes) -> bool:
-    if status not in (403, 429, 503):
-        return False
-    sample = body[:4096].lower()
-    return any(marker in sample for marker in _CHALLENGE_MARKERS)
+def _parse_retry_after(headers: Headers) -> float | None:
+    raw = headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None  # HTTP-date form — not handled, see `FetchResult.retry_after_seconds`
+
+
+def classify_block(
+    status: int | None, headers: Headers, body: bytes
+) -> tuple[str | None, float | None]:
+    """`(error, retry_after_seconds)` — `error` is `"blocked"` or `None`.
+
+    task-50 §0.3/§0.5 (live 2026-08-19): a bare marker scan over the first 4KB
+    missed alphastyle.store's real challenge page entirely. Three independent
+    signals now, any one of which is decisive on its own:
+
+    - `429` is ALWAYS a rate-limit, never page content — treating it as a
+      `broken` page status is a category error regardless of the body.
+    - `cf-mitigated` is Cloudflare's own admission that it intervened — the
+      most reliable signal there is, when present.
+    - `Retry-After` on a 403/503 is a vendor telling us to slow down, which a
+      real page never does.
+
+    Only when none of those fire do we fall back to a body-marker scan — and
+    now over the WHOLE stored body (already capped by `max_body_bytes`), not
+    just the first 4KB: the live ALPHA challenge page's markers sat at byte
+    ~1500, comfortably inside 4KB by luck, not by any guarantee this list can
+    rely on for the next vendor.
+    """
+    if status is None:
+        return None, None
+    retry_after = _parse_retry_after(headers)
+    if status == 429:
+        return "blocked", retry_after
+    if headers.get("cf-mitigated"):
+        return "blocked", retry_after
+    if status in (403, 503):
+        if retry_after is not None:
+            return "blocked", retry_after
+        sample = body.lower()
+        if any(marker in sample for marker in _CHALLENGE_MARKERS):
+            return "blocked", retry_after
+    return None, None
 
 
 def fetch(
@@ -138,7 +196,24 @@ def fetch(
             error_detail=str(exc),
         )
 
-    headers = {"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"}
+    # task-50 §0.5 (live 2026-08-19, alphastyle.store): isolated header-by-
+    # header against a real Cloudflare challenge — `Accept-Language` alone is
+    # what flips a 403 to a 200, even under an openly bot-shaped User-Agent.
+    # `Accept`/`Upgrade-Insecure-Requests` cost nothing and make the request
+    # look like an ordinary navigation instead of a bare script fetch. This
+    # is necessary hygiene, not sufficient on its own (§0.5 note: the same
+    # bare header set from a different TLS/HTTP2 stack still got a 200 where
+    # this container's got a 403) — the antibot browser lane exists for that.
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,"
+            "image/webp,*/*;q=0.8"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip",
+        "Upgrade-Insecure-Requests": "1",
+    }
     headers.update(extra_headers or {})
     request = urllib.request.Request(url, headers=headers, method=method)
     opener = urllib.request.build_opener(GuardedRedirectHandler)
@@ -228,7 +303,7 @@ def fetch(
 
     stats.bytes_downloaded += len(raw)
     elapsed = int((time.monotonic() - started) * 1000)
-    error = "blocked" if _looks_blocked(status, raw) else None
+    error, retry_after_seconds = classify_block(status, response_headers, raw)
     return FetchResult(
         requested_url=url,
         final_url=final_url,
@@ -239,6 +314,7 @@ def fetch(
         truncated_body=truncated,
         elapsed_ms=elapsed,
         error=error,
+        retry_after_seconds=retry_after_seconds,
     )
 
 

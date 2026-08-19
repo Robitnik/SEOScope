@@ -1466,6 +1466,42 @@
         "title": "BatchClientRetryRequest",
         "type": "object"
       },
+      "BatchPortfolioTableDTO": {
+        "properties": {
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/BatchPortfolioTableRowDTO"
+            },
+            "title": "Clients",
+            "type": "array"
+          }
+        },
+        "title": "BatchPortfolioTableDTO",
+        "type": "object"
+      },
+      "BatchPortfolioTableRowDTO": {
+        "description": "One client's table, for the on-page portfolio table preview\n(task-50): the exact same `ReportTableDTO` `GET /runs/{id}/table`\nalready returns for a single run, so the frontend's per-metric table\nrenderer needs no client-name-specific shape.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "table": {
+            "$ref": "#/components/schemas/ReportTableDTO"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "table"
+        ],
+        "title": "BatchPortfolioTableRowDTO",
+        "type": "object"
+      },
       "BatchProgressDTO": {
         "description": "Aggregates cells for the frontend's progress matrix (task-12).",
         "properties": {
@@ -4387,6 +4423,17 @@
       },
       "MonitorRunDTO": {
         "properties": {
+          "blocked_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Count"
+          },
           "bytes_downloaded": {
             "title": "Bytes Downloaded",
             "type": "integer"
@@ -4552,6 +4599,18 @@
             ],
             "title": "Base Url Override"
           },
+          "blocked_detected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Detected At"
+          },
           "canonical_www": {
             "anyOf": [
               {
@@ -4570,6 +4629,16 @@
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "fetch_mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "http",
+              "browser"
+            ],
+            "title": "Fetch Mode",
+            "type": "string"
           },
           "full_interval_hours": {
             "anyOf": [
@@ -4675,6 +4744,22 @@
               }
             ],
             "title": "Enabled"
+          },
+          "fetch_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "http",
+                  "browser"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetch Mode"
           },
           "full_interval_hours": {
             "anyOf": [
@@ -13635,6 +13720,169 @@
           }
         },
         "summary": "Download Batch Pdf Archive",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/batches/{batch_id}/portfolio-table": {
+      "get": {
+        "operationId": "get_batch_portfolio_table_api_v1_reports_batches__batch_id__portfolio_table_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchPortfolioTableDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Batch Portfolio Table",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/batches/{batch_id}/portfolio.pdf": {
+      "get": {
+        "operationId": "download_batch_portfolio_pdf_api_v1_reports_batches__batch_id__portfolio_pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "disposition",
+            "required": false,
+            "schema": {
+              "default": "attachment",
+              "pattern": "^(inline|attachment)$",
+              "title": "Disposition",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Batch Portfolio Pdf",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/batches/{batch_id}/portfolio.xlsx": {
+      "get": {
+        "operationId": "download_batch_portfolio_xlsx_api_v1_reports_batches__batch_id__portfolio_xlsx_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Batch Portfolio Xlsx",
         "tags": [
           "reports"
         ]

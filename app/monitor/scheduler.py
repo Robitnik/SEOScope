@@ -23,7 +23,7 @@ from app.core.config import Settings
 from app.db.models import Client
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.monitor import MonitorRepository
-from app.monitor.runner import FULL, LIGHT, run_client_monitor
+from app.monitor.runner import FULL, LIGHT, effective_fetch_mode, run_client_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,19 @@ class MonitorScheduler:
         self._pool = ThreadPoolExecutor(
             max_workers=max(1, settings.monitor_client_workers), thread_name_prefix="monitor"
         )
+        # Separate, deliberately small pool for antibot-lane clients
+        # (task-50 §B2) — a client escalated to the slow browser lane runs
+        # for ~10-15 minutes at its own throttled pace and must NEVER occupy
+        # one of the 4 main slots the rest of the portfolio needs. Default 1:
+        # two concurrent Chromium instances against the same class of site
+        # is both a memory cost and a second independent source of traffic
+        # hitting the same anti-bot systems we are trying not to trip
+        # further (mirrors the project invariant: one provider/profile
+        # browser session at a time).
+        self._antibot_pool = ThreadPoolExecutor(
+            max_workers=max(1, settings.monitor_antibot_workers),
+            thread_name_prefix="monitor-antibot",
+        )
         self._in_flight: set[tuple[str, str]] = set()
         self._in_flight_lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -93,6 +106,7 @@ class MonitorScheduler:
     def stop(self) -> None:
         self._stop_event.set()
         self._pool.shutdown(wait=True, cancel_futures=False)
+        self._antibot_pool.shutdown(wait=True, cancel_futures=False)
         if self._thread is not None:
             self._thread.join(timeout=30)
 
@@ -136,7 +150,18 @@ class MonitorScheduler:
                 client = clients_repo.get(queued.client_id)
                 if client is None:
                     continue
-                self._submit(client, queued.kind, trigger="manual", existing_run_id=queued.id)
+                mode = effective_fetch_mode(
+                    monitor_repo.get_settings(client.id),
+                    now=now,
+                    sticky_days=self._settings.monitor_antibot_sticky_days,
+                )
+                self._submit(
+                    client,
+                    queued.kind,
+                    trigger="manual",
+                    existing_run_id=queued.id,
+                    fetch_mode=mode,
+                )
 
             # Paused clients (task-34) drop out of the schedule unless the
             # client explicitly opted back in — `enabled=False` always wins.
@@ -179,18 +204,27 @@ class MonitorScheduler:
                 light_due = _due(
                     monitor_repo, client.id, kind=LIGHT, interval_hours=light_interval, now=now
                 )
+                mode = effective_fetch_mode(
+                    client_settings, now=now, sticky_days=self._settings.monitor_antibot_sticky_days
+                )
 
                 if full_due and not monitor_repo.has_running_run(client.id):
-                    self._submit(client, FULL, trigger="scheduled")
+                    self._submit(client, FULL, trigger="scheduled", fetch_mode=mode)
                 # A `full` run covers everything `light` would check, so skip
                 # queuing `light` behind it this same tick (task-35 §3.6
                 # dedup) — and never queue a second run of the same kind
                 # while one is still in flight.
                 elif light_due and not monitor_repo.has_running_run(client.id):
-                    self._submit(client, LIGHT, trigger="scheduled")
+                    self._submit(client, LIGHT, trigger="scheduled", fetch_mode=mode)
 
     def _submit(
-        self, client: Client, kind: str, *, trigger: str, existing_run_id: str | None = None
+        self,
+        client: Client,
+        kind: str,
+        *,
+        trigger: str,
+        existing_run_id: str | None = None,
+        fetch_mode: str = "http",
     ) -> None:
         key = (client.id, kind)
         with self._in_flight_lock:
@@ -210,12 +244,14 @@ class MonitorScheduler:
                         trigger=trigger,
                         stop_event=self._stop_event,
                         existing_run_id=existing_run_id,
+                        fetch_mode=fetch_mode,
                     )
                     logger.info(
-                        "monitor_run_finished client_id=%s kind=%s status=%s checked=%d "
-                        "truncated=%s",
+                        "monitor_run_finished client_id=%s kind=%s fetch_mode=%s status=%s "
+                        "checked=%d truncated=%s",
                         client.id,
                         kind,
+                        fetch_mode,
                         outcome.status,
                         outcome.urls_checked,
                         outcome.truncated,
@@ -226,4 +262,9 @@ class MonitorScheduler:
                 with self._in_flight_lock:
                     self._in_flight.discard(key)
 
-        self._pool.submit(_run)
+        # task-50 §B2: the antibot lane runs at its own slow pace in a pool
+        # sized independently of `monitor_client_workers` — routing here,
+        # not in `run_client_monitor`, is what keeps a slow client from ever
+        # occupying one of the main pool's 4 slots.
+        pool = self._antibot_pool if fetch_mode == "browser" else self._pool
+        pool.submit(_run)

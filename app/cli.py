@@ -121,6 +121,15 @@ def _build_parser() -> argparse.ArgumentParser:
     monitor_run_cmd.add_argument(
         "--kind", choices=["light", "full"], default="light", help="Check depth (default: light)"
     )
+    monitor_run_cmd.add_argument(
+        "--fetch-mode",
+        choices=["auto", "http", "browser"],
+        default=None,
+        help=(
+            "Force a transport for this run (task-50). Default: resolve each "
+            "client's own MonitorSettings.fetch_mode, same as the scheduler"
+        ),
+    )
 
     monitor_status_cmd = subparsers.add_parser(
         "monitor-status",
@@ -152,6 +161,23 @@ def _build_parser() -> argparse.ArgumentParser:
             "ALSO drop stored bodies for versions older than DAYS whose blob backs no "
             "recent version either (default: keep every body forever, task-35 §3.2.1)"
         ),
+    )
+
+    monitor_resolve_blocked_cmd = subparsers.add_parser(
+        "monitor-resolve-blocked",
+        help=(
+            "Close open monitor changes opened by a run that hit an antibot wall "
+            "(task-50) — a one-time cleanup for damage done before this fix landed"
+        ),
+    )
+    monitor_resolve_blocked_cmd.add_argument("--client-id", required=True)
+    monitor_resolve_blocked_cmd.add_argument(
+        "--run-id",
+        default=None,
+        help="Also require this run_id (default: every currently-blocked page's open changes)",
+    )
+    monitor_resolve_blocked_cmd.add_argument(
+        "--dry-run", action="store_true", help="Report what would be resolved without touching it"
     )
 
     audit_bindings_cmd = subparsers.add_parser(
@@ -478,7 +504,8 @@ def main(argv: list[str] | None = None) -> int:
         # (fetch/parse/diff), which the other commands have no reason to load.
         from app.core.config import get_settings
         from app.db.repositories.clients import ClientRepository
-        from app.monitor.runner import run_client_monitor
+        from app.db.repositories.monitor import MonitorRepository
+        from app.monitor.runner import effective_fetch_mode, run_client_monitor
 
         if bool(args.client_id) == bool(args.all):
             print("error: pass exactly one of --client-id or --all", file=sys.stderr)
@@ -488,6 +515,7 @@ def main(argv: list[str] | None = None) -> int:
         session_factory = get_sync_sessionmaker()
         with session_factory() as session:
             clients_repo = ClientRepository(session)
+            monitor_repo = MonitorRepository(session)
             if args.client_id:
                 client = clients_repo.get(args.client_id)
                 if client is None:
@@ -503,6 +531,14 @@ def main(argv: list[str] | None = None) -> int:
 
             exit_code = 0
             for client in clients:
+                if args.fetch_mode and args.fetch_mode != "auto":
+                    mode = args.fetch_mode
+                else:
+                    mode = effective_fetch_mode(
+                        monitor_repo.get_settings(client.id),
+                        now=datetime.now(UTC),
+                        sticky_days=settings.monitor_antibot_sticky_days,
+                    )
                 outcome = run_client_monitor(
                     session,
                     client,
@@ -510,10 +546,11 @@ def main(argv: list[str] | None = None) -> int:
                     settings=settings,
                     artifacts_dir=settings.artifacts_dir,
                     trigger="manual",
+                    fetch_mode=mode,
                 )
                 print(
-                    f"{client.name}: {outcome.status} — checked {outcome.urls_checked} url(s)"
-                    f"{' (truncated)' if outcome.truncated else ''}"
+                    f"{client.name}: {outcome.status} [{mode}] — checked {outcome.urls_checked} "
+                    f"url(s){' (truncated)' if outcome.truncated else ''}"
                 )
                 if outcome.status != "succeeded":
                     exit_code = 1
@@ -579,6 +616,92 @@ def main(argv: list[str] | None = None) -> int:
                 repo.delete_blob(sha256)
             session.commit()
         print(f"pruned {len(targets)} blob(s)")
+        return 0
+
+    if args.command == "monitor-resolve-blocked":
+        from collections import Counter
+
+        from app.core.config import get_settings
+        from app.db.repositories.clients import ClientRepository
+        from app.db.repositories.monitor import MonitorRepository
+        from app.monitor.fetcher import Headers, classify_block
+        from app.monitor.storage import read_blob
+
+        settings = get_settings()
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            clients_repo = ClientRepository(session)
+            client = clients_repo.get(args.client_id)
+            if client is None:
+                print(f"error: unknown --client-id: {args.client_id}", file=sys.stderr)
+                return 2
+            repo = MonitorRepository(session)
+
+            # Ground truth is each page's CURRENT stored state, not
+            # `MonitorRun.notes_json.blocked_count` (task-50 §A onward only
+            # tags that going forward — every run that actually produced this
+            # damage predates the fix and has nothing there). A page sitting
+            # at a block-shaped status whose stored body still reads as a
+            # challenge page is unambiguous: after this fix a real fetch can
+            # never write that combination again.
+            blocked_page_ids: set[str] = set()
+            for page in repo.all_pages(client.id):
+                if page.status not in (403, 429, 503):
+                    continue
+                version = repo.latest_page_version(page.id)
+                if version is None or not version.body_blob_sha256:
+                    continue
+                try:
+                    body = read_blob(settings.artifacts_dir, version.body_blob_sha256)
+                except FileNotFoundError:
+                    continue
+                error, _ = classify_block(page.status, Headers(), body)
+                if error == "blocked":
+                    blocked_page_ids.add(page.id)
+
+            if not blocked_page_ids:
+                print(f"nothing to resolve: no page for {client.name} currently reads as blocked")
+                return 0
+
+            # Every open change this corrupted observation could plausibly
+            # have produced carries `related_id == page.id`
+            # (`_persist_page_result` stamps it on every page-scope diff, and
+            # on the per-page sitemap-status branch too — task-41). The one
+            # portfolio-wide exception is the `sitemap_broken_urls` aggregate,
+            # which has no single page to point at but is derived from the
+            # exact same corrupted counts.
+            open_changes = repo.list_changes(client.id, state="open", limit=10000)
+            changes_to_resolve = [
+                change
+                for change in open_changes
+                if change.change_type != "monitor_blocked"
+                and (args.run_id is None or change.run_id == args.run_id)
+                and (
+                    change.related_id in blocked_page_ids
+                    or (
+                        change.change_type == "sitemap_broken_urls"
+                        and change.subject == f"{client.domain}/sitemap"
+                    )
+                )
+            ]
+            by_type = Counter(change.change_type for change in changes_to_resolve)
+            verb = "would resolve" if args.dry_run else "resolving"
+            print(
+                f"{len(blocked_page_ids)} page(s) for {client.name} currently read as blocked; "
+                f"{verb} {len(changes_to_resolve)} open change(s)"
+            )
+            for change_type, count in sorted(by_type.items(), key=lambda kv: -kv[1]):
+                print(f"  {change_type}: {count}")
+            if args.dry_run:
+                return 0
+
+            now = datetime.now(UTC)
+            for change in changes_to_resolve:
+                repo.resolve_change(change, now=now)
+                change.acknowledged_at = now
+                change.acknowledged_note = "resolved: antibot block, not a real change (task-50)"
+            session.commit()
+        print(f"resolved {len(changes_to_resolve)} change(s)")
         return 0
 
     if args.command == "audit-ninja-bindings":

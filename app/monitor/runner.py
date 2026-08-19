@@ -19,7 +19,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.models import Client, MonitorPage
+from app.db.models import Client, MonitorPage, MonitorSettings
 from app.db.repositories.dimensions import DimensionRepository
 from app.db.repositories.monitor import MonitorRepository
 from app.monitor import diff as diffmod
@@ -31,6 +31,7 @@ from app.monitor import severity as sev
 from app.monitor import sitemaps as sitemapsmod
 from app.monitor import storage
 from app.monitor import tls as tlsmod
+from app.monitor.browser_fetch import BrowserFetchSession, fetch_via_browser
 from app.monitor.fetcher import FetchResult, FetchStats, crawl_delay_floor, fetch, host_of
 from app.tools.http_safety import HostThrottle
 
@@ -85,6 +86,12 @@ _SITEMAP_URL_TRACKED = frozenset(
     {"sitemap_url_redirects", "sitemap_url_broken", "sitemap_url_unavailable"}
 )
 _SITEMAP_AGGREGATE_TRACKED = frozenset({"sitemap_broken_urls"})
+# `monitor_blocked` already existed in `app/monitor/severity.py` (WARNING)
+# and in the frontend (`monitor-page.js` blockedClientIds/rowStateOf,
+# `formatters.js` label, the `monitor-client-blocked.json` fixture) — task-36
+# pre-wired the whole "Blocked" UI state ahead of this task, but nothing ever
+# emitted the change type it was waiting for (task-50).
+_SITE_PROTECTED_TRACKED = frozenset({"monitor_blocked"})
 # Split in two, each reconciled only against the pass that could possibly
 # produce it: `gsc_verification_lost` only comes out of the TXT record-type
 # pass, `dns_unavailable` only out of the final any-record-type-failed pass.
@@ -194,6 +201,32 @@ def _base_url(client: Client, override: str | None, canonical_www: bool | None =
     elif canonical_www is False and has_www:
         host = host[len("www.") :]
     return f"https://{host}".rstrip("/")
+
+
+def effective_fetch_mode(
+    monitor_settings: MonitorSettings | None, *, now: datetime, sticky_days: float
+) -> str:
+    """`"http" | "browser"` — what THIS run should actually use, resolving
+    `MonitorSettings.fetch_mode` (task-50 §B4/§B5).
+
+    `"http"`/`"browser"` are an explicit operator choice and win outright —
+    an operator who forced `"http"` (the emergency kill switch, §B6) is never
+    silently overridden by auto-escalation. `"auto"` (the
+    default) starts on the cheap HTTP lane and stays escalated to the slow
+    browser lane for `sticky_days` after the last confirmed block, rather
+    than flipping back the very next clean run — a site that blocks at
+    request #58 of 362 still blocks on the NEXT full run too, and bouncing
+    between lanes every few hours would just alternate between "clean" and
+    "corrupted with garbage pages" instead of settling.
+    """
+    if monitor_settings is None:
+        return "http"
+    if monitor_settings.fetch_mode != "auto":
+        return monitor_settings.fetch_mode
+    detected = monitor_settings.blocked_detected_at
+    if detected is not None and now - detected < timedelta(days=sticky_days):
+        return "browser"
+    return "http"
 
 
 def _process_robots(
@@ -518,9 +551,12 @@ def _process_page(
     artifacts_dir: Path,
     is_baseline_run: bool,
     now: datetime,
-) -> tuple[bool, str | None]:
-    """Returns `(changed, status_kind)` — `status_kind` feeds the run's
-    `urls_new/urls_changed/urls_gone` counters and the sitemap-health count.
+    browser_session: BrowserFetchSession | None = None,
+) -> tuple[bool, str | None, bool]:
+    """Returns `(changed, status_kind, blocked)` — `status_kind` feeds the
+    run's `urls_new/urls_changed/urls_gone` counters and the sitemap-health
+    count; `blocked` tells the caller this fetch hit an antibot wall rather
+    than observing anything real (task-50 §A2).
 
     The network fetch happens before the lock below is acquired, and
     everything from there on (state reads, writes, diffing) happens inside
@@ -531,14 +567,30 @@ def _process_page(
     2026-08-11: unserialized writes under real 4-way concurrency produced
     "database is locked"). Doing the fetch first keeps the slow, genuinely
     parallel part — the network round trip — outside the lock.
+
+    `browser_session` is `None` on the plain HTTP lane (`fetch_mode="http"`,
+    the default for every client) and a live `BrowserFetchSession` only when
+    this client's run has been escalated to the antibot lane (task-50 §B1) —
+    the ONLY thing that differs between the two lanes is which function
+    produces the `FetchResult`; everything below this point is identical.
     """
-    result = fetch(
-        url,
-        throttle=throttle,
-        stats=stats,
-        timeout=settings.monitor_request_timeout_seconds,
-        max_body_bytes=settings.monitor_max_body_bytes,
-    )
+    if browser_session is not None:
+        result = fetch_via_browser(
+            url,
+            session=browser_session,
+            throttle=throttle,
+            stats=stats,
+            timeout=settings.monitor_request_timeout_seconds,
+            max_body_bytes=settings.monitor_max_body_bytes,
+        )
+    else:
+        result = fetch(
+            url,
+            throttle=throttle,
+            stats=stats,
+            timeout=settings.monitor_request_timeout_seconds,
+            max_body_bytes=settings.monitor_max_body_bytes,
+        )
 
     with _COMMIT_LOCK:
         return _persist_page_result(
@@ -569,7 +621,19 @@ def _persist_page_result(
     artifacts_dir: Path,
     is_baseline_run: bool,
     now: datetime,
-) -> tuple[bool, str | None]:
+) -> tuple[bool, str | None, bool]:
+    if result.error == "blocked":
+        # An antibot interstitial is not a fact about the page (task-50
+        # §A2/PLAN §12: absence of real data is never coerced into a value).
+        # Do NOT create a page row for a URL never actually observed, do NOT
+        # touch an existing page's state/`consecutive_failures`, and do NOT
+        # write a version — the last genuine observation stays the truth
+        # until a real fetch succeeds. The caller aggregates every blocked
+        # URL this run into one `monitor_blocked` change instead of one row
+        # per URL (task-50 §A3 — this is what LIVE 2026-08-19 wrote 304
+        # individual `sitemap_url_broken`/`sitemap_url_unavailable` rows for).
+        return False, None, True
+
     page = repo.get_or_create_page(client.id, url, is_key_page=is_key_page)
     prev_version = repo.latest_page_version(page.id)
     # `google_site_verifications` lives only in the version's `signals_json`
@@ -761,7 +825,7 @@ def _persist_page_result(
     is_new = old_observation is None
     is_changed = bool(changed_fields) and not is_new
     repo.commit()
-    return (is_new or is_changed), status_kind
+    return (is_new or is_changed), status_kind, False
 
 
 def _process_dns(
@@ -967,10 +1031,19 @@ def run_client_monitor(
     now: datetime | None = None,
     stop_event: threading.Event | None = None,
     existing_run_id: str | None = None,
+    fetch_mode: str = "http",
 ) -> RunOutcome:
     """`existing_run_id` claims an already-`queued` row (the API's "Check
     now" enqueues one; the scheduler claims and runs it — same split as
     `SyncJob`) instead of creating a fresh `running` row.
+
+    `fetch_mode` ("http" | "browser", task-50 §B) is resolved by the CALLER
+    (`effective_fetch_mode`, scheduler `_tick`) — this function just acts on
+    it. "browser" only changes which transport fetches PAGE bodies; robots.txt
+    and sitemap fetches always stay on the cheap `urllib` lane regardless
+    (task-50 §B1: those succeed fine even on a client that later rate-limits
+    the bulk of its page requests — live-measured on alphastyle.store, robots
+    + sitemap all came back 200 before the 429 wall hit around request #58).
     """
     now = now or datetime.now(UTC)
     repo = MonitorRepository(session)
@@ -997,6 +1070,7 @@ def run_client_monitor(
     throttle = HostThrottle(min_interval_seconds=min_interval)
     stats = FetchStats()
     deadline = now + timedelta(minutes=settings.monitor_run_max_minutes)
+    browser_session: BrowserFetchSession | None = None
 
     try:
         robots_doc, robots_ok = _process_robots(
@@ -1077,12 +1151,27 @@ def run_client_monitor(
             repo.update_run_counters(run.id, urls_total=len(targets))
             session.commit()
 
+        if fetch_mode == "browser":
+            # A separate, deliberately slower throttle for the antibot lane
+            # (task-50 §B3) — 2.0s default vs. the plain lane's 0.25s. One
+            # browser for the whole run, not one per page: launch alone
+            # measured ~0.5s (task-50 §0.7), and 350+ launches would burn
+            # minutes on nothing.
+            page_throttle = HostThrottle(
+                min_interval_seconds=settings.monitor_antibot_min_interval_seconds
+            )
+            browser_session = BrowserFetchSession()
+        else:
+            page_throttle = throttle
+
         checked = 0
         changed_count = 0
         new_count = 0
         gone_count = 0
         truncated = False
         interrupted = False
+        blocked_urls: list[str] = []
+        consecutive_blocked = 0
         for url in targets:
             # "Зупинка: stop_event перевіряється між URL, тож SIGTERM не
             # чекає кінець обходу" (task-35 §3.6).
@@ -1094,25 +1183,41 @@ def run_client_monitor(
                 truncated = True
                 break
             is_new_page = repo.get_page(client.id, url) is None
-            changed, _status_kind = _process_page(
+            changed, _status_kind, blocked = _process_page(
                 repo,
                 client,
                 url,
                 run_id=run.id,
                 is_key_page=(url in key_pages),
                 in_sitemap=target_in_sitemap.get(url, False),
-                throttle=throttle,
+                throttle=page_throttle,
                 stats=stats,
                 settings=settings,
                 artifacts_dir=artifacts_dir,
                 is_baseline_run=is_baseline_run,
                 now=now,
+                browser_session=browser_session,
             )
             checked += 1
-            if is_new_page:
-                new_count += 1
-            elif changed:
-                changed_count += 1
+            if blocked:
+                blocked_urls.append(url)
+                consecutive_blocked += 1
+                # task-50 §A4/§0.6: 304 of the 362 requests in the run that
+                # exposed this were spent hammering a wall that had already
+                # been up for 250+ requests — every one of them wasted, and
+                # every one of them a few more seconds added to whatever
+                # penalty window the site is already serving. A run-ending
+                # streak stops paying that cost the moment it is clear this
+                # is not going to clear itself mid-run.
+                if consecutive_blocked >= settings.monitor_block_streak_abort:
+                    truncated = True
+                    break
+            else:
+                consecutive_blocked = 0
+                if is_new_page:
+                    new_count += 1
+                elif changed:
+                    changed_count += 1
             if checked % 10 == 0:
                 with _COMMIT_LOCK:
                     repo.update_run_counters(
@@ -1122,6 +1227,53 @@ def run_client_monitor(
                         bytes_downloaded=stats.bytes_downloaded,
                     )
                     session.commit()
+
+        with _COMMIT_LOCK:
+            # One aggregate change for the whole run, not one row per blocked
+            # URL (task-50 §A3 — LIVE 2026-08-19 wrote 304 individual
+            # `sitemap_url_*` rows for exactly this). Reuses `monitor_blocked`
+            # (`app/monitor/severity.py`, WARNING) and its already-wired
+            # frontend (task-36's `blockedClientIds`/`rowStateOf` on the
+            # portfolio page, `formatters.js` label) rather than inventing a
+            # new change type nothing renders yet. No baseline gate, same
+            # reasoning as `_sitemap_aggregate` below: a client blocked from
+            # its very first run is the single most important fact to
+            # surface immediately, not noise to suppress.
+            site_subject = f"{base_url}/"
+            protection_changes: list[diffmod.DetectedChange] = []
+            if blocked_urls:
+                protection_changes = [
+                    diffmod.DetectedChange(
+                        "monitor_blocked",
+                        sev.severity_of("monitor_blocked"),
+                        "site",
+                        site_subject,
+                        new_value=f"{len(blocked_urls)} of {checked} checked this run",
+                        details={
+                            "blocked_count": len(blocked_urls),
+                            "checked": checked,
+                            "sample_urls": blocked_urls[:5],
+                        },
+                    )
+                ]
+                _apply_changes(repo, client.id, run.id, protection_changes, now=now)
+                # `fetch_mode="auto"` clients stay on the antibot lane for
+                # `monitor_antibot_sticky_days` after the last confirmed
+                # block (task-50 §B5/`effective_fetch_mode`) — an explicit
+                # operator choice (`"http"`/`"browser"`) is never touched
+                # here (§B6).
+                if monitor_settings.fetch_mode == "auto":
+                    repo.update_settings(client.id, blocked_detected_at=now)
+            _reconcile(
+                repo,
+                client.id,
+                run.id,
+                site_subject,
+                tracked_types=_SITE_PROTECTED_TRACKED,
+                detected=protection_changes,
+                now=now,
+            )
+            session.commit()
 
         if kind == FULL and not interrupted:
             # Anything previously known but no longer wanted this pass (fell
@@ -1162,6 +1314,30 @@ def run_client_monitor(
             # health fact (task-35 §3.4.1) rather than waiting up to 3h.
             _sitemap_aggregate(repo, client, run_id=run.id, settings=settings, now=now)
 
+        # Honest run status (task-50 §A5): `RunOutcome`/`finish_run` used to
+        # both hardcode "succeeded" even when `interrupted` was true — this
+        # keeps them in agreement instead of the scheduler's own log line
+        # disagreeing with what got written to the run row.
+        blocked_count = len(blocked_urls)
+        if interrupted:
+            final_status = "failed_interrupted"
+            error_code = None
+        elif blocked_count and checked and blocked_count >= checked:
+            # Every single page attempt this run hit the wall — nothing real
+            # was gathered, so this is a failure, not a quiet "succeeded"
+            # with zero real signal (task-50 §A5).
+            final_status = "failed"
+            error_code = "blocked_by_protection"
+        else:
+            final_status = "succeeded"
+            error_code = "partially_blocked" if blocked_count else None
+
+        # Always present (even at 0) for every run through this code path —
+        # `None` (the API DTO's absence case) is reserved for runs written
+        # before this field existed, never for "we checked and found no
+        # blocks" (PLAN §12 invariant, task-50 §4).
+        notes: dict[str, Any] = {"baseline": is_baseline_run, "blocked_count": blocked_count}
+
         with _COMMIT_LOCK:
             # What THIS run found, not what is currently open client-wide
             # (task-37 F4) — a light run on 1 URL must not report the same
@@ -1170,10 +1346,11 @@ def run_client_monitor(
             remaining = len(targets) - checked if truncated else None
             repo.finish_run(
                 run.id,
-                status="failed_interrupted" if interrupted else "succeeded",
+                status=final_status,
                 truncated=truncated,
                 remaining_count=remaining,
-                notes={"baseline": is_baseline_run},
+                error_code=error_code,
+                notes=notes,
             )
             repo.update_run_counters(
                 run.id,
@@ -1189,7 +1366,7 @@ def run_client_monitor(
             )
             session.commit()
         return RunOutcome(
-            run_id=run.id, status="succeeded", urls_checked=checked, truncated=truncated
+            run_id=run.id, status=final_status, urls_checked=checked, truncated=truncated
         )
 
     except Exception as exc:  # noqa: BLE001 - one client's failure must never crash the scheduler
@@ -1202,6 +1379,9 @@ def run_client_monitor(
             )
             session.commit()
         return RunOutcome(run_id=run.id, status="failed", urls_checked=0, truncated=False)
+    finally:
+        if browser_session is not None:
+            browser_session.close()
 
 
 def run_single_page_check(

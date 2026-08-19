@@ -106,6 +106,7 @@ def _run_dto(run: MonitorRun) -> MonitorRunDTO:
         remaining_count=run.remaining_count,
         error_code=run.error_code,
         error_message=run.error_message,
+        blocked_count=(run.notes_json or {}).get("blocked_count"),
     )
 
 
@@ -852,6 +853,8 @@ def _settings_dto(client_id: str) -> MonitorSettingsDTO | None:
             monitor_when_paused=settings.monitor_when_paused,
             ignore_patterns=settings.ignore_patterns_json,
             muted_change_types=settings.muted_change_types_json,
+            fetch_mode=settings.fetch_mode,  # type: ignore[arg-type]
+            blocked_detected_at=settings.blocked_detected_at,
             updated_at=settings.updated_at,
         )
 
@@ -890,6 +893,8 @@ def _update_settings(client_id: str, fields: dict[str, Any]) -> MonitorSettingsD
             monitor_when_paused=settings.monitor_when_paused,
             ignore_patterns=settings.ignore_patterns_json,
             muted_change_types=settings.muted_change_types_json,
+            fetch_mode=settings.fetch_mode,  # type: ignore[arg-type]
+            blocked_detected_at=settings.blocked_detected_at,
             updated_at=settings.updated_at,
         )
 

@@ -127,6 +127,27 @@ class Settings(BaseSettings):
     monitor_sitemap_broken_alert_pct: Decimal = Decimal("10")
     monitor_sitemap_broken_alert_count: int = 50
 
+    # Antibot lane (task-50, PLAN §12 "чесні стани"). Live-measured on
+    # alphastyle.store (task-50 §0): 30 requests at 0.25s pass clean, ~58
+    # requests wall solid — the exact safe throughput was deliberately NOT
+    # determined here (finding it means driving a live client's site into a
+    # multi-minute penalty window on purpose); `monitor_antibot_min_interval_
+    # seconds` starts conservative and gets measured against the real first
+    # antibot-lane run instead.
+    monitor_antibot_workers: int = 1
+    monitor_antibot_min_interval_seconds: float = 2.0
+    # How many consecutive blocked pages end a run early rather than grinding
+    # through the rest of the target list into the same wall (§0.6: 304 of
+    # 362 requests in the incident run were spent hammering a wall already up
+    # since request ~58).
+    monitor_block_streak_abort: int = 5
+    # `fetch_mode="auto"` clients stay on the browser lane for this many days
+    # after the last confirmed block, not just the run that found it — a site
+    # that blocks on one full run blocks on the next one too, and bouncing
+    # back to plain HTTP every few hours would alternate clean runs with
+    # corrupted ones instead of settling (task-50 §B5).
+    monitor_antibot_sticky_days: float = 14.0
+
     # Reports engine (task-42, PLAN §16 "Хвиля N"). Defaults are measurements,
     # not taste — see task-42 §1.2/§1.5/§1.7/§3.6/§3.7 for the live numbers
     # behind each one.
@@ -149,7 +170,6 @@ class Settings(BaseSettings):
     reports_pdf_cache_enabled: bool = True
     # `False` leaves a hook for local debugging under Xvfb.
     reports_headless: bool = True
-    reports_run_stale_minutes: float = 60.0
     # How many COMPLETE months the "Historical Data" block covers (task-45
     # §2.4). 12 mirrors the hand-kept Google Sheets history it replaces; the
     # whole window costs two Reporting Ninja queries (~2s), so this is a

@@ -716,6 +716,17 @@ class MonitorSettings(Base):
     monitor_when_paused: Mapped[bool] = mapped_column(Boolean, default=False)
     ignore_patterns_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     muted_change_types_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Antibot lane (task-50): "auto" | "http" | "browser". "http"/"browser"
+    # are an explicit operator choice and always win (`http` doubles as the
+    # emergency kill switch — §B6); "auto" starts cheap and self-escalates
+    # once a run confirms a block (`blocked_detected_at` below), see
+    # `app.monitor.runner.effective_fetch_mode`.
+    fetch_mode: Mapped[str] = mapped_column(String(16), default="auto")
+    # Set by the runner the moment a run confirms >=1 blocked page while
+    # `fetch_mode == "auto"`; read back by `effective_fetch_mode` to decide
+    # whether the NEXT run still needs the slow lane (task-50 §B5). `NULL` =
+    # never confirmed blocked, or an explicit operator mode overrides it.
+    blocked_detected_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
