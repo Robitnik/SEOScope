@@ -180,6 +180,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="Report what would be resolved without touching it"
     )
 
+    monitor_redirects_cmd = subparsers.add_parser(
+        "monitor-redirects",
+        help="Redirect monitoring state for one client, optionally checking now (task-51)",
+    )
+    monitor_redirects_cmd.add_argument("--client-id", required=True)
+    monitor_redirects_cmd.add_argument(
+        "--check", action="store_true", help="Collect right now instead of just reporting state"
+    )
+
+    wp_credentials_check_cmd = subparsers.add_parser(  # noqa: F841 - no extra arguments
+        "wp-credentials-check",
+        help=(
+            "Per-client Application Password status (configured/missing/invalid) — "
+            "never prints a value (task-51 §3.3)"
+        ),
+    )
+
     audit_bindings_cmd = subparsers.add_parser(
         "audit-ninja-bindings",
         help=(
@@ -228,6 +245,76 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     reports_run_cmd.add_argument(
         "--force-refresh", action="store_true", help="Ignore the closed-period PDF cache (§3.5)"
+    )
+
+    subparsers.add_parser(  # noqa: F841 - no extra arguments
+        "cloud-status",
+        help="Cloud storage (B2) state: last backup, GFS tier counts, sync queue (task-52)",
+    )
+
+    subparsers.add_parser(  # noqa: F841 - no extra arguments
+        "cloud-backup",
+        help=(
+            "Run the daily off-site DB backup now, without waiting for the scheduler's "
+            "tick (task-52) — idempotent, a no-op if today's backup already exists"
+        ),
+    )
+
+    cloud_sync_cmd = subparsers.add_parser(
+        "cloud-sync",
+        help="Run one cloud-storage sweep batch now (task-52), or backfill via --since",
+    )
+    cloud_sync_cmd.add_argument(
+        "--kind",
+        choices=["monitor_blob", "report_file"],
+        default=None,
+        help="Sync only this kind (default: both)",
+    )
+    cloud_sync_cmd.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max objects per kind (default: cloud_sweep_batch_size)",
+    )
+    cloud_sync_cmd.add_argument(
+        "--since",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Move the web-archive watermark back to this date and sync from there — "
+            "a deliberate one-off backfill (task-52 §8 follow-up), never done implicitly"
+        ),
+    )
+
+    cloud_verify_cmd = subparsers.add_parser(
+        "cloud-verify",
+        help="Download a random sample of uploaded objects and compare sha256 (task-52)",
+    )
+    cloud_verify_cmd.add_argument(
+        "--kind", choices=["db_backup", "monitor_blob", "report_file"], default=None
+    )
+    cloud_verify_cmd.add_argument("--sample", type=int, default=20)
+
+    cloud_prune_cmd = subparsers.add_parser(
+        "cloud-prune",
+        help="Apply GFS retention to DB backups in the cloud (task-52 §3.5)",
+    )
+    cloud_prune_cmd.add_argument(
+        "--dry-run", action="store_true", help="Report what would be removed without deleting"
+    )
+
+    cloud_restore_cmd = subparsers.add_parser(
+        "cloud-restore",
+        help=(
+            "Download and verify the latest cloud DB backup onto disk (task-52) — "
+            "does NOT touch the running database; prints the restore_sqlite.py command"
+        ),
+    )
+    cloud_restore_cmd.add_argument(
+        "--latest", action="store_true", required=True, help="Restore the newest daily backup"
+    )
+    cloud_restore_cmd.add_argument(
+        "--out", required=True, type=Path, help="Directory to write the decompressed .db into"
     )
 
     return parser
@@ -704,6 +791,95 @@ def main(argv: list[str] | None = None) -> int:
         print(f"resolved {len(changes_to_resolve)} change(s)")
         return 0
 
+    if args.command == "monitor-redirects":
+        from app.core.config import get_settings
+        from app.db.repositories.clients import ClientRepository
+        from app.db.repositories.monitor import MonitorRepository
+        from app.monitor.redirects.collect import process_redirects
+        from app.monitor.redirects.credentials import (
+            credentials_status,
+            login_credentials_status,
+        )
+        from app.monitor.runner import resolve_base_url
+
+        settings = get_settings()
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            clients_repo = ClientRepository(session)
+            client = clients_repo.get(args.client_id)
+            if client is None:
+                print(f"error: unknown --client-id: {args.client_id}", file=sys.stderr)
+                return 2
+            repo = MonitorRepository(session)
+            monitor_settings = repo.get_or_create_settings(client.id)
+
+            if args.check:
+                base_url = resolve_base_url(
+                    client, monitor_settings.base_url_override, monitor_settings.canonical_www
+                )
+                redirect_run = repo.create_run(client.id, kind="light", trigger="manual")
+                session.commit()
+                redirects_outcome = process_redirects(
+                    repo,
+                    client,
+                    base_url,
+                    run_id=redirect_run.id,
+                    monitor_settings=monitor_settings,
+                    settings=settings,
+                    artifacts_dir=settings.artifacts_dir,
+                    key_pages=set(),
+                    now=datetime.now(UTC),
+                )
+                repo.finish_run(redirect_run.id, status="succeeded", truncated=False)
+                session.commit()
+                if not redirects_outcome.ok:
+                    print(f"check failed: {redirects_outcome.unavailable_reason}")
+                else:
+                    print(
+                        f"checked: +{redirects_outcome.added} added, "
+                        f"~{redirects_outcome.changed} changed, "
+                        f"-{redirects_outcome.removed} removed"
+                    )
+
+            app_password_status = credentials_status(settings.wp_credentials_path, client.id)
+            login_status = login_credentials_status(
+                settings.wp_login_credentials_path, client.id
+            )
+            summary = repo.redirects_summary(client.id)
+            last_checked = monitor_settings.redirects_last_checked_at
+            print(f"{client.name} ({client.domain})")
+            print(f"  redirect_source:   {monitor_settings.redirect_source}")
+            print(f"  app password:      {app_password_status.value}")
+            print(f"  wp-admin login:    {login_status.value}")
+            print(f"  last checked:      {last_checked.isoformat() if last_checked else 'never'}")
+            print(
+                f"  rules:             {summary.get('enabled', 0)} enabled, "
+                f"{summary.get('disabled', 0)} disabled"
+            )
+        return 0
+
+    if args.command == "wp-credentials-check":
+        from app.core.config import get_settings
+        from app.db.repositories.clients import ClientRepository
+        from app.monitor.redirects.credentials import (
+            credentials_status,
+            login_credentials_status,
+        )
+
+        settings = get_settings()
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            clients = ClientRepository(session).list_active()
+            print(f"{'client':30s} {'domain':35s} {'app_password':14s} wp_login")
+            for c in sorted(clients, key=lambda item: item.name):
+                app_password_status = credentials_status(settings.wp_credentials_path, c.id)
+                login_status = login_credentials_status(settings.wp_login_credentials_path, c.id)
+                print(
+                    f"{c.name:30s} {c.domain:35s} "
+                    f"{app_password_status.value:14s} {login_status.value}"
+                )
+        return 0
+
     if args.command == "audit-ninja-bindings":
         # Imported here, not at module scope: pulls in the reports engine's
         # browser client, which the other commands have no reason to load.
@@ -871,6 +1047,223 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  error: {finished.error_code} — {finished.error_message}")
             status = finished.status
         return 0 if status == "succeeded" else 1
+
+    if args.command == "cloud-status":
+        from app.cloud.sweeper import ARCHIVE_WATERMARK
+        from app.core.config import get_settings
+        from app.db.repositories.cloud import CloudLedgerRepository
+
+        settings = get_settings()
+        if not settings.cloud_enabled:
+            print("cloud storage: disabled (CLOUD_ENABLED=false)")
+            return 0
+
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            ledger = CloudLedgerRepository(session)
+            last = ledger.latest_backup()
+            archive_since = ledger.get_watermark(ARCHIVE_WATERMARK)
+
+            print(f"bucket: {settings.b2_vault_bucket_name}")
+            if last is not None and last.uploaded_at is not None:
+                age_hours = (datetime.now(UTC) - last.uploaded_at).total_seconds() / 3600
+                print(f"last backup: {last.key} ({last.size_bytes} bytes, {age_hours:.1f}h ago)")
+            else:
+                print("last backup: none yet")
+
+            for tier in ("daily", "weekly", "monthly"):
+                print(f"  {tier}: {len(ledger.backups_by_tier(tier))} kept")
+
+            print(f"archive since: {archive_since.isoformat() if archive_since else 'not started'}")
+
+            for kind in ("monitor_blob", "report_file"):
+                kind_totals = ledger.kind_counts(kind)
+                if kind == "monitor_blob":
+                    total = ledger.monitor_blob_total(since=archive_since) if archive_since else 0
+                else:
+                    total = ledger.report_file_total()
+                pending = max(0, total - kind_totals["uploaded"] - kind_totals["failed"])
+                print(
+                    f"  {kind}: uploaded={kind_totals['uploaded']} failed={kind_totals['failed']} "
+                    f"pending={pending}"
+                )
+        return 0
+
+    if args.command == "cloud-backup":
+        from app.cloud.backup import prune_backups, run_daily_backup
+        from app.cloud.client import CloudStore
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        if not settings.cloud_enabled:
+            print("error: cloud storage is disabled (CLOUD_ENABLED=false)", file=sys.stderr)
+            return 2
+        store = CloudStore(settings)
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            backup_outcome = run_daily_backup(session, store, settings)
+            if backup_outcome is None:
+                print("today's backup already exists — nothing to do")
+                return 0
+            prune_backups(session, store, settings)
+        print(
+            f"backup uploaded: {backup_outcome.key} ({backup_outcome.size_bytes} bytes, "
+            f"sha256 {backup_outcome.sha256[:12]}…)"
+        )
+        if backup_outcome.promoted_tiers:
+            print(f"promoted to: {', '.join(backup_outcome.promoted_tiers)}")
+        return 0
+
+    if args.command == "cloud-sync":
+        from app.cloud.client import CloudStore
+        from app.cloud.sweeper import ARCHIVE_WATERMARK, sweep_monitor_blobs, sweep_report_files
+        from app.core.config import get_settings
+        from app.db.repositories.cloud import CloudLedgerRepository
+
+        settings = get_settings()
+        if not settings.cloud_enabled:
+            print("error: cloud storage is disabled (CLOUD_ENABLED=false)", file=sys.stderr)
+            return 2
+        store = CloudStore(settings)
+        session_factory = get_sync_sessionmaker()
+
+        if args.since:
+            try:
+                since_date = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=UTC)
+            except ValueError:
+                print(f"error: --since must be YYYY-MM-DD, got {args.since!r}", file=sys.stderr)
+                return 2
+            with session_factory() as session:
+                CloudLedgerRepository(session).set_watermark(ARCHIVE_WATERMARK, since_date)
+                session.commit()
+            print(
+                f"watermark moved to {since_date.date().isoformat()} — "
+                "next sync includes blobs from then on"
+            )
+
+        kinds = [args.kind] if args.kind else ["monitor_blob", "report_file"]
+        with session_factory() as session:
+            for kind in kinds:
+                if kind == "monitor_blob":
+                    result = sweep_monitor_blobs(session, store, settings, limit=args.limit)
+                else:
+                    result = sweep_report_files(session, store, settings, limit=args.limit)
+                print(
+                    f"{kind}: attempted={result.attempted} uploaded={result.uploaded} "
+                    f"failed={result.failed}"
+                )
+                if result.reasons:
+                    print(f"  reasons: {result.reasons}")
+        return 0
+
+    if args.command == "cloud-verify":
+        from app.cloud.client import CloudStore
+        from app.cloud.verify import verify_sample
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        if not settings.cloud_enabled:
+            print("error: cloud storage is disabled (CLOUD_ENABLED=false)", file=sys.stderr)
+            return 2
+        store = CloudStore(settings)
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            outcomes = verify_sample(session, store, kind=args.kind, sample=args.sample)
+
+        if not outcomes:
+            print("nothing to verify (no uploaded objects yet)")
+            return 0
+
+        failed = [o for o in outcomes if not o.ok]
+        for verify_outcome in outcomes:
+            status = "OK" if verify_outcome.ok else f"FAIL ({verify_outcome.detail})"
+            print(f"{verify_outcome.kind:14s} {verify_outcome.source_ref:40s} {status}")
+        print(f"\n{len(outcomes) - len(failed)}/{len(outcomes)} verified OK")
+        return 1 if failed else 0
+
+    if args.command == "cloud-prune":
+        from app.cloud.backup import prune_backups
+        from app.cloud.client import CloudStore
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        if not settings.cloud_enabled:
+            print("error: cloud storage is disabled (CLOUD_ENABLED=false)", file=sys.stderr)
+            return 2
+        store = CloudStore(settings)
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            removed = prune_backups(session, store, settings, dry_run=args.dry_run)
+        verb = "would remove" if args.dry_run else "removed"
+        for tier, count in removed.items():
+            print(f"{tier}: {verb} {count}")
+        return 0
+
+    if args.command == "cloud-restore":
+        import gzip
+        import hashlib
+        import json
+        import sqlite3
+
+        from app.cloud.client import CloudStore
+        from app.core.config import get_settings
+        from app.db.repositories.cloud import CloudLedgerRepository
+
+        settings = get_settings()
+        if not settings.cloud_enabled:
+            print("error: cloud storage is disabled (CLOUD_ENABLED=false)", file=sys.stderr)
+            return 2
+        store = CloudStore(settings)
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            latest = CloudLedgerRepository(session).latest_backup()
+        if latest is None:
+            print("error: no backup found in the cloud", file=sys.stderr)
+            return 2
+
+        manifest_key = latest.key.replace(".db.gz", ".manifest.json")
+        compressed = store.get_bytes(latest.key)
+        actual_sha256 = hashlib.sha256(compressed).hexdigest()
+        if latest.sha256 and actual_sha256 != latest.sha256:
+            print(f"error: sha256 mismatch downloading {latest.key}", file=sys.stderr)
+            return 1
+
+        try:
+            manifest = json.loads(store.get_bytes(manifest_key))
+        except Exception:  # noqa: BLE001 - the manifest is a diagnostic extra, never load-bearing
+            manifest = {}
+
+        raw = gzip.decompress(compressed)
+        args.out.mkdir(parents=True, exist_ok=True)
+        dest = args.out / Path(latest.key).name.removesuffix(".gz")
+        dest.write_bytes(raw)
+
+        verify_conn = sqlite3.connect(f"file:{dest}?mode=ro", uri=True)
+        try:
+            integrity = verify_conn.execute("PRAGMA integrity_check").fetchone()[0]
+        finally:
+            verify_conn.close()
+
+        print(f"downloaded: {dest} ({len(raw)} bytes)")
+        print(f"integrity_check: {integrity}")
+        if manifest.get("alembic_revision"):
+            print(f"alembic revision at backup time: {manifest['alembic_revision']}")
+        if integrity != "ok":
+            print("error: integrity_check failed — do NOT restore this file", file=sys.stderr)
+            return 1
+
+        print("\nTo restore (STOPS THE WRITER — see docs/backup-restore.md):")
+        print("  docker compose stop api worker")
+        print(
+            "  docker compose run --rm api poetry run python scripts/restore_sqlite.py "
+            f"--from {dest}"
+        )
+        print(
+            "  docker compose run --rm api poetry run python scripts/restore_sqlite.py "
+            f"--from {dest} --force"
+        )
+        print("  docker compose up -d")
+        return 0
 
     parser.error(f"unknown command: {args.command}")
     return 2

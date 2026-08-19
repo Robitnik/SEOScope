@@ -27,6 +27,14 @@ ChangeState = Literal["open", "all"]
 # patchright lane once a run confirms a block; "http"/"browser" are an
 # explicit operator override that always wins (task-50 §B4).
 FetchMode = Literal["auto", "http", "browser"]
+# "auto" self-detects via `/wp-json/` namespaces and caches the verdict;
+# "redirection"/"probe" pin a source explicitly; "off" disables collection
+# for this client without touching the global `monitor_redirects_enabled`
+# (task-51 §3.2.4).
+RedirectSourceChoice = Literal["auto", "redirection", "probe", "off"]
+RedirectSource = Literal["redirection", "probe"]
+RedirectListState = Literal["active", "removed", "all"]
+CredentialsStatus = Literal["configured", "missing", "invalid"]
 
 
 class MonitorSettingsDTO(BaseModel):
@@ -47,6 +55,11 @@ class MonitorSettingsDTO(BaseModel):
     # browser lane. `None` if never blocked, or an explicit mode overrides
     # the escalation entirely.
     blocked_detected_at: datetime | None = None
+    redirects_enabled: bool = True
+    redirect_source: RedirectSourceChoice = "auto"
+    # Read-only — `None` if redirects have never been successfully collected
+    # for this client (task-51 §3.5 baseline gate).
+    redirects_last_checked_at: datetime | None = None
     updated_at: datetime
 
 
@@ -66,6 +79,8 @@ class MonitorSettingsUpdateRequest(BaseModel):
     ignore_patterns: list[str] | None = None
     muted_change_types: list[str] | None = None
     fetch_mode: FetchMode | None = None
+    redirects_enabled: bool | None = None
+    redirect_source: RedirectSourceChoice | None = None
 
 
 class MonitorRunDTO(BaseModel):
@@ -163,7 +178,7 @@ class MonitorSummaryDTO(BaseModel):
 
 class MonitorResourceDTO(BaseModel):
     id: str
-    kind: Literal["robots", "sitemap"]
+    kind: Literal["robots", "sitemap", "redirects"]
     url: str
     status: int | None = None
     version_seq: int
@@ -268,3 +283,57 @@ class MonitorDnsVersionDTO(BaseModel):
     ttl: int | None = None
     resolver: str | None = None
     prev_version_id: str | None = None
+
+
+# --- redirects (task-51) ------------------------------------------------
+
+
+class MonitorRedirectDTO(BaseModel):
+    id: str
+    source: RedirectSource
+    source_url: str
+    target_url: str | None = None
+    http_code: int | None = None
+    match_type: str
+    regex: bool
+    status: Literal["enabled", "disabled"]
+    group_name: str | None = None
+    title: str | None = None
+    external_id: int | None = None
+    # The whole point of this table (task-51 §3.1/§3.5): the plugin itself
+    # stores neither — our own hourly check is the only source of a date.
+    first_seen_at: datetime
+    # Lower bound of "appeared between X and Y" — `None` when unknown
+    # (baseline, or the previous check failed), never a guessed date
+    # (PLAN §12).
+    first_seen_window_start: datetime | None = None
+    last_seen_at: datetime
+    removed_at: datetime | None = None
+    version_seq: int
+
+
+class MonitorRedirectsPageDTO(BaseModel):
+    redirects: list[MonitorRedirectDTO]
+    total: int
+    limit: int
+    offset: int
+
+
+class MonitorRedirectsStatusDTO(BaseModel):
+    """`GET /clients/{id}/monitor/redirects/status` — deliberately never
+
+    carries the Application Password itself (task-51 §3.3): `credentials_status`
+    is the only thing this DTO says about it.
+    """
+
+    client_id: str
+    redirect_source: RedirectSourceChoice
+    # The source actually used the last time collection ran — `None` if
+    # `redirect_source="off"` or nothing has run yet.
+    effective_source: RedirectSource | None = None
+    credentials_status: CredentialsStatus
+    last_checked_at: datetime | None = None
+    rules_total: int
+    rules_enabled: int
+    rules_disabled: int
+    last_unavailable_reason: str | None = None

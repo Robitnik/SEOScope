@@ -727,6 +727,19 @@ class MonitorSettings(Base):
     # whether the NEXT run still needs the slow lane (task-50 §B5). `NULL` =
     # never confirmed blocked, or an explicit operator mode overrides it.
     blocked_detected_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # Redirect monitoring (task-51). `redirect_source`: "auto" | "redirection"
+    # | "probe" | "off" — "auto" caches its `detect_source()` verdict in
+    # `redirect_source_json` (`{"source": ..., "checked_at": ...}`) so every
+    # light run does not re-probe `/wp-json/` for nothing.
+    redirects_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    redirect_source: Mapped[str] = mapped_column(String(16), default="auto")
+    redirect_source_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # `NULL` = redirects have never been successfully collected for this
+    # client — the baseline gate AND the lower bound of "appeared between X
+    # and Y" for the very first rules ever seen (task-51 §3.5): distinct from
+    # the run's own `is_baseline_run` because an operator can add Application
+    # Password credentials months into monitoring an existing client.
+    redirects_last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
@@ -1011,6 +1024,66 @@ class MonitorChange(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
 
+# --- Added by task-51 (Redirect monitoring, PLAN §16 "Хвиля M" continued) --
+#
+# Current state per redirect rule — no separate version-chain table (unlike
+# pages/DNS/robots): the WHOLE-list history already lives for free in
+# `MonitorResource(kind="redirects")` + `MonitorResourceVersion` (same
+# content-addressed blob mechanism robots.txt/sitemaps use), and a per-rule
+# CHANGE already carries old_value/new_value on `MonitorChange` the moment it
+# is detected — a third, fully parallel version chain would duplicate both
+# without adding anything the operator asked for (task-51 §3.1).
+
+
+class MonitorRedirect(Base):
+    """One redirect rule's current state, from either source (task-51 §3.1).
+
+    `first_seen_at`/`first_seen_window_start` are the whole point of this
+    table: the plugin itself stores neither a creation date nor an author
+    (task-51 §1.3) — our own hourly check is the only thing that can bound
+    when a rule appeared, and `first_seen_window_start` is exactly that lower
+    bound (the previous successful check for this client+source, `NULL` when
+    unknown — PLAN §12, never a guessed date).
+    """
+
+    __tablename__ = "monitor_redirects"
+    __table_args__ = (
+        UniqueConstraint(
+            "client_id", "source", "rule_key", name="uq_monitor_redirects_client_source_key"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    source: Mapped[str] = mapped_column(String(16))  # "redirection" | "probe"
+    # `str(id)` (plugin) or the normalized source URL (probe, which has no
+    # id of its own) — identity WITHIN one source; the two sources' key
+    # spaces are never compared to each other (task-51 contract.py).
+    rule_key: Mapped[str] = mapped_column(String(64))
+    external_id: Mapped[int | None] = mapped_column(Integer, default=None)
+    source_url: Mapped[str] = mapped_column(String(2048))
+    target_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+    http_code: Mapped[int | None] = mapped_column(Integer, default=None)
+    match_type: Mapped[str] = mapped_column(String(32), default="url")
+    regex: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(16), default="enabled")
+    group_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    title: Mapped[str | None] = mapped_column(String(500), default=None)
+    rule_sha256: Mapped[str] = mapped_column(String(64))
+    first_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    first_seen_window_start: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    last_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # `NULL` = still present as of the latest successful check. Set the run a
+    # rule first drops out of the source, cleared if it reappears (mirrors
+    # `MonitorPage.gone_since`).
+    removed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    version_seq: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
 # --- Added by task-42 (Reports engine, PLAN §16 "Хвиля N") -----------------
 #
 # `kind`/`source`/`status`/`cross_check_status` are plain `String`, not
@@ -1168,6 +1241,43 @@ class ReportFile(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     size_bytes: Mapped[int] = mapped_column(Integer)
     mime: Mapped[str | None] = mapped_column(String(100), default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class CloudObject(Base):
+    """Outbox ledger for the B2 cloud-storage sweeper (task-52 §3.3).
+
+    Not a cache of B2's own listing — the source of truth for "has this
+    already been uploaded". `UNIQUE (kind, source_ref)` is the idempotency
+    guarantee a re-run of the sweeper relies on: a second attempt at the same
+    `(kind, source_ref)` updates this row instead of creating a duplicate
+    object in the bucket.
+    """
+
+    __tablename__ = "cloud_objects"
+    __table_args__ = (
+        UniqueConstraint("kind", "source_ref", name="uq_cloud_objects_kind_source_ref"),
+        Index("ix_cloud_objects_kind_status", "kind", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    # "db_backup" | "report_file" | "monitor_blob" | "watermark".
+    kind: Mapped[str] = mapped_column(String(32))
+    # sha256 for monitor_blob, ReportFile.id for report_file, "<tier>/<date>"
+    # for db_backup (e.g. "daily/2026-08-19"), a fixed name for watermark.
+    source_ref: Mapped[str] = mapped_column(String(200))
+    # B2 object key this ref maps to. For kind="watermark" this column holds
+    # the watermark VALUE (an ISO datetime string), not a real bucket key —
+    # a deliberate reuse of the same table for a single cutover marker
+    # instead of a second table (task-52 §3.4).
+    key: Mapped[str] = mapped_column(String(500))
+    sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, default=None)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    # Never a secret (PLAN §13) — B2 error strings never contain credentials.
+    error_message: Mapped[str | None] = mapped_column(String(1000), default=None)
+    uploaded_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 

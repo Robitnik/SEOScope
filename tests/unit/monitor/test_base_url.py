@@ -1,4 +1,4 @@
-"""`_base_url` + `MonitorSettings.canonical_www` (task-38 follow-up).
+"""`resolve_base_url` + `MonitorSettings.canonical_www` (task-38 follow-up).
 
 An operator-recorded canonical host picks the right host directly instead of
 relying on the site's own redirect to correct it on every single request —
@@ -9,7 +9,7 @@ field existed: `client.domain` verbatim.
 from __future__ import annotations
 
 from app.db.models import Client
-from app.monitor.runner import _base_url
+from app.monitor.runner import resolve_base_url
 
 
 def _client(domain: str) -> Client:
@@ -17,28 +17,28 @@ def _client(domain: str) -> Client:
 
 
 def test_unknown_canonical_www_uses_domain_verbatim():
-    assert _base_url(_client("acme.com"), None, None) == "https://acme.com"
-    assert _base_url(_client("www.acme.com"), None, None) == "https://www.acme.com"
+    assert resolve_base_url(_client("acme.com"), None, None) == "https://acme.com"
+    assert resolve_base_url(_client("www.acme.com"), None, None) == "https://www.acme.com"
 
 
 def test_canonical_www_true_adds_the_prefix_when_missing():
-    assert _base_url(_client("acme.com"), None, True) == "https://www.acme.com"
+    assert resolve_base_url(_client("acme.com"), None, True) == "https://www.acme.com"
 
 
 def test_canonical_www_true_is_a_no_op_when_already_present():
-    assert _base_url(_client("www.acme.com"), None, True) == "https://www.acme.com"
+    assert resolve_base_url(_client("www.acme.com"), None, True) == "https://www.acme.com"
 
 
 def test_canonical_www_false_strips_the_prefix_when_present():
-    assert _base_url(_client("www.acme.com"), None, False) == "https://acme.com"
+    assert resolve_base_url(_client("www.acme.com"), None, False) == "https://acme.com"
 
 
 def test_canonical_www_false_is_a_no_op_when_already_bare():
-    assert _base_url(_client("acme.com"), None, False) == "https://acme.com"
+    assert resolve_base_url(_client("acme.com"), None, False) == "https://acme.com"
 
 
 def test_override_wins_outright_regardless_of_canonical_www():
     assert (
-        _base_url(_client("acme.com"), "https://staging.acme.com/", True)
+        resolve_base_url(_client("acme.com"), "https://staging.acme.com/", True)
         == "https://staging.acme.com"
     )

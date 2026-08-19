@@ -25,6 +25,7 @@ from app.db.models import (
     MonitorDnsVersion,
     MonitorPage,
     MonitorPageVersion,
+    MonitorRedirect,
     MonitorResource,
     MonitorResourceVersion,
     MonitorRun,
@@ -32,6 +33,7 @@ from app.db.models import (
 )
 
 ChangeState = Literal["open", "all"]
+RedirectState = Literal["active", "removed", "all"]
 
 
 class MonitorRepository:
@@ -671,6 +673,157 @@ class MonitorRepository:
             .limit(limit)
         )
         return list(self._session.scalars(stmt))
+
+    # --- redirects (task-51) ------------------------------------------------
+
+    def get_redirect(self, client_id: str, source: str, rule_key: str) -> MonitorRedirect | None:
+        stmt = select(MonitorRedirect).where(
+            MonitorRedirect.client_id == client_id,
+            MonitorRedirect.source == source,
+            MonitorRedirect.rule_key == rule_key,
+        )
+        return self._session.scalars(stmt).first()
+
+    def list_redirects(
+        self, client_id: str, *, source: str | None = None, state: RedirectState = "active"
+    ) -> list[MonitorRedirect]:
+        stmt = select(MonitorRedirect).where(MonitorRedirect.client_id == client_id)
+        if source is not None:
+            stmt = stmt.where(MonitorRedirect.source == source)
+        if state == "active":
+            stmt = stmt.where(MonitorRedirect.removed_at.is_(None))
+        elif state == "removed":
+            stmt = stmt.where(MonitorRedirect.removed_at.is_not(None))
+        return list(self._session.scalars(stmt.order_by(MonitorRedirect.source_url)))
+
+    def list_redirects_page(
+        self,
+        client_id: str,
+        *,
+        source: str | None = None,
+        state: RedirectState = "active",
+        q: str | None = None,
+        sort: str = "first_seen_at",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[MonitorRedirect], int]:
+        stmt: Select[Any] = select(MonitorRedirect).where(MonitorRedirect.client_id == client_id)
+        if source is not None:
+            stmt = stmt.where(MonitorRedirect.source == source)
+        if state == "active":
+            stmt = stmt.where(MonitorRedirect.removed_at.is_(None))
+        elif state == "removed":
+            stmt = stmt.where(MonitorRedirect.removed_at.is_not(None))
+        if q:
+            needle = f"%{q.lower()}%"
+            stmt = stmt.where(
+                or_(
+                    func.lower(MonitorRedirect.source_url).like(needle),
+                    func.lower(MonitorRedirect.target_url).like(needle),
+                )
+            )
+        total = self._session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        descending = sort.startswith("-")
+        field = sort[1:] if descending else sort
+        sort_column = {
+            "first_seen_at": MonitorRedirect.first_seen_at,
+            "last_seen_at": MonitorRedirect.last_seen_at,
+            "source_url": MonitorRedirect.source_url,
+        }.get(field, MonitorRedirect.first_seen_at)
+        order = sort_column.desc() if descending else sort_column.asc()
+        stmt = stmt.order_by(order.nulls_last()).limit(limit).offset(offset)
+        return list(self._session.scalars(stmt)), total
+
+    def upsert_redirect_state(
+        self,
+        client_id: str,
+        source: str,
+        rule_key: str,
+        *,
+        source_url: str,
+        target_url: str | None,
+        http_code: int | None,
+        match_type: str,
+        regex: bool,
+        status: str,
+        group_name: str | None,
+        title: str | None,
+        external_id: int | None,
+        rule_sha256: str,
+        now: datetime | None = None,
+        window_start: datetime | None = None,
+    ) -> MonitorRedirect:
+        """`window_start` is used to set `first_seen_at`/`first_seen_window_start`
+
+        (task-51 §3.5) exactly twice for one rule's lifetime: when the row is
+        first created, and again if it reappears after being `removed_at`
+        (a rule that vanished and came back gets its OWN fresh appearance
+        window, not the ancient date it was first ever seen) — any other
+        call for an already-active rule leaves both fields untouched.
+        """
+        now = now or utcnow()
+        rule = self.get_redirect(client_id, source, rule_key)
+        is_new = rule is None
+        is_reappearance = rule is not None and rule.removed_at is not None
+        if rule is None:
+            rule = MonitorRedirect(client_id=client_id, source=source, rule_key=rule_key)
+            self._session.add(rule)
+        if is_new or is_reappearance:
+            rule.first_seen_at = now
+            rule.first_seen_window_start = window_start
+        rule.source_url = source_url
+        rule.target_url = target_url
+        rule.http_code = http_code
+        rule.match_type = match_type
+        rule.regex = regex
+        rule.status = status
+        rule.group_name = group_name
+        rule.title = title
+        rule.external_id = external_id
+        if not is_new and rule.rule_sha256 != rule_sha256:
+            rule.version_seq += 1
+        rule.rule_sha256 = rule_sha256
+        rule.last_seen_at = now
+        rule.removed_at = None
+        self._session.flush()
+        return rule
+
+    def mark_redirects_removed(
+        self,
+        client_id: str,
+        source: str,
+        still_present_keys: set[str],
+        *,
+        now: datetime | None = None,
+    ) -> list[MonitorRedirect]:
+        """Any active rule for this `(client, source)` not in
+
+        `still_present_keys` just fell out of the latest successful
+        collection — `removed_at` is set once (idempotent: an already-removed
+        rule is left alone, its original `removed_at` is the fact worth
+        keeping).
+        """
+        now = now or utcnow()
+        newly_removed = []
+        for rule in self.list_redirects(client_id, source=source, state="active"):
+            if rule.rule_key not in still_present_keys:
+                rule.removed_at = now
+                newly_removed.append(rule)
+        if newly_removed:
+            self._session.flush()
+        return newly_removed
+
+    def redirects_summary(self, client_id: str, *, source: str | None = None) -> dict[str, int]:
+        stmt = select(MonitorRedirect.status, func.count()).where(
+            MonitorRedirect.client_id == client_id, MonitorRedirect.removed_at.is_(None)
+        )
+        if source is not None:
+            stmt = stmt.where(MonitorRedirect.source == source)
+        stmt = stmt.group_by(MonitorRedirect.status)
+        counts = {"enabled": 0, "disabled": 0}
+        for status, count in self._session.execute(stmt):
+            counts[status] = count
+        return counts
 
     # --- changes (the alert feed) ----------------------------------------
 

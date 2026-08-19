@@ -148,6 +148,50 @@ export function sitemapStructureToFields(fromStructure, toStructure, changedFiel
   }));
 }
 
+const REDIRECTS_FIELD_LABELS = { total: "Total rules", enabled: "Enabled", disabled: "Disabled" };
+
+// `structure_json` for redirects is a whole-list SUMMARY (task-51), not a
+// list of individual rules — `by_code`/`by_group` are `{"301": 429, ...}`
+// count maps, not arrays, so the generic scalar/list split
+// `sitemapStructureToFields` uses would print them as "[object Object]".
+// Formatted into "label: count" list rows instead. No `changed_fields`
+// param: the backend always writes an empty list for this resource kind
+// (per-rule changes are already tracked as their own `MonitorChange` rows,
+// task-51 §3.1) — compared client-side instead, same precedent as
+// `diffDnsVersions` below (DNS has no diff endpoint either).
+function formatCountsList(counts) {
+  if (!counts || typeof counts !== "object") return null;
+  const entries = Object.entries(counts);
+  if (!entries.length) return null;
+  return entries.sort((a, b) => b[1] - a[1]).map(([label, count]) => `${label}: ${count}`);
+}
+
+export function redirectsStructureToFields(fromStructure, toStructure) {
+  const from = fromStructure || {};
+  const to = toStructure || {};
+  const rows = Object.keys(REDIRECTS_FIELD_LABELS).map((key) => ({
+    key,
+    label: REDIRECTS_FIELD_LABELS[key],
+    kind: "scalar",
+    from: from[key] ?? null,
+    to: to[key] ?? null,
+    changed: (from[key] ?? null) !== (to[key] ?? null),
+  }));
+  for (const [key, label] of [["by_code", "By HTTP code"], ["by_group", "By group"]]) {
+    const fromList = formatCountsList(from[key]);
+    const toList = formatCountsList(to[key]);
+    rows.push({
+      key,
+      label,
+      kind: "list",
+      from: fromList,
+      to: toList,
+      changed: JSON.stringify(fromList) !== JSON.stringify(toList),
+    });
+  }
+  return rows;
+}
+
 const SIGNAL_FIELD_LABELS = {
   title: "Title",
   meta_robots: "Meta robots",
@@ -227,6 +271,7 @@ const KIND_TITLES = {
   robots: "robots.txt version history",
   sitemap: "Sitemap version history",
   dns: "DNS record version history",
+  redirects: "Redirects version history",
 };
 
 function titleFor(kind) {
@@ -234,11 +279,15 @@ function titleFor(kind) {
 }
 
 function subtitleFor(descriptor, versions) {
+  // Redirects has exactly one resource per client (an internal marker key,
+  // never a real URL — nothing useful to show as an "identity" line here).
   const identity = descriptor.kind === "page"
     ? `Page ${descriptor.pageId || ""}`.trim()
     : descriptor.kind === "dns"
       ? [descriptor.dnsName, descriptor.dnsRecordType].filter(Boolean).join(" ")
-      : descriptor.resourceUrl || "";
+      : descriptor.kind === "redirects"
+        ? ""
+        : descriptor.resourceUrl || "";
   const count = versions ? `${versions.length} version${versions.length === 1 ? "" : "s"} recorded` : "Loading…";
   return [identity, count].filter(Boolean).join(" — ");
 }
@@ -263,7 +312,11 @@ function emptyMarkup(kind) {
 
 function documentLinkFor(kind, version) {
   if (!version) return "";
-  const sha256 = kind === "page" ? version.body_blob_sha256 : kind === "robots" ? version.content_sha256 : null;
+  const sha256 = kind === "page"
+    ? version.body_blob_sha256
+    : kind === "robots" || kind === "redirects"
+      ? version.content_sha256
+      : null;
   if (!sha256) return "";
   const label = formatTimestamp(version.observed_at, "this version");
   return `<a class="monitor-diff-doc-link button button--quiet" href="${escapeHtml(getMonitorDocumentUrl(sha256))}" target="_blank" rel="noreferrer">${icon("file-text")}<span>Open saved document (${escapeHtml(label)})</span></a>`;
@@ -431,6 +484,7 @@ export function createMonitorDiffViewer({ onError, onStateChange } = {}) {
         return getMonitorPageVersions(descriptor.clientId, descriptor.pageId);
       case "robots":
       case "sitemap":
+      case "redirects":
         return getMonitorResourceVersions(descriptor.clientId, descriptor.kind, { url: descriptor.resourceUrl });
       case "dns":
         return getMonitorDnsVersions(descriptor.clientId, { name: descriptor.dnsName, recordType: descriptor.dnsRecordType });
@@ -538,12 +592,14 @@ export function createMonitorDiffViewer({ onError, onStateChange } = {}) {
         if (token !== requestToken) return;
         fields = signalsToFields(diff.from_signals, diff.to_signals, diff.changed_fields);
         textDiff = diff.text_diff || [];
-      } else if (current.kind === "robots" || current.kind === "sitemap") {
+      } else if (current.kind === "robots" || current.kind === "sitemap" || current.kind === "redirects") {
         const diff = await getMonitorResourceDiff(current.clientId, current.kind, { url: current.resourceUrl, fromVersionId: current.fromVersionId, toVersionId: current.toVersionId });
         if (token !== requestToken) return;
         fields = current.kind === "robots"
           ? robotsStructureToFields(diff.from_structure, diff.to_structure, diff.changed_fields)
-          : sitemapStructureToFields(diff.from_structure, diff.to_structure, diff.changed_fields);
+          : current.kind === "redirects"
+            ? redirectsStructureToFields(diff.from_structure, diff.to_structure)
+            : sitemapStructureToFields(diff.from_structure, diff.to_structure, diff.changed_fields);
       } else if (current.kind === "dns") {
         fields = diffDnsVersions(fromVersion, toVersion);
       }

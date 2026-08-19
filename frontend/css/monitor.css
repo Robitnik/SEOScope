@@ -328,6 +328,46 @@
 .monitor-dns-table td:nth-child(3) { overflow-wrap: anywhere; }
 .monitor-dns-show-all { margin: 10px 18px 0; }
 
+/* Redirects (task-51) — its own full-width block between Sitemap and Pages,
+ * same reasoning as `.monitor-block--dns`: the rules table needs room a
+ * 2-column grid cell would force into a horizontal scroll. */
+.monitor-block--redirects { margin-top: 16px; }
+.monitor-redirects-banner { margin: 12px 18px 0; }
+.monitor-redirects-toolbar { padding-bottom: 4px; }
+/* Column 1 is the numeric plugin ID (task-51 follow-up) — override the
+ * generic `.analytics-table th:first-child` (left-align, 220px min-width,
+ * sized for a URL) so it stays a compact right-aligned number instead. */
+.monitor-redirects-table th:first-child { text-align: right; min-width: 0; }
+.monitor-redirects-table th:nth-child(2),
+.monitor-redirects-table td:nth-child(2),
+.monitor-redirects-table th:nth-child(3),
+.monitor-redirects-table td:nth-child(3) { overflow-wrap: anywhere; }
+.monitor-redirects-table td:nth-child(7),
+.monitor-redirects-table td:nth-child(8) { font-size: 11px; color: var(--ink-muted); white-space: nowrap; }
+.monitor-redirects-table em { color: var(--ink-dim); font-style: normal; }
+.monitor-redirect-row--removed { opacity: .55; }
+.monitor-redirect-row--removed td:first-child { text-decoration: line-through; text-decoration-color: var(--ink-dim); }
+.monitor-redirect__origin {
+  display: inline-block;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  background: var(--canvas-raised);
+  color: var(--ink-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.monitor-redirect__removed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 700;
+}
+.monitor-redirect__removed .icon { width: 12px; height: 12px; }
+
 @media (max-width: 1023px) {
   .monitor-blocks { grid-template-columns: 1fr; }
 }
@@ -503,6 +543,15 @@ th[aria-sort]:not([aria-sort="none"]) .monitor-sort-button { color: var(--ink); 
 .monitor-change__old { color: var(--ink-dim); text-decoration: line-through; }
 .monitor-change__new { color: var(--ink); font-weight: 700; }
 .monitor-change__meta { margin: 6px 0 0; color: var(--ink-dim); font-size: 11px; }
+.monitor-change__window {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 6px 0 0;
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+.monitor-change__window .icon { color: var(--ink-dim); }
 .monitor-change__view-diff { margin: 6px 0 0; }
 .monitor-change-status { flex: 0 0 auto; margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--ink-muted); font-size: 12px; text-align: right; }
 .monitor-change-status .icon { width: 14px; height: 14px; }

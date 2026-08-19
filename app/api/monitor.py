@@ -12,7 +12,7 @@ from __future__ import annotations
 import csv
 import difflib
 import io
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -29,6 +29,7 @@ from app.db.models import (
     MonitorDnsVersion,
     MonitorPage,
     MonitorPageVersion,
+    MonitorRedirect,
     MonitorResource,
     MonitorResourceVersion,
     MonitorRun,
@@ -36,7 +37,15 @@ from app.db.models import (
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.monitor import MonitorRepository
 from app.db.session import worker_session_scope
-from app.monitor.runner import PageCheckConflict, run_single_page_check
+from app.monitor.redirects.collect import process_redirects
+from app.monitor.redirects.credentials import (
+    CredentialsStatus as CredentialsStatusEnum,
+)
+from app.monitor.redirects.credentials import (
+    credentials_status,
+    login_credentials_status,
+)
+from app.monitor.runner import PageCheckConflict, resolve_base_url, run_single_page_check
 from app.monitor.storage import read_blob
 from app.schemas.api import ErrorDTO
 from app.schemas.monitor import (
@@ -49,6 +58,9 @@ from app.schemas.monitor import (
     MonitorPageDTO,
     MonitorPagesPageDTO,
     MonitorPageVersionDTO,
+    MonitorRedirectDTO,
+    MonitorRedirectsPageDTO,
+    MonitorRedirectsStatusDTO,
     MonitorResourceDiffDTO,
     MonitorResourceDTO,
     MonitorResourceVersionDTO,
@@ -57,6 +69,7 @@ from app.schemas.monitor import (
     MonitorSettingsDTO,
     MonitorSettingsUpdateRequest,
     MonitorSummaryDTO,
+    RedirectListState,
     Severity,
     SitemapHealthDTO,
 )
@@ -213,6 +226,27 @@ def _dns_version_dto(version: MonitorDnsVersion) -> MonitorDnsVersionDTO:
         ttl=version.ttl,
         resolver=version.resolver,
         prev_version_id=version.prev_version_id,
+    )
+
+
+def _redirect_dto(rule: MonitorRedirect) -> MonitorRedirectDTO:
+    return MonitorRedirectDTO(
+        id=rule.id,
+        source=rule.source,  # type: ignore[arg-type]
+        source_url=rule.source_url,
+        target_url=rule.target_url,
+        http_code=rule.http_code,
+        match_type=rule.match_type,
+        regex=rule.regex,
+        status=rule.status,  # type: ignore[arg-type]
+        group_name=rule.group_name,
+        title=rule.title,
+        external_id=rule.external_id,
+        first_seen_at=rule.first_seen_at,
+        first_seen_window_start=rule.first_seen_window_start,
+        last_seen_at=rule.last_seen_at,
+        removed_at=rule.removed_at,
+        version_seq=rule.version_seq,
     )
 
 
@@ -667,7 +701,7 @@ def _resources(client_id: str, kind: str) -> list[MonitorResourceDTO] | None:
     responses={404: {"model": ErrorDTO}},
 )
 async def list_monitor_resources(
-    client_id: str, kind: Literal["robots", "sitemap"]
+    client_id: str, kind: Literal["robots", "sitemap", "redirects"]
 ) -> list[MonitorResourceDTO]:
     """Every tracked robots.txt / sitemap file of one client.
 
@@ -701,7 +735,7 @@ def _resource_versions(
     responses={404: {"model": ErrorDTO}},
 )
 async def list_monitor_resource_versions(
-    client_id: str, kind: Literal["robots", "sitemap"], url: str | None = None
+    client_id: str, kind: Literal["robots", "sitemap", "redirects"], url: str | None = None
 ) -> list[MonitorResourceVersionDTO]:
     versions = await run_in_threadpool(_resource_versions, client_id, kind, url)
     if versions is None:
@@ -744,7 +778,7 @@ def _resource_diff(
 )
 async def get_monitor_resource_diff(
     client_id: str,
-    kind: Literal["robots", "sitemap"],
+    kind: Literal["robots", "sitemap", "redirects"],
     url: str | None = None,
     from_version_id: str | None = Query(default=None),
     to_version_id: str | None = Query(default=None),
@@ -806,6 +840,186 @@ async def list_monitor_dns_versions(
     if versions is None:
         raise HTTPException(status_code=404, detail=_RESOURCE_NOT_FOUND)
     return versions
+
+
+# --- redirects (task-51) ------------------------------------------------------
+
+
+def _list_redirects(
+    client_id: str,
+    *,
+    state: RedirectListState,
+    q: str | None,
+    sort: str,
+    limit: int,
+    offset: int,
+) -> tuple[list[MonitorRedirectDTO], int] | None:
+    with worker_session_scope() as session:
+        if ClientRepository(session).get(client_id) is None:
+            return None
+        rules, total = MonitorRepository(session).list_redirects_page(
+            client_id, state=state, q=q, sort=sort, limit=limit, offset=offset
+        )
+        return [_redirect_dto(r) for r in rules], total
+
+
+@router.get(
+    "/clients/{client_id}/monitor/redirects",
+    response_model=MonitorRedirectsPageDTO,
+    responses={404: {"model": ErrorDTO}},
+)
+async def list_monitor_redirects(
+    client_id: str,
+    pagination: PaginationDep,
+    state: RedirectListState = "active",
+    q: str | None = None,
+    sort: Literal[
+        "first_seen_at",
+        "-first_seen_at",
+        "last_seen_at",
+        "-last_seen_at",
+        "source_url",
+        "-source_url",
+    ] = "-first_seen_at",
+) -> MonitorRedirectsPageDTO:
+    result = await run_in_threadpool(
+        _list_redirects,
+        client_id,
+        state=state,
+        q=q,
+        sort=sort,
+        limit=pagination.limit,
+        offset=pagination.offset,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    rules, total = result
+    return MonitorRedirectsPageDTO(
+        redirects=rules, total=total, limit=pagination.limit, offset=pagination.offset
+    )
+
+
+def _combined_credentials_status(settings: Any, client_id: str) -> Any:
+    """Application Password first, regular wp-admin login as a fallback —
+
+    same priority `collect._fetch_snapshot` uses (task-51 follow-up): report
+    `configured` if EITHER works, `invalid` only when something IS on disk
+    but broken with nothing else to fall back on, `missing` only when
+    neither credential kind was ever set up for this client.
+    """
+    app_status = credentials_status(settings.wp_credentials_path, client_id)
+    if app_status == CredentialsStatusEnum.configured:
+        return app_status
+    login_status = login_credentials_status(settings.wp_login_credentials_path, client_id)
+    if login_status == CredentialsStatusEnum.configured:
+        return login_status
+    if CredentialsStatusEnum.invalid in (app_status, login_status):
+        return CredentialsStatusEnum.invalid
+    return CredentialsStatusEnum.missing
+
+
+def _redirects_status(client_id: str) -> MonitorRedirectsStatusDTO | None:
+    settings = get_settings()
+    with worker_session_scope() as session:
+        if ClientRepository(session).get(client_id) is None:
+            return None
+        repo = MonitorRepository(session)
+        monitor_settings = repo.get_or_create_settings(client_id)
+        session.commit()
+        cached = monitor_settings.redirect_source_json or {}
+        effective = (
+            cached.get("source")
+            if monitor_settings.redirect_source == "auto"
+            else (
+                monitor_settings.redirect_source
+                if monitor_settings.redirect_source != "off"
+                else None
+            )
+        )
+        summary = repo.redirects_summary(client_id, source=effective)
+        last_unavailable = None
+        open_unavailable = [
+            c
+            for c in repo.list_changes(client_id, state="open", limit=50)
+            if c.change_type == "redirects_unavailable"
+        ]
+        if open_unavailable:
+            last_unavailable = open_unavailable[0].new_value
+        return MonitorRedirectsStatusDTO(
+            client_id=client_id,
+            redirect_source=monitor_settings.redirect_source,  # type: ignore[arg-type]
+            effective_source=effective,  # type: ignore[arg-type]
+            credentials_status=_combined_credentials_status(settings, client_id),
+            last_checked_at=monitor_settings.redirects_last_checked_at,
+            rules_total=summary.get("enabled", 0) + summary.get("disabled", 0),
+            rules_enabled=summary.get("enabled", 0),
+            rules_disabled=summary.get("disabled", 0),
+            last_unavailable_reason=last_unavailable,
+        )
+
+
+@router.get(
+    "/clients/{client_id}/monitor/redirects/status",
+    response_model=MonitorRedirectsStatusDTO,
+    responses={404: {"model": ErrorDTO}},
+)
+async def get_monitor_redirects_status(client_id: str) -> MonitorRedirectsStatusDTO:
+    result = await run_in_threadpool(_redirects_status, client_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return result
+
+
+def _check_redirects(client_id: str) -> str | None:
+    settings = get_settings()
+    with worker_session_scope() as session:
+        client = ClientRepository(session).get(client_id)
+        if client is None:
+            return None
+        repo = MonitorRepository(session)
+        monitor_settings = repo.get_or_create_settings(client_id)
+        base_url = resolve_base_url(
+            client, monitor_settings.base_url_override, monitor_settings.canonical_www
+        )
+        # A real (if minimal) `MonitorRun` row, same as a single-page "Check
+        # now" (task-38 §2) — every `MonitorChange` needs a legitimate
+        # `run_id`, and the operator gets this in "Check history" too.
+        run = repo.create_run(client_id, kind="light", trigger="manual")
+        session.commit()
+        process_redirects(
+            repo,
+            client,
+            base_url,
+            run_id=run.id,
+            monitor_settings=monitor_settings,
+            settings=settings,
+            artifacts_dir=settings.artifacts_dir,
+            key_pages=set(),
+            now=datetime.now(UTC),
+        )
+        repo.finish_run(run.id, status="succeeded", truncated=False)
+        session.commit()
+        return "ok"
+
+
+@router.post(
+    "/clients/{client_id}/monitor/redirects/check",
+    response_model=MonitorRedirectsStatusDTO,
+    responses={404: {"model": ErrorDTO}},
+)
+async def check_monitor_redirects(client_id: str) -> MonitorRedirectsStatusDTO:
+    """Synchronous re-check (mirrors `check_monitor_page`, task-38 §2) —
+
+    runs inline against the client's site right now instead of waiting for
+    the next scheduled light/full run, then returns the same status shape
+    `GET .../redirects/status` does.
+    """
+    result = await run_in_threadpool(_check_redirects, client_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    status = await run_in_threadpool(_redirects_status, client_id)
+    assert status is not None
+    return status
 
 
 # --- documents (stored robots.txt / page bodies) ------------------------------

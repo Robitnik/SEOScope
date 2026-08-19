@@ -59,11 +59,20 @@
 //                                — обгортки-секції (тільки якір для layout/spacing)
 //   .monitor-dns-table / .monitor-pages-table / .monitor-runs-table
 //                                — модифікатори на .analytics-table для колонок-специфік
+//   .monitor-change__window     — рядок "Appeared between X and Y" під diffLine (task-51)
+//   .monitor-block--redirects   — модифікатор для повноширинного блоку Redirects
+//   .monitor-redirects-toolbar  — модифікатор на .analytics-toolbar для Redirects
+//   .monitor-redirects-table    — модифікатор на .analytics-table для колонок Redirects
+//   .monitor-redirects-banner   — модифікатор на .state-panel для "could not be checked"
+//   .monitor-redirect-row--removed — модифікатор рядка для видаленого правила
+//   .monitor-redirect__origin   — бейдж групи плагіна / "via: X-Redirect-By"
+//   .monitor-redirect__removed  — інлайн-позначка "Removed …" в комірці Source URL
 
 import {
   getMonitorSummary, getMonitorSettings, patchMonitorSettings, listMonitorRuns, startMonitorRun,
   listClientMonitorChanges, ackMonitorChange, getMonitorPages, checkMonitorPage, getMonitorDnsRecords,
   monitorExportCsvUrl, monitorExportXlsxUrl, getDashboard, isAbortError,
+  getMonitorRedirects, getMonitorRedirectsStatus, checkMonitorRedirects,
 } from "./api.js?v=20260819-spin3";
 import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260819-spin3";
 import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260819-spin3";
@@ -125,6 +134,16 @@ let changesRaw = [];
 let changesVisibleCount = CHANGES_PAGE_SIZE;
 let pagesQueryHadFocus = false;
 let pagesSearchTimer = null;
+const REDIRECTS_PAGE_SIZE = 10;
+let redirectsRows = [];
+let redirectsTotal = 0;
+let redirectsLimit = REDIRECTS_PAGE_SIZE;
+let redirectsOffset = 0;
+let redirectsStatus = null;
+let redirectsState = "active"; // "active" | "removed" | "all"
+let redirectsQuery = "";
+let redirectsSearchTimer = null;
+let redirectsChecking = false;
 
 function toast(message) {
   const region = document.querySelector("#toast-region");
@@ -324,6 +343,7 @@ function contentShellHtml() {
       <section class="monitor-block" id="mc-robots" aria-label="Robots.txt" aria-busy="true">${sectionSkeleton({ label: "robots.txt", rows: 2, columns: 1 })}</section>
       <section class="monitor-block" id="mc-sitemap" aria-label="Sitemap" aria-busy="true">${sectionSkeleton({ label: "sitemap", rows: 3, columns: 1 })}</section>
     </div>
+    <section class="monitor-block monitor-block--redirects" id="mc-redirects" aria-label="Redirects" aria-busy="true">${sectionSkeleton({ label: "redirects", rows: 4, columns: 6 })}</section>
     <section class="monitor-pages-section" id="mc-pages" aria-label="Pages" aria-busy="true">${sectionSkeleton({ label: "pages", rows: 8, columns: 10 })}</section>
     <section class="monitor-runs-section" id="mc-runs" aria-label="Check history" aria-busy="true">${sectionSkeleton({ label: "check history", rows: 5, columns: 8 })}</section>
     <section class="monitor-changes-section" id="mc-changes" aria-label="Change feed" aria-busy="true">${sectionSkeleton({ label: "change feed", rows: 5, columns: 2 })}</section>
@@ -344,6 +364,7 @@ function mountFullContentAndLoadBlocks() {
   renderRobots();
   loadSiteChangesAndDependents();
   loadDns();
+  loadRedirects();
   loadPages();
   loadRuns();
   loadChangesFeed();
@@ -397,6 +418,11 @@ function handleContentClick(event) {
     case "pages-next": changePage(1); break;
     case "retry-dns": loadDns(); break;
     case "dns-show-all": dnsShowAll = true; renderDns(dnsRecords); break;
+    case "retry-redirects": loadRedirects(); break;
+    case "redirects-check": checkRedirectsNow(); break;
+    case "redirects-history": diffViewer.open({ kind: "redirects", clientId: current.clientId, trigger: target }); break;
+    case "redirects-prev": changeRedirectsPage(-1); break;
+    case "redirects-next": changeRedirectsPage(1); break;
     case "retry-pages": loadPages(); break;
     case "retry-runs": loadRuns(); break;
     case "retry-changes": loadChangesFeed(); break;
@@ -412,19 +438,31 @@ function handleContentChange(event) {
   else if (target.id === "mc-pages-not-indexable") { current.notIndexable = target.checked; current.page = 1; persist(); loadPages(); }
   else if (target.id === "mc-pages-in-sitemap-not200") { current.inSitemapNot200 = target.checked; current.page = 1; persist(); loadPages(); }
   else if (target.id === "mc-pages-changed-since") { current.changedSince = target.value; current.page = 1; persist(); loadPages(); }
+  else if (target.id === "mc-redirects-state") { redirectsState = target.value; redirectsOffset = 0; loadRedirects(); }
 }
 
 function handleContentInput(event) {
-  if (event.target.id !== "mc-pages-q") return;
-  clearTimeout(pagesSearchTimer);
-  const value = event.target.value;
-  pagesSearchTimer = setTimeout(() => {
-    current.q = value;
-    current.page = 1;
-    persist();
-    pagesQueryHadFocus = true;
-    loadPages();
-  }, 220);
+  if (event.target.id === "mc-pages-q") {
+    clearTimeout(pagesSearchTimer);
+    const value = event.target.value;
+    pagesSearchTimer = setTimeout(() => {
+      current.q = value;
+      current.page = 1;
+      persist();
+      pagesQueryHadFocus = true;
+      loadPages();
+    }, 220);
+    return;
+  }
+  if (event.target.id === "mc-redirects-q") {
+    clearTimeout(redirectsSearchTimer);
+    const value = event.target.value;
+    redirectsSearchTimer = setTimeout(() => {
+      redirectsQuery = value;
+      redirectsOffset = 0;
+      loadRedirects();
+    }, 220);
+  }
 }
 
 function handleContentSubmit(event) {
@@ -956,6 +994,178 @@ function renderDns(records) {
 }
 
 // ---------------------------------------------------------------------------
+// Redirects block (task-51)
+// ---------------------------------------------------------------------------
+
+async function loadRedirects() {
+  const el = document.querySelector("#mc-redirects");
+  if (!el) return;
+  el.setAttribute("aria-busy", "true");
+  el.innerHTML = sectionSkeleton({ label: "redirects", rows: 4, columns: 6 });
+  try {
+    const [page, status] = await Promise.all([
+      getMonitorRedirects(current.clientId, {
+        state: redirectsState,
+        q: redirectsQuery || undefined,
+        limit: REDIRECTS_PAGE_SIZE,
+        offset: redirectsOffset,
+      }),
+      getMonitorRedirectsStatus(current.clientId),
+    ]);
+    redirectsRows = page.redirects || [];
+    redirectsTotal = page.total || 0;
+    redirectsLimit = page.limit || REDIRECTS_PAGE_SIZE;
+    redirectsOffset = page.offset || 0;
+    redirectsStatus = status;
+    renderRedirects();
+  } catch (error) {
+    if (isAbortError(error)) { settleAbortedSection(el, "Redirects", "retry-redirects"); return; }
+    el.setAttribute("aria-busy", "false");
+    el.innerHTML = `${sectionHeadingWithAction("Redirects", "", "")}<div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Could not load redirects.</strong><br>${escapeHtml(error.message)}</p><button type="button" class="button button--primary" data-action="retry-redirects">${icon("refresh")}Retry</button></div>`;
+  }
+}
+
+async function checkRedirectsNow() {
+  if (redirectsChecking) return;
+  redirectsChecking = true;
+  const el = document.querySelector("#mc-redirects");
+  const button = el?.querySelector('[data-action="redirects-check"]');
+  if (button) { button.disabled = true; button.innerHTML = `${icon("loader-2", "icon icon--spin")}Checking…`; }
+  try {
+    redirectsStatus = await checkMonitorRedirects(current.clientId);
+    // Cleared BEFORE the re-render below: `renderRedirects()` reads this
+    // flag for the button's own label/disabled state, and `loadRedirects()`
+    // calls it internally — flipping it in a trailing `finally` left the
+    // button reading "Checking…" forever after a real, completed check.
+    redirectsChecking = false;
+    toast(redirectsStatus.last_unavailable_reason ? "Redirects check finished with a problem — see below." : "Redirects checked.");
+    await loadRedirects();
+    loadChangesFeed();
+    loadRuns();
+  } catch (error) {
+    redirectsChecking = false;
+    toast(`Could not check redirects: ${error.message}`);
+    renderRedirects();
+  }
+}
+
+// Origin hint (task-51 §1.4/§1.5): the plugin's own "Modified Posts" group
+// means a human edited a post's URL and the plugin reacted — not a change
+// worth reading as suspicious. Blackbox probe stamps `via: <X-Redirect-By>`
+// into the same field instead, when the responding server sends one.
+function redirectOriginLine(rule) {
+  if (rule.group_name) return `<span class="monitor-redirect__origin">${escapeHtml(rule.group_name)}</span>`;
+  if (rule.title && rule.title.startsWith("via: ")) {
+    return `<span class="monitor-redirect__origin">${escapeHtml(rule.title.slice(5))}</span>`;
+  }
+  return "";
+}
+
+function redirectFirstSeenCell(rule) {
+  if (rule.first_seen_window_start) {
+    return `<span title="Not seen as of the previous check">Between ${formatTimestamp(rule.first_seen_window_start)}<br>and ${formatTimestamp(rule.first_seen_at)}</span>`;
+  }
+  return `<span title="No earlier check to compare against">${formatTimestamp(rule.first_seen_at)}<br><em>earlier window unknown</em></span>`;
+}
+
+function redirectRow(rule) {
+  const removedTag = rule.removed_at
+    ? `<span class="monitor-redirect__removed">${icon("trash")}Removed ${formatTimestamp(rule.removed_at)}</span>`
+    : "";
+  return `<tr class="${rule.removed_at ? "monitor-redirect-row--removed" : ""}">
+    <td class="num">${rule.external_id ?? "—"}</td>
+    <td class="analytics-row__value">${escapeHtml(rule.source_url)}${removedTag}</td>
+    <td>${rule.target_url ? escapeHtml(rule.target_url) : "<em>no target</em>"}</td>
+    <td class="num">${rule.http_code ?? "—"}</td>
+    <td>${rule.status === "enabled" ? "Enabled" : "Disabled"}</td>
+    <td>${redirectOriginLine(rule) || "—"}</td>
+    <td>${redirectFirstSeenCell(rule)}</td>
+    <td>${formatTimestamp(rule.last_seen_at)}</td>
+  </tr>`;
+}
+
+function redirectsSubtitle(status) {
+  if (!status) return "";
+  if (status.redirect_source === "off") return "Redirect monitoring is off";
+  if (status.effective_source === "redirection") return `${redirectsTotal} rule(s) · Redirection plugin`;
+  if (status.effective_source === "probe") return `${redirectsTotal} rule(s) · probe mode (known URLs only)`;
+  return `${redirectsTotal} rule(s)`;
+}
+
+function redirectsToolbar() {
+  return `<div class="analytics-toolbar monitor-redirects-toolbar">
+    <label class="search-field"><span class="visually-hidden">Search redirects by URL</span>${icon("search")}<input type="search" id="mc-redirects-q" placeholder="Search URL" value="${escapeHtml(redirectsQuery)}"></label>
+    <label>State<select id="mc-redirects-state">
+      <option value="active" ${redirectsState === "active" ? "selected" : ""}>Active</option>
+      <option value="removed" ${redirectsState === "removed" ? "selected" : ""}>Removed</option>
+      <option value="all" ${redirectsState === "all" ? "selected" : ""}>All</option>
+    </select></label>
+  </div>`;
+}
+
+function renderRedirects() {
+  const el = document.querySelector("#mc-redirects");
+  if (!el) return;
+  el.setAttribute("aria-busy", "false");
+  const status = redirectsStatus;
+  const checkButton = `<button type="button" class="button button--quiet" data-action="redirects-check" ${redirectsChecking ? "disabled" : ""}>${icon(redirectsChecking ? "loader-2" : "refresh")}${redirectsChecking ? "Checking…" : "Check now"}</button><button type="button" class="button button--quiet" data-action="redirects-history">${icon("history")}History</button>`;
+
+  // Truly never attempted — the honest starting state (PLAN §12), distinct
+  // from "attempted and failed" below AND from "checked and found none"
+  // (AGENTS §5/§6). A failed attempt still counts as an attempt: it must not
+  // read as "nothing has happened yet" once `last_unavailable_reason` is set.
+  if (status && !status.last_checked_at && !status.last_unavailable_reason) {
+    el.innerHTML = `${sectionHeadingWithAction("Redirects", "", checkButton)}<div class="state-panel state-not_configured">${icon("plug-off")}<p><strong>Redirects have not been checked yet.</strong><br>The next scheduled check will pick this up automatically, or check now.</p></div>`;
+    return;
+  }
+
+  // A check ran but could not read anything at all (bad/missing Application
+  // Password, plugin not found, or the site did not respond) — the existing
+  // rules below (if any) are the last KNOWN state, not "no redirects".
+  const banner = status && status.last_unavailable_reason
+    ? `<div class="state-panel state-attention monitor-redirects-banner">${icon("cloud-off")}<p><strong>Redirects could not be checked.</strong><br>${escapeHtml(unavailableReasonText(status.last_unavailable_reason))} Showing the last known rules below.</p></div>`
+    : "";
+
+  const table = redirectsRows.length
+    ? `<div class="table-scroll"><table class="analytics-table monitor-redirects-table">
+        <thead><tr><th class="num">ID</th><th>Source URL</th><th>Target</th><th class="num">Code</th><th>Status</th><th>Origin</th><th>First seen</th><th>Last seen</th></tr></thead>
+        <tbody>${redirectsRows.map(redirectRow).join("")}</tbody>
+      </table></div>${redirectsPaginationMarkup()}`
+    : `<div class="state-panel state-not_configured"><p><strong>${redirectsState === "active" ? "No redirects found." : "Nothing here for this filter."}</strong></p></div>`;
+
+  el.innerHTML = `
+    ${sectionHeadingWithAction("Redirects", redirectsSubtitle(status), checkButton)}
+    ${banner}
+    ${redirectsToolbar()}
+    ${table}`;
+}
+
+function unavailableReasonText(reason) {
+  switch (reason) {
+    case "auth_failed": return "No working Application Password is configured for this client's WordPress.";
+    case "plugin_missing": return "The Redirection plugin's REST endpoint was not found.";
+    case "unsafe_url": return "This site cannot be checked over a plain (non-HTTPS) connection.";
+    default: return "The site did not respond.";
+  }
+}
+
+function redirectsPaginationMarkup() {
+  if (!redirectsTotal) return "";
+  const start = redirectsOffset + 1;
+  const end = Math.min(redirectsOffset + redirectsLimit, redirectsTotal);
+  return `<div class="pagination">
+    <button type="button" class="button button--quiet" data-action="redirects-prev" ${redirectsOffset > 0 ? "" : "disabled"}>${icon("chevron-left")}Previous</button>
+    <span>${formatCount(start)}–${formatCount(end)} of ${formatCount(redirectsTotal)}</span>
+    <button type="button" class="button button--quiet" data-action="redirects-next" ${end < redirectsTotal ? "" : "disabled"}>Next${icon("chevron-right")}</button>
+  </div>`;
+}
+
+function changeRedirectsPage(delta) {
+  redirectsOffset = Math.max(0, redirectsOffset + delta * REDIRECTS_PAGE_SIZE);
+  loadRedirects();
+}
+
+// ---------------------------------------------------------------------------
 // Pages block
 // ---------------------------------------------------------------------------
 
@@ -1321,6 +1531,17 @@ function changeRow(change) {
   const diffLine = hasDiffValues
     ? `<p class="monitor-change__diff"><span class="monitor-change__old">${escapeHtml(change.old_value ?? "—")}</span> <span aria-hidden="true">→</span> <span class="monitor-change__new">${escapeHtml(change.new_value ?? "—")}</span></p>`
     : "";
+  // A new redirect's whole reason for existing (task-51 §3.5): the plugin
+  // itself stores no creation date, so this is the only place that date
+  // comes from. `window_start` absent means no earlier check to bound it —
+  // said plainly rather than pretending to more precision than we have
+  // (PLAN §12).
+  const details = change.details || {};
+  const windowLine = details.window_end
+    ? details.window_start
+      ? `<p class="monitor-change__window">${icon("clock", "icon icon--tiny")}Appeared between ${formatTimestamp(details.window_start)} and ${formatTimestamp(details.window_end)}</p>`
+      : `<p class="monitor-change__window">${icon("clock", "icon icon--tiny")}First seen ${formatTimestamp(details.window_end)} — earlier window unknown</p>`
+    : "";
   // Page-scope changes (`content_changed`, `title_changed`, ...) carry
   // `related_id` = the page's id (`app/monitor/runner.py::_persist_page_result`)
   // so a bare "Page content changed" row isn't a dead end — it opens the same
@@ -1334,6 +1555,7 @@ function changeRow(change) {
     <div class="monitor-change__body">
       <p class="monitor-change__headline"><span class="visually-hidden">${meta.label}: </span><strong>${escapeHtml(label)}</strong>${subject ? ` <span class="monitor-change__subject">${escapeHtml(subject)}</span>` : ""}</p>
       ${diffLine}
+      ${windowLine}
       ${viewDiffMarkup}
       <p class="monitor-change__meta">${meta.label} · ${formatTimestamp(change.detected_at)}</p>
     </div>

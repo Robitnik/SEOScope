@@ -33,6 +33,7 @@ from app.monitor import storage
 from app.monitor import tls as tlsmod
 from app.monitor.browser_fetch import BrowserFetchSession, fetch_via_browser
 from app.monitor.fetcher import FetchResult, FetchStats, crawl_delay_floor, fetch, host_of
+from app.monitor.redirects import collect as redirects_collect
 from app.tools.http_safety import HostThrottle
 
 logger = logging.getLogger(__name__)
@@ -184,13 +185,19 @@ def _reconcile(
         )
 
 
-def _base_url(client: Client, override: str | None, canonical_www: bool | None = None) -> str:
+def resolve_base_url(
+    client: Client, override: str | None, canonical_www: bool | None = None
+) -> str:
     """`override` wins outright (a whole different URL — e.g. staging). Absent
     that, `canonical_www` (`MonitorSettings`, operator-set — task-38 follow-up)
     picks the right host directly instead of relying on the site's own
     redirect to correct it on every single request: `None` means "not known",
     so `client.domain` is used exactly as stored, same as before this field
     existed.
+
+    Public (no leading underscore, task-51): the API and CLI "check redirects
+    now" actions need the exact same host-resolution rule a scheduled run
+    uses, not a second copy that could quietly drift from it.
     """
     if override:
         return override.rstrip("/")
@@ -1049,7 +1056,7 @@ def run_client_monitor(
     repo = MonitorRepository(session)
     with _COMMIT_LOCK:
         monitor_settings = repo.get_or_create_settings(client.id)
-        base_url = _base_url(
+        base_url = resolve_base_url(
             client, monitor_settings.base_url_override, monitor_settings.canonical_www
         )
         is_baseline_run = repo.latest_finished_run(client.id) is None
@@ -1114,6 +1121,21 @@ def run_client_monitor(
         max_urls = monitor_settings.max_urls or settings.monitor_max_urls_per_client
         key_pages = _key_pages(
             session, client, limit=settings.monitor_key_pages_limit, base_url=base_url
+        )
+
+        # Redirect monitoring (task-51) — cheap enough (one pull request, or
+        # a bounded probe) to run on every light AND full pass, same as
+        # robots/sitemap above; already committed internally.
+        redirects_collect.process_redirects(
+            repo,
+            client,
+            base_url,
+            run_id=run.id,
+            monitor_settings=monitor_settings,
+            settings=settings,
+            artifacts_dir=artifacts_dir,
+            key_pages=key_pages,
+            now=now,
         )
 
         if kind == LIGHT:
