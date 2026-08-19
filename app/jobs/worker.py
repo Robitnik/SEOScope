@@ -14,6 +14,7 @@ import signal
 import socket
 import types
 
+from app.cloud.scheduler import CloudScheduler
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import worker_session_scope
@@ -93,11 +94,21 @@ def main() -> None:
     report_scheduler = ReportScheduler(session_scope=worker_session_scope, settings=settings)
     report_scheduler.start()
 
+    # task-52: cloud storage's own scheduler loop, independent of the job
+    # dispatcher and the two schedulers above (PLAN §14 "scheduler loop
+    # inside the single worker" — a second process would be a second SQLite
+    # writer, which PLAN §5.1 forbids). One point-of-contact touch to
+    # `app/jobs/worker.py` (task-05 zone), documented in the task-52
+    # Completion report, same pattern as MonitorScheduler/ReportScheduler.
+    cloud_scheduler = CloudScheduler(session_scope=worker_session_scope, settings=settings)
+    cloud_scheduler.start()
+
     def _handle_signal(signum: int, _frame: types.FrameType | None) -> None:
         logger.info("worker_shutdown_signal signum=%s", signum)
         dispatcher.stop()
         monitor_scheduler.stop()
         report_scheduler.stop()
+        cloud_scheduler.stop()
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)

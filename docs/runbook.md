@@ -41,8 +41,9 @@ curl -s localhost:6524/api/v1/providers/status | head
 
 | Задача | Команда |
 |---|---|
-| Бекап БД + artifacts | `docker compose exec api poetry run python scripts/backup_sqlite.py --out-dir /app/app_data/backups --keep 14` |
-| Відновлення | див. [backup-restore.md](backup-restore.md) |
+| Бекап БД + artifacts (локально) | `docker compose exec api poetry run python scripts/backup_sqlite.py --out-dir /app/app_data/backups --keep 14` |
+| Стан off-site бекапу (B2) | `docker compose exec worker poetry run yovth-report cloud-status` |
+| Відновлення | див. [backup-restore.md](backup-restore.md) (розділ «Off-site» — хмара) |
 | Чистка старих подій | `docker compose exec api poetry run python scripts/retention_cleanup.py` |
 | Імпорт історії AISeoTools | `docker compose run --rm api poetry run yovth-report import-ai-seo-history --source /seo/AISeoTools --dry-run` |
 | Live smoke перед release | `docker compose exec api poetry run python scripts/live_smoke.py --list` |

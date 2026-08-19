@@ -12,6 +12,82 @@
 | Browser-профілі / сесії | volume `browser_profiles`, `${HOME}/.local/share/seo-audit` | ні — перелогінюються вручну; містять секрети, тож у бекап навмисно не йдуть |
 | Ключі провайдерів | `.env` AISeoTools | ні — застосунок їх не зберігає (PLAN §13) |
 
+Усе це — **локальний** бекап, на тому самому диску, що й оригінал. Off-site
+копія (інша машина, інший датацентр) — окремий шар, розділ нижче.
+
+## Off-site (Backblaze B2, task-52)
+
+Локальний бекап вище не рятує від втрати самого диска/машини. `CloudScheduler`
+(тред у worker-процесі, як `MonitorScheduler`/`ReportScheduler`) щодоби
+заливає консистентний знімок БД у приватний бакет `theyovth-vault`, а окремий
+sweeper — усі файли звітів клієнтів (наші PDF/XLSX + PDF з Reporting Ninja) і
+нові тіла сторінок веб-архіву моніторингу (`monitor_blobs`).
+
+### Що і як зберігається
+
+| Що | Ретеншен | Механізм |
+|---|---|---|
+| Дамп БД (gzip) | GFS: 30 добових + 12 тижневих + 12 місячних | `run_daily_backup` + `prune_backups` (`app/cloud/backup.py`) |
+| Звіти клієнтів | назавжди | pull-sweeper по `report_files` (`app/cloud/sweeper.py`) |
+| Веб-архів (тіла сторінок) | назавжди, **лише нові** з моменту активації | pull-sweeper по `monitor_blobs`, watermark `archive_since` |
+
+Sweeper — **pull**, не хук у точці запису: він читає вже наявні реєстри
+(`monitor_blobs`, `report_files`) і доливає різницю. Збій хмари ніколи не
+валить прогін монітора чи звіту; рестарт воркера сам доганяє відставання.
+
+Бакет `theyovth-vault` — приватний (не той самий, що публічний `TheYovth` із
+CDN-асетів): анонімний GET повертає `401`. Ключ застосунку (`B2_VAULT_KEY_ID`/
+`B2_VAULT_APPLICATION_KEY`) обмежений саме цим бакетом і не бачить нічого
+іншого на акаунті.
+
+### Увімкнути
+
+```bash
+# .env (worker/api контейнер)
+CLOUD_ENABLED=true
+B2_VAULT_BUCKET_NAME=theyovth-vault
+B2_VAULT_KEY_ID=...
+B2_VAULT_APPLICATION_KEY=...
+```
+
+Без усіх трьох `B2_VAULT_*` разом із `CLOUD_ENABLED=true` застосунок **не
+стартує** (`Settings.validate_cloud_credentials`) — «хмара увімкнена, але не
+налаштована» має бути видно негайно, а не тихим no-op.
+
+### Керування (CLI, у worker-контейнері)
+
+```bash
+docker compose exec worker poetry run yovth-report cloud-status
+docker compose exec worker poetry run yovth-report cloud-backup
+docker compose exec worker poetry run yovth-report cloud-sync --kind monitor_blob --limit 500
+docker compose exec worker poetry run yovth-report cloud-verify --sample 20
+docker compose exec worker poetry run yovth-report cloud-prune --dry-run
+```
+
+`cloud-verify` тягне випадкову вибірку вже залитих об'єктів назад із B2 і
+звіряє sha256 з тим, що записано в ledger — бекап, який ніхто не прочитав,
+не є перевіреним бекапом.
+
+### Відновити з хмари
+
+```bash
+docker compose exec worker poetry run yovth-report cloud-restore --latest \
+    --out /app/app_data/restore
+```
+
+Команда лише завантажує й перевіряє (`sha256` + `PRAGMA integrity_check`) —
+робочої бази не чіпає і друкує готову команду `restore_sqlite.py` (той самий
+незворотний порядок — «Відновити» вище — з `--force` як явним другим кроком).
+
+### Ризики
+
+- **Втрата ключа застосунку не смертельна:** новий обмежений ключ
+  перевипускається в панелі B2 без втрати даних (це і є причина, чому таска
+  свідомо відмовилась від шифрування власним ключем — той ризик був би
+  безповоротним).
+- **Публічний бакет `TheYovth` цим шаром не використовується взагалі** —
+  ключ `B2_VAULT_*` обмежений на `theyovth-vault` і не має доступу до нього.
+
 ## Зняти бекап
 
 ```bash

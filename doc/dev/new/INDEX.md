@@ -538,6 +538,18 @@ Clicks/Impressions і GA4 Sessions/Users по днях/тижнях/місяця
 > облікових даних Reporting Ninja в середовищі виконання) — статус `done-with-followups`, деталі й
 > рекомендація оператору — у Completion report.
 
+## Хвиля O — операційна стійкість (хмарне сховище)
+
+Уся історія проєкту сьогодні лежить на одному диску: 548 МБ SQLite + 672 МБ артефактів, і навіть бекап —
+поруч із оригіналом. Хвиля виносить критичне **поза машину** (Backblaze B2) і робить із локального
+веб-архіву моніторингу довготривалий: щоденний off-site бекап БД, копія всіх звітів клієнтів
+(наші PDF/XLSX + PDF з Reporting Ninja) і тіла сторінок клієнтських сайтів.
+
+| # | Файл | Пакет | Depends on | Головні owned paths |
+|---|---|---|---|---|
+| 52 | ✅ [task-52-cloud-storage-b2.md](../done/task-52-cloud-storage-b2.md) | **Хмарне сховище (B2).** Приватний бакет `theyovth-vault` (створено й перевірено: анонімно 401), два обмежені application-ключі замість master (`RestrictedBucket` структурно не пускає ключ бекапів у публічний бакет). Щоденний бекап БД (548 МБ → **110 МБ gz за 9 с**, виміряно) з GFS 30/12/12 і манифестом, дзеркало `report_files`, веб-архів «тільки нове». Ключове рішення — **pull-sweeper** поверх наявних реєстрів `monitor_blobs`/`report_files` замість хуків у точках запису: нуль правок у `app/monitor/**` і `app/reports/**`, тож **паралельно з task-50/51**; збій хмари не валить збір, рестарт наздоганяє сам. Шифрування з власним ключем свідомо відхилене — ключ, втрата якого вбиває бекапи, гірший за приватний бакет | **13** ✅, **35** ✅, **42** ✅ | `app/cloud/**`, `app/api/cloud.py`, `app/schemas/cloud.py`, `app/db/repositories/cloud.py`, `migrations/versions/08824e25f060_cloud_objects.py`, `tests/unit/cloud/**` (+ адитивні дотики `core/{config,logging}.py`, `db/models.py`, `jobs/worker.py`, `main.py`, `cli.py`, `docs/backup-restore.md`) |
+
+
 ## Мапа володіння файлами (write-зони)
 
 Кожен шлях має **рівно одного** власника. Якщо таска має торкнутись чужого шляху — це зміна контракту: узгодь через `task-02` (див. правила у `CLAUDE.md`).
@@ -569,6 +581,7 @@ Clicks/Impressions і GA4 Sessions/Users по днях/тижнях/місяця
 | `app/reports/history.py`, `migrations/versions/a1c58d7e26b4_report_run_periods.py` | task-45 (round-2 доробка зони task-42/43: `app/reports/**`, `app/api/reports.py`, `app/schemas/reports.py`, `app/db/repositories/reports.py`, `frontend/js/reports-{run,wizard}.js`) |
 | `app/reports/{document,svg_charts,client_pdf,batch}.py`, `frontend/css/report-doc.css`, `frontend/js/reports-batch.js`, `migrations/versions/d8f42b9e6c17_report_batches.py` | task-47 (round-3 доробка зони task-42/43/45: `app/reports/{runner,scheduler,ninja_api}.py`, `app/api/reports.py`, `app/schemas/reports.py`, `app/db/models.py`, `app/db/repositories/reports.py`, `app/core/config.py`, `frontend/js/reports-{page,wizard,run}.js`, `frontend/css/reports.css`) |
 | `app/monitor/**`, `app/api/monitor.py`, `app/schemas/monitor.py`, `app/db/repositories/monitor.py`, `frontend/js/monitor-client.js`, `frontend/css/monitor.css` + власна міграція | task-35/36/37/38/41 → **task-50** (antibot-доріжка) → **task-51** (редіректи; `app/monitor/redirects/**` — власна зона, решта дотиків адитивні; стартує після 50) |
+| `app/cloud/**`, `app/api/cloud.py`, `app/schemas/cloud.py`, `app/db/repositories/cloud.py` + власна міграція | task-52 (хмарне сховище B2; читає `monitor_blobs`/`report_files` **тільки на читання**, у зони task-35/42 не пише) |
 
 > **Успадковані зони (v2).** Таски 14–19 доповнюють файли завершених тасок (`app/schemas/`, `app/db/models.py`, `migrations/`, `app/integrations/gsc.py`, `frontend/`). Кожна відповідає **лише за свої додатки** й не змінює наявну поведінку. Спільні фронт-модулі (`formatters.js`, `api.js`, `tokens.css`, `index.html`) — read-only для 18 і 19: правки узгоджуються, не робляться мовчки.
 

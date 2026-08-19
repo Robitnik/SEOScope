@@ -22,6 +22,14 @@ aiosqlite = "^0.20.0"
 # escape hatch (task-01 owns pyproject.toml; see this task's Completion
 # report, "Контрактні зміни").
 openpyxl = "^3.1"
+# Added by task-52 (cloud storage / Backblaze B2): official B2 SDK for the
+# nightly DB backup, the report mirror and the web-archive offload. Native B2
+# API rather than boto3/S3-compat — the account's application keys are native
+# B2 keys, and the SDK brings large-file upload, sha1 verification and
+# server-side lifecycle rules with only `logfury` as an extra transitive dep
+# (task-01 owns pyproject.toml; requested directly by the user, flagged per
+# CLAUDE.md's "нова залежність" escape hatch).
+b2sdk = "^2.8"
 
 [tool.poetry.scripts]
 # Added by task-07 (importer), as flagged in the task plan itself

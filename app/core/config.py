@@ -5,7 +5,9 @@ from __future__ import annotations
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
+from typing import Self
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -148,6 +150,36 @@ class Settings(BaseSettings):
     # corrupted ones instead of settling (task-50 §B5).
     monitor_antibot_sticky_days: float = 14.0
 
+    # Redirect monitoring (task-51). Live-measured on the portfolio
+    # 2026-08-19: 10 of 14 clients expose `redirection/v1` in `/wp-json/`
+    # (authenticated pull), the rest fall back to the blackbox probe.
+    monitor_redirects_enabled: bool = True
+    # Above this many new rules in one run, collapse them into one
+    # `redirects_bulk_added` aggregate instead of one row each (same pattern
+    # as `monitor_sitemap_broken_warn_count`) — a bulk permalink change on an
+    # active site is one human action, not N events.
+    monitor_redirects_bulk_threshold: int = 25
+    # Blackbox-probe fallback (task-51 §3.2.3): existing probe rules + key
+    # pages, padded from the sitemap up to this many URLs — a request budget
+    # roughly on par with the light run's own page checks.
+    monitor_redirect_probe_max_urls: int = 50
+    # Emergency valve on the pull adapter's pagination, not a product limit —
+    # the largest portfolio client today is nowhere near this.
+    monitor_redirects_max_rules: int = 20_000
+    # Application Passwords, file-based and OUTSIDE the database (task-51
+    # §3.3): the project has no encrypted-column mechanism, and
+    # `ClientIntegration.config_json` is explicitly documented as
+    # non-secret-only. `{"<client_id>": {"user": ..., "app_password": ...}}`,
+    # `0600`, never written by this codebase's own migrations/seed data.
+    wp_credentials_path: Path = Path("./app_data/secrets/wp_credentials.json")
+    # Regular wp-admin login, browser-session fallback (task-51 follow-up,
+    # live finding 2026-08-19): no client in the portfolio had an
+    # Application Password ever issued. A REGULAR password is a bigger
+    # secret than an app password (full account access, not one revocable
+    # token) — kept in its OWN file so the two credential kinds are never
+    # confused about which one a record holds.
+    wp_login_credentials_path: Path = Path("./app_data/secrets/wp_login_credentials.json")
+
     # Reports engine (task-42, PLAN §16 "Хвиля N"). Defaults are measurements,
     # not taste — see task-42 §1.2/§1.5/§1.7/§3.6/§3.7 for the live numbers
     # behind each one.
@@ -197,6 +229,47 @@ class Settings(BaseSettings):
     # `/reports/runs/{id}/document` page (task-47 §2.1) exactly like a
     # browser would — one rendered markup, on screen and in the PDF alike.
     reports_internal_base_url: str = "http://127.0.0.1:6524"
+
+    # Cloud storage (task-52, Backblaze B2): off-site DB backup, a mirror of
+    # every client report file, and the Site Monitor web archive. Live-tested
+    # 2026-08-19 against a PRIVATE bucket (`theyovth-vault`) with its own
+    # restricted application key — see the task plan §1.2/§1.3 for why:
+    # the account's original key was an unrestricted master key, and the
+    # only OTHER bucket on this account (`TheYovth`) is `allPublic`, so
+    # storing backups there would need an encryption key on our side whose
+    # loss would make every backup unreadable forever (rejected by the user
+    # 2026-08-19 as a worse risk than the private bucket).
+    cloud_enabled: bool = False
+    b2_vault_bucket_name: str = ""
+    b2_vault_key_id: str = ""
+    b2_vault_application_key: str = ""
+    # UTC "HH:MM" — the one daily backup tick (`app/cloud/scheduler.py`).
+    cloud_backup_at_utc: str = "03:30"
+    cloud_backup_keep_daily: int = 30
+    cloud_backup_keep_weekly: int = 12
+    cloud_backup_keep_monthly: int = 12
+    cloud_sync_reports: bool = True
+    cloud_sync_monitor_blobs: bool = True
+    # Per-tick sweep size (task-52 §3.6) — the portfolio's own measured
+    # growth (300-800 new monitor blobs/day) is far below this even at the
+    # scheduler's 60s tick, so this is a safety ceiling, not a throughput knob.
+    cloud_sweep_batch_size: int = 200
+    cloud_upload_workers: int = 4
+    cloud_request_timeout_seconds: float = 60.0
+
+    @model_validator(mode="after")
+    def validate_cloud_credentials(self) -> Self:
+        # `cloud_enabled=True` with missing credentials must fail loudly at
+        # startup (task-52 §3.8) — a silent no-op would look identical to a
+        # working off-site backup until the day it's actually needed.
+        if self.cloud_enabled and not (
+            self.b2_vault_bucket_name and self.b2_vault_key_id and self.b2_vault_application_key
+        ):
+            raise ValueError(
+                "cloud_enabled=True вимагає всіх трьох B2_VAULT_BUCKET_NAME/"
+                "B2_VAULT_KEY_ID/B2_VAULT_APPLICATION_KEY"
+            )
+        return self
 
 
 @lru_cache
