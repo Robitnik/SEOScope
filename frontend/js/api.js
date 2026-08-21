@@ -2591,3 +2591,158 @@ export async function getBatchPortfolioTable(batchId) {
   await wait(150);
   return { clients: [] };
 }
+
+// --- Content QA: Strategy Check + Framework Check (task-53) ------------------
+//
+// The upload mechanics mirror `uploadAltTextSource`: raw bytes, `X-Filename`
+// header, no multipart. Profile fields travel as query params since the body
+// is the file itself, not JSON. The report is persisted server-side
+// (`content_qa_reports`), so it gets a real `id` and a shareable
+// `#/tools/<key>/<id>` link — list/get below read that same table.
+let contentQaFixtureCounter = 0;
+
+async function checkContentQa(route, file, profile, fixtureName) {
+  if (FIXTURE_MODE) {
+    await wait(420);
+    const data = await fixture(fixtureName);
+    contentQaFixtureCounter += 1;
+    return {
+      ...data,
+      id: `${data.id}-${contentQaFixtureCounter}`,
+      source_filename: file.name,
+      created_at: new Date().toISOString(),
+    };
+  }
+  const params = new URLSearchParams();
+  if (profile?.kind) params.set("kind", profile.kind);
+  if (profile?.locale) params.set("locale", profile.locale);
+  for (const name of profile?.brandNames || []) {
+    if (name.trim()) params.append("brand", name.trim());
+  }
+  const qs = params.toString();
+  const response = await fetch(`${API_ROOT}/tools/${route}${qs ? `?${qs}` : ""}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream", "X-Filename": file.name, Accept: "application/json" },
+    body: file,
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const error = new Error(normalizeErrorDetail(payload.detail, response.status));
+    error.status = response.status;
+    error.code = (payload.detail && typeof payload.detail === "object" && !Array.isArray(payload.detail))
+      ? payload.detail.error_code
+      : undefined;
+    throw error;
+  }
+  return response.json();
+}
+
+export async function checkStrategy(file, profile) {
+  return checkContentQa("strategy-check/check", file, profile, "strategy-check-report");
+}
+
+export async function checkFramework(file, profile) {
+  return checkContentQa("framework-check/check", file, profile, "framework-check-report");
+}
+
+async function listContentQaReports(route, fixtureName, requestKey) {
+  if (FIXTURE_MODE) {
+    await wait(140);
+    if (FIXTURE_MODE === "tools-empty") return { total: 0, limit: 100, offset: 0, reports: [] };
+    const data = await fixture(fixtureName);
+    const { findings: _findings, skipped_sheets: _skipped, profile: _profile, ...summary } = data;
+    return { total: 1, limit: 100, offset: 0, reports: [summary] };
+  }
+  return request(`/tools/${route}/reports`, {}, requestKey);
+}
+
+async function getContentQaReport(route, reportId, fixtureName, requestKey) {
+  if (FIXTURE_MODE) {
+    await wait(180);
+    const data = await fixture(fixtureName);
+    return { ...data, id: reportId };
+  }
+  return request(`/tools/${route}/reports/${encodeURIComponent(reportId)}`, {}, requestKey);
+}
+
+export async function getStrategyReports() {
+  return listContentQaReports("strategy-check", "strategy-check-report", "strategy-check-reports");
+}
+
+export async function getStrategyReport(reportId) {
+  return getContentQaReport(
+    "strategy-check", reportId, "strategy-check-report", `strategy-check-report-${reportId}`
+  );
+}
+
+export async function getFrameworkReports() {
+  return listContentQaReports("framework-check", "framework-check-report", "framework-check-reports");
+}
+
+export async function getFrameworkReport(reportId) {
+  return getContentQaReport(
+    "framework-check", reportId, "framework-check-report", `framework-check-report-${reportId}`
+  );
+}
+
+// --- Monthly Performance table (task-54) --------------------------------------
+//
+// A read-mostly register, not a job: `GET` reads whatever is already stored
+// (instant, never touches Reporting Ninja) and `POST /refresh` is the only
+// call that does — synchronous, 2-4s measured live. `requestKey` is always an
+// explicit purpose string, not derived from `clientId` alone, so a settings
+// save and a table reload issued back-to-back never abort each other
+// (task-36's own request-key lesson, repeated here on purpose).
+
+export async function getClientMonthlyTable(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(160);
+    const data = await fixture("client-monthly-table");
+    return data.table;
+  }
+  return request(`/clients/${clientId}/monthly-table`, {}, `monthly-table:${clientId}`);
+}
+
+export async function refreshClientMonthlyTable(clientId, { force } = {}) {
+  if (FIXTURE_MODE) {
+    await wait(600);
+    const data = await fixture("client-monthly-table");
+    return { table: data.table, requests_used: 4, months_collected: [] };
+  }
+  const qs = force ? `?force=${encodeURIComponent(force)}` : "";
+  return request(
+    `/clients/${clientId}/monthly-table/refresh${qs}`,
+    { method: "POST", body: "{}" },
+    `monthly-table-refresh:${clientId}`,
+  );
+}
+
+export async function getClientMonthlyKeyEvents(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(300);
+    const data = await fixture("client-monthly-table");
+    return { candidates: data.keyEventCandidates || [] };
+  }
+  return request(
+    `/clients/${clientId}/monthly-table/key-events`, {}, `monthly-table-key-events:${clientId}`
+  );
+}
+
+export async function putClientMonthlyTableSettings(clientId, payload) {
+  if (FIXTURE_MODE) {
+    await wait(200);
+    const data = await fixture("client-monthly-table");
+    return { ...data.settings, ...payload };
+  }
+  return request(
+    `/clients/${clientId}/monthly-table/settings`,
+    { method: "PUT", body: JSON.stringify(payload) },
+    `monthly-table-settings:${clientId}`,
+  );
+}
+
+// A binary download: deliberately NOT routed through `request()`, same
+// convention as `techAuditExportUrl` above. The UI links straight to it.
+export function monthlyTableXlsxUrl(clientId) {
+  return `${API_ROOT}/clients/${clientId}/monthly-table/xlsx`;
+}

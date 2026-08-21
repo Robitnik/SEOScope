@@ -1,0 +1,29 @@
+{
+  "id": "fx-strategy-report-1",
+  "doc_type": "strategy_xlsx",
+  "client_id": null,
+  "client_name": null,
+  "source_filename": "SEO_STRATEGY_Q3.xlsx",
+  "item_count": 9,
+  "created_at": "2026-08-21T09:00:00Z",
+  "profile": { "kind": "page", "intent": "commercial", "locale": "en-US", "brand_names": ["Acme"] },
+  "skipped_sheets": ["Structure v 2.0"],
+  "severity_counts": { "error": 8, "warn": 6, "info": 2 },
+  "findings": [
+    { "check": "meta-title-length", "severity": "error", "ref": "Q3 Strategy!row 3", "detail": "Title is 76 chars; ceiling is 60.", "value": "Building Surveying Software UK | Digital Reports and RICS Templates and More | Acme" },
+    { "check": "meta-title-brand-padding", "severity": "error", "ref": "Q3 Strategy!row 3", "detail": "Title exceeds 60 chars and ends with '| Acme' — brand padding pushed it over.", "value": "Building Surveying Software UK | Digital Reports and RICS Templates and More | Acme" },
+    { "check": "meta-title-length", "severity": "error", "ref": "Q3 Strategy!row 4", "detail": "Title is 70 chars; ceiling is 60.", "value": "Residential Surveying Software for RICS Home Surveys and Reports Today" },
+    { "check": "meta-desc-length", "severity": "error", "ref": "Q3 Strategy!row 5", "detail": "Description is 168 chars; ceiling is 160.", "value": "See our full range of survey plans and pricing for residential and commercial property teams, with RICS templates and offline mobile capture included." },
+    { "check": "meta-title-length", "severity": "error", "ref": "Blogs!row 5", "detail": "Title is 61 chars; ceiling is 60.", "value": "Schedule of Condition: A Surveyor's Guide (Updated 2026)" },
+    { "check": "voice-em-dash", "severity": "error", "ref": "Q3 Strategy!row 6", "detail": "h1: em dash present — house rule bans it.", "value": "Commercial Surveying — Portfolios, Compliance and Asset Data" },
+    { "check": "keyword-duplicate-across-pages", "severity": "error", "ref": "Q3 Strategy!row 4, Q3 Strategy!row 9", "detail": "Primary keyword 'survey reporting software' targeted by 2 pages (cannibalization risk).", "value": "survey reporting software" },
+    { "check": "url-duplicate", "severity": "error", "ref": "Q3 Strategy!row 7, Blogs!row 2", "detail": "URL 'https://example.com/pricing/' appears on 2 rows.", "value": "https://example.com/pricing/" },
+    { "check": "meta-title-length", "severity": "warn", "ref": "Q3 Strategy!row 8", "detail": "Title is 42 chars; floor is 50.", "value": "Integrations Overview" },
+    { "check": "meta-desc-length", "severity": "warn", "ref": "Q3 Strategy!row 9", "detail": "Description is 128 chars; floor is 140.", "value": "Connect your survey data to Power BI and export to Word or Excel." },
+    { "check": "row-incomplete", "severity": "warn", "ref": "Q3 Strategy!row 11", "detail": "'Pricing' has a name but no title, description or H1.", "value": "Pricing" },
+    { "check": "slop-filler-term", "severity": "warn", "ref": "Q3 Strategy!row 3", "detail": "description: 'comprehensive' asserts quality without proving it.", "value": "GoReport is a comprehensive building surveying platform for mobile capture and reporting." },
+    { "check": "voice-locale-mismatch", "severity": "warn", "ref": "Blogs!row 3", "detail": "description: 'optimise' does not match locale en-US (expected optimize-family spelling).", "value": "Learn how to optimise your survey reporting workflow this quarter." },
+    { "check": "internal-links-above-max", "severity": "info", "ref": "Q3 Strategy!row 6", "detail": "6 internal links for a commercial page; ceiling is 4." },
+    { "check": "sheet-skipped", "severity": "info", "ref": "SEO_STRATEGY_Q3.xlsx!Structure v 2.0", "detail": "No recognized title/description columns in sheet 'Structure v 2.0' — not checked." }
+  ]
+}

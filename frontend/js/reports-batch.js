@@ -9,15 +9,15 @@ import {
   cancelReportBatch, createClientPdf, getBatchPortfolioTable, getReportBatch, getReportTypes,
   isAbortError, isFixtureMode, reportBatchPdfArchiveUrl, reportBatchPortfolioPdfUrl,
   reportBatchPortfolioXlsxUrl, reportDocumentUrl, reportFileUrl, retryReportBatchClient,
-} from "./api.js?v=20260819-spin3";
-import { openReportsWizard } from "./reports-wizard.js?v=20260819-spin3";
-import { buildReportsHash, buildReportsRunHash } from "./router.js?v=20260819-spin3";
+} from "./api.js?v=20260821-spin3";
+import { openReportsWizard } from "./reports-wizard.js?v=20260821-spin3";
+import { buildReportsHash, buildReportsRunHash } from "./router.js?v=20260821-spin3";
 import {
   REPORT_KIND_META, REPORT_RUN_STATUS_META, REPORT_SOURCE_META,
   escapeHtml, formatDateRange, formatDuration, formatDurationSeconds, formatMetricValue,
   formatTimestamp, icon, isTerminal, stateClass, statusIcon,
-} from "./formatters.js?v=20260819-spin3";
-import { sectionSkeleton } from "./skeleton.js?v=20260819-spin3";
+} from "./formatters.js?v=20260821-spin3";
+import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
 
 const root = document.querySelector("#reports-batch-page-root");
 const fileDialog = document.querySelector("#reports-file-dialog");

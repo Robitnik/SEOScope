@@ -59,6 +59,39 @@ _TOOLS: tuple[_ToolEntry, ...] = (
         route="#/tools/redirects",
         icon="arrow-right-circle",
     ),
+    _ToolEntry(
+        key="char-counter",
+        name="Character Counter",
+        summary=(
+            "Type or paste text and watch the character count update live — "
+            "handy for meta descriptions, title tags and character-limited copy."
+        ),
+        tags=("text", "characters", "copywriting", "meta", "counter"),
+        route="#/tools/char-counter",
+        icon="text-size",
+    ),
+    _ToolEntry(
+        key="strategy-check",
+        name="Strategy Check",
+        summary=(
+            "Upload an SEO strategy workbook and get every meta-length, brand-voice, "
+            "slop and cannibalization issue back at once."
+        ),
+        tags=("seo", "strategy", "meta", "brand-voice", "audit", "xlsx"),
+        route="#/tools/strategy-check",
+        icon="file-spreadsheet",
+    ),
+    _ToolEntry(
+        key="framework-check",
+        name="Framework Check",
+        summary=(
+            "Upload a page or blog framework brief and catch heading, FAQ, "
+            "brand-voice and slop issues before it reaches the copywriter."
+        ),
+        tags=("seo", "framework", "structure", "brand-voice", "audit", "docx"),
+        route="#/tools/framework-check",
+        icon="file-type-docx",
+    ),
 )
 
 
@@ -82,6 +115,9 @@ def _redirects_stat(session: Session) -> tuple[str | None, str | None]:
 
 
 # Статистику дає сам інструмент: хаб не знає, що для нього «одиниця роботи».
+# `char-counter` тут навмисно немає: він нічого не зберігає в БД, тож
+# stat_label/stat_value лишаються `None` (картка чесно показує «Not used
+# yet»), а не `0 uses` заради заповнення (PLAN §12).
 _STATS: dict[str, Callable[[Session], tuple[str | None, str | None]]] = {
     "alt-text": _alt_text_stat,
     "redirects": _redirects_stat,

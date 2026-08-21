@@ -257,6 +257,17 @@ class Settings(BaseSettings):
     cloud_upload_workers: int = 4
     cloud_request_timeout_seconds: float = 60.0
 
+    # Monthly Performance table (task-54): the sheet-fidelity block on the
+    # client page. 24 covers the operator's own historical sheet (20 months
+    # measured on the live SDS screenshot, task-54 §1.6); GSC columns still
+    # read `None` past its own 16-month window regardless of this setting.
+    client_monthly_history_months: int = 24
+    # `/refresh` runs synchronously (task-54 §2.5) — 3-4 Reporting Ninja
+    # queries measured at ~2-4s per client, well under this. A generous
+    # ceiling rather than a tuned one: this is the failure mode for an
+    # upstream RN slowdown, not the expected path.
+    client_monthly_refresh_timeout_seconds: float = 90.0
+
     @model_validator(mode="after")
     def validate_cloud_credentials(self) -> Self:
         # `cloud_enabled=True` with missing credentials must fail loudly at

@@ -34,3 +34,4 @@ graphify-out/
 
 # Local Claude Code tooling/config — never tracked in this repo
 .claude/
+.verify_tmp/

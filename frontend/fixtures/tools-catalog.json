@@ -21,6 +21,39 @@
       "icon": "arrow-right-circle",
       "stat_label": "checks",
       "stat_value": "2"
+    },
+    {
+      "key": "char-counter",
+      "name": "Character Counter",
+      "summary": "Type or paste text and watch the character count update live — handy for meta descriptions, title tags and character-limited copy.",
+      "tags": ["text", "characters", "copywriting", "meta", "counter"],
+      "route": "#/tools/char-counter",
+      "status": "available",
+      "icon": "text-size",
+      "stat_label": null,
+      "stat_value": null
+    },
+    {
+      "key": "strategy-check",
+      "name": "Strategy Check",
+      "summary": "Upload an SEO strategy workbook and get every meta-length, brand-voice, slop and cannibalization issue back at once.",
+      "tags": ["seo", "strategy", "meta", "brand-voice", "audit", "xlsx"],
+      "route": "#/tools/strategy-check",
+      "status": "available",
+      "icon": "file-spreadsheet",
+      "stat_label": null,
+      "stat_value": null
+    },
+    {
+      "key": "framework-check",
+      "name": "Framework Check",
+      "summary": "Upload a page or blog framework brief and catch heading, FAQ, brand-voice and slop issues before it reaches the copywriter.",
+      "tags": ["seo", "framework", "structure", "brand-voice", "audit", "docx"],
+      "route": "#/tools/framework-check",
+      "status": "available",
+      "icon": "file-type-docx",
+      "stat_label": null,
+      "stat_value": null
     }
   ]
 }

@@ -1,14 +1,14 @@
-import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, getMonitorSummary, isAbortError, isFixtureMode } from "./api.js?v=20260819-spin3";
-import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260819-spin3";
-import { clientStatusBadge, clientStatusNote, isPaused, openClientStatusDialog } from "./client-status.js?v=20260819-spin3";
-import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260819-spin3";
-import { buildAhrefsHash, buildBlogsHash, buildMonitorClientHash, replaceClientHash } from "./router.js?v=20260819-spin3";
-import { escapeHtml, formatTimestamp, icon, initials, isTerminal, MONITOR_SEVERITY_META, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260819-spin3";
-import { createAnalyticsTab } from "./analytics-tabs.js?v=20260819-spin3";
-import { renderAlertsBlock } from "./alerts-block.js?v=20260819-spin3";
-import { renderChart, destroyChart } from "./charts.js?v=20260819-spin3";
-import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260819-spin3";
-import { watchJob } from "./sse.js?v=20260819-spin3";
+import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, getMonitorSummary, getClientMonthlyTable, isAbortError, isFixtureMode } from "./api.js?v=20260821-spin3";
+import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
+import { clientStatusBadge, clientStatusNote, isPaused, openClientStatusDialog } from "./client-status.js?v=20260821-spin3";
+import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260821-spin3";
+import { buildAhrefsHash, buildBlogsHash, buildMonitorClientHash, buildMonthlyPerformanceHash, replaceClientHash } from "./router.js?v=20260821-spin3";
+import { escapeHtml, formatTimestamp, icon, initials, isTerminal, MONITOR_SEVERITY_META, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260821-spin3";
+import { createAnalyticsTab } from "./analytics-tabs.js?v=20260821-spin3";
+import { renderAlertsBlock } from "./alerts-block.js?v=20260821-spin3";
+import { renderChart, destroyChart } from "./charts.js?v=20260821-spin3";
+import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260821-spin3";
+import { watchJob } from "./sse.js?v=20260821-spin3";
 
 const PERIODS = [
   { key: "week", label: "Week" },
@@ -88,6 +88,11 @@ let blogsSummary = null;
 // Site Monitor (task-36). Same reasoning: a continuous background check, not
 // tied to the selected reporting period.
 let monitorSummary = null;
+// Monthly Performance (task-54). Independent of the selected period: it has
+// its own persisted month window, not the page's current/previous comparison.
+// Only a compact summary lives here — the full sheet-fidelity table is its
+// own sub-page (`monthly-performance-page.js`), same split as Ahrefs/Blogs.
+let monthlyTable = null;
 const AUDIT_PAGE_SIZE = 25;
 const GA4_DATASETS = ["ga4_channels", "ga4_landing_pages", "ga4_events", "ga4_devices", "ga4_countries"];
 
@@ -141,6 +146,7 @@ export async function initClientPage(clientId, query) {
   pendingRecheck.clear();
   blogsSummary = null;
   monitorSummary = null;
+  monthlyTable = null;
   destroyChart();
   destroyReportingNinjaChart();
   current = { clientId, ...paramsFromQuery(query) };
@@ -195,6 +201,9 @@ function shell() {
     <header class="client-page__header" id="cp-header" aria-live="polite" aria-busy="true">
       ${clientHeaderSkeleton()}
     </header>
+    <section class="monthly-section" id="cp-monthly" aria-label="Monthly performance" aria-live="polite" aria-busy="true">
+      ${sectionSkeleton({ label: "monthly performance", kpis: 4 })}
+    </section>
     <section class="period-panel" aria-label="Comparison period">
       <div class="period-panel__kinds" role="group" aria-label="Period type" id="cp-period-kinds">
         ${PERIODS.map((item) => `<button type="button" data-period-kind="${item.key}" aria-pressed="${item.key === current.period}">${item.label}</button>`).join("")}
@@ -316,6 +325,7 @@ async function loadClient({ allowAutoLive = true } = {}) {
     loadTechAudit();
     loadBlogsSummary();
     loadMonitorSummary();
+    loadMonthlyTable();
     current.reportingNinjaConfigured = Boolean(reportingNinja && reportingNinja.state !== "not_configured");
     current.reportingNinjaSummary = reportingNinja || null;
     if (!gsc || gsc.state === "not_configured") {
@@ -734,6 +744,56 @@ function renderBlogsSummaryCard() {
     <div class="ahrefs-kpis"><article class="ahrefs-kpi"><span>Posts</span><strong>${formatUaNumber(blogsSummary.post_count)}</strong></article></div>
     <div class="ahrefs-summary-actions">${link}</div>`;
   settle("#cp-blogs");
+}
+
+// --- Monthly Performance (task-54) ------------------------------------------
+//
+// Independent of the selected period (own persisted month window, freezes
+// closed months server-side) — loaded once per client, like Blogs/Monitor.
+// Only a compact summary card lives here; Refresh, Configure and the full
+// sheet-fidelity table are on their own sub-page (same split as Ahrefs/Blogs
+// use `renderAhrefsSummaryCard`/`buildAhrefsHash` for).
+
+async function loadMonthlyTable() {
+  try {
+    monthlyTable = await getClientMonthlyTable(current.clientId);
+  } catch {
+    // Same "renders as empty, never a crash" contract as Blogs/Monitor
+    // summaries — the full page (which the operator reaches via Open) is
+    // where a real failure gets its own retryable error state.
+    monthlyTable = null;
+  }
+  renderMonthlyTableSummaryCard();
+}
+
+function latestMonthlyRow(table) {
+  const rows = table?.rows || [];
+  return rows.length ? rows[rows.length - 1] : null;
+}
+
+function renderMonthlyTableSummaryCard() {
+  const container = document.querySelector("#cp-monthly");
+  if (!container) return;
+  const link = `<a class="button button--quiet" href="${buildMonthlyPerformanceHash(current.clientId)}">${icon("arrow-right")}Open Monthly Performance</a>`;
+  const row = latestMonthlyRow(monthlyTable);
+  if (!row) {
+    container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Monthly Performance</p><h2>Month-over-month table</h2></div></div><div class="state-panel state-not_configured">${icon("calendar-stats")}<p><strong>No monthly data collected yet.</strong><br>Open Monthly Performance and press Refresh to pull history from Reporting Ninja.</p>${link}</div>`;
+    settle("#cp-monthly");
+    return;
+  }
+  const eventLabel = monthlyTable?.settings?.key_event_label;
+  const cards = [
+    ["Total organic Users", formatUaNumber(row.organic_users), row.directions?.organic_users],
+    ["Organic Conversions", formatUaNumber(row.organic_conversions), row.directions?.organic_conversions],
+    ["Conversion rate", row.conversion_rate === null ? "—" : `${(row.conversion_rate * 100).toFixed(1)}%`, row.directions?.conversion_rate],
+    eventLabel
+      ? [`Organic "${eventLabel}"`, formatUaNumber(row.key_event_count), row.directions?.key_event_count]
+      : ["Clicks", formatUaNumber(row.gsc_clicks), row.directions?.gsc_clicks],
+  ];
+  container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Monthly Performance</p><h2>Month-over-month table</h2><p class="ahrefs-collected">${escapeHtml(row.label)}${monthlyTable?.collected_at ? ` · collected ${formatTimestamp(monthlyTable.collected_at)}` : ""}</p></div></div>
+    <div class="ahrefs-kpis">${cards.map(([label, formatted, direction]) => `<article class="ahrefs-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(formatted)}${direction === "up" ? ` <small class="mt-summary-up">▲</small>` : direction === "down" ? ` <small class="mt-summary-down">▼</small>` : ""}</strong></article>`).join("")}</div>
+    <div class="ahrefs-summary-actions">${link}</div>`;
+  settle("#cp-monthly");
 }
 
 // --- Technical SEO audit (task-25) ----------------------------------------

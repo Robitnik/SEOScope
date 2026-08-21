@@ -5,16 +5,19 @@
  * переверстка. Пошук тут робочий (фільтрує назву/опис/теги), а не
  * декоративний, і статистика в блоці — справжня.
  */
-import { getToolsCatalog } from "./api.js?v=20260819-spin3";
-import { buildToolsHash } from "./router.js?v=20260819-spin3";
-import { escapeHtml, icon } from "./formatters.js?v=20260819-spin3";
+import { getToolsCatalog } from "./api.js?v=20260821-spin3";
+import { buildToolsHash } from "./router.js?v=20260821-spin3";
+import { escapeHtml, icon } from "./formatters.js?v=20260821-spin3";
 
 const root = document.querySelector("#tools-page-root");
 
 // Реєстр модулів інструментів: ключ із каталогу → динамічний імпорт сторінки.
 const TOOL_MODULES = {
-  "alt-text": () => import("./alt-text-tool.js?v=20260819-spin3"),
-  "redirects": () => import("./redirect-tool.js?v=20260819-spin3"),
+  "alt-text": () => import("./alt-text-tool.js?v=20260821-spin3"),
+  "redirects": () => import("./redirect-tool.js?v=20260821-spin3"),
+  "char-counter": () => import("./char-counter-tool.js?v=20260821-spin3"),
+  "strategy-check": () => import("./strategy-check-tool.js?v=20260821-spin3"),
+  "framework-check": () => import("./framework-check-tool.js?v=20260821-spin3"),
 };
 
 export async function initToolsRoute(route) {

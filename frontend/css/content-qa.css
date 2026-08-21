@@ -1,0 +1,118 @@
+/* Strategy Check + Framework Check (task-53).
+ *
+ * Тільки наявні токени з tokens.css — та сама дисципліна, що в tools.css:
+ * жодних нових кольорів/радіусів. Severity читається кольором + іконкою +
+ * текстом (AGENTS.md §7), ніколи кольором самим.
+ */
+
+/* --- file picker: власні класи, не `.at-file*` з tools.css — content-qa.css
+   свідомо самодостатній, без залежності від класів іншого інструмента. --- */
+.cq-file { display: grid; gap: 8px; cursor: pointer; margin-bottom: 18px; }
+.cq-file__label { color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+.cq-file__input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.cq-file__control { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.cq-file__control .button { pointer-events: none; }
+.cq-file__control .icon { width: 16px; height: 16px; }
+.cq-file__name { color: var(--ink-muted); font-size: 12px; overflow-wrap: anywhere; }
+.cq-file:hover .button { background: var(--accent-hover); }
+.cq-file:focus-within .button { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.cq-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px 20px; }
+.cq-fields select, .cq-fields input { display: block; width: 100%; margin-top: 6px; }
+
+/* --- results panel --- */
+.cq-report { display: grid; gap: 18px; }
+
+.cq-report__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; color: var(--ink-muted); font-size: 12px; }
+.cq-report__file { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 700; }
+.cq-report__file .icon { width: 14px; height: 14px; }
+.cq-report__count { font-variant-numeric: tabular-nums; }
+.cq-report__client, .cq-report__date, .cq-report__profile { display: inline-flex; align-items: center; gap: 6px; }
+.cq-report__client .icon { width: 14px; height: 14px; color: var(--ink-dim); }
+.cq-report__link { margin-left: auto; gap: 6px; }
+.cq-report__link .icon { width: 14px; height: 14px; }
+
+.cq-summary { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.cq-summary__item {
+  display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px;
+  border: 1px solid var(--line); background: var(--canvas-raised); font-size: 12px; font-weight: 700;
+}
+.cq-summary__item strong { font-variant-numeric: tabular-nums; font-size: 14px; }
+.cq-summary__item .icon { width: 15px; height: 15px; }
+.cq-sev--error { border-left: 3px solid var(--danger); }
+.cq-sev--error .icon, .cq-sev--error strong { color: var(--danger); }
+.cq-sev--warn { border-left: 3px solid var(--warning); }
+.cq-sev--warn .icon, .cq-sev--warn strong { color: var(--warning); }
+.cq-sev--info { border-left: 3px solid var(--info); }
+.cq-sev--info .icon, .cq-sev--info strong { color: var(--info); }
+
+.cq-skipped {
+  display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 12px 14px;
+  border: 1px solid var(--line); background: var(--canvas-raised); color: var(--ink-muted); font-size: 12px;
+}
+.cq-skipped .icon { flex: 0 0 auto; margin-top: 1px; color: var(--ink-dim); width: 16px; height: 16px; }
+.cq-skipped strong { color: var(--ink); }
+
+.cq-filter { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border: 1px solid var(--line); width: fit-content; }
+.cq-filter__option {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; cursor: pointer;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-muted);
+}
+.cq-filter__option .icon { width: 14px; height: 14px; }
+.cq-filter__option:has(input:checked) { background: var(--surface-strong); color: var(--ink); }
+.cq-filter__option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cq-filter__option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+.cq-groups { display: grid; gap: 16px; }
+.cq-group__title {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--line); font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
+}
+.cq-group__title .icon { width: 16px; height: 16px; }
+.cq-group__count { margin-left: auto; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.cq-group__list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+
+.cq-finding {
+  display: grid; gap: 4px; padding: 10px 12px; background: var(--canvas-raised);
+  border-left: 3px solid var(--line); font-size: 13px;
+}
+.cq-group.cq-sev--error .cq-finding { border-left-color: var(--danger); }
+.cq-group.cq-sev--warn .cq-finding { border-left-color: var(--warning); }
+.cq-group.cq-sev--info .cq-finding { border-left-color: var(--info); }
+.cq-finding__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cq-finding__check { font-size: 11px; color: var(--ink-dim); }
+.cq-finding__head .icon-button { width: 30px; height: 30px; }
+.cq-finding__head .icon-button .icon { width: 15px; height: 15px; }
+.cq-finding__ref { margin: 0; color: var(--ink-muted); font-size: 12px; overflow-wrap: anywhere; }
+.cq-finding__detail { margin: 0; color: var(--ink); }
+
+.cq-finding__value {
+  display: flex; align-items: flex-start; gap: 8px; margin-top: 2px; padding: 8px 10px;
+  background: var(--canvas-raised); border: 1px solid var(--line-soft);
+}
+.cq-finding__value blockquote {
+  margin: 0; flex: 1 1 auto; color: var(--ink); font-size: 12px; font-style: normal;
+  overflow-wrap: anywhere; white-space: pre-wrap;
+}
+.cq-finding__value .icon-button { width: 26px; height: 26px; flex: 0 0 auto; }
+.cq-finding__value .icon-button .icon { width: 13px; height: 13px; }
+
+/* --- reports list row badges --- */
+.cq-row-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; margin: 0 4px 4px 0;
+  border: 1px solid var(--line); font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+
+.cq-clean, .cq-loading {
+  display: flex; align-items: center; gap: 12px; padding: 22px; background: var(--surface);
+  border: 1px solid var(--line); border-left: 3px solid var(--success); color: var(--ink-muted);
+}
+.cq-loading { border-left-color: var(--accent); }
+.cq-clean .icon { width: 24px; height: 24px; color: var(--success); flex: 0 0 auto; }
+.cq-loading .icon { width: 22px; height: 22px; color: var(--accent); flex: 0 0 auto; }
+
+@media (max-width: 720px) {
+  .cq-fields { grid-template-columns: 1fr; }
+  .cq-report__meta { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .cq-report__link { margin-left: 0; }
+}

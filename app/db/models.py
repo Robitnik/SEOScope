@@ -593,6 +593,41 @@ class AltTextItem(Base):
     wp_media_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
 
+class ContentQaReport(Base):
+    """Один прогін Strategy Check / Framework Check (task-53).
+
+    Одна таблиця на обидва тули — `doc_type` розрізняє: `findings_json` не має
+    per-finding мутабельного стану (на відміну від `AltTextItem.status`), тож
+    дитячої таблиці не потрібно, весь звіт — один незмінний рядок (без
+    `updated_at`: звіт не редагується, повторний прогін створює новий рядок).
+
+    `client_id` опційний тим самим міркуванням, що в `AltTextReport`: перевірку
+    роблять і для проспекта, якого ще нема в списку клієнтів.
+    """
+
+    __tablename__ = "content_qa_reports"
+    __table_args__ = (
+        Index("ix_content_qa_reports_doc_type_created_at", "doc_type", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="SET NULL"), default=None
+    )
+    # "strategy_xlsx" | "framework_docx" — той самий discriminator, що
+    # `ContentDoc.doc_type` в app/contentqa/model.py. String, не sa.Enum: це
+    # UI/каталожний вибір інструмента, не спільний контракт провайдерів.
+    doc_type: Mapped[str] = mapped_column(String(32))
+    source_filename: Mapped[str] = mapped_column(String(255))
+    # kind/intent/locale/brand_names — усе, що оператор задав перед прогоном.
+    profile_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    item_count: Mapped[int] = mapped_column(Integer, default=0)
+    skipped_sheets_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    findings_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    severity_counts_json: Mapped[dict[str, int]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
 class RedirectCheck(Base):
     """Один прогін інструмента Redirect Checker (task-29).
 
@@ -1279,6 +1314,103 @@ class CloudObject(Base):
     error_message: Mapped[str | None] = mapped_column(String(1000), default=None)
     uploaded_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+# --- Added by task-54 (Monthly Performance table, PLAN §16 "Хвиля Q") ------
+#
+# A cumulative register of months, NOT a `ReportRun` (task-42): GSC only
+# keeps a 16-month window, so a row built once from a `ReportRun` would lose
+# a month the moment it ages out of that window. `ClientMonthlyMetric` rows
+# are mutable while `is_frozen=False` (re-collected on `/refresh`) and then
+# left alone forever — the opposite of `MetricValue`'s immutable-on-commit
+# rule, so these two models are deliberately NOT wired into `_reject_update`
+# below.
+
+
+class ClientMonthlyTableSettings(Base):
+    """Per-client configuration, lazily created — same shape as
+    `MonitorSettings.get_or_create_settings` (task-35): a client with no row
+    yet reads as "unconfigured" (`key_event_names_json == []`) rather than
+    needing a migration-time backfill for every existing client.
+    """
+
+    __tablename__ = "client_monthly_table_settings"
+    __table_args__ = (
+        UniqueConstraint("client_id", name="uq_client_monthly_table_settings_client_id"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
+    # GA4 `eventName` values to sum into the named-event column (task-54
+    # §1.5) — a plain list because several clients split one conversion
+    # across per-location events ("Book Now 3rd Avenue", "... Hudson", ...).
+    # `[]` means the column has never been configured for this client.
+    key_event_names_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Column header for the named-event column ("Book Now", "Order Now") —
+    # `None` while `key_event_names_json` is empty, hides the column.
+    key_event_label: Mapped[str | None] = mapped_column(String(100), default=None)
+    # "first_user" | "session" — which GA4 channel-group field decides
+    # "Organic Search" for each half of the table (task-54 §1.3/§2.2): the
+    # default mix (users=first_user, events=session) is what live-matched
+    # the operator's own sheet exactly, not a technical default.
+    attribution_users: Mapped[str] = mapped_column(String(16), default="first_user")
+    attribution_events: Mapped[str] = mapped_column(String(16), default="session")
+    # `None` = use the global `client_monthly_history_months` setting.
+    history_months: Mapped[int | None] = mapped_column(Integer, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class ClientMonthlyMetric(Base):
+    """One row per `(client, month)` — the Monthly Performance table's own
+    durable store (task-54 §2.2), independent of any `ReportRun`.
+
+    `is_frozen=True` once a month is closed, settled (>=3 days past close,
+    GA4 keeps revising for ~48h) and its last collection attempt succeeded
+    (`ga4_state`/`gsc_state` in `ok`/`no_data`/`not_configured` — never
+    `failed`, task-54 §2.2): a frozen row is never re-queried, which is what
+    keeps a month from vanishing once it ages out of GSC's 16-month window.
+    `attribution_users`/`attribution_events`/`key_event_names_json` are
+    duplicated from the settings that produced THIS row (not read live from
+    `ClientMonthlyTableSettings`) so that changing the client's attribution
+    later can never silently reinterpret an already-frozen row — the exact
+    failure mode that made the operator's own sheet mix models undetected
+    (task-54 §1.2).
+    """
+
+    __tablename__ = "client_monthly_metrics"
+    __table_args__ = (
+        UniqueConstraint("client_id", "month", name="uq_client_monthly_metrics_client_id_month"),
+        Index("ix_client_monthly_metrics_client_id", "client_id"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
+    month: Mapped[str] = mapped_column(String(7))  # "YYYY-MM"
+    organic_users: Mapped[int | None] = mapped_column(Integer, default=None)
+    organic_conversions: Mapped[int | None] = mapped_column(Integer, default=None)
+    key_event_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    gsc_clicks: Mapped[int | None] = mapped_column(Integer, default=None)
+    gsc_impressions: Mapped[int | None] = mapped_column(Integer, default=None)
+    # How many day-rows GSC actually returned for this month (task-54 §1.4б)
+    # — the `date`-dimensioned discriminator between "no data" and "a real
+    # zero", and the source of the `partial` badge (e.g. 23 of 30 days at
+    # the edge of the 16-month window).
+    gsc_days_with_data: Mapped[int | None] = mapped_column(Integer, default=None)
+    days_in_month: Mapped[int] = mapped_column(Integer)
+    attribution_users: Mapped[str] = mapped_column(String(16))
+    attribution_events: Mapped[str] = mapped_column(String(16))
+    key_event_names_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    is_frozen: Mapped[bool] = mapped_column(Boolean, default=False)
+    ga4_state: Mapped[str] = mapped_column(String(20), default="ok")
+    gsc_state: Mapped[str] = mapped_column(String(20), default="ok")
+    # Set when a query for this row was answered with `limit` rows exactly
+    # (task-54 §2.3) — a possible silent truncation, surfaced rather than
+    # rendered as a trustworthy total.
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    collected_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
 
 def _reject_update(mapper: Any, connection: Any, target: Base) -> None:

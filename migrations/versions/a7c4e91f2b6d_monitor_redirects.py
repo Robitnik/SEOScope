@@ -56,7 +56,9 @@ def upgrade() -> None:
             )
         )
         batch.add_column(
-            sa.Column("redirect_source", sa.String(length=16), nullable=False, server_default="auto")
+            sa.Column(
+                "redirect_source", sa.String(length=16), nullable=False, server_default="auto"
+            )
         )
         batch.add_column(
             sa.Column("redirect_source_json", sa.JSON(), nullable=False, server_default="{}")

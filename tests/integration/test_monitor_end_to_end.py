@@ -426,8 +426,10 @@ def test_run_counters_are_per_run(temp_db, fake_site):
         repo = MonitorRepository(session)
         settings = Settings(_env_file=None)
 
-        # Baseline light run: only the homepage is in scope, and baseline
-        # diffing is suppressed — this run finds nothing.
+        # Baseline light run: only the homepage is in scope and ordinary
+        # diffing is suppressed. Redirect discovery is deliberately exempt:
+        # the fake site has no supported redirect source, so task-51 records
+        # one honest `redirects_unavailable` warning on the first check.
         light_outcome = run_client_monitor(
             session,
             client,
@@ -440,7 +442,7 @@ def test_run_counters_are_per_run(temp_db, fake_site):
         light_run = repo.get_run(light_outcome.run_id)
         assert (light_run.changes_critical, light_run.changes_warning, light_run.changes_info) == (
             0,
-            0,
+            1,
             0,
         )
 

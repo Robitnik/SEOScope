@@ -1,5 +1,9 @@
 const AHREFS_ROUTE = /^#\/client\/([^/?]+)\/ahrefs/;
 const BLOGS_ROUTE = /^#\/client\/([^/?]+)\/blogs/;
+// Monthly Performance sub-page (task-54) — same shape as Ahrefs/Blogs: the
+// client page only shows a compact summary card, the full sheet-fidelity
+// table lives on its own route.
+const MONTHLY_ROUTE = /^#\/client\/([^/?]+)\/monthly/;
 // Site Monitor client section (task-36) — matched before the generic
 // `CLIENT_ROUTE` below, same as `AHREFS_ROUTE`/`BLOGS_ROUTE`.
 const MONITOR_CLIENT_ROUTE = /^#\/client\/([^/?]+)\/monitor/;
@@ -45,6 +49,8 @@ export function parseRoute() {
   if (ahrefsMatch) return { name: "ahrefs", clientId: decodeURIComponent(ahrefsMatch[1]), query };
   const blogsMatch = hash.match(BLOGS_ROUTE);
   if (blogsMatch) return { name: "blogs", clientId: decodeURIComponent(blogsMatch[1]), query };
+  const monthlyMatch = hash.match(MONTHLY_ROUTE);
+  if (monthlyMatch) return { name: "monthly", clientId: decodeURIComponent(monthlyMatch[1]), query };
   const monitorClientMatch = hash.match(MONITOR_CLIENT_ROUTE);
   if (monitorClientMatch) return { name: "monitor-client", clientId: decodeURIComponent(monitorClientMatch[1]), query };
   const match = hash.match(CLIENT_ROUTE);
@@ -71,6 +77,10 @@ export function buildAhrefsHash(clientId, params = {}) {
 
 export function buildBlogsHash(clientId, params = {}) {
   return buildHash(`#/client/${encodeURIComponent(clientId)}/blogs`, params);
+}
+
+export function buildMonthlyPerformanceHash(clientId, params = {}) {
+  return buildHash(`#/client/${encodeURIComponent(clientId)}/monthly`, params);
 }
 
 export function buildTrendsHash(params = {}) {
@@ -155,6 +165,7 @@ async function activate() {
   const clientRoot = document.querySelector("#client-page-root");
   const ahrefsRoot = document.querySelector("#ahrefs-page-root");
   const blogsRoot = document.querySelector("#blogs-page-root");
+  const monthlyRoot = document.querySelector("#monthly-performance-page-root");
   const toolsRoot = document.querySelector("#tools-page-root");
   const trendsRoot = document.querySelector("#trends-page-root");
   const monitorRoot = document.querySelector("#monitor-page-root");
@@ -167,7 +178,7 @@ async function activate() {
     document.querySelector("#dashboard-command-bar"),
   ];
   const allRoots = [
-    clientRoot, ahrefsRoot, blogsRoot, toolsRoot, trendsRoot, monitorRoot, monitorClientRoot,
+    clientRoot, ahrefsRoot, blogsRoot, monthlyRoot, toolsRoot, trendsRoot, monitorRoot, monitorClientRoot,
     reportsRoot, reportsRunRoot, reportsBatchRoot,
   ];
   // Global nav marks the active destination for assistive tech and for the eye
@@ -184,76 +195,83 @@ async function activate() {
     allRoots.filter((el) => el !== toolsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     toolsRoot?.removeAttribute("hidden");
-    const { initToolsRoute } = await import("./tools-page.js?v=20260819-spin3");
+    const { initToolsRoute } = await import("./tools-page.js?v=20260821-spin3");
     await initToolsRoute(route);
   } else if (route.name === "trends") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== trendsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     trendsRoot?.removeAttribute("hidden");
-    const { initTrendsPage } = await import("./trends-page.js?v=20260819-spin3");
+    const { initTrendsPage } = await import("./trends-page.js?v=20260821-spin3");
     await initTrendsPage(route.query);
   } else if (route.name === "monitor") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== monitorRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     monitorRoot?.removeAttribute("hidden");
-    const { initMonitorPage } = await import("./monitor-page.js?v=20260819-spin3");
+    const { initMonitorPage } = await import("./monitor-page.js?v=20260821-spin3");
     await initMonitorPage(route.query);
   } else if (route.name === "reports") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== reportsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     reportsRoot?.removeAttribute("hidden");
-    const { initReportsPage } = await import("./reports-page.js?v=20260819-spin3");
+    const { initReportsPage } = await import("./reports-page.js?v=20260821-spin3");
     await initReportsPage(route.query);
   } else if (route.name === "reports-run") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== reportsRunRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     reportsRunRoot?.removeAttribute("hidden");
-    const { initReportsRunPage } = await import("./reports-run.js?v=20260819-spin3");
+    const { initReportsRunPage } = await import("./reports-run.js?v=20260821-spin3");
     await initReportsRunPage(route.runId, route.query);
   } else if (route.name === "reports-batch") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== reportsBatchRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     reportsBatchRoot?.removeAttribute("hidden");
-    const { initReportsBatchPage } = await import("./reports-batch.js?v=20260819-spin3");
+    const { initReportsBatchPage } = await import("./reports-batch.js?v=20260821-spin3");
     await initReportsBatchPage(route.batchId);
   } else if (route.name === "ahrefs") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== ahrefsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     ahrefsRoot?.removeAttribute("hidden");
-    const { initAhrefsPage } = await import("./ahrefs-page.js?v=20260819-spin3");
+    const { initAhrefsPage } = await import("./ahrefs-page.js?v=20260821-spin3");
     initAhrefsPage(route.clientId, route.query);
   } else if (route.name === "blogs") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== blogsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     blogsRoot?.removeAttribute("hidden");
-    const { initBlogsPage } = await import("./blogs-page.js?v=20260819-spin3");
+    const { initBlogsPage } = await import("./blogs-page.js?v=20260821-spin3");
     initBlogsPage(route.clientId, route.query);
+  } else if (route.name === "monthly") {
+    dashboardView?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== monthlyRoot).forEach((el) => el?.setAttribute("hidden", ""));
+    dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
+    monthlyRoot?.removeAttribute("hidden");
+    const { initMonthlyPerformancePage } = await import("./monthly-performance-page.js?v=20260821-spin3");
+    initMonthlyPerformancePage(route.clientId, route.query);
   } else if (route.name === "monitor-client") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== monitorClientRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     monitorClientRoot?.removeAttribute("hidden");
-    const { initMonitorClientPage } = await import("./monitor-client.js?v=20260819-spin3");
+    const { initMonitorClientPage } = await import("./monitor-client.js?v=20260821-spin3");
     initMonitorClientPage(route.clientId, route.query);
   } else if (route.name === "client") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== clientRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     clientRoot?.removeAttribute("hidden");
-    const { initClientPage } = await import("./client-page.js?v=20260819-spin3");
+    const { initClientPage } = await import("./client-page.js?v=20260821-spin3");
     initClientPage(route.clientId, route.query);
   } else {
     allRoots.forEach((el) => el?.setAttribute("hidden", ""));
     dashboardView?.removeAttribute("hidden");
     dashboardChrome.forEach((el) => el?.removeAttribute("hidden"));
-    await import("./dashboard.js?v=20260819-spin3");
+    await import("./dashboard.js?v=20260821-spin3");
   }
 }
 

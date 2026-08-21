@@ -78,7 +78,14 @@ def test_verify_sample_filters_by_kind(session: Session):
 def test_verify_sample_respects_sample_size(session: Session):
     store = FakeCloudStore()
     for i in range(5):
-        _seed(session, store, kind="monitor_blob", source_ref=str(i), key=f"k{i}", data=f"{i}".encode())
+        _seed(
+            session,
+            store,
+            kind="monitor_blob",
+            source_ref=str(i),
+            key=f"k{i}",
+            data=f"{i}".encode(),
+        )
 
     outcomes = verify_sample(session, store, kind=None, sample=2)
 

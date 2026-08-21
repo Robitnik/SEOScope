@@ -562,6 +562,45 @@
 .rd-advice ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--ink-muted); font-size: 12px; }
 .rd-advice strong { color: var(--ink); }
 
+/* --- Character Counter ------------------------------------------------------ */
+
+/* Проза/копірайт, не список URL — тож звичайний шрифт, не моно (на відміну
+ * від `.rd-form textarea`). */
+.tc-textarea {
+  display: block; width: 100%; min-height: 320px; margin-top: 6px; padding: 14px 16px;
+  background: var(--canvas); color: var(--ink); border: 1px solid var(--line);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.6; resize: vertical;
+}
+.tc-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 12px; margin-top: 12px;
+}
+.tc-count {
+  margin: 0; color: var(--ink); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.tc-count::first-letter { color: var(--accent); }
+
+/* Три статус-картки (title/description/alt) — тон означає стан, а не сам
+ * колір (AGENTS.md §7): клас `.state-*` (app.css) задає `--state-color`.
+ * `.tc-seo-card` свідомо НЕ редеклароє цю змінну (на відміну від, скажімо,
+ * `.source-setup`) — вона лише читає її через `var(--state-color, fallback)`
+ * у кожній властивості, інакше порядок каскаду (tools.css вантажиться після
+ * app.css) перебив би тон дефолтним сірим незалежно від `.state-*`. */
+.tc-seo { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.tc-seo-card {
+  border: 1px solid var(--line); border-left: 3px solid var(--state-color, var(--ink-dim));
+  background: var(--canvas-raised); padding: 14px 16px; display: grid; gap: 6px; align-content: start;
+}
+.tc-seo-card__head { display: flex; align-items: center; gap: 8px; }
+.tc-seo-card__head .icon { flex: 0 0 auto; width: 18px; height: 18px; color: var(--state-color, var(--ink-dim)); }
+.tc-seo-card__head strong {
+  font-family: var(--font-body); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-muted);
+}
+.tc-seo-card__count { margin: 0; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+.tc-seo-card__count small { font-size: 13px; font-weight: 400; color: var(--ink-dim); }
+.tc-seo-card__status { margin: 0; font-size: 13px; font-weight: 700; color: var(--state-color, var(--ink-dim)); }
+.tc-seo-card__hint { margin: 0; color: var(--ink-dim); font-size: 11px; line-height: 1.5; }
+
 @media (max-width: 860px) {
   /* `.app-header` (app.css) — flex без wrap: без цього нав'ю немає куди
    * переїхати, і на 390px воно наїжджало на логотип. Перевизначаємо тут, у

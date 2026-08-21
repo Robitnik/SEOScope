@@ -4,8 +4,8 @@
 // одна й та сама дія: показати поточний стан і дати його змінити. Бейдж —
 // справжня `<button>`, а не клікабельний `<span>`: він і показує статус, і є
 // його контролом (AGENTS §7 — ніяких клікабельних div/span).
-import { setClientStatus } from "./api.js?v=20260819-spin3";
-import { escapeHtml, formatDate, icon } from "./formatters.js?v=20260819-spin3";
+import { setClientStatus } from "./api.js?v=20260821-spin3";
+import { escapeHtml, formatDate, icon } from "./formatters.js?v=20260821-spin3";
 
 export const CLIENT_STATUS_META = {
   // Не колір-онлі: у кожного стану власна іконка + слово (AGENTS §7).

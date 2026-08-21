@@ -19,7 +19,9 @@ class FakeCloudStore:
         self.uploads: list[str] = []
         self.fail_keys: set[str] = set()
 
-    def put_bytes(self, data: bytes, key: str, *, content_type: str | None = None) -> CloudObjectRef:
+    def put_bytes(
+        self, data: bytes, key: str, *, content_type: str | None = None
+    ) -> CloudObjectRef:
         if key in self.fail_keys:
             raise RuntimeError(f"simulated upload failure: {key}")
         self.objects[key] = data

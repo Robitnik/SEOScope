@@ -12,12 +12,12 @@
 import {
   computeReportPeriods, createReportBatch, createReportRun, getNinjaBindings, getNinjaReportName,
   getReportTypes, isAbortError, putNinjaReportName,
-} from "./api.js?v=20260819-spin3";
-import { isPaused } from "./client-status.js?v=20260819-spin3";
-import { buildClientHash } from "./router.js?v=20260819-spin3";
+} from "./api.js?v=20260821-spin3";
+import { isPaused } from "./client-status.js?v=20260821-spin3";
+import { buildClientHash } from "./router.js?v=20260821-spin3";
 import {
   REPORT_KIND_META, escapeHtml, formatDateRange, formatDurationSeconds, icon, statusIcon,
-} from "./formatters.js?v=20260819-spin3";
+} from "./formatters.js?v=20260821-spin3";
 
 const dialog = document.querySelector("#reports-wizard-dialog");
 const stepsNav = document.querySelector("#reports-wizard-steps");
