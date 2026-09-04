@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from app.webarchive.urls import normalize_url, resolve
+from app.webarchive.urls import (
+    is_asset_like_url,
+    looks_like_binary_content_type,
+    normalize_url,
+    resolve,
+)
 
 
 def test_normalize_strips_www_and_scheme() -> None:
@@ -69,6 +74,48 @@ def test_resolve_does_not_double_encode_existing_percent_sequences() -> None:
     assert result == "https://example.com/already%20encoded.jpg"
 
 
+def test_resolve_percent_encodes_a_literal_ascii_space() -> None:
+    """Live incident (task-59, 2026-09-04, SDS): a real filename contained a
+    literal space (`1 - PHOTO.mp4`) — fully ASCII, so the old
+    `if url.isascii(): return url` fast path let it through raw, and
+    `http.client`'s own request-line validator rejects a bare space exactly
+    like it rejects non-ASCII bytes.
+    """
+    result = resolve("https://example.com/", "/uploads/1 - PHOTO.mp4")
+    assert result is not None
+    assert " " not in result
+    assert result == "https://example.com/uploads/1%20-%20PHOTO.mp4"
+
+
 def test_resolve_ascii_url_is_untouched() -> None:
     result = resolve("https://example.com/", "/plain/path.jpg?a=1&b=2")
     assert result == "https://example.com/plain/path.jpg?a=1&b=2"
+
+
+def test_is_asset_like_url_flags_gallery_lightbox_targets() -> None:
+    """Live incident (task-59, 2026-09-04): EFFYS's own gallery wraps each
+    thumbnail in `<a href="...-scaled.webp">` for a lightbox popup — a
+    perfectly real same-host link that is nonetheless not a page.
+    """
+    assert is_asset_like_url("https://effyscafe.com/wp-content/uploads/2026/06/photo-scaled.webp")
+    assert is_asset_like_url("https://example.com/brochure.pdf")
+    assert is_asset_like_url("https://example.com/fonts/main.woff2")
+
+
+def test_is_asset_like_url_allows_real_pages() -> None:
+    assert not is_asset_like_url("https://example.com/gallery/")
+    assert not is_asset_like_url("https://example.com/about-us")
+    assert not is_asset_like_url("https://example.com/2026/09/04/post-title")
+
+
+def test_looks_like_binary_content_type_flags_images_and_documents() -> None:
+    assert looks_like_binary_content_type("image/webp")
+    assert looks_like_binary_content_type("image/jpeg; charset=binary")
+    assert looks_like_binary_content_type("application/pdf")
+    assert looks_like_binary_content_type("font/woff2")
+
+
+def test_looks_like_binary_content_type_allows_html_and_text() -> None:
+    assert not looks_like_binary_content_type("text/html; charset=UTF-8")
+    assert not looks_like_binary_content_type("text/plain")
+    assert not looks_like_binary_content_type("application/xhtml+xml")

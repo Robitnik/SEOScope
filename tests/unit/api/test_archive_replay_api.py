@@ -14,6 +14,7 @@ from app.db.repositories.web_archive import WebArchiveRepository
 from app.webarchive import storage
 from app.webarchive.fingerprint import content_fingerprint
 from app.webarchive.replay import format_ts
+from app.webarchive.urls import normalize_url
 
 PAGE_HTML = (
     b"<html><head><title>Acme</title></head><body>"
@@ -22,19 +23,25 @@ PAGE_HTML = (
 )
 
 
-def _seed_page(db, *, url: str = "https://acme.com/") -> tuple[str, str]:
+def _seed_page(
+    db,
+    *,
+    url: str = "https://acme.com/",
+    body: bytes = PAGE_HTML,
+    content_type: str = "text/html",
+) -> tuple[str, str]:
     client = ClientRepository(db).create(
         name="Acme", slug="acme", domain="acme.com", timezone="America/New_York"
     )
     db.commit()
     settings = get_settings()
-    blob = storage.store_blob(settings.artifacts_dir, PAGE_HTML)
+    blob = storage.store_blob(settings.artifacts_dir, body)
     repo = WebArchiveRepository(db)
     repo.register_blob(
         blob.sha256, size_bytes=blob.size_bytes, gzip_size_bytes=blob.gzip_size_bytes,
-        content_type="text/html", path=blob.path,
+        content_type=content_type, path=blob.path,
     )
-    archive_url = repo.get_or_create_url(client.id, url, "acme.com/", source="manual")
+    archive_url = repo.get_or_create_url(client.id, url, normalize_url(url), source="manual")
     observed_at = datetime(2026, 9, 4, 13, 30, tzinfo=UTC)
     repo.create_snapshot(
         archive_url_id=archive_url.id,
@@ -43,9 +50,9 @@ def _seed_page(db, *, url: str = "https://acme.com/") -> tuple[str, str]:
         observed_at=observed_at,
         http_status=200,
         final_url=url,
-        headers_json={"Content-Type": "text/html", "Set-Cookie": "session=leak-me"},
-        content_type="text/html",
-        content_fingerprint=content_fingerprint(PAGE_HTML.decode()),
+        headers_json={"Content-Type": content_type, "Set-Cookie": "session=leak-me"},
+        content_type=content_type,
+        content_fingerprint=content_fingerprint(body.decode("utf-8", errors="replace")),
         raw_sha256=blob.sha256,
         body_blob_sha256=blob.sha256,
         title="Acme",
@@ -125,6 +132,27 @@ def test_shim_script_served_with_cors_header(client):
     assert response.headers["content-type"].startswith("application/javascript")
     assert response.headers["access-control-allow-origin"] == "*"
     assert "__archiveNav" in response.text
+
+
+def test_replay_serves_binary_page_row_as_raw_asset(client, db):
+    """Live incident (task-59, 2026-09-04): a gallery lightbox link got
+    queued and captured as a "page" whose real content is an image. Even
+    for an already-bad row like this, replay must serve the raw bytes with
+    their real content-type — never run it through `rewrite_html` +
+    shim-injection and label it `text/html`, which is what produced a
+    broken `<img>` in the browser.
+    """
+    webp_bytes = b"RIFF\x00\x00\x00\x00WEBPVP8 not-a-real-page"
+    ts, url = _seed_page(
+        db, url="https://acme.com/gallery/photo-scaled.webp",
+        body=webp_bytes, content_type="image/webp",
+    )
+    response = client.get(f"/archive/r/{ts}/{url}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/webp"
+    assert response.content == webp_bytes
+    assert "/archive/static/shim.js" not in response.text
 
 
 def test_replay_options_preflight_answered(client, db):

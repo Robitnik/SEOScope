@@ -84,8 +84,9 @@ function onKeydown(event) {
 
 // The replayed frame has an opaque sandbox origin — this page cannot read
 // `iframe.contentWindow.location` itself, so `shim.js` posts the real URL
-// it is currently showing (on load, and on every pushState/replaceState).
-// That is the ONLY way the address input can track in-page navigation.
+// AND the snapshot id the server resolved for it (on load, and on every
+// pushState/replaceState). That is the ONLY way this chrome learns that a
+// click inside the archived page moved it to a different archived page.
 function onFrameMessage(event) {
   const iframe = root.querySelector(".archive-iframe");
   if (!iframe || event.source !== iframe.contentWindow) return;
@@ -94,6 +95,31 @@ function onFrameMessage(event) {
   state.liveUrl = data.url;
   const input = root.querySelector("#archive-viewer-url-input");
   if (input && document.activeElement !== input) input.value = data.url;
+  if (data.snapshot && data.snapshot !== state.snapshotId) {
+    adoptFrameSnapshot(data.snapshot);
+    return;
+  }
+  replaceArchiveViewHash({ snapshot: state.snapshotId, url: data.url });
+}
+
+// A link click inside the replay already navigated the frame to the right
+// archived page — so re-point the chrome (address hash, date, prev/next,
+// Meta, Compare) at that version WITHOUT re-rendering the iframe, which
+// would otherwise reload the page the operator just landed on.
+async function adoptFrameSnapshot(snapshotId) {
+  const previousId = state.snapshotId;
+  state.snapshotId = snapshotId;
+  try {
+    state.snapshot = await getArchiveSnapshot(snapshotId);
+  } catch (error) {
+    if (!isAbortError(error)) state.snapshotId = previousId; // keep the chrome truthful
+    return;
+  }
+  state.metaOpen = false;
+  state.diffOpen = false;
+  state.diff = null;
+  replaceArchiveViewHash({ snapshot: snapshotId, url: state.liveUrl || state.snapshot.url });
+  renderChrome();
 }
 
 async function navigateTo(snapshotId) {
@@ -178,9 +204,24 @@ function render() {
   if (!state.snapshot) { root.innerHTML = ""; return; }
 
   const s = state.snapshot;
-  const addressValue = state.liveUrl || s.url;
   root.innerHTML = `
     <div class="archive-viewer">
+      ${chromeMarkup(s)}
+      <div class="archive-iframe-wrap">
+        <iframe class="archive-iframe" src="${escapeHtml(s.view_url)}"
+          sandbox="allow-forms allow-popups${state.scriptsEnabled ? " allow-scripts" : ""}"
+          title="Archived copy of ${escapeHtml(s.url)} (${escapeHtml(s.ts)})"></iframe>
+      </div>
+    </div>`;
+  bindActions();
+}
+
+// Banner + panels only — everything ABOVE the iframe. Rendered separately
+// so `adoptFrameSnapshot` can refresh it after an in-frame link click
+// without touching (and thereby reloading) the frame itself.
+function chromeMarkup(s) {
+  const addressValue = state.liveUrl || s.url;
+  return `
       <div class="archive-banner">
         <a class="back-link archive-banner__back" href="${buildArchiveHash()}">${icon("arrow-left")}<span class="visually-hidden">Back to Archive</span></a>
         <div class="archive-banner__identity">
@@ -211,13 +252,18 @@ function render() {
         </div>
       </div>
       ${state.metaOpen ? metaPanelMarkup(s) : ""}
-      ${state.diffOpen ? diffPanelMarkup() : ""}
-      <div class="archive-iframe-wrap">
-        <iframe class="archive-iframe" src="${escapeHtml(s.view_url)}"
-          sandbox="allow-forms allow-popups${state.scriptsEnabled ? " allow-scripts" : ""}"
-          title="Archived copy of ${escapeHtml(s.url)} (${escapeHtml(s.ts)})"></iframe>
-      </div>
-    </div>`;
+      ${state.diffOpen ? diffPanelMarkup() : ""}`;
+}
+
+function renderChrome() {
+  const viewer = root.querySelector(".archive-viewer");
+  const frameWrap = root.querySelector(".archive-iframe-wrap");
+  if (!viewer || !frameWrap || !state.snapshot) {
+    render();
+    return;
+  }
+  while (viewer.firstChild !== frameWrap) viewer.removeChild(viewer.firstChild);
+  frameWrap.insertAdjacentHTML("beforebegin", chromeMarkup(state.snapshot));
   bindActions();
 }
 

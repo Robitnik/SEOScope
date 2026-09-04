@@ -78,6 +78,68 @@ def resolve(base_url: str, maybe_relative: str) -> str | None:
     return _ascii_safe(absolute)
 
 
+# A same-host `<a href>` can legally point straight at a binary resource —
+# a WordPress gallery lightbox linking `<a href=".../photo.webp">` around
+# its own thumbnail is the case that surfaced this (task-59, 2026-09-04
+# live incident on EFFYS): `_discover_same_host_links` was queuing every
+# full-size photo as its own "page" to crawl, and the resulting garbled
+# "page" snapshot of raw image bytes then SHADOWED the correctly-captured
+# `archive_assets` entry for the same URL at replay time (pages are
+# resolved before assets there), so the image rendered as broken.
+_NON_PAGE_EXTENSIONS = frozenset(
+    {
+        # images
+        "jpg", "jpeg", "png", "gif", "webp", "avif", "svg", "ico", "bmp", "tiff", "tif", "heic",
+        # fonts
+        "woff", "woff2", "ttf", "otf", "eot",
+        # media
+        "mp4", "mp3", "wav", "ogg", "webm", "mov", "avi", "m4a", "m4v", "flac",
+        # documents / archives / data
+        "pdf", "zip", "rar", "7z", "gz", "tar", "doc", "docx", "xls", "xlsx",
+        "ppt", "pptx", "csv", "rtf",
+        # code assets
+        "css", "js", "mjs", "map", "wasm", "json", "xml",
+    }
+)
+_NON_PAGE_CONTENT_TYPE_PREFIXES = ("image/", "font/", "video/", "audio/")
+_NON_PAGE_CONTENT_TYPES = frozenset(
+    {
+        "application/pdf",
+        "application/zip",
+        "application/octet-stream",
+        "application/font-woff",
+        "application/font-woff2",
+        "application/vnd.ms-fontobject",
+        "application/x-font-ttf",
+    }
+)
+
+
+def is_asset_like_url(url: str) -> bool:
+    """True when `url`'s path extension is something a visitor is never
+    meant to land on as its own page — see the module-level note above.
+    Extension-only (fast, no network): the content-type-based
+    `looks_like_binary_content_type` below is the authoritative fallback
+    for whatever slips past this (an extensionless URL, a mislabeled path).
+    """
+    name = urlsplit(url).path.rsplit("/", 1)[-1]
+    if "." not in name:
+        return False
+    return name.rsplit(".", 1)[-1].lower() in _NON_PAGE_EXTENSIONS
+
+
+def looks_like_binary_content_type(content_type: str) -> bool:
+    """True for a response `Content-Type` that is clearly not an HTML page
+    — the authoritative check (actual bytes, not a URL guess) used to
+    refuse storing/replaying a binary response as a "page".
+    """
+    main_type = content_type.split(";", 1)[0].strip().lower()
+    return (
+        main_type.startswith(_NON_PAGE_CONTENT_TYPE_PREFIXES)
+        or main_type in _NON_PAGE_CONTENT_TYPES
+    )
+
+
 def _ascii_safe(url: str) -> str:
     """Percent-encode any character an href can carry literally that
     `urllib`'s HTTP client refuses to put on the request line — live-measured
@@ -87,7 +149,13 @@ def _ascii_safe(url: str) -> str:
     touched them with `UnicodeEncodeError: 'ascii' codec can't encode...`
     before this existed. `%` stays in the safe set so an already
     percent-encoded sequence (e.g. `%20`) is never double-encoded.
+
+    Always quotes, never short-circuits on `url.isascii()` — a SECOND live
+    incident (task-59, 2026-09-04, SDS) hit a real filename containing a
+    literal space (`.../1 - PHOTO.mp4`), fully ASCII, which the old
+    ascii-skip let through raw; `http.client` rejects a bare space in the
+    request line exactly like it rejects non-ASCII bytes. The safe set
+    already covers every legitimate URL-structure character, so re-quoting
+    an already-clean ASCII URL is a no-op.
     """
-    if url.isascii():
-        return url
     return quote(url, safe="%/:?&=@!$'()*+,;#~")

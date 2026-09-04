@@ -258,6 +258,14 @@ class WebArchiveRepository:
             archive_url.gone_since = observed_at
         self._session.flush()
 
+    def delete_url(self, archive_url: ArchiveUrl) -> None:
+        """Removes a tracked URL that turned out never to be a page (task-59,
+        2026-09-04) — cascades to its snapshots/changes via the FK's own
+        `ondelete="CASCADE"`.
+        """
+        self._session.delete(archive_url)
+        self._session.flush()
+
     # --- snapshots -----------------------------------------------------
 
     def latest_snapshot(self, archive_url_id: str) -> ArchiveSnapshot | None:

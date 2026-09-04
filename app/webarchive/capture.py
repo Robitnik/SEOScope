@@ -40,7 +40,7 @@ from app.webarchive import changes as changesmod
 from app.webarchive import storage
 from app.webarchive.db_retry import commit_with_retry
 from app.webarchive.fingerprint import content_fingerprint
-from app.webarchive.urls import normalize_url
+from app.webarchive.urls import is_asset_like_url, looks_like_binary_content_type, normalize_url
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +297,22 @@ def capture_url(
             repo.mark_url_gone(archive_url, observed_at=now)
         return UrlCaptureResult(outcome="failed")
 
-    html_text = decode_body(result.body, content_type=result.headers.get("Content-Type"))
+    content_type_header = result.headers.get("Content-Type")
+    if content_type_header and looks_like_binary_content_type(content_type_header):
+        # This ArchiveUrl was never really a page — a same-host link
+        # pointing straight at an image/font/media file (task-59,
+        # 2026-09-04 live incident, see `app.webarchive.urls`'s module
+        # note) got queued into the page frontier before
+        # `is_asset_like_url` existed. Drop it rather than storing a
+        # garbled "page" snapshot of raw bytes forever: the real resource
+        # is already tracked correctly via `archive_assets` (discovered
+        # independently off the same page's `<img>`/`srcset`), and a
+        # page-shaped row for the SAME url would otherwise shadow that
+        # asset at replay time (`_resolve_replay` checks pages first).
+        repo.delete_url(archive_url)
+        return UrlCaptureResult(outcome="failed")
+
+    html_text = decode_body(result.body, content_type=content_type_header)
     fingerprint = content_fingerprint(html_text)
 
     prev_snapshot = repo.latest_snapshot(archive_url.id)
@@ -421,6 +436,11 @@ def _discover_same_host_links(
         return
     for link in links:
         if urlsplit(link).hostname != page_host:
+            continue
+        if is_asset_like_url(link):
+            # A gallery lightbox's `<a href=".../photo.webp">` is a same-
+            # host link but not a page a visitor lands on — see
+            # `app.webarchive.urls`'s module note (task-59, 2026-09-04).
             continue
         key = normalize_url(link)
         if repo.find_url(client.id, key) is None:

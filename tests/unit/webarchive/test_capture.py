@@ -392,6 +392,50 @@ def test_one_crashing_asset_does_not_fail_the_whole_page(
     assert snapshot.title == "Acme"
 
 
+def test_binary_content_type_deletes_url_instead_of_storing_page_snapshot(
+    session, artifacts_dir, settings, fake_fetch
+):
+    """Live incident (task-59, 2026-09-04): EFFYS's gallery wraps each
+    thumbnail in `<a href="...-scaled.webp">` for a lightbox popup, which
+    got queued into the page frontier by an earlier capture pass (before
+    `is_asset_like_url` existed) and re-fetched here as if it were a page.
+    The response is a real image — this must never be stored as a "page"
+    snapshot, since a page-shaped row for the same URL would shadow the
+    correctly-captured `archive_assets` entry at replay time.
+    """
+    client, repo, archive_url = _seed(session)
+    fake_fetch.set(
+        PAGE_URL, _result(PAGE_URL, b"\x89PNG\r\n\x1a\n...", headers={"Content-Type": "image/webp"})
+    )
+
+    result = _capture_one(
+        session, repo, client, archive_url,
+        settings=settings, artifacts_dir=artifacts_dir, now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert result.outcome == "failed"
+    assert repo.latest_snapshot(archive_url.id) is None
+    assert repo.get_url(archive_url.id) is None  # dropped from the page frontier entirely
+
+
+def test_discover_same_host_links_skips_asset_like_urls(session):
+    client, repo, archive_url = _seed(session)
+
+    capturemod._discover_same_host_links(
+        repo, client, archive_url,
+        frozenset(
+            {
+                "https://acme.example.com/gallery/photo-scaled.webp",  # lightbox target
+                "https://acme.example.com/about-us",  # a real page
+            }
+        ),
+    )
+    session.commit()
+
+    assert repo.find_url(client.id, "acme.example.com/about-us") is not None
+    assert repo.find_url(client.id, "acme.example.com/gallery/photo-scaled.webp") is None
+
+
 def test_has_running_capture_blocks_a_second_manual_run(session):
     client, repo, _archive_url = _seed(session)
     running = repo.create_capture(

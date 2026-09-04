@@ -15,7 +15,8 @@ never a live fetch of today's real page under yesterday's byline.
 
 from __future__ import annotations
 
-from typing import Literal
+from html import escape
+from typing import Literal, NamedTuple
 
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
@@ -30,7 +31,7 @@ from app.monitor.page import decode_body
 from app.webarchive import rewrite as rewritemod
 from app.webarchive import storage
 from app.webarchive.replay import parse_ts
-from app.webarchive.urls import normalize_url
+from app.webarchive.urls import looks_like_binary_content_type, normalize_url
 
 router = APIRouter(tags=["web-archive-replay"])
 
@@ -62,12 +63,23 @@ _REPLAY_CSP = (
 # by our own routing, carries no credentials (the sandbox has none to
 # send), and is the same archived, already-public page content either way.
 _ACCESS_CONTROL_ALLOW_ORIGIN = {"Access-Control-Allow-Origin": "*"}
+# Deliberately NOT `immutable`/a year-long `max-age` despite a given
+# `(ts, url)` pair's bytes genuinely never changing once correctly
+# classified: live incident (task-59, 2026-09-04) — a page/asset
+# misclassification bug (see `app.webarchive.urls`'s module note) got
+# served once, and Cloudflare's edge (`cf-cache-status: HIT`, `age: 2022`)
+# cached that WRONG response under this same header for what would have
+# been a year, surviving the origin-side fix entirely. One hour matches
+# `/archive/static/shim.js`'s own cache lifetime below and still meaningfully
+# offloads repeat views within a session, while keeping any future replay
+# bug's blast radius to "self-heals within the hour" instead of "needs a
+# manual Cloudflare purge we have no API token configured for".
 _REPLAY_HEADERS = {
     "Content-Security-Policy": _REPLAY_CSP,
     "X-Frame-Options": "SAMEORIGIN",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
-    "Cache-Control": "public, max-age=31536000, immutable",
+    "Cache-Control": "public, max-age=3600",
     **_ACCESS_CONTROL_ALLOW_ORIGIN,
 }
 _MISS_HEADERS = {
@@ -83,6 +95,7 @@ _SHIM_JS = r"""(function () {
   var self_script = document.currentScript;
   var TS = self_script ? self_script.getAttribute("data-ts") : "";
   var ORIGIN = self_script ? self_script.getAttribute("data-origin") : "";
+  var SNAPSHOT = self_script ? self_script.getAttribute("data-snapshot") : "";
   if (!TS || !ORIGIN) return;
 
   function isReplayUrl(value) {
@@ -186,9 +199,17 @@ _SHIM_JS = r"""(function () {
   // sandbox origin), so this is the only way it learns. `"*"` targetOrigin
   // is safe: nothing sensitive is sent, only the archived page's own
   // already-public URL and title.
+  //
+  // `snapshot` is what lets the parent re-point its OWN address bar and
+  // banner (date, prev/next, Meta, Compare) at the version the frame is
+  // actually showing after a click on an archived link: the frame lands on
+  // `/archive/r/<ts>/<url>`, whose nearest-version resolution happens
+  // server-side, so the id it settled on can only come from here.
   function notifyParent(url) {
     try {
-      window.parent.postMessage({ __archiveNav: true, url: url, title: document.title }, "*");
+      window.parent.postMessage(
+        { __archiveNav: true, url: url, title: document.title, snapshot: SNAPSHOT }, "*"
+      );
     } catch (e) { /* no parent, or postMessage unavailable — nothing to do */ }
   }
   notifyParent(ORIGIN);
@@ -196,8 +217,13 @@ _SHIM_JS = r"""(function () {
 """
 
 
-def _inject_shim(html: str, *, ts: str, origin: str) -> str:
-    tag = f'<script src="/archive/static/shim.js" data-ts="{ts}" data-origin="{origin}"></script>'
+def _inject_shim(html: str, *, ts: str, origin: str, snapshot_id: str | None) -> str:
+    tag = (
+        '<script src="/archive/static/shim.js"'
+        f' data-ts="{escape(ts)}"'
+        f' data-origin="{escape(origin)}"'
+        f' data-snapshot="{escape(snapshot_id or "")}"></script>'
+    )
     lowered = html.lower()
     head_index = lowered.find("<head")
     if head_index != -1:
@@ -221,14 +247,25 @@ def _full_requested_url(ts: str, url_path: str, raw_query: str) -> str:
     return f"{url_path}?{raw_query}" if raw_query else url_path
 
 
-def _resolve_replay(
-    original_url: str, ts_value: str
-) -> tuple[Literal["page", "asset", "miss"], bytes | None, str | None, str | None]:
-    """`(kind, raw_bytes, content_type, base_url_for_rewriting)`."""
+class ReplayTarget(NamedTuple):
+    kind: Literal["page", "asset", "miss"]
+    raw: bytes | None
+    content_type: str | None
+    base_url: str | None
+    # Only set for a page: the id of the version actually resolved, handed
+    # to the viewer chrome through the shim so it can re-point its own
+    # address bar and banner after an in-frame link click.
+    snapshot_id: str | None = None
+
+
+_MISS = ReplayTarget("miss", None, None, None)
+
+
+def _resolve_replay(original_url: str, ts_value: str) -> ReplayTarget:
     settings = get_settings()
     ts = parse_ts(ts_value)
     if ts is None:
-        return "miss", None, None, None
+        return _MISS
     key = normalize_url(original_url)
     with worker_session_scope() as session:
         repo = WebArchiveRepository(session)
@@ -237,16 +274,29 @@ def _resolve_replay(
             snapshot, _is_exact = repo.resolve_snapshot(archive_url.id, ts)
             if snapshot is not None and snapshot.body_blob_sha256:
                 raw = storage.read_blob(settings.artifacts_dir, snapshot.body_blob_sha256)
-                return "page", raw, snapshot.content_type, snapshot.final_url or archive_url.url
+                base_url = snapshot.final_url or archive_url.url
+                # Defensive, not just belt-and-suspenders: a "page" row
+                # whose actual bytes are an image/font/media file (task-59,
+                # 2026-09-04 — a gallery lightbox link queued as a page
+                # before the capture-time guard existed, see
+                # `app.webarchive.urls`'s module note) must never be run
+                # through the HTML rewrite+shim pipeline below — self-heals
+                # any already-stored bad snapshot immediately, without
+                # waiting for the next capture pass to delete the row.
+                if snapshot.content_type and looks_like_binary_content_type(
+                    snapshot.content_type
+                ):
+                    return ReplayTarget("asset", raw, snapshot.content_type, base_url)
+                return ReplayTarget("page", raw, snapshot.content_type, base_url, snapshot.id)
         asset = repo.get_asset_by_key(key)
         if asset is not None:
             version, _is_exact = repo.resolve_asset_version(asset.id, ts)
             if version is not None and version.blob_sha256:
                 raw = storage.read_blob(settings.artifacts_dir, version.blob_sha256)
-                return "asset", raw, version.content_type, asset.url
+                return ReplayTarget("asset", raw, version.content_type, asset.url)
         repo.record_replay_miss(original_url, key)
         session.commit()
-        return "miss", None, None, None
+        return _MISS
 
 
 _PREFLIGHT_HEADERS = {
@@ -283,7 +333,9 @@ async def replay_preflight(ts: str, url: str) -> Response:
 async def replay(ts: str, url: str, request: Request) -> Response:
     parsed: URL = request.url
     original_url = _full_requested_url(ts, url, parsed.query)
-    kind, raw, content_type, base_url = await run_in_threadpool(_resolve_replay, original_url, ts)
+    target = await run_in_threadpool(_resolve_replay, original_url, ts)
+    kind, raw = target.kind, target.raw
+    content_type, base_url = target.content_type, target.base_url
 
     if kind == "miss" or raw is None:
         return Response(
@@ -296,7 +348,12 @@ async def replay(ts: str, url: str, request: Request) -> Response:
     if kind == "page":
         text = decode_body(raw, content_type=content_type)
         rewritten = rewritemod.rewrite_html(text, base_url=base_url or original_url, ts=ts)
-        rewritten = _inject_shim(rewritten, ts=ts, origin=base_url or original_url)
+        rewritten = _inject_shim(
+            rewritten,
+            ts=ts,
+            origin=base_url or original_url,
+            snapshot_id=target.snapshot_id,
+        )
         return Response(
             content=rewritten, media_type="text/html; charset=utf-8", headers=_REPLAY_HEADERS
         )
@@ -317,7 +374,7 @@ async def replay_shim() -> Response:
     return Response(
         content=_SHIM_JS,
         media_type="application/javascript; charset=utf-8",
-        headers={**_REPLAY_HEADERS, "Cache-Control": "public, max-age=3600"},
+        headers=_REPLAY_HEADERS,
     )
 
 
