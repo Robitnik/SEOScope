@@ -1,0 +1,188 @@
+/* Web Archive (task-59): hub (`#/archive`), replay viewer (`#/archive/view`),
+ * change feed (`#/archive/changes`). Reuses `.section-heading`/`.tablist`/
+ * `.state-panel`/`.pagination`/`.analytics-table`/`.table-scroll`/`.tag-new`/
+ * `.back-link`/`.search-field` base styles (client-page.css/app.css) — only
+ * archive-specific pieces live here.
+ */
+
+.button--small { padding: 5px 10px; font-size: 12px; min-height: 30px; }
+
+/* --- Hub: URL input hero ------------------------------------------------ */
+
+.archive-hero {
+  padding: 32px 20px 20px;
+  border-bottom: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 14px;
+}
+.archive-hero h1 { font-size: clamp(26px, 4vw, 40px); margin: 0; }
+.archive-hero__subtitle { margin: 0; color: var(--ink-muted); max-width: 640px; }
+.archive-lookup-form { display: flex; gap: 10px; flex-wrap: wrap; max-width: 720px; }
+.archive-lookup-field { flex: 1; min-width: 260px; }
+.archive-lookup-field input { min-height: 46px; font-size: 15px; }
+.archive-hero__changes-link {
+  display: inline-flex; align-items: center; gap: 6px; width: fit-content;
+  color: var(--ink-muted); font-size: 13px; font-weight: 700; text-decoration: none;
+}
+.archive-hero__changes-link:hover { color: var(--accent); }
+.archive-hero__changes-link .icon { width: 16px; height: 16px; }
+
+/* --- Hub: lookup result --------------------------------------------------- */
+
+.archive-result { padding: 0 20px; }
+.archive-result__meta { margin: 4px 0 0; color: var(--ink-muted); font-size: 13px; }
+
+/* Wayback-style month calendar: highlighted days have a captured version;
+ * clicking one shows its times below (`selectedDayMarkup`). */
+.archive-calendar { max-width: 420px; margin: 16px 0 20px; }
+.archive-calendar__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.archive-calendar__month { margin: 0; font-family: var(--font-display); font-weight: 900; text-transform: uppercase; letter-spacing: .04em; }
+.archive-calendar__weekdays, .archive-calendar__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.archive-calendar__weekdays span { text-align: center; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); padding-bottom: 4px; }
+.archive-calendar__day {
+  position: relative; aspect-ratio: 1; min-height: 36px; border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--ink-dim);
+  font-variant-numeric: tabular-nums; font-size: 12px; cursor: default;
+}
+.archive-calendar__day--empty { border: none; background: none; }
+.archive-calendar__day--has-capture { color: var(--ink); border-color: var(--line); cursor: pointer; }
+.archive-calendar__day--has-capture:hover { border-color: var(--accent); color: var(--accent); }
+.archive-calendar__day--changed::after {
+  content: ""; position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+}
+.archive-calendar__day--selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--ink); }
+.archive-calendar__day:disabled { cursor: not-allowed; }
+
+.archive-timeline-days { display: flex; flex-direction: column; gap: 16px; margin: 16px 0 24px; }
+.archive-timeline-day__label {
+  margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--ink-dim);
+}
+.archive-timeline-points { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+.archive-timeline-point {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius-md); text-decoration: none;
+  color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums;
+}
+.archive-timeline-point:hover { border-color: var(--accent); color: var(--accent); }
+/* `point-filled` (a change was recorded here) vs `point` (confirmed
+ * unchanged) — the icon choice itself carries the distinction, colored the
+ * same as everything else that means "this is what changed" (--accent). */
+.archive-timeline-point__dot { width: 9px; height: 9px; color: var(--ink-dim); flex: 0 0 auto; }
+.archive-timeline-point__dot--changed { color: var(--accent); }
+.archive-timeline-point__reason { color: var(--ink-muted); font-size: 12px; }
+
+/* --- Hub: portfolio overview ---------------------------------------------- */
+
+.archive-stat-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line); margin: 0 20px 20px;
+}
+.archive-stat { background: var(--surface); padding: 16px; }
+.archive-stat__value {
+  margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 900;
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.archive-stat__label { margin: 4px 0 0; color: var(--ink-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+
+.archive-clients-table td:first-child, .archive-clients-table th:first-child { text-align: left; min-width: 160px; }
+.archive-row--disabled { opacity: .55; }
+
+.archive-columns {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; margin: 0 0 24px;
+}
+@media (max-width: 900px) { .archive-columns { grid-template-columns: 1fr; } }
+
+.archive-capture-list, .archive-top-changing-list { margin: 0 20px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.archive-capture-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--state-color, var(--ink-dim)); font-size: 13px;
+}
+.archive-capture-row .icon { width: 16px; height: 16px; color: var(--state-color, var(--ink-dim)); flex: 0 0 auto; }
+.archive-capture-row.state-ok { --state-color: var(--success); }
+.archive-capture-row.state-partial { --state-color: var(--warning); }
+.archive-capture-row.state-failed, .archive-capture-row.state-blocked { --state-color: var(--danger); }
+.archive-capture-row.state-running, .archive-capture-row.state-queued { --state-color: var(--info); }
+.archive-capture-row__counts { color: var(--ink-muted); font-size: 12px; margin-left: auto; }
+.archive-capture-row__time { color: var(--ink-dim); font-size: 12px; white-space: nowrap; }
+.archive-top-changing-list li {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line-soft);
+}
+.archive-top-changing-list a { color: var(--ink); overflow-wrap: anywhere; text-decoration: none; }
+.archive-top-changing-list a:hover { color: var(--accent); }
+.archive-empty-note { margin: 0 20px; color: var(--ink-dim); font-size: 13px; }
+
+/* --- Viewer -------------------------------------------------------------- */
+
+/* Full-bleed: the app shell (`.masthead`/`.app-main`) has no defined
+ * viewport-height chain (`.app-main` is a simple auto-height content
+ * block), so `height:100%` here would resolve against nothing. Pinning the
+ * whole viewer to the real browser viewport — and hiding the app's own nav
+ * (`initArchiveViewPage`) — makes this page read as an immersive replay
+ * tool instead of a strip squeezed under the masthead.
+ */
+.archive-viewer { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; background: var(--canvas); }
+.archive-banner {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--canvas-raised);
+}
+.archive-banner__back { flex: 0 0 auto; }
+.archive-banner__identity { min-width: 0; flex: 1; }
+.archive-banner__url {
+  width: 100%; min-width: 120px; max-width: 640px; margin: 0; padding: 5px 10px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface);
+  color: var(--ink); font-weight: 700; font-family: var(--font-body);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.archive-banner__url:focus-visible { border-color: var(--accent); outline: none; }
+.archive-banner__time { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
+.archive-banner__confirmed { color: var(--ink-dim); }
+.archive-banner__nav { display: flex; gap: 6px; }
+.archive-banner__actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.archive-scripts-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-muted); cursor: pointer; }
+
+.archive-meta-panel { padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.archive-meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 20px; }
+.archive-meta-label { margin: 0; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); }
+.archive-meta-value { margin: 2px 0 0; overflow-wrap: anywhere; }
+.archive-meta-headers { margin-top: 14px; }
+.archive-meta-headers summary { cursor: pointer; color: var(--ink-muted); font-size: 12px; }
+
+.archive-diff-panel { padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--canvas); max-height: 40vh; overflow-y: auto; }
+.archive-diff { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
+.archive-diff-line--add { color: var(--success); }
+.archive-diff-line--del { color: var(--danger); }
+
+.archive-iframe-wrap { flex: 1; min-height: 0; overscroll-behavior: contain; contain: paint; }
+.archive-iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+
+/* --- Changes feed ---------------------------------------------------------- */
+
+.archive-changes-filters { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 20px; }
+.archive-changes-filters select {
+  min-height: 40px; padding: 6px 10px; border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink); border-radius: var(--radius-sm);
+}
+.archive-changes-feed { margin: 0 20px 16px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 1px; }
+.archive-change-row {
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border: 1px solid var(--line-soft);
+}
+.archive-change-row__main { min-width: 0; flex: 1; }
+.archive-change-row__client { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-dim); }
+.archive-change-row__url { margin: 2px 0 0; font-weight: 700; overflow-wrap: anywhere; }
+.archive-change-row__summary { margin: 4px 0 0; color: var(--ink-muted); font-size: 13px; }
+.archive-change-row__kinds { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.archive-change-row__meta { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; font-size: 12px; color: var(--ink-dim); white-space: nowrap; }
+.archive-change-row__actions { display: flex; gap: 6px; }
+.archive-change-row + .archive-diff-panel,
+.archive-change-row .archive-diff-panel { flex-basis: 100%; margin: 8px -14px -12px; border-bottom: none; }
+
+@media (max-width: 640px) {
+  .archive-lookup-form { flex-direction: column; align-items: stretch; }
+  .archive-banner { flex-direction: column; align-items: stretch; }
+  .archive-banner__url { max-width: 100%; }
+  .archive-banner__actions { margin-left: 0; }
+  .archive-changes-filters { flex-direction: column; }
+  .archive-change-row__meta { align-items: flex-start; }
+}

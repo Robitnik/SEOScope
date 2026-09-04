@@ -1454,6 +1454,979 @@
         "title": "AnalyticsDatasetRowDTO",
         "type": "object"
       },
+      "ArchiveCaptureAcceptedDTO": {
+        "properties": {
+          "capture_id": {
+            "title": "Capture Id",
+            "type": "string"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capture_id",
+          "status_url"
+        ],
+        "title": "ArchiveCaptureAcceptedDTO",
+        "type": "object"
+      },
+      "ArchiveCaptureDTO": {
+        "properties": {
+          "assets_failed": {
+            "title": "Assets Failed",
+            "type": "integer"
+          },
+          "assets_fetched": {
+            "title": "Assets Fetched",
+            "type": "integer"
+          },
+          "assets_reused": {
+            "title": "Assets Reused",
+            "type": "integer"
+          },
+          "bytes_stored": {
+            "title": "Bytes Stored",
+            "type": "integer"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "scheduled_for": {
+            "format": "date-time",
+            "title": "Scheduled For",
+            "type": "string"
+          },
+          "slot_key": {
+            "title": "Slot Key",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "ok",
+              "partial",
+              "failed",
+              "blocked"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "scheduled",
+              "manual"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          },
+          "urls_blocked": {
+            "title": "Urls Blocked",
+            "type": "integer"
+          },
+          "urls_captured": {
+            "title": "Urls Captured",
+            "type": "integer"
+          },
+          "urls_failed": {
+            "title": "Urls Failed",
+            "type": "integer"
+          },
+          "urls_new": {
+            "title": "Urls New",
+            "type": "integer"
+          },
+          "urls_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urls Total"
+          },
+          "urls_unchanged": {
+            "title": "Urls Unchanged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "client_name",
+          "slot_key",
+          "scheduled_for",
+          "trigger",
+          "status",
+          "started_at",
+          "finished_at",
+          "urls_total",
+          "urls_captured",
+          "urls_unchanged",
+          "urls_new",
+          "urls_failed",
+          "urls_blocked",
+          "assets_fetched",
+          "assets_reused",
+          "assets_failed",
+          "bytes_stored",
+          "error_code",
+          "error_message"
+        ],
+        "title": "ArchiveCaptureDTO",
+        "type": "object"
+      },
+      "ArchiveChangeDTO": {
+        "properties": {
+          "archive_url_id": {
+            "title": "Archive Url Id",
+            "type": "string"
+          },
+          "change_kinds": {
+            "items": {
+              "enum": [
+                "title",
+                "description",
+                "h1",
+                "text",
+                "links",
+                "images",
+                "status",
+                "redirect",
+                "noindex"
+              ],
+              "type": "string"
+            },
+            "title": "Change Kinds",
+            "type": "array"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "prev_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Snapshot Id"
+          },
+          "snapshot_id": {
+            "title": "Snapshot Id",
+            "type": "string"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          },
+          "text_delta_words": {
+            "title": "Text Delta Words",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "client_name",
+          "archive_url_id",
+          "url",
+          "snapshot_id",
+          "prev_snapshot_id",
+          "detected_at",
+          "change_kinds",
+          "summary",
+          "text_delta_words"
+        ],
+        "title": "ArchiveChangeDTO",
+        "type": "object"
+      },
+      "ArchiveChangeDiffDTO": {
+        "properties": {
+          "change": {
+            "$ref": "#/components/schemas/ArchiveChangeDTO"
+          },
+          "diff_lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Diff Lines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "change",
+          "diff_lines"
+        ],
+        "title": "ArchiveChangeDiffDTO",
+        "type": "object"
+      },
+      "ArchiveChangesPageDTO": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveChangeDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "ArchiveChangesPageDTO",
+        "type": "object"
+      },
+      "ArchiveClientCoverageDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "last_capture_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Capture At"
+          },
+          "last_capture_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "queued",
+                  "running",
+                  "ok",
+                  "partial",
+                  "failed",
+                  "blocked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Capture Status"
+          },
+          "next_capture_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Capture At"
+          },
+          "snapshots_total": {
+            "title": "Snapshots Total",
+            "type": "integer"
+          },
+          "urls_known_to_monitor": {
+            "title": "Urls Known To Monitor",
+            "type": "integer"
+          },
+          "urls_tracked": {
+            "title": "Urls Tracked",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "enabled",
+          "urls_tracked",
+          "urls_known_to_monitor",
+          "snapshots_total",
+          "last_capture_at",
+          "last_capture_status",
+          "next_capture_at"
+        ],
+        "title": "ArchiveClientCoverageDTO",
+        "type": "object"
+      },
+      "ArchiveLookupDTO": {
+        "properties": {
+          "found": {
+            "title": "Found",
+            "type": "boolean"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArchiveUrlDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "found"
+        ],
+        "title": "ArchiveLookupDTO",
+        "type": "object"
+      },
+      "ArchiveOverviewDTO": {
+        "properties": {
+          "archive_enabled": {
+            "title": "Archive Enabled",
+            "type": "boolean"
+          },
+          "blobs_total": {
+            "title": "Blobs Total",
+            "type": "integer"
+          },
+          "bytes_local": {
+            "title": "Bytes Local",
+            "type": "integer"
+          },
+          "bytes_not_uploaded": {
+            "title": "Bytes Not Uploaded",
+            "type": "integer"
+          },
+          "bytes_uploaded": {
+            "title": "Bytes Uploaded",
+            "type": "integer"
+          },
+          "capture_times": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capture Times",
+            "type": "array"
+          },
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveClientCoverageDTO"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "cloud_enabled": {
+            "title": "Cloud Enabled",
+            "type": "boolean"
+          },
+          "recent_captures": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveCaptureDTO"
+            },
+            "title": "Recent Captures",
+            "type": "array"
+          },
+          "snapshots_total": {
+            "title": "Snapshots Total",
+            "type": "integer"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "top_changing_urls": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveUrlDTO"
+            },
+            "title": "Top Changing Urls",
+            "type": "array"
+          },
+          "urls_total": {
+            "title": "Urls Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "archive_enabled",
+          "cloud_enabled",
+          "timezone",
+          "capture_times",
+          "clients",
+          "urls_total",
+          "snapshots_total",
+          "blobs_total",
+          "bytes_local",
+          "bytes_uploaded",
+          "bytes_not_uploaded",
+          "top_changing_urls",
+          "recent_captures"
+        ],
+        "title": "ArchiveOverviewDTO",
+        "type": "object"
+      },
+      "ArchiveSnapshotDetailDTO": {
+        "properties": {
+          "archive_url_id": {
+            "title": "Archive Url Id",
+            "type": "string"
+          },
+          "asset_count": {
+            "title": "Asset Count",
+            "type": "integer"
+          },
+          "assets_missing": {
+            "title": "Assets Missing",
+            "type": "integer"
+          },
+          "assets_truncated": {
+            "title": "Assets Truncated",
+            "type": "boolean"
+          },
+          "canonical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "confirmed_count": {
+            "title": "Confirmed Count",
+            "type": "integer"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_confirmed_at": {
+            "format": "date-time",
+            "title": "Last Confirmed At",
+            "type": "string"
+          },
+          "meta_robots": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Robots"
+          },
+          "next_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Snapshot Id"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "prev_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Snapshot Id"
+          },
+          "store_reason": {
+            "enum": [
+              "first",
+              "changed",
+              "weekly_refresh",
+              "status_changed"
+            ],
+            "title": "Store Reason",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "view_url": {
+            "title": "View Url",
+            "type": "string"
+          },
+          "word_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word Count"
+          }
+        },
+        "required": [
+          "id",
+          "archive_url_id",
+          "client_id",
+          "client_name",
+          "url",
+          "ts",
+          "view_url",
+          "observed_at",
+          "last_confirmed_at",
+          "confirmed_count",
+          "http_status",
+          "final_url",
+          "content_type",
+          "title",
+          "description",
+          "canonical",
+          "meta_robots",
+          "word_count",
+          "headers",
+          "asset_count",
+          "assets_truncated",
+          "assets_missing",
+          "store_reason",
+          "prev_snapshot_id",
+          "next_snapshot_id"
+        ],
+        "title": "ArchiveSnapshotDetailDTO",
+        "type": "object"
+      },
+      "ArchiveSnapshotSummaryDTO": {
+        "properties": {
+          "asset_count": {
+            "title": "Asset Count",
+            "type": "integer"
+          },
+          "assets_truncated": {
+            "title": "Assets Truncated",
+            "type": "boolean"
+          },
+          "confirmed_count": {
+            "title": "Confirmed Count",
+            "type": "integer"
+          },
+          "has_change": {
+            "title": "Has Change",
+            "type": "boolean"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_confirmed_at": {
+            "format": "date-time",
+            "title": "Last Confirmed At",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "store_reason": {
+            "enum": [
+              "first",
+              "changed",
+              "weekly_refresh",
+              "status_changed"
+            ],
+            "title": "Store Reason",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ts",
+          "observed_at",
+          "last_confirmed_at",
+          "confirmed_count",
+          "http_status",
+          "store_reason",
+          "title",
+          "asset_count",
+          "assets_truncated",
+          "has_change"
+        ],
+        "title": "ArchiveSnapshotSummaryDTO",
+        "type": "object"
+      },
+      "ArchiveUrlDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "first_captured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Captured At"
+          },
+          "gone_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gone Since"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_captured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Captured At"
+          },
+          "snapshot_count": {
+            "title": "Snapshot Count",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "sitemap",
+              "link",
+              "manual"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "client_name",
+          "url",
+          "source",
+          "first_captured_at",
+          "last_captured_at",
+          "snapshot_count",
+          "gone_since"
+        ],
+        "title": "ArchiveUrlDTO",
+        "type": "object"
+      },
+      "ArchiveUrlSearchResponseDTO": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveUrlSearchResultDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ArchiveUrlSearchResponseDTO",
+        "type": "object"
+      },
+      "ArchiveUrlSearchResultDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_captured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Captured At"
+          },
+          "snapshot_count": {
+            "title": "Snapshot Count",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "client_name",
+          "url",
+          "snapshot_count",
+          "last_captured_at"
+        ],
+        "title": "ArchiveUrlSearchResultDTO",
+        "type": "object"
+      },
+      "ArchiveUrlTimelineDTO": {
+        "properties": {
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveSnapshotSummaryDTO"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          },
+          "url": {
+            "$ref": "#/components/schemas/ArchiveUrlDTO"
+          }
+        },
+        "required": [
+          "url",
+          "snapshots"
+        ],
+        "title": "ArchiveUrlTimelineDTO",
+        "type": "object"
+      },
       "BackupTierCountsDTO": {
         "properties": {
           "daily": {
@@ -1813,6 +2786,30 @@
         "title": "BlogsSummaryDTO",
         "type": "object"
       },
+      "BreadcrumbNodeDTO": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "BreadcrumbNodeDTO",
+        "type": "object"
+      },
       "CellProgressDTO": {
         "description": "Progress of one `(client, provider)` cell \u2014 PLAN \u00a79.1.",
         "properties": {
@@ -1988,6 +2985,11 @@
           "health": {
             "$ref": "#/components/schemas/ClientHealthDTO"
           },
+          "is_dev": {
+            "default": false,
+            "title": "Is Dev",
+            "type": "boolean"
+          },
           "last_synced_at": {
             "anyOf": [
               {
@@ -2107,6 +3109,11 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "is_dev": {
+            "default": false,
+            "title": "Is Dev",
+            "type": "boolean"
+          },
           "market": {
             "anyOf": [
               {
@@ -2163,6 +3170,11 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "is_dev": {
+            "default": false,
+            "title": "Is Dev",
+            "type": "boolean"
           },
           "logo_path": {
             "anyOf": [
@@ -2395,6 +3407,17 @@
               }
             ],
             "title": "Enabled"
+          },
+          "is_dev": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Dev"
           },
           "market": {
             "anyOf": [
@@ -3014,6 +4037,32 @@
         "title": "DimensionRowDTO",
         "type": "object"
       },
+      "DuplicateClusterDTO": {
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "required": [
+          "check",
+          "field",
+          "members"
+        ],
+        "title": "DuplicateClusterDTO",
+        "type": "object"
+      },
       "ErrorDTO": {
         "description": "Safe error payload \u2014 never contains secrets, stack traces or paths.",
         "properties": {
@@ -3037,6 +4086,50 @@
           "message"
         ],
         "title": "ErrorDTO",
+        "type": "object"
+      },
+      "FindingDTO": {
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warn",
+              "info"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "check",
+          "severity",
+          "field",
+          "detail"
+        ],
+        "title": "FindingDTO",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -6267,6 +7360,368 @@
         "title": "NinjaReportNameUpdateRequest",
         "type": "object"
       },
+      "PageInventoryRebuildResponseDTO": {
+        "properties": {
+          "table": {
+            "$ref": "#/components/schemas/PageInventoryTableDTO"
+          }
+        },
+        "required": [
+          "table"
+        ],
+        "title": "PageInventoryRebuildResponseDTO",
+        "type": "object"
+      },
+      "PageInventoryRowDTO": {
+        "properties": {
+          "breadcrumb_source": {
+            "enum": [
+              "json_ld",
+              "dom",
+              "mixed",
+              "none"
+            ],
+            "title": "Breadcrumb Source",
+            "type": "string"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/components/schemas/BreadcrumbNodeDTO"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "canonical_key": {
+            "title": "Canonical Key",
+            "type": "string"
+          },
+          "canonical_missing": {
+            "title": "Canonical Missing",
+            "type": "boolean"
+          },
+          "checked": {
+            "title": "Checked",
+            "type": "boolean"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "duplicate_urls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Duplicate Urls",
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/FindingDTO"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "findings_by_field": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/FindingDTO"
+              },
+              "type": "array"
+            },
+            "title": "Findings By Field",
+            "type": "object"
+          },
+          "h1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H1"
+          },
+          "indexable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexable"
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keywords",
+            "type": "array"
+          },
+          "keywords_source": {
+            "enum": [
+              "meta",
+              "none"
+            ],
+            "title": "Keywords Source",
+            "type": "string"
+          },
+          "page_label": {
+            "title": "Page Label",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "status_label": {
+            "enum": [
+              "live",
+              "broken",
+              "redirect",
+              "noindex",
+              "not_checked"
+            ],
+            "title": "Status Label",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "worst_severity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "error",
+                  "warn",
+                  "info"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Severity"
+          }
+        },
+        "required": [
+          "url",
+          "canonical_key",
+          "duplicate_urls",
+          "page_label",
+          "breadcrumbs",
+          "breadcrumb_source",
+          "title",
+          "description",
+          "keywords",
+          "keywords_source",
+          "h1",
+          "status",
+          "status_label",
+          "indexable",
+          "canonical_missing",
+          "checked",
+          "findings",
+          "findings_by_field",
+          "worst_severity"
+        ],
+        "title": "PageInventoryRowDTO",
+        "type": "object"
+      },
+      "PageInventorySummaryDTO": {
+        "properties": {
+          "breadcrumb_source": {
+            "enum": [
+              "json_ld",
+              "dom",
+              "mixed",
+              "none"
+            ],
+            "title": "Breadcrumb Source",
+            "type": "string"
+          },
+          "built_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Built At"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "duplicate_groups": {
+            "title": "Duplicate Groups",
+            "type": "integer"
+          },
+          "never_built": {
+            "title": "Never Built",
+            "type": "boolean"
+          },
+          "pages_in_duplicate_groups": {
+            "title": "Pages In Duplicate Groups",
+            "type": "integer"
+          },
+          "pages_total": {
+            "title": "Pages Total",
+            "type": "integer"
+          },
+          "pages_unique": {
+            "title": "Pages Unique",
+            "type": "integer"
+          },
+          "pages_with_breadcrumbs": {
+            "title": "Pages With Breadcrumbs",
+            "type": "integer"
+          },
+          "pages_with_keywords": {
+            "title": "Pages With Keywords",
+            "type": "integer"
+          },
+          "severity_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "enum": [
+                "error",
+                "warn",
+                "info"
+              ]
+            },
+            "title": "Severity Counts",
+            "type": "object"
+          },
+          "source_collected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Collected At"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id",
+          "built_at",
+          "source_collected_at",
+          "pages_total",
+          "pages_unique",
+          "pages_with_breadcrumbs",
+          "pages_with_keywords",
+          "breadcrumb_source",
+          "duplicate_groups",
+          "pages_in_duplicate_groups",
+          "severity_counts",
+          "warnings",
+          "never_built",
+          "stale"
+        ],
+        "title": "PageInventorySummaryDTO",
+        "type": "object"
+      },
+      "PageInventoryTableDTO": {
+        "properties": {
+          "duplicate_clusters": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateClusterDTO"
+            },
+            "title": "Duplicate Clusters",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "profile": {
+            "enum": [
+              "calibrated",
+              "strict"
+            ],
+            "title": "Profile",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/PageInventoryRowDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PageInventorySummaryDTO"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "summary",
+          "rows",
+          "duplicate_clusters",
+          "total",
+          "page",
+          "page_size",
+          "profile"
+        ],
+        "title": "PageInventoryTableDTO",
+        "type": "object"
+      },
       "PeriodKind": {
         "description": "Comparison period (PLAN \u00a73.1, \u00a721.1).\n\n`week`/`month` are the dashboard's base periods. `quarter`/`year`/`custom`\nwere added by task-14 and are computed **by aggregating already-stored\nhistory** (zero new collection), so they are only available where the UI\nhonestly shows coverage \u2014 on the client page (\u00a721.1/\u00a721.6), not on the\nmain dashboard.",
         "enum": [
@@ -8921,6 +10376,437 @@
         "title": "RunRebuildRequest",
         "type": "object"
       },
+      "SchemaMarkupCheckDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "findings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SchemaMarkupFindingDTO"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "found_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Found Types",
+            "type": "array"
+          },
+          "generated": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchemaMarkupGeneratedDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "page_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Kind"
+          },
+          "raw_markup": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SchemaMarkupRawBlockDTO"
+            },
+            "title": "Raw Markup",
+            "type": "array"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "clean",
+              "has_gaps",
+              "missing",
+              "fetch_failed"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "vocab_version": {
+            "title": "Vocab Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "verdict",
+          "created_at",
+          "vocab_version"
+        ],
+        "title": "SchemaMarkupCheckDTO",
+        "type": "object"
+      },
+      "SchemaMarkupCheckRequest": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "SchemaMarkupCheckRequest",
+        "type": "object"
+      },
+      "SchemaMarkupCheckSummaryDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "found_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Found Types",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "page_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Kind"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "clean",
+              "has_gaps",
+              "missing",
+              "fetch_failed"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "verdict",
+          "created_at"
+        ],
+        "title": "SchemaMarkupCheckSummaryDTO",
+        "type": "object"
+      },
+      "SchemaMarkupChecksPageDTO": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/SchemaMarkupCheckSummaryDTO"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "limit",
+          "offset",
+          "checks"
+        ],
+        "title": "SchemaMarkupChecksPageDTO",
+        "type": "object"
+      },
+      "SchemaMarkupFindingDTO": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "entity_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Entity Types",
+            "type": "array"
+          },
+          "level": {
+            "enum": [
+              "L0",
+              "L1",
+              "L2"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "property_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Name"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warn",
+              "info"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "severity",
+          "code",
+          "message"
+        ],
+        "title": "SchemaMarkupFindingDTO",
+        "type": "object"
+      },
+      "SchemaMarkupGeneratedDTO": {
+        "properties": {
+          "entities": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SchemaMarkupGeneratedEntityDTO"
+            },
+            "title": "Entities",
+            "type": "array"
+          },
+          "skipped": {
+            "default": [],
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "title": "SchemaMarkupGeneratedDTO",
+        "type": "object"
+      },
+      "SchemaMarkupGeneratedEntityDTO": {
+        "properties": {
+          "jsonld": {
+            "additionalProperties": true,
+            "title": "Jsonld",
+            "type": "object"
+          },
+          "needs_input": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Needs Input",
+            "type": "array"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Sources",
+            "type": "object"
+          },
+          "type_name": {
+            "title": "Type Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type_name",
+          "jsonld"
+        ],
+        "title": "SchemaMarkupGeneratedEntityDTO",
+        "type": "object"
+      },
+      "SchemaMarkupRawBlockDTO": {
+        "description": "\u0420\u043e\u0437\u043c\u0456\u0442\u043a\u0430 \u044f\u043a \u0432\u043e\u043d\u0430 \u0440\u0435\u0430\u043b\u044c\u043d\u043e \u043b\u0435\u0436\u0438\u0442\u044c \u043d\u0430 \u0441\u0442\u043e\u0440\u0456\u043d\u0446\u0456 \u2014 \u043e\u043a\u0440\u0435\u043c\u043e \u0432\u0456\u0434 `found_types`\n(\u043b\u0438\u0448\u0435 \u0441\u043f\u0438\u0441\u043e\u043a \u0456\u043c\u0435\u043d) \u0456 `findings` (\u043b\u0438\u0448\u0435 \u043f\u043e\u0440\u0443\u0448\u0435\u043d\u043d\u044f). `raw` \u0434\u043b\u044f `json-ld` \u2014\n\u043e\u0440\u0438\u0433\u0456\u043d\u0430\u043b\u044c\u043d\u0438\u0439 \u0432\u0443\u0437\u043e\u043b/\u0433\u0440\u0430\u0444, \u044f\u043a \u0439\u043e\u0433\u043e \u043d\u0430\u043f\u0438\u0441\u0430\u0432 \u043f\u043b\u0430\u0433\u0456\u043d; \u0434\u043b\u044f `microdata` \u2014 \u0442\u0435 \u0441\u0430\u043c\u0435\n\u0434\u0435\u0440\u0435\u0432\u043e, \u0437\u0456\u0431\u0440\u0430\u043d\u0435 \u0437 `itemprop`/`itemscope` (\u043d\u0430\u0442\u0438\u0432\u043d\u043e\u0457 JSON-\u0444\u043e\u0440\u043c\u0438 \u0432 microdata\n\u043d\u0435\u043c\u0430\u0454, \u0442\u043e\u043c\u0443 \u0434\u0435\u0440\u0435\u0432\u043e \u0441\u0435\u0440\u0456\u0430\u043b\u0456\u0437\u0443\u0454\u0442\u044c\u0441\u044f \u2014 `ExtractedEntity.to_jsonable()`).",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "format": {
+            "enum": [
+              "json-ld",
+              "microdata"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "raw": {
+            "title": "Raw"
+          }
+        },
+        "required": [
+          "format"
+        ],
+        "title": "SchemaMarkupRawBlockDTO",
+        "type": "object"
+      },
       "SheetPreviewDTO": {
         "properties": {
           "header_row_index": {
@@ -10200,12 +12086,585 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Unprocessable Entity"
           }
         },
         "summary": "Get Portfolio Series",
         "tags": [
           "portfolio"
+        ]
+      }
+    },
+    "/api/v1/archive/captures": {
+      "get": {
+        "operationId": "list_archive_captures_api_v1_archive_captures_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ArchiveCaptureDTO"
+                  },
+                  "title": "Response List Archive Captures Api V1 Archive Captures Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Archive Captures",
+        "tags": [
+          "web-archive"
+        ]
+      },
+      "post": {
+        "description": "\"Capture now\" \u2014 enqueues a `queued` `ArchiveCapture` for the worker's\n`ArchiveScheduler` to claim on its next tick (\u226460s later); the worker\nprocess never crawls a client's site from the API itself.",
+        "operationId": "start_archive_capture_api_v1_archive_captures_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveCaptureAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Archive Capture",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/changes": {
+      "get": {
+        "operationId": "list_archive_changes_api_v1_archive_changes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveChangesPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Archive Changes",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/lookup": {
+      "get": {
+        "operationId": "lookup_archive_url_api_v1_archive_lookup_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveLookupDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Lookup Archive Url",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/overview": {
+      "get": {
+        "operationId": "get_archive_overview_api_v1_archive_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveOverviewDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Archive Overview",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/snapshots/{snapshot_id}": {
+      "get": {
+        "operationId": "get_snapshot_detail_api_v1_archive_snapshots__snapshot_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveSnapshotDetailDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Snapshot Detail",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/snapshots/{snapshot_id}/diff": {
+      "get": {
+        "operationId": "get_snapshot_diff_api_v1_archive_snapshots__snapshot_id__diff_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveChangeDiffDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Snapshot Diff",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/snapshots/{snapshot_id}/source": {
+      "get": {
+        "operationId": "get_snapshot_source_api_v1_archive_snapshots__snapshot_id__source_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Snapshot Source",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/urls": {
+      "get": {
+        "operationId": "search_archive_urls_api_v1_archive_urls_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveUrlSearchResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Archive Urls",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/urls/{url_id}/snapshots": {
+      "get": {
+        "operationId": "get_url_timeline_api_v1_archive_urls__url_id__snapshots_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "url_id",
+            "required": true,
+            "schema": {
+              "title": "Url Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveUrlTimelineDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Url Timeline",
+        "tags": [
+          "web-archive"
         ]
       }
     },
@@ -13450,6 +15909,63 @@
         ]
       }
     },
+    "/api/v1/clients/{client_id}/monitor/robots/check": {
+      "post": {
+        "description": "Synchronous re-check of robots.txt (mirrors `check_monitor_page` /\n`check_monitor_redirects`) \u2014 runs inline right now and returns the same\nshape `GET .../resources/robots` does, so the \"Robots\" block can refresh\nitself without waiting for the next scheduled run.",
+        "operationId": "check_monitor_robots_api_v1_clients__client_id__monitor_robots_check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorResourceDTO"
+                  },
+                  "title": "Response Check Monitor Robots Api V1 Clients  Client Id  Monitor Robots Check Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Monitor Robots",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
     "/api/v1/clients/{client_id}/monitor/runs": {
       "get": {
         "operationId": "list_monitor_runs_api_v1_clients__client_id__monitor_runs_get",
@@ -13708,6 +16224,63 @@
           }
         },
         "summary": "Update Monitor Settings",
+        "tags": [
+          "monitor"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/monitor/sitemap/check": {
+      "post": {
+        "description": "Synchronous re-check of the sitemap tree \u2014 same rationale as\n`check_monitor_robots`.",
+        "operationId": "check_monitor_sitemap_api_v1_clients__client_id__monitor_sitemap_check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MonitorResourceDTO"
+                  },
+                  "title": "Response Check Monitor Sitemap Api V1 Clients  Client Id  Monitor Sitemap Check Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Monitor Sitemap",
         "tags": [
           "monitor"
         ]
@@ -14024,6 +16597,320 @@
         "summary": "Export Monthly Table Xlsx",
         "tags": [
           "client-monthly-table"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/pages": {
+      "get": {
+        "operationId": "get_page_inventory_api_v1_clients__client_id__pages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "profile",
+            "required": false,
+            "schema": {
+              "default": "calibrated",
+              "enum": [
+                "calibrated",
+                "strict"
+              ],
+              "title": "Profile",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "field",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Field"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageInventoryTableDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Page Inventory",
+        "tags": [
+          "page-inventory"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/pages/rebuild": {
+      "post": {
+        "operationId": "rebuild_page_inventory_api_v1_clients__client_id__pages_rebuild_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageInventoryRebuildResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rebuild Page Inventory",
+        "tags": [
+          "page-inventory"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/pages/summary": {
+      "get": {
+        "operationId": "get_page_inventory_summary_api_v1_clients__client_id__pages_summary_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageInventorySummaryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Page Inventory Summary",
+        "tags": [
+          "page-inventory"
+        ]
+      }
+    },
+    "/api/v1/clients/{client_id}/pages/xlsx": {
+      "get": {
+        "operationId": "export_page_inventory_xlsx_api_v1_clients__client_id__pages_xlsx_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Page Inventory Xlsx",
+        "tags": [
+          "page-inventory"
         ]
       }
     },
@@ -15174,7 +18061,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Unprocessable Entity"
           }
         },
         "summary": "Create Report Batch",
@@ -15734,7 +18621,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Unprocessable Entity"
           }
         },
         "summary": "Put Ninja Report Name",
@@ -16001,7 +18888,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Unprocessable Entity"
           }
         },
         "summary": "Create Report Run",
@@ -16167,7 +19054,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Unprocessable Entity"
           }
         },
         "summary": "Create Client Pdf",
@@ -16217,7 +19104,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Unprocessable Entity"
           }
         },
         "summary": "Get Report Document",
@@ -17097,7 +19984,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Unprocessable Entity"
           }
         },
         "summary": "Create Report",
@@ -18135,7 +21022,7 @@
                 }
               }
             },
-            "description": "Content Too Large"
+            "description": "Request Entity Too Large"
           },
           "422": {
             "content": {
@@ -18145,7 +21032,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Unprocessable Entity"
           }
         },
         "summary": "Create Check",
@@ -18602,6 +21489,169 @@
         ]
       }
     },
+    "/api/v1/tools/schema-markup/checks": {
+      "get": {
+        "operationId": "list_checks_api_v1_tools_schema_markup_checks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaMarkupChecksPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Checks",
+        "tags": [
+          "schema-markup"
+        ]
+      },
+      "post": {
+        "operationId": "create_check_api_v1_tools_schema_markup_checks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchemaMarkupCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaMarkupCheckDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Check",
+        "tags": [
+          "schema-markup"
+        ]
+      }
+    },
+    "/api/v1/tools/schema-markup/checks/{check_id}": {
+      "get": {
+        "operationId": "get_check_api_v1_tools_schema_markup_checks__check_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "check_id",
+            "required": true,
+            "schema": {
+              "title": "Check Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaMarkupCheckDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Check",
+        "tags": [
+          "schema-markup"
+        ]
+      }
+    },
     "/api/v1/tools/strategy-check/check": {
       "post": {
         "description": "SEO-\u0441\u0442\u0440\u0430\u0442\u0435\u0433\u0456\u044f (XLSX) -> findings, \u043f\u0435\u0440\u0441\u0438\u0441\u0442\u043e\u0432\u0430\u043d\u043e. \u041c\u0430\u043f\u0456\u043d\u0433 \u043a\u043e\u043b\u043e\u043d\u043e\u043a \u0456 \u0432\u043a\u043b\u0430\u0434\u043a\u0430\n\u0432\u0438\u0437\u043d\u0430\u0447\u0430\u044e\u0442\u044c\u0441\u044f \u0441\u0430\u043c\u0438\u043c \u0440\u0438\u0434\u0435\u0440\u043e\u043c (\u00a72.3 task-53 \u043f\u043b\u0430\u043d\u0443) \u2014 \u043d\u0430 \u0432\u0456\u0434\u043c\u0456\u043d\u0443 \u0432\u0456\u0434 Alt Text\n\u0442\u0443\u0442 \u043d\u0435\u043c\u0430\u0454 \u0434\u0432\u043e\u0437\u043d\u0430\u0447\u043d\u043e\u0441\u0442\u0456, \u044f\u043a\u0443 \u043c\u0430\u0432 \u0431\u0438 \u0432\u0438\u0440\u0456\u0448\u0443\u0432\u0430\u0442\u0438 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440 \u043f\u0435\u0440\u0435\u0434 \u043f\u0440\u043e\u0433\u043e\u043d\u043e\u043c.",
@@ -18835,6 +21885,122 @@
         "summary": "Get Strategy Report",
         "tags": [
           "content-qa"
+        ]
+      }
+    },
+    "/archive/r/{ts}/{url}": {
+      "get": {
+        "operationId": "replay_archive_r__ts___url__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ts",
+            "required": true,
+            "schema": {
+              "title": "Ts",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replay",
+        "tags": [
+          "web-archive-replay"
+        ]
+      },
+      "options": {
+        "description": "Answers a bare `OPTIONS` probe with this route's own CORS headers.\n\nDoes NOT cover a genuine multi-header CORS preflight (`OPTIONS` carrying\n`Access-Control-Request-Method`) \u2014 `app.core.security.configure_security`'s\nglobal `CORSMiddleware` intercepts and answers those itself, before\nrouting ever reaches here, using the app-wide `cors_allow_origins`\n(empty by default). Live-measured (task-59, 2026-09-04): a real\ncaptured page's own third-party script (Cloudflare's RUM analytics\nbeacon) triggers exactly that kind of preflight against another\nsame-origin path it references, and it fails \u2014 a DELIBERATELY accepted,\nharmless gap: the beacon is fire-and-forget third-party telemetry with\nzero effect on the archived page's own content, and it failing means it\nnever reaches Cloudflare's live infrastructure either, which is the\ncorrect outcome for an archive. Fixing it properly would mean loosening\nthe app-WIDE `cors_allow_origins` for every other route too, which is a\nworse trade than living with one third-party beacon's console noise.",
+        "operationId": "replay_preflight_archive_r__ts___url__options",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ts",
+            "required": true,
+            "schema": {
+              "title": "Ts",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replay Preflight",
+        "tags": [
+          "web-archive-replay"
+        ]
+      }
+    },
+    "/archive/static/shim.js": {
+      "get": {
+        "operationId": "replay_shim_archive_static_shim_js_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Replay Shim",
+        "tags": [
+          "web-archive-replay"
         ]
       }
     },
