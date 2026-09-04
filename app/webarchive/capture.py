@@ -19,6 +19,8 @@ with its own session — the same split Site Monitor's own scheduler uses
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -48,6 +50,17 @@ logger = logging.getLogger(__name__)
 # events) — a session cookie is exactly the kind of value that must never
 # end up replayed back to an operator's browser from an archived response.
 _STRIP_RESPONSE_HEADERS = frozenset({"set-cookie"})
+
+# How often the capture's own progress counters reach the database, so
+# the hub's Recent captures panel can animate a real fraction instead of
+# a spinner with no numbers behind it.
+_COUNTER_FLUSH_EVERY_URLS = 20
+_COUNTER_FLUSH_SECONDS = 5.0
+
+# URLs inserted per transaction while seeding a client's frontier, and the
+# lock that keeps two clients from seeding at the same time.
+_SEED_COMMIT_BATCH = 100
+_SEED_LOCK = threading.Lock()
 
 # A capture pass with more than this fraction of its URLs coming back
 # `blocked` is reported as `blocked`, not `partial` — mirrors
@@ -108,12 +121,31 @@ def seed_urls_from_monitor(
     no-ops for a URL already tracked.
     """
     stmt = select(MonitorPage.url).where(MonitorPage.client_id == client.id).limit(max_urls)
+    urls = [url for (url,) in session.execute(stmt).all()]
+
+    def _seed_batch(batch: list[str]) -> int:
+        seeded = 0
+        for url in batch:
+            key = normalize_url(url)
+            if repo.find_url(client.id, key) is None:
+                seeded += 1
+            repo.get_or_create_url(client.id, url, key, source="sitemap")
+        return seeded
+
+    # Batched AND retried as a whole batch, with the seed phase serialized
+    # process-wide (`_SEED_LOCK`). All three matter, for the same live
+    # incident (task-59, 2026-09-04): seeding a client inserts hundreds of
+    # rows (ALPHA: 794), six clients bootstrap in the same minute, and
+    # SQLite has exactly one writer. One transaction around the whole seed
+    # held the writer lock for the entire burst; retrying only the COMMIT
+    # did not help either, because `get_or_create_url` flushes per row and
+    # it was those flushes that raised `database is locked`. Re-running a
+    # batch is safe — `get_or_create_url` is idempotent by `url_key`.
     added = 0
-    for (url,) in session.execute(stmt).all():
-        before = repo.find_url(client.id, normalize_url(url))
-        repo.get_or_create_url(client.id, url, normalize_url(url), source="sitemap")
-        if before is None:
-            added += 1
+    with _SEED_LOCK:
+        for start in range(0, len(urls), _SEED_COMMIT_BATCH):
+            batch = urls[start : start + _SEED_COMMIT_BATCH]
+            added += commit_with_retry(session, partial(_seed_batch, batch))
     return added
 
 
@@ -193,6 +225,7 @@ def _check_or_fetch_asset(
 
 
 def _capture_assets_for_page(
+    session: Session,
     repo: WebArchiveRepository,
     html_text: str,
     *,
@@ -242,6 +275,18 @@ def _capture_assets_for_page(
             # just "one URL": one asset is its own cell within the page.
             logger.warning("archive_asset_crashed asset_url=%s", asset.url, exc_info=True)
             version, result_kind = None, "failed"
+        # Commit per asset, and this is the single most important write in
+        # the pipeline for portfolio-wide health: SQLite takes its one
+        # writer lock at the FIRST write of a transaction and holds it until
+        # commit, so batching a page's assets into one transaction pins that
+        # lock across every asset's NETWORK round-trip — a 200-asset page
+        # held it for minutes. Live incident (task-59, 2026-09-04): with six
+        # clients capturing at once that starved everything else past
+        # SQLite's 30s `busy_timeout`, and the resulting
+        # `database is locked` crashes are what left seven captures wedged
+        # at "in progress…". One asset per transaction keeps the lock held
+        # for microseconds of local writes instead.
+        commit_with_retry(session, lambda: None)
         outcome.links.append((asset.id, version.id if version else None, ref.kind))
         if result_kind == "fetched":
             outcome.fetched += 1
@@ -352,7 +397,7 @@ def capture_url(
     asset_outcome = _AssetCaptureOutcome()
     if capture_assets:
         asset_outcome = _capture_assets_for_page(
-            repo, html_text, base_url=result.final_url, settings=settings,
+            session, repo, html_text, base_url=result.final_url, settings=settings,
             artifacts_dir=artifacts_dir, throttle=throttle, stats=stats, now=now,
         )
 
@@ -480,6 +525,13 @@ def run_client_capture(
     url_ids = [u.id for u in urls]
 
     outcome = CaptureOutcome(status="ok", urls_total=len(url_ids))
+    # Written BEFORE the first URL is touched: without a denominator the
+    # hub can only say "in progress…", and a capture of 500 URLs looks
+    # identical to a wedged one for the better part of an hour.
+    commit_with_retry(
+        session, partial(repo.update_capture_counters, capture_id, urls_total=outcome.urls_total)
+    )
+    last_counter_flush = time.monotonic()
     throttle = HostThrottle(
         min_interval_seconds=settings.archive_host_min_interval_seconds,
         concurrency=settings.archive_host_concurrency,
@@ -526,16 +578,26 @@ def run_client_capture(
         outcome.assets_reused += url_result.assets_reused
         outcome.assets_failed += url_result.assets_failed
 
-        if index % 20 == 0 or index == len(url_ids):
-            repo.update_capture_counters(
-                capture_id,
-                urls_captured=outcome.urls_captured, urls_new=outcome.urls_new,
-                urls_unchanged=outcome.urls_unchanged, urls_failed=outcome.urls_failed,
-                urls_blocked=outcome.urls_blocked, assets_fetched=outcome.assets_fetched,
-                assets_reused=outcome.assets_reused, assets_failed=outcome.assets_failed,
-                bytes_stored=outcome.bytes_stored,
+        # Also time-based, not just every Nth URL: a slow client (one URL
+        # can take many seconds behind the per-host throttle) otherwise
+        # leaves the hub's progress frozen on its last multiple of 20.
+        due_by_count = index % _COUNTER_FLUSH_EVERY_URLS == 0 or index == len(url_ids)
+        due_by_time = time.monotonic() - last_counter_flush >= _COUNTER_FLUSH_SECONDS
+        if due_by_count or due_by_time:
+            last_counter_flush = time.monotonic()
+            commit_with_retry(
+                session,
+                partial(
+                    repo.update_capture_counters,
+                    capture_id,
+                    urls_total=outcome.urls_total,
+                    urls_captured=outcome.urls_captured, urls_new=outcome.urls_new,
+                    urls_unchanged=outcome.urls_unchanged, urls_failed=outcome.urls_failed,
+                    urls_blocked=outcome.urls_blocked, assets_fetched=outcome.assets_fetched,
+                    assets_reused=outcome.assets_reused, assets_failed=outcome.assets_failed,
+                    bytes_stored=outcome.bytes_stored,
+                ),
             )
-            session.commit()
 
     blocked_ratio = outcome.urls_blocked / outcome.urls_total if outcome.urls_total else 0.0
     if outcome.urls_total > 0 and blocked_ratio >= _BLOCKED_RATIO_THRESHOLD:

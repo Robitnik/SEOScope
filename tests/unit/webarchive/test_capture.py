@@ -450,3 +450,29 @@ def test_has_running_capture_blocks_a_second_manual_run(session):
     repo.finish_capture(running.id, status="ok")
     session.commit()
     assert repo.has_running_capture(client.id) is False
+
+
+def test_capture_writes_urls_total_before_visiting_any_url(
+    session, artifacts_dir, settings, fake_fetch
+):
+    """The hub can only animate real progress against a denominator, and it
+    has to exist from the first second — a 500-URL client is otherwise
+    indistinguishable from a wedged one for the better part of an hour.
+    """
+    client, repo, archive_url = _seed(session)
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, HTML_V1, headers={"Content-Type": "text/html"}))
+    capture = repo.create_capture(
+        client.id, slot_key="progress", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+        trigger="manual",
+    )
+    repo.claim_capture(capture.id)
+    session.commit()
+
+    capturemod.run_client_capture(
+        session, client, capture_id=capture.id, settings=settings,
+        artifacts_dir=artifacts_dir, now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    stored = repo.get_capture(capture.id)
+    assert stored.urls_total == 1
+    assert stored.urls_captured == 1

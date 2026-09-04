@@ -27,7 +27,15 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
-LOCK_RETRY_DELAYS_SECONDS = (0.1, 0.5, 1.5)
+# A lock error only surfaces AFTER SQLite's own `busy_timeout` (30s,
+# `app.db.session`) has already been waited out — so by the time we retry,
+# the writer ahead of us has been holding the lock for half a minute and
+# sub-second backoff just burns the remaining attempts on the same storm.
+# Live-measured (task-59, 2026-09-04): with (0.1, 0.5, 1.5) six captures
+# bootstrapping at once exhausted all three attempts inside ~92s and
+# crashed; the run that survived took its lock on the second attempt after
+# a multi-second wait.
+LOCK_RETRY_DELAYS_SECONDS = (1.0, 5.0, 15.0, 30.0)
 
 
 def commit_with_retry(session: Session, fn: Callable[[], _T]) -> _T:

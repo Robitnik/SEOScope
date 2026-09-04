@@ -30,6 +30,7 @@ from app.db.repositories.clients import ClientRepository
 from app.db.repositories.web_archive import WebArchiveRepository
 from app.webarchive.capture import run_client_capture
 from app.webarchive.cloud_sync import sweep_archive_blobs
+from app.webarchive.db_retry import commit_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class ArchiveScheduler:
         if not self._settings.archive_enabled:
             logger.info("archive_scheduler_disabled")
             return
-        self._recover_stale_captures()
+        self._reclaim_dead_captures()
         self._thread = threading.Thread(target=self._loop, name="archive-scheduler", daemon=True)
         self._thread.start()
         logger.info(
@@ -114,24 +115,56 @@ class ArchiveScheduler:
         if self._thread is not None:
             self._thread.join(timeout=30)
 
-    def _recover_stale_captures(self) -> None:
-        """A capture still `running` from a previous process instance is
-        dead — the process that owned it no longer exists.
+    def _reclaim_dead_captures(self) -> None:
+        """A row still `running` that THIS process is not actually running
+        is dead, and reclaiming it is urgent: `_tick` skips any client with
+        `has_running_capture`, so one dead row locks that client out of
+        every later slot, silently, forever.
+
+        Membership in `_in_flight` — not a wall-clock deadline — is what
+        decides. A deadline cannot tell a legitimately long capture (SAPHNY:
+        528 URLs, 52 minutes, live-measured) from a dead one; the in-flight
+        set can, exactly. Two ways a row goes dead:
+          * the previous process owned it (`_in_flight` is empty at boot);
+          * `_run` crashed AND its except-handler could not write the
+            failure either — live incident (task-59, 2026-09-04): a
+            `database is locked` burst crashed six captures at once and
+            then blocked the very `finish_capture` meant to record it, so
+            seven clients sat at "in progress…" for three hours.
+        Runs on every tick, so recovery is a minute, not the next restart.
+
+        Known edge: `yovth-report archive-capture` runs a capture in its OWN
+        process, whose rows this scheduler cannot see in `_in_flight` and so
+        marks failed within a minute (the CLI overwrites the status again
+        when it finishes, but for that minute the client also looks free to
+        schedule). Only reachable by running the CLI against a live worker,
+        which is an ops action, not the production path. The real fix is an
+        owner/heartbeat column on `archive_captures` — a migration, so
+        task-03's call.
         """
+        with self._in_flight_lock:
+            in_flight = set(self._in_flight)
+        now = datetime.now(UTC)
+        deadline = timedelta(minutes=self._settings.archive_capture_deadline_minutes)
         with self._session_scope() as session:
             repo = WebArchiveRepository(session)
-            now = datetime.now(UTC)
-            cutoff = timedelta(minutes=self._settings.archive_capture_deadline_minutes)
-            recovered = 0
+            reclaimed = 0
             for capture in repo.running_captures():
-                if capture.started_at is not None and now - capture.started_at >= cutoff:
-                    repo.finish_capture(
-                        capture.id, status="failed", error_code="interrupted_by_restart"
-                    )
-                    recovered += 1
-            session.commit()
-            if recovered:
-                logger.warning("archive_scheduler_recovered_stale_captures count=%d", recovered)
+                if capture.id in in_flight:
+                    # Ours and alive. It can still be wedged (a hung socket,
+                    # a throttle that never releases) — nothing here can kill
+                    # its thread, but an operator should see it.
+                    if capture.started_at is not None and now - capture.started_at >= deadline:
+                        logger.warning(
+                            "archive_capture_over_deadline capture_id=%s started_at=%s",
+                            capture.id, capture.started_at,
+                        )
+                    continue
+                repo.finish_capture(capture.id, status="failed", error_code="interrupted")
+                reclaimed += 1
+            if reclaimed:
+                commit_with_retry(session, lambda: None)
+                logger.warning("archive_scheduler_reclaimed_dead_captures count=%d", reclaimed)
 
     def _loop(self) -> None:
         while not self._stop_event.is_set():
@@ -154,6 +187,8 @@ class ArchiveScheduler:
         return datetime.now(UTC).astimezone(tz)
 
     def _tick(self) -> None:
+        # First, before anything decides whether a client is busy.
+        self._reclaim_dead_captures()
         now_local = self._local_now()
         slot_times = _parse_slot_times(self._settings.archive_capture_times)
         target_local = most_recent_slot(now_local, slot_times)
@@ -214,16 +249,23 @@ class ArchiveScheduler:
             try:
                 with self._session_scope() as session:
                     repo = WebArchiveRepository(session)
-                    claimed = repo.claim_capture(capture_id)
+                    # Both bookkeeping writes go through `commit_with_retry`:
+                    # they are short, but they land in the same lock storm as
+                    # six other captures bootstrapping at once, and losing
+                    # either one is what turns a finished capture into a row
+                    # the UI shows as "in progress…" (live, 2026-09-04 —
+                    # LAXTON died on exactly this `UPDATE`).
+                    claimed = commit_with_retry(session, lambda: repo.claim_capture(capture_id))
                     if claimed is None:
                         return
-                    session.commit()
                     outcome = run_client_capture(
                         session, client, capture_id=capture_id, settings=self._settings,
                         artifacts_dir=self._settings.artifacts_dir,
                     )
-                    repo.finish_capture(capture_id, status=outcome.status)  # type: ignore[arg-type]
-                    session.commit()
+                    commit_with_retry(
+                        session,
+                        lambda: repo.finish_capture(capture_id, status=outcome.status),  # type: ignore[arg-type]
+                    )
                     logger.info(
                         "archive_capture_finished client_id=%s capture_id=%s status=%s "
                         "new=%d unchanged=%d failed=%d blocked=%d",
@@ -235,14 +277,23 @@ class ArchiveScheduler:
                 logger.exception(
                     "archive_capture_crashed client_id=%s capture_id=%s", client.id, capture_id
                 )
+                # Bound here, not inside the lambda: `exc` is unbound once the
+                # except block ends, and this callable may be retried.
+                crash_message = str(exc)[:1000]
                 try:
                     with self._session_scope() as session:
-                        WebArchiveRepository(session).finish_capture(
-                            capture_id, status="failed", error_code="crashed",
-                            error_message=str(exc)[:1000],
+                        crash_repo = WebArchiveRepository(session)
+                        commit_with_retry(
+                            session,
+                            lambda: crash_repo.finish_capture(
+                                capture_id, status="failed", error_code="crashed",
+                                error_message=crash_message,
+                            ),
                         )
-                        session.commit()
                 except Exception:  # noqa: BLE001 - best-effort bookkeeping only
+                    # Not the end of the story any more: `_reclaim_dead_captures`
+                    # picks the row up on the next tick, because by then this
+                    # capture is out of `_in_flight`.
                     logger.exception(
                         "archive_capture_finish_after_crash_failed capture_id=%s", capture_id
                     )

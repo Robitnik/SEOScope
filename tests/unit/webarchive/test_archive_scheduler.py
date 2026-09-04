@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.webarchive.scheduler import _parse_slot_times, most_recent_slot, slot_key_for
@@ -53,3 +53,82 @@ def test_slot_key_distinguishes_dst_transition() -> None:
     assert slot_key_for(before_dst_end) != slot_key_for(after_dst_end)
     assert "+03:00" in slot_key_for(before_dst_end)
     assert "+02:00" in slot_key_for(after_dst_end)
+
+
+def test_reclaim_dead_captures_frees_a_row_this_process_is_not_running(session, tmp_path) -> None:
+    """Live incident (task-59, 2026-09-04): a `database is locked` burst
+    crashed six captures at once AND blocked the `finish_capture` in their
+    own crash handler, leaving rows `running` for three hours. Because
+    `_tick` skips any client with `has_running_capture`, each of those rows
+    also locked its client out of every later slot.
+    """
+    from contextlib import contextmanager
+
+    from app.core.config import Settings
+    from app.db.repositories.clients import ClientRepository
+    from app.db.repositories.web_archive import WebArchiveRepository
+    from app.webarchive.scheduler import ArchiveScheduler
+
+    client = ClientRepository(session).create(
+        name="Acme", slug="acme", domain="acme.example.com", timezone="America/New_York"
+    )
+    session.commit()
+    repo = WebArchiveRepository(session)
+    zombie = repo.create_capture(
+        client.id, slot_key="2026-09-04T13:30+03:00",
+        scheduled_for=datetime(2026, 9, 4, 10, 30, tzinfo=UTC), trigger="scheduled",
+    )
+    repo.claim_capture(zombie.id)
+    session.commit()
+    assert repo.has_running_capture(client.id) is True
+
+    @contextmanager
+    def _scope():
+        yield session
+
+    scheduler = ArchiveScheduler(
+        session_scope=_scope,
+        settings=Settings(_env_file=None, artifacts_dir=tmp_path),
+    )
+    scheduler._reclaim_dead_captures()
+
+    reclaimed = repo.get_capture(zombie.id)
+    assert reclaimed.status == "failed"
+    assert reclaimed.error_code == "interrupted"
+    assert reclaimed.finished_at is not None
+    # The client is free to be captured again on the very next tick.
+    assert repo.has_running_capture(client.id) is False
+
+
+def test_reclaim_dead_captures_leaves_this_process_own_run_alone(session, tmp_path) -> None:
+    from contextlib import contextmanager
+
+    from app.core.config import Settings
+    from app.db.repositories.clients import ClientRepository
+    from app.db.repositories.web_archive import WebArchiveRepository
+    from app.webarchive.scheduler import ArchiveScheduler
+
+    client = ClientRepository(session).create(
+        name="Acme", slug="acme", domain="acme.example.com", timezone="America/New_York"
+    )
+    session.commit()
+    repo = WebArchiveRepository(session)
+    capture = repo.create_capture(
+        client.id, slot_key="2026-09-04T13:30+03:00",
+        scheduled_for=datetime(2026, 9, 4, 10, 30, tzinfo=UTC), trigger="scheduled",
+    )
+    repo.claim_capture(capture.id)
+    session.commit()
+
+    @contextmanager
+    def _scope():
+        yield session
+
+    scheduler = ArchiveScheduler(
+        session_scope=_scope,
+        settings=Settings(_env_file=None, artifacts_dir=tmp_path),
+    )
+    scheduler._in_flight.add(capture.id)  # a live capture, however long it runs
+    scheduler._reclaim_dead_captures()
+
+    assert repo.get_capture(capture.id).status == "running"

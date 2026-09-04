@@ -10,12 +10,20 @@ import {
   getArchiveOverview, getArchiveUrlTimeline, lookupArchiveUrl, startArchiveCapture, isAbortError,
 } from "./api.js?v=20260821-spin3";
 import { buildArchiveViewHash, buildArchiveChangesHash } from "./router.js?v=20260821-spin3";
-import { escapeHtml, formatFileSize, formatTimestamp, icon } from "./formatters.js?v=20260821-spin3";
+import {
+  escapeHtml, formatFileSize, formatTimestamp, icon, statusIcon,
+} from "./formatters.js?v=20260821-spin3";
 import { sectionSkeleton, panelSkeleton } from "./skeleton.js?v=20260821-spin3";
 
 const root = document.querySelector("#archive-page-root");
 
+// While any capture is running the panel is a live view, not a snapshot of
+// page-load time: without this the counters sit at whatever they were when
+// the operator opened the hub, which reads as a stuck capture.
+const LIVE_POLL_INTERVAL_MS = 5000;
+
 let state = null;
+let livePollTimer = null;
 
 function toast(message) {
   const region = document.querySelector("#toast-region");
@@ -39,6 +47,7 @@ export async function initArchivePage(query) {
     overviewError: null,
     captureStarting: null, // client_id currently being triggered
   };
+  stopLivePolling();
   root.innerHTML = shell();
   bindStaticActions();
   loadOverview();
@@ -289,6 +298,45 @@ async function loadOverview() {
   }
   state.overviewLoading = false;
   renderOverview();
+  syncLivePolling();
+}
+
+// Polls only while something is actually running, and stops itself the tick
+// after the last capture finishes — an idle hub costs no requests.
+function syncLivePolling() {
+  const running = (state.overview?.recent_captures || []).some(
+    (c) => c.status === "running" || c.status === "queued"
+  );
+  if (!running) {
+    stopLivePolling();
+    return;
+  }
+  if (livePollTimer) return;
+  livePollTimer = setInterval(refreshOverviewQuietly, LIVE_POLL_INTERVAL_MS);
+}
+
+function stopLivePolling() {
+  if (livePollTimer) clearInterval(livePollTimer);
+  livePollTimer = null;
+}
+
+// No skeleton, no `overviewLoading` flip: a poll must never make the panel
+// the operator is reading flash back to placeholders every five seconds.
+async function refreshOverviewQuietly() {
+  // The router hides pages with `hidden` rather than removing them, so
+  // that attribute — not `isConnected` — is what says "the operator left".
+  if (root.hasAttribute("hidden") || !root.querySelector("#archive-overview")) {
+    stopLivePolling();
+    return;
+  }
+  try {
+    state.overview = await getArchiveOverview();
+  } catch (error) {
+    if (isAbortError(error)) return;
+    return; // a failed poll keeps the last good numbers on screen
+  }
+  renderOverview();
+  syncLivePolling();
 }
 
 function renderOverview() {
@@ -374,14 +422,52 @@ function captureStatusLabel(status) {
 function capturesListMarkup(captures) {
   if (captures.length === 0) return `<p class="archive-empty-note">No captures have run yet.</p>`;
   return `<ul class="archive-capture-list">
-    ${captures.map((c) => `
-      <li class="archive-capture-row state-${escapeHtml(c.status)}">
-        ${icon(captureIcon(c.status))}
-        <span class="analytics-row__value">${escapeHtml(c.client_name)}</span>
-        <span class="archive-capture-row__counts">${c.urls_new} new · ${c.urls_unchanged} unchanged${c.urls_failed ? ` · ${c.urls_failed} failed` : ""}${c.urls_blocked ? ` · ${c.urls_blocked} blocked` : ""}</span>
-        <span class="archive-capture-row__time">${c.finished_at ? formatTimestamp(c.finished_at) : "in progress…"}</span>
-      </li>`).join("")}
+    ${captures.map(captureRowMarkup).join("")}
   </ul>`;
+}
+
+function captureRowMarkup(c) {
+  // A bar only once the capture is actually working: `queued` gets the clock
+  // glyph and nothing else, because a bar there would claim progress that
+  // has not started.
+  const running = c.status === "running";
+  return `
+      <li class="archive-capture-row state-${escapeHtml(c.status)}">
+        ${statusIcon(captureIcon(c.status), "icon")}
+        <span class="analytics-row__value">${escapeHtml(c.client_name)}</span>
+        <span class="archive-capture-row__counts">${captureCountsText(c)}</span>
+        <span class="archive-capture-row__time">${c.finished_at ? formatTimestamp(c.finished_at) : captureProgressText(c)}</span>
+        ${running ? captureProgressBarMarkup(c) : ""}
+      </li>`;
+}
+
+function captureCountsText(c) {
+  const parts = [`${c.urls_new} new`, `${c.urls_unchanged} unchanged`];
+  if (c.urls_failed) parts.push(`${c.urls_failed} failed`);
+  if (c.urls_blocked) parts.push(`${c.urls_blocked} blocked`);
+  return parts.join(" · ");
+}
+
+// "142 / 441 URLs" beats a bare "in progress…": a big client legitimately
+// takes the better part of an hour, and only a moving number tells that
+// apart from a capture that died.
+function captureProgressText(c) {
+  if (c.status === "queued") return "queued…";
+  if (!c.urls_total) return "starting…";
+  return `${c.urls_captured} / ${c.urls_total} URLs`;
+}
+
+// Native `<progress>`, like every other live bar in the app: the page CSP is
+// `default-src 'self'` with no `unsafe-inline`, so a width-driven `<span>`
+// (inline style, or a JS-set `.style.width`) would simply not paint.
+// No `value` attribute = the browser's own indeterminate animation, which is
+// exactly the right thing before the URL count is known.
+function captureProgressBarMarkup(c) {
+  if (!c.urls_total) {
+    return `<progress class="archive-capture-row__bar" aria-label="Capture starting"></progress>`;
+  }
+  return `<progress class="archive-capture-row__bar" max="${c.urls_total}" value="${c.urls_captured}"
+    aria-label="${c.urls_captured} of ${c.urls_total} URLs captured"></progress>`;
 }
 
 function captureIcon(status) {
