@@ -97,7 +97,12 @@ class Settings(BaseSettings):
     monitor_enabled: bool = True
     monitor_light_interval_hours: float = 1.0
     monitor_full_interval_hours: float = 3.0
-    monitor_client_workers: int = 4
+    # task-58 §0.5/§1.4: 4 was sized for "one client at a time, fully
+    # sequential inside it" — with the per-client page pool below, the whole
+    # active portfolio (13 clients live 2026-09-04) can run at once instead
+    # of queueing behind 4 slots; the serialized DB section's own measured
+    # ceiling (~100 pages/s, §0.4) has ample headroom for this.
+    monitor_client_workers: int = 16
     # Safety valve, NOT a product limit (§3.3): the largest client today is 608
     # URLs. This exists only so a runaway/looping sitemap cannot hang the
     # engine forever.
@@ -106,6 +111,18 @@ class Settings(BaseSettings):
     monitor_max_body_bytes: int = 3 * 1024 * 1024
     monitor_request_timeout_seconds: float = 20.0
     monitor_host_min_interval_seconds: float = 0.25
+    # task-58 §1.4: pages of ONE client checked by this many threads at
+    # once, pulling off one shared priority-ordered queue. Bounded well
+    # under `monitor_host_concurrency` × any plausible value would still be
+    # polite — the real limit on how fast one client's run goes is the
+    # site's own TTFB (live-measured 3-5s/page), which parallelism hides,
+    # not eliminates.
+    monitor_page_workers: int = 6
+    # task-58 §1.5: `HostThrottle`'s new `concurrency` — how many of one
+    # client's page workers may have a request in flight against the same
+    # host at once (`HostThrottle`'s old default, `concurrency=1`, is a full
+    # mutex — every OTHER caller of `HostThrottle()` keeps that unchanged).
+    monitor_host_concurrency: int = 4
     monitor_key_pages_limit: int = 10
     # Confirmed with the user 2026-08-11: a URL gone from the sitemap stays
     # watched for 30 days before it drops off entirely, so a silent removal
@@ -129,26 +146,37 @@ class Settings(BaseSettings):
     monitor_sitemap_broken_alert_pct: Decimal = Decimal("10")
     monitor_sitemap_broken_alert_count: int = 50
 
-    # Antibot lane (task-50, PLAN §12 "чесні стани"). Live-measured on
-    # alphastyle.store (task-50 §0): 30 requests at 0.25s pass clean, ~58
-    # requests wall solid — the exact safe throughput was deliberately NOT
-    # determined here (finding it means driving a live client's site into a
-    # multi-minute penalty window on purpose); `monitor_antibot_min_interval_
-    # seconds` starts conservative and gets measured against the real first
-    # antibot-lane run instead.
-    monitor_antibot_workers: int = 1
+    # Antibot lane (task-50, PLAN §12 "чесні стани"; revised task-58 §1.1-§1.3
+    # — HTTP-first with a per-PAGE browser fallback instead of a whole-run
+    # transport choice). Live-measured on alphastyle.store (task-50 §0): 30
+    # requests at 0.25s pass clean, ~58 requests wall solid — the exact safe
+    # throughput was deliberately NOT determined here (finding it means
+    # driving a live client's site into a multi-minute penalty window on
+    # purpose); `monitor_antibot_min_interval_seconds` starts conservative
+    # and gets measured against the real first antibot-lane run instead.
     monitor_antibot_min_interval_seconds: float = 2.0
-    # How many consecutive blocked pages end a run early rather than grinding
-    # through the rest of the target list into the same wall (§0.6: 304 of
-    # 362 requests in the incident run were spent hammering a wall already up
-    # since request ~58).
-    monitor_block_streak_abort: int = 5
-    # `fetch_mode="auto"` clients stay on the browser lane for this many days
-    # after the last confirmed block, not just the run that found it — a site
-    # that blocks on one full run blocks on the next one too, and bouncing
-    # back to plain HTTP every few hours would alternate clean runs with
-    # corrupted ones instead of settling (task-50 §B5).
-    monitor_antibot_sticky_days: float = 14.0
+    # task-58 §1.3: ONE process-wide cap on concurrently-live Chromium
+    # instances, replacing the old dedicated single-client `_antibot_pool` —
+    # a page-worker thread's `_LazyBrowser` holds a slot for its whole run,
+    # not per navigation, so this bounds "how many Chromiums exist right now
+    # across the whole portfolio". Kept small: each one is a real browser
+    # process, and the whole point of HTTP-first is that most clients never
+    # touch this at all.
+    monitor_browser_concurrency: int = 3
+    # task-58 §1.2: hard ceiling on how many pages ONE run may escalate to
+    # Chromium — `_should_escalate_to_browser` already avoids re-confirming
+    # a URL already known dead, but this is the backstop for a site that has
+    # gone down entirely: without it, every one of its hundreds of pages
+    # would each still cost a Chromium launch+navigation once.
+    monitor_browser_fallback_max_per_run: int = 50
+    # Fraction of the last 20 completed page attempts that came back blocked
+    # before a run ends itself early rather than grinding through the rest
+    # of the target list into the same wall (task-50 §0.6: 304 of 362
+    # requests in the incident run were spent hammering a wall already up
+    # since request ~58). Replaces `monitor_block_streak_abort`
+    # (task-58 §2.2): "consecutive" has no meaning once page workers finish
+    # out of order, a sliding-window ratio still says the same thing.
+    monitor_block_ratio_abort: float = 0.8
 
     # Redirect monitoring (task-51). Live-measured on the portfolio
     # 2026-08-19: 10 of 14 clients expose `redirection/v1` in `/wp-json/`
@@ -267,6 +295,81 @@ class Settings(BaseSettings):
     # ceiling rather than a tuned one: this is the failure mode for an
     # upstream RN slowdown, not the expected path.
     client_monthly_refresh_timeout_seconds: float = 90.0
+
+    # Web Archive (task-59, PLAN §16 wave-U): a self-hosted, Wayback-style
+    # copy of every active client's site, captured twice a day. Independent
+    # of Site Monitor (task-35) — see `app/webarchive/__init__.py`.
+    archive_enabled: bool = True
+    archive_capture_times: list[str] = ["13:30", "19:30"]
+    archive_timezone: str = "Europe/Kyiv"
+    archive_include_paused_clients: bool = False
+    archive_max_urls_per_client: int = 25_000
+    # "Актуальність тиждень" (user's own words, task-59): an unchanged page
+    # still gets a fresh anchor snapshot after this many days even though
+    # its fingerprint never changed, so the archive never goes further than
+    # a week without a confirmed-live copy of a page.
+    archive_refresh_after_days: int = 7
+    # Live-measured (task-59 §0.5): conditional GET on a client-site asset
+    # returned 304 in 10/10 samples with `Last-Modified` present in 38/38 —
+    # an asset checked more recently than this is not re-requested at all.
+    archive_asset_revalidate_days: int = 7
+    # Live-measured (task-59 §0.4): p90 476 subresource references on one
+    # page — a ceiling exists so one unusually heavy first capture cannot
+    # dominate a whole capture pass; overage is recorded honestly as
+    # `assets_truncated`, never silently dropped.
+    archive_new_assets_per_page: int = 300
+    archive_html_max_bytes: int = 5 * 1024 * 1024
+    archive_asset_max_bytes: int = 10 * 1024 * 1024
+    archive_client_workers: int = 6
+    archive_page_workers: int = 4
+    archive_host_min_interval_seconds: float = 0.25
+    # `HostThrottle(concurrency=N)` — 1 until task-58 lands (mirrors
+    # `monitor_host_concurrency`'s own pre-task-58 default); safe to raise
+    # once that lane's own per-host concurrency guard is in `done/`.
+    archive_host_concurrency: int = 1
+    archive_request_timeout_seconds: float = 25.0
+    archive_capture_deadline_minutes: float = 240.0
+    # task-62: how stale `heartbeat_at` may get before a capture is declared
+    # dead and reclaimed. Replaces `ArchiveScheduler._in_flight` (in-process
+    # memory) as the liveness check — a CLI-run capture, its own OS process,
+    # was invisible to that set and got declared `interrupted` within a
+    # minute despite running to completion (live-observed, 2026-09-05).
+    # Comfortably above the 5s/20-URL counter-flush interval that also
+    # drives the heartbeat write (`capture.py`'s `_COUNTER_FLUSH_SECONDS`).
+    archive_heartbeat_stale_seconds: float = 90.0
+    archive_local_retention_days: int = 30
+    archive_blob_cache_gb: float = 20.0
+    archive_cloud_prefix: str = "webarchive"
+    archive_capture_assets: bool = True
+    # task-60 §2: an iframe's `src` is left pointing at the real, live host
+    # instead of being archived — the user's own call (archiving a
+    # map/video/audio widget is slower than the page itself AND trips
+    # antibot). A kill-switch, not a tuning knob: flipping it to `False`
+    # reverts BOTH the rewrite (`app.webarchive.rewrite.rewrite_html`) and
+    # the replay CSP's `frame-src` (`app/api/archive_replay.py`) to the
+    # old fully-archived-or-blocked behavior, without a code deploy.
+    archive_live_iframes: bool = True
+    # Hosts an iframe `src` must NEVER be left live for even with the flag
+    # above on — analytics/tracking beacons (task-60 §2.2): loading these
+    # for real on every archived-snapshot view would send a live hit into
+    # the CLIENT's own GA/Meta account. A setting, not a hardcoded list, so
+    # a newly-spotted beacon host can be blocked without a code change.
+    # `facebook.com/tr` (Meta's pixel endpoint specifically, not the whole
+    # domain) is matched separately in `app.webarchive.urls` regardless of
+    # this list.
+    archive_iframe_analytics_hosts: list[str] = [
+        "googletagmanager.com", "google-analytics.com", "doubleclick.net", "connect.facebook.net",
+    ]
+    # task-63 §3.3: some assets are referenced ONLY as a string literal
+    # inside a page's own JS (a deferred-loading bootstrap calling
+    # `load_js('/wp-content/.../lazyload.min.js')`), never in the page's
+    # static HTML at all — `discover_html_assets` cannot see either.
+    # `discover_js_string_assets` is a heuristic over already-fetched JS
+    # text; this caps how many NEW refs it may contribute per page so a
+    # large minified bundle full of unrelated-looking strings cannot flood
+    # the asset queue. A kill-switch, not just a tuning knob: `0` disables
+    # the heuristic entirely without a code deploy if it proves noisy.
+    archive_js_discovered_assets_per_page: int = 20
 
     @model_validator(mode="after")
     def validate_cloud_credentials(self) -> Self:

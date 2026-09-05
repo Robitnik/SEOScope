@@ -1413,8 +1413,543 @@ class ClientMonthlyMetric(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
 
+class SchemaMarkupCheck(Base):
+    """Один прогін інструмента Schema Markup Checker (task-56).
+
+    Та сама форма, що `ContentQaReport`/`RedirectCheck`: один рядок = один
+    прогін, без per-property мутабельного стану всередині — весь звіт
+    незмінний (без `updated_at`), повторна перевірка того самого URL створює
+    новий рядок, історія важлива (той самий URL міг раніше не мати розмітки,
+    а тепер мати — це видима зміна, не те, що варто затерти).
+
+    `client_id` опційний: перевіряють і чужі/проспектні сторінки, не лише
+    клієнтів дашборду.
+    """
+
+    __tablename__ = "schema_markup_checks"
+    __table_args__ = (Index("ix_schema_markup_checks_created_at", "created_at"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="SET NULL"), default=None
+    )
+    url: Mapped[str] = mapped_column(String(2048))
+    final_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+    http_status: Mapped[int | None] = mapped_column(Integer, default=None)
+    # "clean" | "has_gaps" | "missing" | "fetch_failed" — `app.tools.schema_markup.service.Verdict`.
+    verdict: Mapped[str] = mapped_column(String(16))
+    page_kind: Mapped[str | None] = mapped_column(String(32), default=None)
+    found_types_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    findings_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    generated_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    # Кожен елемент — `{"format": "json-ld"|"microdata", "raw": ..., "error": str|None}`.
+    # `raw` для JSON-LD — вузол/граф як його реально написав плагін (Yoast/RankMath/…),
+    # для microdata — те саме дерево, зібране з `itemprop`/`itemscope` у формі JSON
+    # (`ExtractedEntity.to_jsonable()`), бо своєї нативної JSON-форми в microdata немає.
+    # Показується оператору в UI «Raw markup» — не лише список типів, а те, що реально
+    # лежить на сторінці, для звірки вручну.
+    raw_markup_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    vocab_version: Mapped[str] = mapped_column(String(32))
+    error: Mapped[str | None] = mapped_column(String(500), default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class PageInventorySnapshot(Base):
+    """One built Page Inventory table for one client (task-57 §3).
+
+    A client keeps exactly one active snapshot — a rebuild deletes the
+    previous row (`ondelete="CASCADE"` on `PageInventoryItem.snapshot_id`
+    takes its items with it) and inserts a new one. Full QA history across
+    rebuilds isn't kept (task-57 §11 follow-up); this table exists so the
+    UI and the XLSX export always read the exact same already-computed
+    findings, rather than two independent re-runs of the QA engine.
+    """
+
+    __tablename__ = "page_inventory_snapshots"
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    built_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # Latest `MonitorPage.last_checked_at` seen among the rows this snapshot
+    # was built from — "as-of" freshness shown in the UI (task-57 §2.2),
+    # since the inventory reads monitor's LAST crawl, not a live fetch.
+    source_collected_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    pages_total: Mapped[int] = mapped_column(Integer, default=0)
+    pages_unique: Mapped[int] = mapped_column(Integer, default=0)
+    pages_with_breadcrumbs: Mapped[int] = mapped_column(Integer, default=0)
+    pages_with_keywords: Mapped[int] = mapped_column(Integer, default=0)
+    # "json_ld" | "dom" | "mixed" | "none" (task-57 §1.2).
+    breadcrumb_source: Mapped[str] = mapped_column(String(16), default="none")
+    warnings_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class PageInventoryItem(Base):
+    """One row of a `PageInventorySnapshot` — one canonical URL, its
+    breadcrumb trail, meta fields and the full (uncalibrated) QA finding
+    set for it. Profile calibration (task-57 §2.3) is applied on READ, not
+    stored — `findings_json` always holds what `strict` would show."""
+
+    __tablename__ = "page_inventory_items"
+    __table_args__ = (
+        Index("ix_page_inventory_items_snapshot_status", "snapshot_id", "status_label"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("page_inventory_snapshots.id", ondelete="CASCADE"), index=True
+    )
+    client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
+    url: Mapped[str] = mapped_column(String(2048))
+    canonical_key: Mapped[str] = mapped_column(String(2048))
+    duplicate_urls_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    page_label: Mapped[str] = mapped_column(String(500), default="")
+    breadcrumbs_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    breadcrumb_source: Mapped[str] = mapped_column(String(16), default="none")
+    # `None` = page never checked by the monitor (PLAN §12); `""` = checked,
+    # tag absent from the fetched HTML — a real defect, not a missing source
+    # (task-57 §1.6, the deliberate inversion of `app.contentqa`'s own rule).
+    title: Mapped[str | None] = mapped_column(String(500), default=None)
+    description: Mapped[str | None] = mapped_column(String(1000), default=None)
+    keywords_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    keywords_source: Mapped[str] = mapped_column(String(8), default="none")
+    h1: Mapped[str | None] = mapped_column(String(500), default=None)
+    status: Mapped[int | None] = mapped_column(Integer, default=None)
+    status_label: Mapped[str] = mapped_column(String(16), default="not_checked")
+    indexable: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    canonical_missing: Mapped[bool] = mapped_column(Boolean, default=False)
+    checked: Mapped[bool] = mapped_column(Boolean, default=False)
+    # [{check, severity, field, detail, value}, ...] — the FULL (strict)
+    # finding set; `app.pageinventory.calibrate` derives `calibrated` from
+    # this on read, never the other way around.
+    findings_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+
+
+# --- Added by task-59 (Web Archive, PLAN §16 wave-U extension) ------------
+#
+# A self-hosted, Wayback-style copy of every client's site: twice-daily
+# capture, content-addressed dedup, replay. Deliberately its OWN tables,
+# independent of `monitor_*` above (task-35) — the monitor is a cheap,
+# hourly watchdog with no subresources; this is a full archive. See
+# `app/webarchive/__init__.py` for why the two are not merged.
+
+
+class ArchiveSettings(Base):
+    """Per-client Web Archive configuration. Lazily created on first touch —
+    `WebArchiveRepository.get_or_create_settings` — same pattern as
+    `MonitorSettings`, so a client with no row yet still reads as "archive
+    enabled with the global defaults" rather than needing a migration-time
+    backfill for every existing client.
+    """
+
+    __tablename__ = "archive_settings"
+    __table_args__ = (UniqueConstraint("client_id", name="uq_archive_settings_client_id"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    capture_assets: Mapped[bool] = mapped_column(Boolean, default=True)
+    # `None` = use the global `archive_max_urls_per_client` setting.
+    max_urls: Mapped[int | None] = mapped_column(Integer, default=None)
+    ignore_patterns_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    include_query_strings: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class ArchiveCapture(Base):
+    """One capture pass (a scheduled 13:30/19:30 Kyiv slot, or a manual
+    request) for one client (task-59 §1.4).
+
+    `slot_key` carries the UTC-offset-qualified Kyiv slot identity (e.g.
+    `2026-09-04T13:30+03:00`) rather than relying on scheduler-thread memory
+    for idempotency — a worker restart mid-slot re-derives "has this slot
+    already run" from THIS unique constraint, not from an in-memory set, so
+    it neither duplicates nor silently skips a slot across a restart.
+    """
+
+    __tablename__ = "archive_captures"
+    __table_args__ = (
+        UniqueConstraint("client_id", "slot_key", name="uq_archive_captures_client_id_slot_key"),
+        Index("ix_archive_captures_client_started", "client_id", "started_at"),
+        Index("ix_archive_captures_status_queued_at", "status", "queued_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    slot_key: Mapped[str] = mapped_column(String(64))
+    scheduled_for: Mapped[datetime] = mapped_column(UTCDateTime)
+    trigger: Mapped[str] = mapped_column(String(16), default="scheduled")  # "scheduled"|"manual"
+    # "queued" | "running" | "ok" | "partial" | "failed" | "blocked"
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # `None` for a run that never got far enough to count its own target
+    # list (PLAN §12: absence of data is never coerced into 0).
+    urls_total: Mapped[int | None] = mapped_column(Integer, default=None)
+    urls_captured: Mapped[int] = mapped_column(Integer, default=0)
+    urls_unchanged: Mapped[int] = mapped_column(Integer, default=0)
+    urls_new: Mapped[int] = mapped_column(Integer, default=0)
+    urls_failed: Mapped[int] = mapped_column(Integer, default=0)
+    urls_blocked: Mapped[int] = mapped_column(Integer, default=0)
+    assets_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    assets_reused: Mapped[int] = mapped_column(Integer, default=0)
+    assets_failed: Mapped[int] = mapped_column(Integer, default=0)
+    bytes_stored: Mapped[int] = mapped_column(Integer, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(100), default=None)
+    error_message: Mapped[str | None] = mapped_column(String(1000), default=None)
+    # task-62: a real FIFO queue + a liveness signal that survives process
+    # boundaries. `queued_at` orders `claim_capture`'s pick (`scheduled_for`
+    # used to double as this for manual runs, but that reads oddly once the
+    # queue has more than one waiting row). `owner`/`heartbeat_at` replace
+    # `ArchiveScheduler._in_flight` (in-process memory only) as the "is this
+    # capture actually alive" check — a CLI-run capture, in its own OS
+    # process, was invisible to that in-memory set and got declared
+    # `interrupted` within a minute despite running to completion (live,
+    # 2026-09-05). `scope`/`archive_url_id` let a capture target exactly one
+    # URL instead of a whole client (task-62 §2.7).
+    queued_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    owner: Mapped[str | None] = mapped_column(String(64), default=None)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    scope: Mapped[str] = mapped_column(String(16), default="client")  # "client" | "url"
+    archive_url_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("archive_urls.id", ondelete="SET NULL"), default=None
+    )
+    progress_message: Mapped[str | None] = mapped_column(String(500), default=None)
+
+
+class ArchiveUrl(Base):
+    """One URL of one client tracked by the archive (task-59 §1.9) — the
+    monitor's own `monitor_pages` seeds this, plus same-host links
+    discovered while rewriting a captured page (`source="link"`).
+    """
+
+    __tablename__ = "archive_urls"
+    __table_args__ = (
+        UniqueConstraint("client_id", "url_key", name="uq_archive_urls_client_id_url_key"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    url: Mapped[str] = mapped_column(String(2048))
+    url_key: Mapped[str] = mapped_column(String(2048))
+    source: Mapped[str] = mapped_column(String(16), default="sitemap")  # sitemap|link|manual
+    first_captured_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    last_captured_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    snapshot_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Set the capture a URL first fails to resolve/gone; cleared if it comes
+    # back (mirrors `MonitorPage.gone_since`).
+    gone_since: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class ArchiveBlob(Base):
+    """Content-addressed byte registry + upload state (task-59 §1.8) — own
+    `webarchive/` B2 prefix and own ledger, deliberately NOT a reuse of
+    task-52's `cloud_objects`/`CloudLedgerRepository` (this module's sweeper
+    is self-contained, see `app/webarchive/cloud_sync.py`).
+    """
+
+    __tablename__ = "archive_blobs"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    gzip_size_bytes: Mapped[int] = mapped_column(Integer)
+    content_type: Mapped[str | None] = mapped_column(String(200), default=None)
+    # Relative to the artifacts root, never absolute.
+    path: Mapped[str] = mapped_column(String(500))
+    first_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    uploaded_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    local_deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
+
+class ArchiveSnapshot(Base):
+    """One captured state of one `ArchiveUrl` (task-59 §1.2) — written ONLY
+    when `content_fingerprint` differs from the previous snapshot, the
+    previous one is older than `archive_refresh_after_days`, or the HTTP
+    status/final URL changed. An unchanged capture instead just calls
+    `WebArchiveRepository.confirm_snapshot` on the existing row.
+
+    Immutable after commit except `last_confirmed_at`/`confirmed_count` —
+    see `_reject_mutation_except` below, which allow-lists exactly those two
+    so "was this version still live as of the last check" can be recorded
+    without opening up the historical record itself to edits.
+    """
+
+    __tablename__ = "archive_snapshots"
+    __table_args__ = (
+        Index("ix_archive_snapshots_url_observed", "archive_url_id", "observed_at"),
+        Index("ix_archive_snapshots_client_observed", "client_id", "observed_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    archive_url_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("archive_urls.id", ondelete="CASCADE"), index=True
+    )
+    client_id: Mapped[str] = mapped_column(GUID, ForeignKey("clients.id", ondelete="CASCADE"))
+    capture_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("archive_captures.id", ondelete="SET NULL"), default=None
+    )
+    observed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    http_status: Mapped[int | None] = mapped_column(Integer, default=None)
+    final_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+    # `Set-Cookie` is stripped before this is written (PLAN §13: no secrets
+    # in stored data) — see `app.webarchive.capture`.
+    headers_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    content_type: Mapped[str | None] = mapped_column(String(200), default=None)
+    content_fingerprint: Mapped[str | None] = mapped_column(String(64), default=None)
+    raw_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    body_blob_sha256: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("archive_blobs.sha256", ondelete="SET NULL"), default=None
+    )
+    title: Mapped[str | None] = mapped_column(String(500), default=None)
+    description: Mapped[str | None] = mapped_column(String(1000), default=None)
+    canonical: Mapped[str | None] = mapped_column(String(2048), default=None)
+    meta_robots: Mapped[str | None] = mapped_column(String(200), default=None)
+    word_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    asset_count: Mapped[int] = mapped_column(Integer, default=0)
+    assets_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    # "first" | "changed" | "weekly_refresh" | "status_changed"
+    store_reason: Mapped[str] = mapped_column(String(16), default="first")
+    prev_snapshot_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("archive_snapshots.id", ondelete="SET NULL"), default=None
+    )
+    last_confirmed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    confirmed_count: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class ArchiveAsset(Base):
+    """One subresource URL, globally deduplicated across every client
+    (task-59 §1.3) — the same Google Font or CDN library referenced by five
+    clients is tracked, and re-validated, exactly once.
+    """
+
+    __tablename__ = "archive_assets"
+    __table_args__ = (UniqueConstraint("url_key", name="uq_archive_assets_url_key"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    url: Mapped[str] = mapped_column(String(2048))
+    url_key: Mapped[str] = mapped_column(String(2048))
+    kind: Mapped[str] = mapped_column(String(16), default="other")  # css|js|img|font|media|other
+    first_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    etag: Mapped[str | None] = mapped_column(String(200), default=None)
+    last_modified: Mapped[str | None] = mapped_column(String(100), default=None)
+    failure_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ArchiveAssetVersion(Base):
+    """One captured content version of one `ArchiveAsset`, valid over a time
+    window (task-59 §1.3). Immutable after commit except
+    `last_confirmed_at` — a `304` on re-validation only extends the window.
+    """
+
+    __tablename__ = "archive_asset_versions"
+    __table_args__ = (
+        Index("ix_archive_asset_versions_asset_confirmed", "asset_id", "last_confirmed_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    asset_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("archive_assets.id", ondelete="CASCADE"), index=True
+    )
+    blob_sha256: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("archive_blobs.sha256", ondelete="SET NULL"), default=None
+    )
+    content_type: Mapped[str | None] = mapped_column(String(200), default=None)
+    http_status: Mapped[int | None] = mapped_column(Integer, default=None)
+    first_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_confirmed_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class ArchiveSnapshotAsset(Base):
+    """Which asset version was actually on the page for one snapshot
+    (task-59 §1.3) — drives the Meta panel's asset list and
+    `assets_truncated` accounting. `asset_version_id` is `None` when the
+    asset was referenced but could not be captured (PLAN §12: a real
+    failure, never silently dropped from the list).
+    """
+
+    __tablename__ = "archive_snapshot_assets"
+    __table_args__ = (Index("ix_archive_snapshot_assets_snapshot", "snapshot_id"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("archive_snapshots.id", ondelete="CASCADE"), index=True
+    )
+    asset_id: Mapped[str] = mapped_column(GUID, ForeignKey("archive_assets.id", ondelete="CASCADE"))
+    asset_version_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("archive_asset_versions.id", ondelete="SET NULL"), default=None
+    )
+    role: Mapped[str] = mapped_column(String(16), default="other")  # css|js|img|font|media|other
+
+
+class ArchiveChange(Base):
+    """The "what changed when" feed (task-59 §5) — a diff summary computed
+    at capture time between two consecutive snapshots of the same URL.
+    Deliberately does NOT reuse `MonitorChange` — different scope (whole
+    rendered page vs SEO signals) and a different consumer (`#/archive/changes`
+    vs the monitor's alert feed), same reasoning `MonitorChange`'s own
+    docstring gives for not reusing "alerts" across unrelated concepts.
+    """
+
+    __tablename__ = "archive_changes"
+    __table_args__ = (Index("ix_archive_changes_client_detected", "client_id", "detected_at"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    archive_url_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("archive_urls.id", ondelete="CASCADE"), index=True
+    )
+    snapshot_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("archive_snapshots.id", ondelete="CASCADE")
+    )
+    prev_snapshot_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("archive_snapshots.id", ondelete="SET NULL"), default=None
+    )
+    detected_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # title|description|h1|text|links|images|status|redirect|noindex
+    change_kinds_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    text_delta_words: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ArchiveReplayMiss(Base):
+    """Every replay request that resolved to neither an `ArchiveUrl` nor an
+    `ArchiveAsset` (task-59 §1.6/§4) — the archive's own honest list of
+    rewriter gaps, discovered from real traffic instead of guessed at.
+    """
+
+    __tablename__ = "archive_replay_misses"
+    __table_args__ = (UniqueConstraint("url_key", name="uq_archive_replay_misses_url_key"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    url: Mapped[str] = mapped_column(String(2048))
+    url_key: Mapped[str] = mapped_column(String(2048))
+    hit_count: Mapped[int] = mapped_column(Integer, default=1)
+    first_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class ArchiveCaptureEvent(Base):
+    """Progress/log line for one capture (task-62 §2.4) — same shape as
+    `ReportRunEvent`: `seq` is monotonic WITHIN a capture, not global, so a
+    capture's own log endpoint replays `since=` against
+    `WHERE capture_id=... AND seq>...` without a shared counter across runs.
+    `run_client_capture` writes nothing anywhere else — this table is the
+    only per-URL trace of what a capture actually did (task-62 §0.5).
+    """
+
+    __tablename__ = "archive_capture_events"
+    __table_args__ = (
+        UniqueConstraint("capture_id", "seq", name="uq_archive_capture_events_capture_id_seq"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    capture_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("archive_captures.id", ondelete="CASCADE"), index=True
+    )
+    seq: Mapped[int] = mapped_column(Integer)
+    level: Mapped[str] = mapped_column(String(16), default="info")  # debug|info|warning|error
+    stage: Mapped[str | None] = mapped_column(String(64), default=None)
+    message: Mapped[str] = mapped_column(String(2000), default="")
+    details_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+# --- Added by task-64 (URL Inspector screenshots, task-64 §2) ---------------
+#
+# Inherited-zone addition: takes over migration/model ownership for exactly
+# this one table, same precedent as task-16's `GscDimensionMetric` above.
+# Deliberately its OWN table under `settings.artifacts_dir / "urlshots"`, not
+# a row referencing the shared `monitor_blobs`/`archive_*` blob stores —
+# `app.cloud.sweeper` prunes blobs that carry no row in ITS OWN tables, and a
+# screenshot living in a shared blob root without one of those rows is
+# exactly the "unreferenced blob" shape that sweeper is built to delete.
+
+
+class UrlScreenshot(Base):
+    """One rendered screenshot of one URL at one viewport preset (task-64 §2).
+
+    Multiple rows per `(inspector_key, preset)` are kept over time — never
+    overwritten — so "how did this page look a month ago" falls out of the
+    same table as "how does it look now", the same reasoning `ArchiveSnapshot`
+    already uses for HTML. `state="failed"` rows carry no blob (PLAN §12: a
+    failed capture is a real outcome, not a missing row) — `error` says why.
+    """
+
+    __tablename__ = "url_screenshots"
+    __table_args__ = (
+        Index(
+            "ix_url_screenshots_key_preset_captured",
+            "inspector_key",
+            "preset",
+            "captured_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    # Nullable: a screenshot can be taken for a URL whose host matches no
+    # known client (same reasoning as `SchemaMarkupCheck.client_id`).
+    client_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="SET NULL"), default=None
+    )
+    inspector_key: Mapped[str] = mapped_column(String(2048))
+    url: Mapped[str] = mapped_column(String(2048))
+    preset: Mapped[str] = mapped_column(String(16))  # "desktop" | "tablet" | "mobile"
+    state: Mapped[str] = mapped_column(String(8), default="ok")  # "ok" | "failed"
+    blob_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    thumb_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    width: Mapped[int | None] = mapped_column(Integer, default=None)
+    height: Mapped[int | None] = mapped_column(Integer, default=None)
+    # Viewport height ("the fold") — distinct from `height`, the full
+    # captured page height, so the UI can draw a fold line on the image.
+    fold_height: Mapped[int | None] = mapped_column(Integer, default=None)
+    byte_size: Mapped[int | None] = mapped_column(Integer, default=None)
+    # A full-page capture past `_MAX_FULL_HEIGHT_PX` is clipped, not silently
+    # truncated (PLAN §12) — this flag says so.
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    http_status: Mapped[int | None] = mapped_column(Integer, default=None)
+    final_url: Mapped[str | None] = mapped_column(String(2048), default=None)
+    error: Mapped[str | None] = mapped_column(String(500), default=None)
+    captured_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
 def _reject_update(mapper: Any, connection: Any, target: Base) -> None:
     raise ValueError(f"{type(target).__name__} rows are immutable after commit")
+
+
+def _reject_mutation_except(allowed: set[str]) -> Any:
+    """Same intent as `_reject_update`, relaxed for a small allow-list of
+    fields (task-59's `ArchiveSnapshot`/`ArchiveAssetVersion`, which stay
+    "immutable" except for recording that a later capture reconfirmed the
+    same content). A local `inspect` import keeps this purely additive at
+    the bottom of the file instead of touching the shared import block at
+    the top, which other in-flight sessions may be editing concurrently.
+    """
+
+    def _check(mapper: Any, connection: Any, target: Base) -> None:
+        from sqlalchemy import inspect as _inspect
+
+        state = _inspect(target)
+        for attr in state.attrs:
+            if attr.key in allowed:
+                continue
+            if attr.load_history().has_changes():
+                raise ValueError(
+                    f"{type(target).__name__}.{attr.key} is immutable after commit"
+                )
+
+    return _check
 
 
 event.listen(ProviderSnapshot, "before_update", _reject_update)
@@ -1423,3 +1958,11 @@ event.listen(GscDimensionMetric, "before_update", _reject_update)
 event.listen(MonitorResourceVersion, "before_update", _reject_update)
 event.listen(MonitorPageVersion, "before_update", _reject_update)
 event.listen(MonitorDnsVersion, "before_update", _reject_update)
+event.listen(
+    ArchiveSnapshot,
+    "before_update",
+    _reject_mutation_except({"last_confirmed_at", "confirmed_count"}),
+)
+event.listen(
+    ArchiveAssetVersion, "before_update", _reject_mutation_except({"last_confirmed_at"})
+)
