@@ -216,3 +216,90 @@ def test_shim_js_no_longer_patches_iframe_src_setter(client):
     response = client.get("/archive/static/shim.js")
     assert "[window.HTMLIFrameElement" not in response.text  # not in the patched-setter list
     assert 'this.tagName === "IFRAME"' in response.text
+
+
+# --- task-63 §3.1: shim rewrites a reference to THIS APP's own origin -----
+
+
+def test_replay_injects_self_origin_for_the_shim(client, db):
+    """`toReplayUrl` (shim.js) needs to know THIS app's own origin to spot
+    a page's own JS (e.g. LAB.js resolving its base off `location.href`)
+    accidentally building a reference to it instead of the archived site.
+    """
+    ts, url = _seed_page(db)
+    response = client.get(f"/archive/r/{ts}/{url}")
+    assert 'data-self-origin="http://testserver"' in response.text
+
+
+def test_shim_js_contains_self_origin_rewrite_branch(client) -> None:
+    """The actual rewrite runs in a browser (verified end-to-end via
+    Playwright); this is the same string-level contract check the rest of
+    this file already uses for shim.js — the SELF_ORIGIN branch and its
+    `/archive/` exemption must both be present in what gets served.
+    """
+    response = client.get("/archive/static/shim.js")
+    assert "SELF_ORIGIN" in response.text
+    assert 'rest.indexOf("/archive/") !== 0' in response.text
+
+
+# --- task-63 §3.2: asset resolves despite a cache-buster query mismatch ---
+
+
+def _seed_css_asset(db, *, url_key: str, css: bytes = b".a{color:red}") -> None:
+    settings = get_settings()
+    blob = storage.store_blob(settings.artifacts_dir, css)
+    repo = WebArchiveRepository(db)
+    repo.register_blob(
+        blob.sha256, size_bytes=blob.size_bytes, gzip_size_bytes=blob.gzip_size_bytes,
+        content_type="text/css", path=blob.path,
+    )
+    asset = repo.get_or_create_asset(f"https://acme.com/{url_key.split('/', 1)[1]}", url_key, kind="css")
+    now = datetime(2026, 9, 4, 13, 30, tzinfo=UTC)
+    repo.create_asset_version(
+        asset_id=asset.id, blob_sha256=blob.sha256, content_type="text/css",
+        http_status=200, first_seen_at=now, last_confirmed_at=now,
+    )
+    db.commit()
+
+
+def test_replay_resolves_asset_when_archived_with_no_query_at_all(client, db):
+    ts, _url = _seed_page(db)
+    _seed_css_asset(db, url_key="acme.com/style.css")
+
+    response = client.get(f"/archive/r/{ts}/https://acme.com/style.css?v=1788604050059")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/css")
+
+
+def test_replay_resolves_asset_archived_under_a_different_query(client, db):
+    ts, _url = _seed_page(db)
+    _seed_css_asset(db, url_key="acme.com/style.css?v=1788000000000")
+
+    response = client.get(f"/archive/r/{ts}/https://acme.com/style.css?v=1788604050059")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/css")
+
+
+def test_replay_asset_fallback_never_crosses_to_a_different_file(client, db):
+    ts, _url = _seed_page(db)
+    _seed_css_asset(db, url_key="acme.com/other.css")
+
+    response = client.get(f"/archive/r/{ts}/https://acme.com/style.css?v=123")
+    assert response.status_code == 404
+
+
+# --- task-63 §3.4: a busy write-lock on the miss log must never 500 ------
+
+
+def test_replay_miss_survives_a_locked_database(client, db, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    def _boom(self, url, url_key, *, now=None):
+        raise OperationalError("INSERT", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(WebArchiveRepository, "record_replay_miss", _boom)
+
+    response = client.get("/archive/r/20260904133000/https://never-captured.example.com/")
+
+    assert response.status_code == 404
+    assert response.headers["content-security-policy"]

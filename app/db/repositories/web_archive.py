@@ -421,12 +421,23 @@ class WebArchiveRepository:
         the URL was ever captured), falls back to the EARLIEST snapshot with
         `is_exact=False` — the closest available in the only direction there
         is, same "nearest capture" convention Wayback itself uses.
+
+        `at` is a 14-digit `ts` (`app.webarchive.replay.parse_ts`) — SECOND
+        precision — while `observed_at` carries microseconds. A snapshot's
+        OWN `ts` is therefore always a whole second earlier than its own
+        `observed_at`; a literal `observed_at <= at` excludes a snapshot
+        from resolving to ITSELF (task-63 §2.1, live-confirmed: every one of
+        4 versions of a real multi-version URL resolved one version stale).
+        Widening the upper bound to the next whole second is exact, not an
+        approximation: two snapshots of the same URL within one second of
+        each other cannot happen (capture is sequential per URL, median
+        5.8s/URL — task-62 §0).
         """
         stmt = (
             select(ArchiveSnapshot)
             .where(
                 ArchiveSnapshot.archive_url_id == archive_url_id,
-                ArchiveSnapshot.observed_at <= at,
+                ArchiveSnapshot.observed_at < at + timedelta(seconds=1),
             )
             .order_by(ArchiveSnapshot.observed_at.desc())
             .limit(1)
@@ -468,6 +479,26 @@ class WebArchiveRepository:
 
     def get_asset_by_key(self, url_key: str) -> ArchiveAsset | None:
         stmt = select(ArchiveAsset).where(ArchiveAsset.url_key == url_key)
+        return self._session.scalars(stmt).first()
+
+    def find_asset_by_key_prefix(self, prefix: str) -> ArchiveAsset | None:
+        """Best-effort recovery for a query-string cache-buster mismatch
+        (task-63 §3.2, live-measured: 59 distinct replay misses carry a
+        query string, e.g. `?v=<timestamp>` a page's own JS appends at
+        request time). The bytes behind a matching key were never fetched
+        over the network for THIS request — this only ever hands back a
+        stored, already-archived version of the SAME file at a different
+        point in its own revision history, never a different resource.
+        `%`/`_` in `prefix` (both valid in a real URL path) are escaped so
+        they match literally, not as SQL `LIKE` wildcards.
+        """
+        escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = (
+            select(ArchiveAsset)
+            .where(ArchiveAsset.url_key.like(f"{escaped}%", escape="\\"))
+            .order_by(ArchiveAsset.first_seen_at.desc())
+            .limit(1)
+        )
         return self._session.scalars(stmt).first()
 
     def get_or_create_asset(self, url: str, url_key: str, *, kind: str) -> ArchiveAsset:
@@ -518,11 +549,16 @@ class WebArchiveRepository:
     def resolve_asset_version(
         self, asset_id: str, at: datetime
     ) -> tuple[ArchiveAssetVersion | None, bool]:
+        """Same second-vs-microsecond fix as `resolve_snapshot` above
+        (task-63 §2.1) — `at` is always a whole-second `ts`, so a literal
+        `<=` would exclude a version confirmed within the same second as the
+        page's own snapshot.
+        """
         stmt = (
             select(ArchiveAssetVersion)
             .where(
                 ArchiveAssetVersion.asset_id == asset_id,
-                ArchiveAssetVersion.first_seen_at <= at,
+                ArchiveAssetVersion.first_seen_at < at + timedelta(seconds=1),
             )
             .order_by(ArchiveAssetVersion.first_seen_at.desc())
             .limit(1)
@@ -749,6 +785,19 @@ class WebArchiveRepository:
                 )
             )
         self._session.flush()
+
+    def count_replay_misses_for_host(self, host: str) -> int:
+        """Rows in `archive_replay_misses` whose `url_key` starts with this
+        host (task-63 §3.5). Scoped to the HOST, not one exact page — a
+        miss row has no link back to which page's replay triggered it (no
+        migration adds one here), so this is the closest honest signal the
+        Meta panel can show without inventing a false precision.
+        """
+        stmt = (
+            select(func.count()).select_from(ArchiveReplayMiss)
+            .where(ArchiveReplayMiss.url_key.like(f"{host}/%"))
+        )
+        return int(self._session.scalar(stmt) or 0)
 
     # --- cross-reference into Site Monitor (read-only) --------------------
 

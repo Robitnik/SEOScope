@@ -389,3 +389,79 @@ def test_queue_view_separates_running_queued_and_recent(client, db):
     assert len(body["queued"]) == 1
     assert body["queued"][0]["queue_position"] == 1
     assert len(body["recent"]) == 2
+
+
+# --- task-63 follow-up: "Archive this page now" on a never-seen URL ------
+
+
+def test_start_adhoc_url_capture_resolves_client_and_enqueues(client, db):
+    client_id = _create_client(db)
+
+    response = client.post(
+        "/api/v1/archive/captures/url-adhoc", params={"url": "https://acme.com/new-page/"}
+    )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["client_id"] == client_id
+    assert body["client_name"] == "Acme"
+
+    detail = client.get(f"/api/v1/archive/captures/{body['capture_id']}")
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    assert detail_body["scope"] == "url"
+    assert detail_body["target_url"] == "https://acme.com/new-page/"
+
+    repo = WebArchiveRepository(db)
+    archive_url = repo.get_url(body["url_id"])
+    assert archive_url is not None
+    assert archive_url.client_id == client_id
+
+
+def test_start_adhoc_url_capture_matches_a_subdomain(client, db):
+    _create_client(db)
+
+    response = client.post(
+        "/api/v1/archive/captures/url-adhoc", params={"url": "https://www.acme.com/about/"}
+    )
+    assert response.status_code == 202
+
+
+def test_start_adhoc_url_capture_unknown_domain_is_404(client, db):
+    _create_client(db)
+
+    response = client.post(
+        "/api/v1/archive/captures/url-adhoc", params={"url": "https://totally-unrelated.example/"}
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "client_not_found"
+
+
+def test_start_adhoc_url_capture_refuses_while_one_is_already_running(client, db):
+    client_id = _create_client(db)
+    repo = WebArchiveRepository(db)
+    running = repo.create_capture(
+        client_id, slot_key="already", scheduled_for=datetime.now(UTC), trigger="scheduled",
+    )
+    repo.claim_capture(running.id, owner="test")
+    db.commit()
+
+    response = client.post(
+        "/api/v1/archive/captures/url-adhoc", params={"url": "https://acme.com/new-page/"}
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["error_code"] == "already_running"
+
+
+def test_start_adhoc_url_capture_reuses_an_already_tracked_url(client, db):
+    """A URL that's already tracked (but has no snapshot yet, or the
+    operator just wants to refresh it) must not create a duplicate
+    `ArchiveUrl` row — `get_or_create_url` is idempotent by its own key.
+    """
+    client_id = _create_client(db)
+    archive_url, _snapshot = _seed_snapshot(db, client_id)
+
+    response = client.post(
+        "/api/v1/archive/captures/url-adhoc", params={"url": archive_url.url}
+    )
+    assert response.status_code == 202
+    assert response.json()["url_id"] == archive_url.id

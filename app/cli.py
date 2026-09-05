@@ -162,6 +162,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "recent version either (default: keep every body forever, task-35 §3.2.1)"
         ),
     )
+    monitor_prune_cmd.add_argument(
+        "--ignore-cloud",
+        action="store_true",
+        help=(
+            "With --bodies-older-than: drop a body by age alone, even if this install has "
+            "never confirmed it reached B2 (task-52). Default is cloud-gated — a body is "
+            "only dropped locally once the ledger says the cloud has that exact blob too."
+        ),
+    )
 
     monitor_resolve_blocked_cmd = subparsers.add_parser(
         "monitor-resolve-blocked",
@@ -315,6 +324,35 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     cloud_restore_cmd.add_argument(
         "--out", required=True, type=Path, help="Directory to write the decompressed .db into"
+    )
+
+    archive_capture_cmd = subparsers.add_parser(
+        "archive-capture",
+        help="Run a Web Archive capture now, without waiting for the 13:30/19:30 schedule",
+    )
+    archive_capture_cmd.add_argument("--client-id", default=None, help="One client to capture")
+    archive_capture_cmd.add_argument(
+        "--all", action="store_true", help="Capture every collectable (non-paused) client"
+    )
+    archive_capture_cmd.add_argument(
+        "--no-assets", action="store_true", help="Skip subresources — HTML only, for a quick check"
+    )
+
+    archive_backfill_assets_cmd = subparsers.add_parser(
+        "archive-backfill-assets",
+        help=(
+            "Retroactively fetch images/fonts referenced only from CSS "
+            "(task-60 §1.3) — predates the discovery fix, or missed by it"
+        ),
+    )
+    archive_backfill_assets_cmd.add_argument(
+        "--client-id", default=None, help="Scope to one client's own stored snapshots/CSS"
+    )
+    archive_backfill_assets_cmd.add_argument(
+        "--all", action="store_true", help="Scan the whole portfolio"
+    )
+    archive_backfill_assets_cmd.add_argument(
+        "--dry-run", action="store_true", help="Report what's missing without fetching anything"
     )
 
     return parser
@@ -622,9 +660,7 @@ def main(argv: list[str] | None = None) -> int:
                     mode = args.fetch_mode
                 else:
                     mode = effective_fetch_mode(
-                        monitor_repo.get_settings(client.id),
-                        now=datetime.now(UTC),
-                        sticky_days=settings.monitor_antibot_sticky_days,
+                        monitor_repo.get_settings(client.id), now=datetime.now(UTC)
                     )
                 outcome = run_client_monitor(
                     session,
@@ -671,38 +707,49 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if any_critical else 0
 
     if args.command == "monitor-prune":
+        # One implementation, shared with the daily scheduled pass
+        # (`CloudScheduler._run_local_retention_if_due`): chunked, committed
+        # rows-before-files, and cloud-gated unless --ignore-cloud. Doing it
+        # here by hand is what left 7,341 rows pointing at deleted files on
+        # 2026-09-04 — see `prune_monitor_bodies`'s docstring.
+        from app.cloud.client import CloudStore
+        from app.cloud.sweeper import prune_monitor_bodies
         from app.core.config import get_settings
-        from app.db.repositories.monitor import MonitorRepository
-        from app.monitor.storage import delete_blob_file
 
         settings = get_settings()
         session_factory = get_sync_sessionmaker()
+        store = None if args.ignore_cloud else CloudStore(settings)
+        # Without --bodies-older-than the command keeps its original,
+        # narrower job: only blobs no version references at all.
+        older_than = args.bodies_older_than if args.bodies_older_than is not None else 0
         with session_factory() as session:
-            repo = MonitorRepository(session)
+            prune_result = prune_monitor_bodies(
+                session,
+                settings,
+                older_than_days=older_than,
+                store=store,
+                dry_run=args.dry_run,
+                include_unreferenced=True,
+            )
 
-            targets = {b.sha256 for b in repo.unreferenced_blobs()}
-            if args.bodies_older_than is not None:
-                cutoff = datetime.now(UTC) - timedelta(days=args.bodies_older_than)
-                aging_out = repo.blobs_referenced_only_by_versions_older_than(cutoff)
-                print(
-                    f"{len(aging_out)} version(s)' bodies are older than "
-                    f"{args.bodies_older_than} day(s)"
-                )
-                targets |= set(aging_out)
-
-            if not targets:
-                print("nothing to prune")
-                return 0
-
-            print(f"{'would remove' if args.dry_run else 'removing'} {len(targets)} blob(s)")
-            if args.dry_run:
-                return 0
-
-            for sha256 in sorted(targets):
-                delete_blob_file(settings.artifacts_dir, sha256)
-                repo.delete_blob(sha256)
-            session.commit()
-        print(f"pruned {len(targets)} blob(s)")
+        if prune_result.candidates == 0:
+            print("nothing to prune")
+            return 0
+        print(f"{prune_result.candidates} blob(s) are prune candidates")
+        if prune_result.deferred_not_uploaded:
+            print(
+                f"  deferring {prune_result.deferred_not_uploaded}: not yet confirmed uploaded "
+                "to the cloud (pass --ignore-cloud to drop anyway)"
+            )
+        if args.dry_run:
+            print(f"would remove {prune_result.removed} blob(s)")
+            return 0
+        print(f"pruned {prune_result.removed} blob(s)")
+        if prune_result.chunks_failed:
+            print(
+                f"  {prune_result.chunks_failed} chunk(s) skipped: database was locked by the "
+                "monitor mid-write — rerun later, nothing was left inconsistent"
+            )
         return 0
 
     if args.command == "monitor-resolve-blocked":
@@ -1263,6 +1310,142 @@ def main(argv: list[str] | None = None) -> int:
             f"--from {dest} --force"
         )
         print("  docker compose up -d")
+        return 0
+
+    if args.command == "archive-capture":
+        # Imported here, not at module scope: pulls in the archive engine
+        # (fetch/fingerprint/rewrite), which the other commands have no
+        # reason to load — same convention as `monitor-run` above.
+        import uuid
+
+        from app.core.config import get_settings
+        from app.db.repositories.clients import ClientRepository
+        from app.db.repositories.web_archive import WebArchiveRepository
+        from app.webarchive.capture import run_client_capture
+        from app.webarchive.writequeue import ArchiveWriteController
+
+        if bool(args.client_id) == bool(args.all):
+            print("error: pass exactly one of --client-id or --all", file=sys.stderr)
+            return 2
+
+        settings = get_settings()
+        session_factory = get_sync_sessionmaker()
+        # This CLI invocation runs in its own OS process (task-62 §2.3): the
+        # worker's `ArchiveScheduler` cannot see this controller either, so
+        # cross-process write contention still falls back to SQLite's own
+        # busy_timeout + `commit_with_retry`'s backoff — fine, a rare tail,
+        # not the in-process pileup this controller exists to remove.
+        write_controller = ArchiveWriteController()
+        write_controller.start()
+        try:
+            with session_factory() as session:
+                clients_repo = ClientRepository(session)
+                archive_repo = WebArchiveRepository(session)
+                if args.client_id:
+                    client = clients_repo.get(args.client_id)
+                    if client is None:
+                        print(f"error: unknown --client-id: {args.client_id}", file=sys.stderr)
+                        return 2
+                    clients = [client]
+                else:
+                    clients = clients_repo.list_collectable()
+
+                if not clients:
+                    print("error: no clients to capture (empty client list)", file=sys.stderr)
+                    return 2
+
+                if args.no_assets:
+                    for client in clients:
+                        archive_repo.update_settings(client.id, capture_assets=False)
+                    session.commit()
+
+                exit_code = 0
+                for client in clients:
+                    # Mirrors `ArchiveScheduler._tick`'s own guard: without this,
+                    # a manual run can race a still-running scheduled capture
+                    # for the same client (live-observed, task-59 2026-09-04) —
+                    # wasted duplicate work, not a data-safety issue (cells are
+                    # isolated), but confusing and worth refusing outright.
+                    if archive_repo.has_running_capture(client.id):
+                        print(
+                            f"{client.name}: skipped — a capture is already running",
+                            file=sys.stderr,
+                        )
+                        exit_code = 1
+                        continue
+                    capture = archive_repo.create_capture(
+                        client.id,
+                        slot_key=f"manual:{uuid.uuid4()}",
+                        scheduled_for=datetime.now(UTC),
+                        trigger="manual",
+                    )
+                    session.commit()
+                    archive_repo.claim_capture(capture.id, owner="cli")
+                    session.commit()
+                    capture_outcome = run_client_capture(
+                        session, client, capture_id=capture.id, settings=settings,
+                        artifacts_dir=settings.artifacts_dir,
+                        write_controller=write_controller, session_scope=session_factory,
+                    )
+                    archive_repo.finish_capture(
+                        capture.id, status=capture_outcome.status  # type: ignore[arg-type]
+                    )
+                    session.commit()
+                    print(
+                        f"{client.name}: {capture_outcome.status} — "
+                        f"{capture_outcome.urls_new} new, "
+                        f"{capture_outcome.urls_unchanged} unchanged, "
+                        f"{capture_outcome.urls_failed} failed, "
+                        f"{capture_outcome.urls_blocked} blocked (of {capture_outcome.urls_total})"
+                    )
+                    if capture_outcome.status not in ("ok", "partial"):
+                        exit_code = 1
+            return exit_code
+        finally:
+            write_controller.stop()
+
+    if args.command == "archive-backfill-assets":
+        # Imported here, not at module scope — same convention as
+        # `archive-capture` above.
+        from app.core.config import get_settings
+        from app.db.repositories.clients import ClientRepository
+        from app.db.repositories.web_archive import WebArchiveRepository
+        from app.webarchive.capture import backfill_css_assets
+
+        if bool(args.client_id) == bool(args.all):
+            print("error: pass exactly one of --client-id or --all", file=sys.stderr)
+            return 2
+
+        settings = get_settings()
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            backfill_client_id: str | None = None
+            scope_label = "all clients"
+            if args.client_id:
+                client = ClientRepository(session).get(args.client_id)
+                if client is None:
+                    print(f"error: unknown --client-id: {args.client_id}", file=sys.stderr)
+                    return 2
+                backfill_client_id = client.id
+                scope_label = client.name
+
+            archive_repo = WebArchiveRepository(session)
+            backfill_outcome = backfill_css_assets(
+                session, archive_repo, client_id=backfill_client_id, settings=settings,
+                artifacts_dir=settings.artifacts_dir, dry_run=args.dry_run,
+            )
+
+            print(
+                f"{scope_label}: scanned {backfill_outcome.scanned_snapshots} snapshots, "
+                f"{backfill_outcome.scanned_css_files} CSS files"
+            )
+            for asset_kind, count in sorted(backfill_outcome.missing_by_kind.items()):
+                print(f"  missing {asset_kind}: {count}")
+            print(f"missing total: {backfill_outcome.missing_total}")
+            if args.dry_run:
+                print("dry-run: nothing fetched")
+            else:
+                print(f"fetched: {backfill_outcome.fetched}, failed: {backfill_outcome.failed}")
         return 0
 
     parser.error(f"unknown command: {args.command}")

@@ -15,12 +15,14 @@ never a live fetch of today's real page under yesterday's byline.
 
 from __future__ import annotations
 
+import logging
 from html import escape
 from typing import Literal, NamedTuple
 
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
+from sqlalchemy.exc import OperationalError
 from starlette.datastructures import URL
 
 from app.api import register_router
@@ -34,6 +36,7 @@ from app.webarchive.replay import parse_ts
 from app.webarchive.urls import looks_like_binary_content_type, normalize_url
 
 router = APIRouter(tags=["web-archive-replay"])
+logger = logging.getLogger(__name__)
 
 # The ONE external-origin exception in this whole policy: `frame-src
 # https:` (task-60 §2), gated on `Settings.archive_live_iframes` — the
@@ -112,6 +115,7 @@ _SHIM_JS = r"""(function () {
   var TS = self_script ? self_script.getAttribute("data-ts") : "";
   var ORIGIN = self_script ? self_script.getAttribute("data-origin") : "";
   var SNAPSHOT = self_script ? self_script.getAttribute("data-snapshot") : "";
+  var SELF_ORIGIN = self_script ? self_script.getAttribute("data-self-origin") : "";
   if (!TS || !ORIGIN) return;
 
   function isReplayUrl(value) {
@@ -127,6 +131,25 @@ _SHIM_JS = r"""(function () {
       absolute = new URL(value, ORIGIN).href;
     } catch (err) {
       return value;
+    }
+    // A page's OWN JS (a lazy-load bootstrap, any lib that resolves its own
+    // asset root off `location.href`) sees THIS app's origin inside the
+    // sandboxed iframe, not the archived site's — `location.href` is
+    // `https://<this app>/archive/r/<ts>/<real url>`, and code that only
+    // looks at the origin (not the path) builds
+    // "https://<this app>/wp-content/..." (task-63 §3.1, live-confirmed:
+    // #1 entry in `archive_replay_misses` — a real WP Rocket LazyLoad
+    // bootstrap doing exactly this on a real client site). That is never a
+    // legitimate reference to THIS app (everything of ours lives under
+    // `/archive/`) — re-resolve it against the archived page's real origin
+    // instead of leaving it pointed at a host the archive can never serve.
+    if (SELF_ORIGIN && absolute.indexOf(SELF_ORIGIN) === 0) {
+      var rest = absolute.slice(SELF_ORIGIN.length);
+      if (rest.indexOf("/archive/") !== 0) {
+        try {
+          absolute = new URL(rest, ORIGIN).href;
+        } catch (err) { /* leave absolute as-is */ }
+      }
     }
     if (!/^https?:\/\//i.test(absolute)) return value;
     return "/archive/r/" + TS + "/" + absolute;
@@ -242,12 +265,15 @@ _SHIM_JS = r"""(function () {
 """
 
 
-def _inject_shim(html: str, *, ts: str, origin: str, snapshot_id: str | None) -> str:
+def _inject_shim(
+    html: str, *, ts: str, origin: str, snapshot_id: str | None, self_origin: str
+) -> str:
     tag = (
         '<script src="/archive/static/shim.js"'
         f' data-ts="{escape(ts)}"'
         f' data-origin="{escape(origin)}"'
-        f' data-snapshot="{escape(snapshot_id or "")}"></script>'
+        f' data-snapshot="{escape(snapshot_id or "")}"'
+        f' data-self-origin="{escape(self_origin)}"></script>'
     )
     lowered = html.lower()
     head_index = lowered.find("<head")
@@ -314,13 +340,35 @@ def _resolve_replay(original_url: str, ts_value: str) -> ReplayTarget:
                     return ReplayTarget("asset", raw, snapshot.content_type, base_url)
                 return ReplayTarget("page", raw, snapshot.content_type, base_url, snapshot.id)
         asset = repo.get_asset_by_key(key)
+        if asset is None and "?" in key:
+            # task-63 §3.2: a page's own JS appends a fresh cache-buster
+            # query (`?v=<timestamp>`) that the archived asset was never
+            # captured under. Two independent fallbacks, both scoped to
+            # ASSETS ONLY — `LAXTON`'s `?taxonomy=...&term=123` PAGES are
+            # real, distinct pages (`app.webarchive.urls.normalize_url`'s
+            # own docstring) and must never be collapsed this way.
+            no_query_key = normalize_url(original_url, keep_query=False)
+            asset = repo.get_asset_by_key(no_query_key)
+            if asset is None:
+                prefix = f"{key.split('?', 1)[0]}?"
+                asset = repo.find_asset_by_key_prefix(prefix)
         if asset is not None:
             version, _is_exact = repo.resolve_asset_version(asset.id, ts)
             if version is not None and version.blob_sha256:
                 raw = storage.read_blob(settings.artifacts_dir, version.blob_sha256)
                 return ReplayTarget("asset", raw, version.content_type, asset.url)
-        repo.record_replay_miss(original_url, key)
-        session.commit()
+        try:
+            repo.record_replay_miss(original_url, key)
+            session.commit()
+        except OperationalError:
+            # Telemetry, not archive data — a busy SQLite writer (task-62's
+            # own `ArchiveWriteController` only serializes ITS OWN process;
+            # this read-path GET has no controller to queue behind) must
+            # never turn an honest 404 into a 500 (task-63 §3.4,
+            # live-confirmed: `database is locked` surfaced as a bare 500
+            # with none of this module's own CSP/CORS headers attached).
+            session.rollback()
+            logger.warning("archive_replay_miss_unlogged url=%s", key)
         return _MISS
 
 
@@ -384,6 +432,7 @@ async def replay(ts: str, url: str, request: Request) -> Response:
             ts=ts,
             origin=base_url or original_url,
             snapshot_id=target.snapshot_id,
+            self_origin=f"{parsed.scheme}://{parsed.netloc}",
         )
         return Response(
             content=rewritten, media_type="text/html; charset=utf-8",

@@ -5,6 +5,7 @@ real on-disk blob storage (`tmp_path`) — everything except the network.
 
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -792,3 +793,65 @@ def test_run_client_capture_stops_when_cancel_requested(
     assert outcome.status == "cancelled"
     assert outcome.urls_captured == 0
     assert fake_fetch.calls == {}  # stopped before touching either URL
+
+
+def test_run_client_capture_many_clients_in_parallel_never_locks_the_database(
+    artifacts_dir, settings, fake_fetch, write_controller, session_scope
+):
+    """Regression, live 2026-09-05: the per-URL loop called `commit_with_retry`
+    directly instead of `write_controller.submit`, so N clients capturing at
+    once — each its own thread, each its own session, exactly
+    `ArchiveScheduler._submit`'s real shape — put the exact pre-task-62 lock
+    storm right back and crashed most of a live portfolio's captures with
+    `database is locked` inside one tick. A single-session test cannot catch
+    this class of bug at all; it needs genuine concurrent writers against a
+    real file-backed engine, one per client, sharing one controller.
+    """
+    n_clients = 6
+    urls_per_client = 20
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    jobs: list[tuple[object, str]] = []
+    with session_scope() as setup_session:
+        for i in range(n_clients):
+            client = ClientRepository(setup_session).create(
+                name=f"Client{i}", slug=f"client{i}", domain=f"client{i}.example.com",
+                timezone="America/New_York",
+            )
+            repo = WebArchiveRepository(setup_session)
+            for j in range(urls_per_client):
+                url = f"https://client{i}.example.com/page-{j}"
+                repo.get_or_create_url(
+                    client.id, url, f"client{i}.example.com/page-{j}", source="manual"
+                )
+                fake_fetch.set(url, _result(url, HTML_V1, headers={"Content-Type": "text/html"}))
+            capture = repo.create_capture(
+                client.id, slot_key=f"manual:{i}", scheduled_for=now, trigger="manual"
+            )
+            setup_session.commit()
+            jobs.append((client, capture.id))
+
+    errors: list[BaseException] = []
+    outcomes: dict[str, object] = {}
+
+    def _worker(client, capture_id) -> None:
+        try:
+            with session_scope() as own_session:
+                outcomes[capture_id] = capturemod.run_client_capture(
+                    own_session, client, capture_id=capture_id, settings=settings,
+                    artifacts_dir=artifacts_dir, write_controller=write_controller,
+                    session_scope=session_scope, now=now,
+                )
+        except BaseException as exc:  # noqa: BLE001 - captured for the assertion below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_worker, args=(c, cid)) for c, cid in jobs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+
+    assert errors == []
+    assert len(outcomes) == n_clients
+    for outcome in outcomes.values():
+        assert outcome.status == "ok"
+        assert outcome.urls_new == urls_per_client

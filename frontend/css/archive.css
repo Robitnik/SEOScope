@@ -63,8 +63,15 @@
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
   border: 1px solid var(--line); border-radius: var(--radius-md); text-decoration: none;
   color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums;
+  background: none; font-family: inherit; cursor: pointer;
 }
 .archive-timeline-point:hover { border-color: var(--accent); color: var(--accent); }
+/* The viewer's own calendar popover renders this as a `<button>` (task-63
+ * §4, picking a version stays IN the viewer instead of navigating a link)
+ * and marks the currently-open version this way. */
+.archive-timeline-point[aria-current="true"] {
+  border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
 /* `point-filled` (a change was recorded here) vs `point` (confirmed
  * unchanged) — the icon choice itself carries the distinction, colored the
  * same as everything else that means "this is what changed" (--accent). */
@@ -131,6 +138,17 @@
 .archive-top-changing-list a:hover { color: var(--accent); }
 .archive-empty-note { margin: 0 20px; color: var(--ink-dim); font-size: 13px; }
 
+/* "Not archived yet" + "Archive this page now" (task-63 follow-up) — the
+ * base `.state-panel` is a single flex ROW (icon | text | button); this
+ * variant wraps so the error line (only present after a failed attempt)
+ * drops to its own full-width row instead of squeezing into that row. */
+.archive-not-archived { flex-wrap: wrap; row-gap: 10px; }
+.archive-not-archived__error {
+  flex-basis: 100%; margin: 0; display: flex; align-items: center; gap: 6px;
+  color: var(--danger); font-size: 13px;
+}
+.archive-not-archived__error .icon { width: 16px; height: 16px; color: var(--danger); }
+
 /* --- Viewer -------------------------------------------------------------- */
 
 /* Full-bleed: the app shell (`.masthead`/`.app-main`) has no defined
@@ -156,6 +174,17 @@
 .archive-banner__url:focus-visible { border-color: var(--accent); outline: none; }
 .archive-banner__time { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
 .archive-banner__confirmed { color: var(--ink-dim); }
+/* Version-picker calendar in the viewer's own banner (task-63 §4) — the
+ * exact same `.archive-calendar*` markup the hub renders inline, here
+ * popped over the button that opens it. */
+.archive-banner__calendar { position: relative; flex: 0 0 auto; }
+.archive-calendar-popover {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 30;
+  width: 320px; max-width: calc(100vw - 24px); padding: 14px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, .3));
+}
+.archive-calendar-popover .archive-calendar { margin: 0 0 12px; }
 .archive-banner__nav { display: flex; gap: 6px; }
 .archive-banner__actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .archive-scripts-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-muted); cursor: pointer; }
@@ -177,6 +206,18 @@
 .archive-diff { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
 .archive-diff-line--add { color: var(--success); }
 .archive-diff-line--del { color: var(--danger); }
+
+/* Full-bleed loading state (task-63 follow-up) — the viewer IS the whole
+ * viewport before a snapshot loads, so this fills it centered rather than
+ * showing a generic skeleton row floating at the top. */
+.archive-loader {
+  position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px; background: var(--canvas);
+}
+.archive-loader__icon { color: var(--accent); }
+.archive-loader__icon .icon { width: 40px; height: 40px; }
+.archive-loader__label { margin: 0; color: var(--ink-muted); font-size: 14px; }
+.archive-loader__bar { width: 220px; height: 4px; border-radius: 2px; }
 
 .archive-iframe-wrap { flex: 1; min-height: 0; overscroll-behavior: contain; contain: paint; }
 .archive-iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
@@ -248,6 +289,9 @@
   .archive-banner { flex-direction: column; align-items: stretch; }
   .archive-banner__url { max-width: 100%; }
   .archive-banner__actions { margin-left: 0; }
+  /* Flows under the banner in its own column instead of floating as an
+   * absolute overlay that could run off the narrow viewport (task-63 §4). */
+  .archive-calendar-popover { position: static; width: 100%; max-width: 100%; margin-top: 8px; }
   .archive-changes-filters { flex-direction: column; }
   .archive-change-row__meta { align-items: flex-start; }
   .archive-log-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }

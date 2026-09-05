@@ -8,15 +8,19 @@
 // "is the archive actually working" without opening a client.
 import {
   getArchiveOverview, getArchiveQueue, getArchiveUrlTimeline, lookupArchiveUrl,
-  startAllArchiveCaptures, startArchiveCapture, startArchiveUrlCapture, isAbortError,
-} from "./api.js?v=20260905-t62";
+  startAllArchiveCaptures, startArchiveCapture, startArchiveUrlCapture,
+  startArchiveAdhocUrlCapture, isAbortError,
+} from "./api.js?v=20260905-t63";
 import {
   buildArchiveCaptureHash, buildArchiveViewHash, buildArchiveChangesHash,
-} from "./router.js?v=20260905-t62";
+} from "./router.js?v=20260905-t63";
 import {
   escapeHtml, formatFileSize, formatTimestamp, icon, statusIcon,
 } from "./formatters.js?v=20260821-spin3";
 import { sectionSkeleton, panelSkeleton } from "./skeleton.js?v=20260821-spin3";
+import {
+  calendarMarkup, bindCalendarActions, groupSnapshotsByDay, reasonLabel,
+} from "./archive-calendar.js?v=20260905-t63";
 
 const root = document.querySelector("#archive-page-root");
 
@@ -52,6 +56,8 @@ export async function initArchivePage(query) {
     captureStarting: null, // client_id currently being triggered
     urlCaptureStarting: false, // "Refresh now" on the currently looked-up URL
     allCapturesStarting: false,
+    adhocCaptureStarting: false, // "Archive this page now" on a NEVER-seen URL
+    adhocCaptureError: null,
   };
   stopLivePolling();
   root.innerHTML = shell();
@@ -101,6 +107,7 @@ async function runLookup(url) {
   state.lookupError = null;
   state.lookupUrl = null;
   state.timeline = null;
+  state.adhocCaptureError = null;
   renderLookup();
   try {
     const result = await lookupArchiveUrl(url);
@@ -125,36 +132,6 @@ async function runLookup(url) {
   renderLookup();
 }
 
-const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTH_LABELS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
-// One cell per day of `year`/`month` (0-indexed), padded with `null`s so the
-// grid always starts on the correct weekday column — same shape the real
-// Wayback Machine calendar uses.
-function buildCalendarCells(year, month, groupsByDay) {
-  const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay();
-  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const cells = new Array(firstWeekday).fill(null);
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    cells.push({ iso, day, points: groupsByDay.get(iso) || [] });
-  }
-  return cells;
-}
-
-function groupSnapshotsByDay(snapshots) {
-  const groups = new Map();
-  for (const snapshot of snapshots) {
-    const day = snapshot.observed_at.slice(0, 10);
-    if (!groups.has(day)) groups.set(day, []);
-    groups.get(day).push(snapshot);
-  }
-  return groups;
-}
-
 function renderLookup() {
   const container = root.querySelector("#archive-lookup-result");
   if (!container) return;
@@ -176,12 +153,18 @@ function renderLookup() {
   if (!state.lookupAttempted) { container.innerHTML = ""; return; }
   if (state.timeline === null) {
     container.innerHTML = `
-      <div class="state-panel state-not_configured">
+      <div class="state-panel state-not_configured archive-not-archived">
         ${icon("history-off")}
-        <p><strong>Not archived (yet).</strong><br>
+        <p><strong>Not archived yet.</strong><br>
         This URL hasn't been captured. If its client has the archive enabled, it will be picked up
-        on the next discovery pass — or ask an operator to enable it for that client.</p>
+        on the next discovery pass — or capture it right now instead of waiting.</p>
+        <button type="button" class="button button--primary" id="archive-adhoc-capture" ${state.adhocCaptureStarting ? "disabled" : ""}>
+          ${icon(state.adhocCaptureStarting ? "loader-2" : "camera", state.adhocCaptureStarting ? "icon icon--spin" : "icon")}
+          ${state.adhocCaptureStarting ? "Starting…" : "Archive this page now"}
+        </button>
+        ${state.adhocCaptureError ? `<p class="archive-not-archived__error">${icon("alert-triangle")}${escapeHtml(state.adhocCaptureError)}</p>` : ""}
       </div>`;
+    container.querySelector("#archive-adhoc-capture").addEventListener("click", () => triggerAdhocCapture(state.urlInput));
     return;
   }
 
@@ -191,7 +174,12 @@ function renderLookup() {
       <div class="state-panel state-not_configured">
         ${icon("history-off")}
         <p><strong>${escapeHtml(url.client_name)}</strong> is tracked, but no version has been captured yet.</p>
+        <button type="button" class="button button--primary" id="archive-refresh-url" ${state.urlCaptureStarting ? "disabled" : ""}>
+          ${icon(state.urlCaptureStarting ? "loader-2" : "camera", state.urlCaptureStarting ? "icon icon--spin" : "icon")}
+          ${state.urlCaptureStarting ? "Starting…" : "Archive this page now"}
+        </button>
       </div>`;
+    container.querySelector("#archive-refresh-url").addEventListener("click", () => triggerUrlCapture(url.id));
     return;
   }
 
@@ -209,10 +197,17 @@ function renderLookup() {
           ${icon(state.urlCaptureStarting ? "loader-2" : "refresh", state.urlCaptureStarting ? "icon icon--spin" : "icon")}Refresh now
         </button>
       </div>
-      ${calendarMarkup(groups)}
+      ${calendarMarkup({ year: state.calendarYear, month: state.calendarMonth, selectedDay: state.selectedDay, groups })}
       ${selectedDayMarkup(groups)}
     </div>`;
-  bindCalendarActions(groups);
+  bindCalendarActions(container, {
+    onPrevMonth: () => shiftCalendarMonth(-1),
+    onNextMonth: () => shiftCalendarMonth(1),
+    onSelectDay: (day) => {
+      state.selectedDay = day;
+      renderLookup();
+    },
+  });
   container.querySelector("#archive-refresh-url").addEventListener("click", () => triggerUrlCapture(url.id));
 }
 
@@ -234,33 +229,32 @@ async function triggerUrlCapture(urlId) {
   }
 }
 
-function calendarMarkup(groups) {
-  const cells = buildCalendarCells(state.calendarYear, state.calendarMonth, groups);
-  return `
-    <div class="archive-calendar">
-      <div class="archive-calendar__header">
-        <button type="button" class="icon-button" data-action="cal-prev" aria-label="Previous month">${icon("chevron-left")}</button>
-        <p class="archive-calendar__month">${MONTH_LABELS[state.calendarMonth]} ${state.calendarYear}</p>
-        <button type="button" class="icon-button" data-action="cal-next" aria-label="Next month">${icon("chevron-right")}</button>
-      </div>
-      <div class="archive-calendar__weekdays">
-        ${WEEKDAY_LABELS.map((label) => `<span>${label}</span>`).join("")}
-      </div>
-      <div class="archive-calendar__grid">
-        ${cells.map((cell) => {
-          if (!cell) return `<span class="archive-calendar__day archive-calendar__day--empty"></span>`;
-          const hasCapture = cell.points.length > 0;
-          const changed = cell.points.some((p) => p.has_change);
-          const isSelected = cell.iso === state.selectedDay;
-          return `
-            <button type="button" class="archive-calendar__day${hasCapture ? " archive-calendar__day--has-capture" : ""}${isSelected ? " archive-calendar__day--selected" : ""}${changed ? " archive-calendar__day--changed" : ""}"
-              data-day="${cell.iso}" ${hasCapture ? "" : "disabled"}
-              aria-current="${isSelected ? "date" : "false"}" aria-label="${cell.iso}${hasCapture ? `, ${cell.points.length} version${cell.points.length === 1 ? "" : "s"}` : ", no capture"}">
-              ${cell.day}
-            </button>`;
-        }).join("")}
-      </div>
-    </div>`;
+// "Archive this page now" on a URL that has NEVER been seen before —
+// `startArchiveUrlCapture` needs an `ArchiveUrl.id` this URL doesn't have
+// yet; this resolves a client from the URL's own host and creates that row
+// on the spot (task-63 follow-up, live-reported 2026-09-05). Navigates
+// straight to the capture's own live-progress page (task-62) instead of
+// leaving the operator staring at the same empty lookup panel with nothing
+// to watch.
+async function triggerAdhocCapture(url) {
+  if (state.adhocCaptureStarting) return;
+  state.adhocCaptureStarting = true;
+  state.adhocCaptureError = null;
+  renderLookup();
+  try {
+    const result = await startArchiveAdhocUrlCapture(url);
+    location.hash = buildArchiveCaptureHash({ id: result.capture_id });
+  } catch (error) {
+    if (isAbortError(error)) return;
+    state.adhocCaptureError =
+      error.code === "client_not_found"
+        ? "Couldn't match this URL to a known client — check the domain, or ask an operator to add it."
+        : error.code === "already_running"
+          ? "A capture is already running for this client — try again in a moment."
+          : `Could not start the capture: ${error.message}`;
+    state.adhocCaptureStarting = false;
+    renderLookup();
+  }
 }
 
 function selectedDayMarkup(groups) {
@@ -285,18 +279,6 @@ function selectedDayMarkup(groups) {
     </div>`;
 }
 
-function bindCalendarActions(groups) {
-  const container = root.querySelector("#archive-lookup-result");
-  container.querySelector('[data-action="cal-prev"]')?.addEventListener("click", () => shiftCalendarMonth(-1));
-  container.querySelector('[data-action="cal-next"]')?.addEventListener("click", () => shiftCalendarMonth(1));
-  container.querySelectorAll(".archive-calendar__day[data-day]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.selectedDay = button.dataset.day;
-      renderLookup();
-    });
-  });
-}
-
 function shiftCalendarMonth(delta) {
   let month = state.calendarMonth + delta;
   let year = state.calendarYear;
@@ -305,10 +287,6 @@ function shiftCalendarMonth(delta) {
   state.calendarMonth = month;
   state.calendarYear = year;
   renderLookup();
-}
-
-function reasonLabel(reason) {
-  return { first: "First capture", changed: "Changed", weekly_refresh: "Confirmed unchanged", status_changed: "Status changed" }[reason] || reason;
 }
 
 // --- overview --------------------------------------------------------------

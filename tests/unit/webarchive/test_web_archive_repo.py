@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.web_archive import WebArchiveRepository
+from app.webarchive.replay import format_ts, parse_ts
 
 
 def _client(session, *, slug: str = "acme"):
@@ -18,15 +19,16 @@ def _client(session, *, slug: str = "acme"):
     return client
 
 
-def _snapshot(session, repo, client, *, url: str = "https://acme.com/"):
+def _snapshot(session, repo, client, *, url: str = "https://acme.com/", observed_at=None):
     archive_url = repo.get_or_create_url(
         client.id, url, url.replace("https://", ""), source="manual"
     )
+    at = observed_at or datetime(2026, 1, 1, tzinfo=UTC)
     snapshot = repo.create_snapshot(
         archive_url_id=archive_url.id,
         client_id=client.id,
         capture_id=None,
-        observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        observed_at=at,
         http_status=200,
         final_url=url,
         headers_json={},
@@ -36,7 +38,7 @@ def _snapshot(session, repo, client, *, url: str = "https://acme.com/"):
         body_blob_sha256=None,
         title=None, description=None, canonical=None, meta_robots=None, word_count=1,
         asset_count=0, assets_truncated=False, store_reason="first", prev_snapshot_id=None,
-        last_confirmed_at=datetime(2026, 1, 1, tzinfo=UTC), confirmed_count=1,
+        last_confirmed_at=at, confirmed_count=1,
     )
     session.commit()
     return archive_url, snapshot
@@ -255,3 +257,137 @@ def test_append_event_redacts_nothing_by_itself_but_stores_details_json(session)
 
     event = repo.events_since(capture.id, 0)[0]
     assert event.details_json == {"status": 500}
+
+
+# --- resolve_snapshot / resolve_asset_version off-by-one (task-63 §2.1) ---
+#
+# `ts` (14-digit, second precision) always sits a whole second BEFORE the
+# snapshot's own `observed_at` (which carries microseconds) — a snapshot
+# captured at 13:40:46.280052 has its own `ts` = "20260904134046",
+# i.e. 13:40:46.000000. A literal `observed_at <= at` therefore excludes
+# the snapshot from resolving to ITSELF. Live-confirmed on a real
+# multi-version URL: every one of 4 versions resolved one version stale.
+
+def test_resolve_snapshot_resolves_a_version_to_itself(session):
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    _, snapshot = _snapshot(
+        session, repo, client, observed_at=datetime(2026, 9, 4, 13, 40, 46, 280052, tzinfo=UTC)
+    )
+
+    own_ts = parse_ts(format_ts(snapshot.observed_at))
+    resolved, is_exact = repo.resolve_snapshot(snapshot.archive_url_id, own_ts)
+
+    assert resolved is not None
+    assert resolved.id == snapshot.id
+    assert is_exact is True
+
+
+def test_resolve_snapshot_picks_the_right_one_of_several_versions(session):
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    archive_url = repo.get_or_create_url(client.id, "https://acme.com/", "acme.com/", source="manual")
+    session.commit()
+
+    def _make(observed_at):
+        return repo.create_snapshot(
+            archive_url_id=archive_url.id, client_id=client.id, capture_id=None,
+            observed_at=observed_at, http_status=200, final_url="https://acme.com/",
+            headers_json={}, content_type="text/html", content_fingerprint="deadbeef",
+            raw_sha256="a" * 64, body_blob_sha256=None,
+            title=None, description=None, canonical=None, meta_robots=None, word_count=1,
+            asset_count=0, assets_truncated=False, store_reason="first", prev_snapshot_id=None,
+            last_confirmed_at=observed_at, confirmed_count=1,
+        )
+
+    oldest = _make(datetime(2026, 9, 4, 10, 31, 4, 164922, tzinfo=UTC))
+    middle = _make(datetime(2026, 9, 4, 13, 40, 46, 260870, tzinfo=UTC))
+    newest = _make(datetime(2026, 9, 4, 16, 30, 30, 258380, tzinfo=UTC))
+    session.commit()
+
+    for target in (oldest, middle, newest):
+        own_ts = parse_ts(format_ts(target.observed_at))
+        resolved, _is_exact = repo.resolve_snapshot(archive_url.id, own_ts)
+        assert resolved.id == target.id, f"ts for {target.id} resolved to {resolved.id}"
+
+    # A moment strictly BEFORE the first capture still falls back to the
+    # earliest version (`is_exact=False`) — the off-by-one fix must not
+    # regress this existing "nearest capture" convention.
+    before_anything = parse_ts("20260101000000")
+    resolved, is_exact = repo.resolve_snapshot(archive_url.id, before_anything)
+    assert resolved.id == oldest.id
+    assert is_exact is False
+
+
+def test_resolve_asset_version_resolves_a_version_to_itself(session):
+    repo = WebArchiveRepository(session)
+    repo.register_blob("a" * 64, size_bytes=3, gzip_size_bytes=3, content_type="text/css", path="x")
+    asset = repo.get_or_create_asset("https://cdn.com/a.css", "cdn.com/a.css", kind="css")
+    first_seen = datetime(2026, 9, 4, 13, 40, 46, 280052, tzinfo=UTC)
+    version = repo.create_asset_version(
+        asset_id=asset.id, blob_sha256="a" * 64, content_type="text/css",
+        http_status=200, first_seen_at=first_seen, last_confirmed_at=first_seen,
+    )
+    session.commit()
+
+    own_ts = parse_ts(format_ts(first_seen))
+    resolved, is_exact = repo.resolve_asset_version(asset.id, own_ts)
+
+    assert resolved is not None
+    assert resolved.id == version.id
+    assert is_exact is True
+
+
+# --- find_asset_by_key_prefix (task-63 §3.2) ------------------------------
+
+def test_find_asset_by_key_prefix_matches_a_different_query_string(session):
+    repo = WebArchiveRepository(session)
+    repo.get_or_create_asset(
+        "https://acme.com/widget.css?v=1788000000000",
+        "acme.com/widget.css?v=1788000000000",
+        kind="css",
+    )
+    session.commit()
+
+    found = repo.find_asset_by_key_prefix("acme.com/widget.css?")
+    assert found is not None
+    assert found.url_key == "acme.com/widget.css?v=1788000000000"
+
+
+def test_find_asset_by_key_prefix_does_not_match_a_different_file(session):
+    repo = WebArchiveRepository(session)
+    repo.get_or_create_asset("https://acme.com/other.css", "acme.com/other.css", kind="css")
+    session.commit()
+
+    assert repo.find_asset_by_key_prefix("acme.com/widget.css?") is None
+
+
+def test_find_asset_by_key_prefix_escapes_like_wildcards_in_the_prefix(session):
+    # A real path segment can legitimately contain `%`/`_` — these must be
+    # matched LITERALLY, not treated as SQL LIKE wildcards (which would
+    # match any-and-everything and defeat the whole point of a prefix scan).
+    repo = WebArchiveRepository(session)
+    repo.get_or_create_asset(
+        "https://acme.com/a_b%20c.css?v=1", "acme.com/a_b%20c.css?v=1", kind="css"
+    )
+    repo.get_or_create_asset("https://acme.com/aXbYYc.css?v=1", "acme.com/aXbYYc.css?v=1", kind="css")
+    session.commit()
+
+    found = repo.find_asset_by_key_prefix("acme.com/a_b%20c.css?")
+    assert found is not None
+    assert found.url_key == "acme.com/a_b%20c.css?v=1"
+
+
+def test_count_replay_misses_for_host(session):
+    repo = WebArchiveRepository(session)
+    repo.record_replay_miss(
+        "https://acme.com/missing.js", "acme.com/missing.js"
+    )
+    repo.record_replay_miss(
+        "https://other.com/missing.js", "other.com/missing.js"
+    )
+    session.commit()
+
+    assert repo.count_replay_misses_for_host("acme.com") == 1
+    assert repo.count_replay_misses_for_host("other.com") == 1
+    assert repo.count_replay_misses_for_host("nowhere.com") == 0

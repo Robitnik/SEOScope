@@ -31,10 +31,29 @@ _STYLE_ATTR_URL_RE = re.compile(
 _STYLE_TAG_RE = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.IGNORECASE | re.DOTALL)
 _CSS_URL_RE = re.compile(r"""url\(\s*(['"]?)(?!data:)([^)'"]+)\1\s*\)""", re.IGNORECASE)
 _AS_ATTR_RE = re.compile(r"""\bas\s*=\s*["']?([a-z]+)["']?""", re.IGNORECASE)
+_SCRIPT_TAG_RE = re.compile(r"<script\b([^>]*)>(.*?)</script\s*>", re.IGNORECASE | re.DOTALL)
+_SCRIPT_SRC_ATTR_RE = re.compile(r"""\bsrc\s*=\s*["']""", re.IGNORECASE)
+_NON_JS_SCRIPT_TYPE_RE = re.compile(
+    r"""\btype\s*=\s*["'](?:application/(?:json|ld\+json)|text/(?:template|html))["']""",
+    re.IGNORECASE,
+)
+# Any of the three JS string-literal forms. Content is NOT unescaped (a
+# real `\'`/`\n` inside a path is vanishingly rare and, if present, simply
+# fails the later extension/host checks harmlessly) — this only needs to
+# find candidate literals, not execute them.
+_JS_STRING_RE = re.compile(r"""(['"`])((?:\\.|(?!\1)[^\\\n])*)\1""", re.DOTALL)
 
 _STYLESHEET_MARKERS = ("stylesheet",)
 _ICON_MARKERS = ("icon", "manifest", "apple-touch-icon", "mask-icon")
 _FONT_EXTENSIONS = frozenset({"woff", "woff2", "ttf", "otf", "eot"})
+_IMAGE_EXTENSIONS = frozenset({"png", "jpg", "jpeg", "webp", "avif", "gif", "ico", "svg"})
+_MEDIA_EXTENSIONS = frozenset({"mp4", "webm"})
+# task-63 §3.3: deliberately narrow — a literal must end (before any `?`)
+# in one of these to even be considered. Anything else (a CSS selector
+# string, a font-family name, a translated UI label) is left alone.
+_JS_ASSET_EXTENSIONS = (
+    _FONT_EXTENSIONS | _IMAGE_EXTENSIONS | _MEDIA_EXTENSIONS | frozenset({"js", "css", "json"})
+)
 
 
 @dataclass(frozen=True)
@@ -109,6 +128,73 @@ def discover_html_assets(html: str, base_url: str) -> list[AssetRef]:
         for ref in discover_css_assets(style_body, base_url):
             found.setdefault(ref.url, ref.kind)
 
+    return [AssetRef(kind=kind, url=url) for url, kind in found.items()]
+
+
+def inline_script_bodies(html: str) -> list[str]:
+    """Bodies of `<script>` tags with no `src` and a JS (or unspecified)
+    `type` — text a page's own bootstrap logic actually EXECUTES, as
+    opposed to a JSON-LD payload or a client-side template that merely
+    looks like a script tag. Feeds `discover_js_string_assets` below: a
+    lazy-load bootstrap that calls `load_js('/wp-content/...')` from an
+    inline block (not a `<script src>` file) would otherwise never be
+    scanned at all (task-63 §3.3).
+    """
+    bodies = []
+    for attrs, body in _SCRIPT_TAG_RE.findall(html):
+        if _SCRIPT_SRC_ATTR_RE.search(attrs) or _NON_JS_SCRIPT_TYPE_RE.search(attrs):
+            continue
+        bodies.append(body)
+    return bodies
+
+
+def discover_js_string_assets(
+    js_text: str, base_url: str, *, limit: int | None = None
+) -> list[AssetRef]:
+    """Heuristic recovery for an asset referenced ONLY as a JS string
+    literal (task-63 §3.3, live-measured on a real client site: WP
+    Rocket's own LazyLoad library and a cache-busted stylesheet are both
+    loaded this way — via a custom deferred-load bootstrap — and never
+    named anywhere in the page's static HTML, so `discover_html_assets`
+    cannot see either).
+
+    Deliberately conservative, in three ways:
+    - a candidate must resolve to the SAME HOST as `base_url` — a font
+      family name, a CDN library id, or any other third-party-looking
+      literal is left alone; this is for the page's OWN assets only.
+    - the path portion (everything before an optional `?`) must end in a
+      HARD extension allowlist — a CSS selector string, a UI label, or any
+      other prose literal that merely contains a dot never qualifies.
+    - a template literal with `${...}` INSIDE the path is skipped
+      outright rather than guessed at (a wrong guess would put a
+      fabricated file in the archive under a real-looking name); `${...}`
+      confined to the QUERY (a cache-buster: `` `/a/b.js?v=${t}` ``) is
+      accepted with the query simply dropped — the same file, just at
+      request time under a timestamp this archive never controls anyway.
+    """
+    base_host = urlsplit(base_url).hostname
+    found: dict[str, str] = {}
+    for _quote, raw in _JS_STRING_RE.findall(js_text):
+        path_part = raw.split("?", 1)[0]
+        if "${" in path_part or " " in path_part or not path_part:
+            continue
+        extension = _extension_of(path_part)
+        if extension not in _JS_ASSET_EXTENSIONS:
+            continue
+        absolute = resolve(base_url, path_part)
+        if absolute is None or urlsplit(absolute).hostname != base_host:
+            continue
+        kind = (
+            "css" if extension == "css"
+            else "js" if extension == "js"
+            else "font" if extension in _FONT_EXTENSIONS
+            else "media" if extension in _MEDIA_EXTENSIONS
+            else "img" if extension in _IMAGE_EXTENSIONS
+            else "other"
+        )
+        found.setdefault(absolute, kind)
+        if limit is not None and len(found) >= limit:
+            break
     return [AssetRef(kind=kind, url=url) for url, kind in found.items()]
 
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
@@ -26,6 +27,7 @@ from app.db.session import worker_session_scope
 from app.monitor.page import decode_body
 from app.schemas.api import ErrorDTO
 from app.schemas.web_archive import (
+    ArchiveAdhocCaptureAcceptedDTO,
     ArchiveCaptureAcceptedDTO,
     ArchiveCaptureBatchAcceptedDTO,
     ArchiveCaptureCancelDTO,
@@ -45,6 +47,7 @@ from app.schemas.web_archive import (
     ArchiveUrlSearchResultDTO,
     ArchiveUrlTimelineDTO,
 )
+from app.urlinspector.resolve import resolve_client_for_url
 from app.webarchive import changes as changesmod
 from app.webarchive import rewrite as rewritemod
 from app.webarchive import storage
@@ -351,6 +354,8 @@ def _snapshot_detail(snapshot_id: str) -> ArchiveSnapshotDetailDTO | None:
                     analytics_hosts=frozenset(settings.archive_iframe_analytics_hosts),
                 )
         ts = format_ts(snapshot.observed_at)
+        host = urlsplit(snapshot.final_url or archive_url.url).hostname or ""
+        replay_misses_for_host = repo.count_replay_misses_for_host(host) if host else 0
         return ArchiveSnapshotDetailDTO(
             id=snapshot.id,
             archive_url_id=snapshot.archive_url_id,
@@ -378,6 +383,7 @@ def _snapshot_detail(snapshot_id: str) -> ArchiveSnapshotDetailDTO | None:
             store_reason=snapshot.store_reason,  # type: ignore[arg-type]
             prev_snapshot_id=prev_id,
             next_snapshot_id=next_id,
+            replay_misses_for_host=replay_misses_for_host,
         )
 
 
@@ -589,6 +595,53 @@ async def start_archive_url_capture(url_id: str) -> ArchiveCaptureAcceptedDTO:
         raise HTTPException(status_code=409, detail=_ALREADY_RUNNING)
     return ArchiveCaptureAcceptedDTO(
         capture_id=result, status_url=f"/api/v1/archive/captures/{result}"
+    )
+
+
+def _start_adhoc_url_capture(url: str) -> tuple[str, str, str, str] | str:
+    """"Archive this page now" on a URL the archive has NEVER seen (task-63
+    follow-up, live-reported 2026-09-05): `find_url_any_client` in `/lookup`
+    only ever finds an ALREADY-tracked URL, so a genuinely new page had no
+    path forward besides waiting for the next portfolio-wide discovery
+    pass. Resolves the client from the URL's own host (the same helper URL
+    Inspector uses to answer the identical question), creates the
+    `ArchiveUrl` row on the spot, and enqueues exactly the `scope="url"`
+    capture `_start_url_capture` above enqueues for an already-tracked one.
+    """
+    with worker_session_scope() as session:
+        clients_repo = ClientRepository(session)
+        resolved = resolve_client_for_url(url, clients_repo.list_active())
+        if resolved.client is None:
+            return "client_not_found"
+        client = resolved.client
+        repo = WebArchiveRepository(session)
+        if repo.has_active_capture(client.id):
+            return "already_running"
+        archive_url = repo.get_or_create_url(client.id, url, normalize_url(url), source="manual")
+        capture = repo.create_capture(
+            client.id, slot_key=f"manual:{uuid.uuid4()}", scheduled_for=datetime.now(UTC),
+            trigger="manual", scope="url", archive_url_id=archive_url.id,
+        )
+        session.commit()
+        return capture.id, archive_url.id, client.id, client.name
+
+
+@router.post(
+    "/captures/url-adhoc",
+    status_code=202,
+    responses={404: {"model": ErrorDTO}, 409: {"model": ErrorDTO}},
+)
+async def start_archive_adhoc_url_capture(url: str) -> ArchiveAdhocCaptureAcceptedDTO:
+    result = await run_in_threadpool(_start_adhoc_url_capture, url)
+    if result == "client_not_found":
+        raise HTTPException(status_code=404, detail=_CLIENT_NOT_FOUND)
+    if result == "already_running":
+        raise HTTPException(status_code=409, detail=_ALREADY_RUNNING)
+    assert not isinstance(result, str)
+    capture_id, url_id, client_id, client_name = result
+    return ArchiveAdhocCaptureAcceptedDTO(
+        capture_id=capture_id, status_url=f"/api/v1/archive/captures/{capture_id}",
+        url_id=url_id, client_id=client_id, client_name=client_name,
     )
 
 

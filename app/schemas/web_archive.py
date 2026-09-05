@@ -88,6 +88,12 @@ class ArchiveSnapshotDetailDTO(BaseModel):
     store_reason: StoreReason
     prev_snapshot_id: str | None
     next_snapshot_id: str | None
+    # task-63 §3.5 — count of `archive_replay_misses` rows for this
+    # snapshot's OWN HOST (misses aren't linked to a specific snapshot; no
+    # migration adds that link here), so an operator staring at
+    # "0 missing" assets still sees that the page tried to load something
+    # the archive never captured at all.
+    replay_misses_for_host: int
 
 
 class ArchiveChangeDTO(BaseModel):
@@ -164,6 +170,21 @@ class ArchiveQueueDTO(BaseModel):
 class ArchiveCaptureAcceptedDTO(BaseModel):
     capture_id: str
     status_url: str
+
+
+# task-63 follow-up (live-reported 2026-09-05): the hub's own URL lookup on
+# a never-before-seen URL returns a bare `found=False` with no client to
+# act on — an operator staring at "Not archived (yet)" had no path forward
+# besides waiting for the next portfolio-wide discovery pass. This is the
+# accepted-response shape for capturing that URL on the spot; carries the
+# client the URL's host resolved to so the UI can show "capturing on
+# <CLIENT>" instead of a bare capture id.
+class ArchiveAdhocCaptureAcceptedDTO(BaseModel):
+    capture_id: str
+    status_url: str
+    url_id: str
+    client_id: str
+    client_name: str
 
 
 class ArchiveCaptureBatchAcceptedDTO(BaseModel):

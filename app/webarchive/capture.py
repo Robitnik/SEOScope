@@ -251,10 +251,11 @@ def _check_or_fetch_asset(
     return version, "fetched"
 
 
-def _read_css_text(artifacts_dir: Path, version: ArchiveAssetVersion | None) -> str | None:
-    """The stored body of an already-fetched CSS asset version, decoded for
-    a second regex pass (task-60 §1.2) — `None` for anything not actually
-    on disk (a truncated/failed asset has no blob at all).
+def _read_asset_text(artifacts_dir: Path, version: ArchiveAssetVersion | None) -> str | None:
+    """The stored body of an already-fetched CSS or JS asset version,
+    decoded for a second regex pass (task-60 §1.2 for CSS, task-63 §3.3 for
+    JS) — `None` for anything not actually on disk (a truncated/failed
+    asset has no blob at all).
     """
     if version is None or not version.blob_sha256:
         return None
@@ -295,6 +296,33 @@ def _capture_assets_for_page(
     queue: deque[assetsmod.AssetRef] = deque(assetsmod.discover_html_assets(html_text, base_url))
     seen_keys: set[str] = {normalize_url(ref.url) for ref in queue}
     css_expanded: set[str] = set()
+    js_expanded: set[str] = set()
+    # Shared, page-wide budget (task-63 §3.3) — not per-script — so one
+    # heavy minified bundle cannot alone exhaust it before the page's other
+    # scripts get a turn.
+    js_discovery_budget = settings.archive_js_discovered_assets_per_page
+
+    def _enqueue_js_string_assets(js_text: str, js_base_url: str) -> None:
+        nonlocal js_discovery_budget
+        if js_discovery_budget <= 0:
+            return
+        for nested in assetsmod.discover_js_string_assets(
+            js_text, js_base_url, limit=js_discovery_budget
+        ):
+            nested_key = normalize_url(nested.url)
+            if nested_key in seen_keys:
+                continue
+            seen_keys.add(nested_key)
+            queue.append(nested)
+            js_discovery_budget -= 1
+            if js_discovery_budget <= 0:
+                break
+
+    # Inline `<script>` bodies live in the PAGE's own HTML, not in any
+    # fetched asset — scanned once, up front, same as `discover_html_assets`
+    # already does for inline `<style>` bodies.
+    for inline_body in assetsmod.inline_script_bodies(html_text):
+        _enqueue_js_string_assets(inline_body, base_url)
 
     while queue:
         ref = queue.popleft()
@@ -370,13 +398,18 @@ def _capture_assets_for_page(
 
         if ref.kind == "css" and key not in css_expanded and version is not None:
             css_expanded.add(key)
-            css_text = _read_css_text(artifacts_dir, version)
+            css_text = _read_asset_text(artifacts_dir, version)
             if css_text:
                 for nested in assetsmod.discover_css_assets(css_text, ref.url):
                     nested_key = normalize_url(nested.url)
                     if nested_key not in seen_keys:
                         seen_keys.add(nested_key)
                         queue.append(nested)
+        elif ref.kind == "js" and key not in js_expanded and version is not None:
+            js_expanded.add(key)
+            js_text = _read_asset_text(artifacts_dir, version)
+            if js_text:
+                _enqueue_js_string_assets(js_text, ref.url)
 
     return outcome
 
@@ -673,19 +706,26 @@ def run_client_capture(
             outcome.urls_failed += 1
             continue
         try:
-            url_result = commit_with_retry(
-                session,
-                # `functools.partial` binds THIS iteration's `archive_url`
-                # immediately (unlike a lambda closing over the loop
-                # variable) — matters here specifically because a retry
-                # re-invokes the same callable synchronously.
-                partial(
-                    capture_url, session, repo, client, archive_url,
-                    capture_id=capture_id, settings=settings, artifacts_dir=artifacts_dir,
-                    throttle=throttle, stats=stats, now=now, capture_assets=capture_assets,
-                    write_controller=write_controller,
-                ),
+            # Called directly, NOT via `write_controller.submit` (regression,
+            # live 2026-09-05: six clients' worth of these calling
+            # `commit_with_retry` directly, each on its own thread, put the
+            # exact pre-task-62 lock storm right back — `database is locked`
+            # crashed most of the portfolio's captures within one tick).
+            # `capture_url` only ever stages via `session.add`, never commits,
+            # so the fetch — including every asset fetch inside it — runs
+            # fully in parallel on THIS thread; only the flush below needs
+            # the controller. Submitting the whole call instead would run
+            # the network fetch ON the controller's one shared thread
+            # (serializing every other client's writes behind it) and
+            # deadlock the moment `_capture_assets_for_page`'s own nested
+            # `submit` tried to queue behind itself.
+            url_result = capture_url(
+                session, repo, client, archive_url,
+                capture_id=capture_id, settings=settings, artifacts_dir=artifacts_dir,
+                throttle=throttle, stats=stats, now=now, capture_assets=capture_assets,
+                write_controller=write_controller,
             )
+            write_controller.submit(session, lambda: None)
         except Exception:  # noqa: BLE001 - one URL's crash must never take down the whole capture
             logger.exception(
                 "archive_capture_url_crashed client_id=%s url=%s", client.id, archive_url.url
@@ -822,7 +862,7 @@ def backfill_css_assets(
     css_assets = repo.css_assets_for_client(client_id) if client_id else repo.all_css_assets()
     for asset in css_assets:
         outcome.scanned_css_files += 1
-        css_text = _read_css_text(artifacts_dir, repo.latest_asset_version(asset.id))
+        css_text = _read_asset_text(artifacts_dir, repo.latest_asset_version(asset.id))
         if css_text:
             _collect(assetsmod.discover_css_assets(css_text, asset.url))
 
