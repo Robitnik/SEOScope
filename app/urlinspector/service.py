@@ -21,8 +21,10 @@ from app.schemas.url_inspector import (
     ResolvedClientDTO,
     UrlArchiveDTO,
     UrlInspectorDTO,
+    UrlKeywordsDTO,
     UrlMetaDTO,
     UrlMonitorDTO,
+    UrlScreenshotsStateDTO,
     UrlSearchAnalyticsDTO,
     UrlSourceStateDTO,
     UrlTechAuditDTO,
@@ -32,7 +34,9 @@ from app.urlinspector.sources.archive import collect_archive
 from app.urlinspector.sources.ga4 import collect_ga4
 from app.urlinspector.sources.gsc import collect_gsc
 from app.urlinspector.sources.inventory import collect_meta
+from app.urlinspector.sources.keywords import collect_keywords
 from app.urlinspector.sources.monitor import collect_monitor
+from app.urlinspector.sources.screenshots import collect_screenshots
 from app.urlinspector.sources.techaudit import collect_tech_audit
 from app.urlinspector.urlkey import inspector_key
 
@@ -68,6 +72,8 @@ def inspect_url(
             monitor=_empty_monitor(unknown_state),
             meta=_empty_meta(unknown_state),
             tech_audit=_empty_tech_audit(unknown_state),
+            keywords=_empty_keywords(unknown_state),
+            screenshots=UrlScreenshotsStateDTO(state=unknown_state),
             generated_at=generated_at,
         )
 
@@ -108,7 +114,29 @@ def inspect_url(
     except Exception as exc:  # noqa: BLE001
         tech_audit = _empty_tech_audit(_failed_state("tech_audit", exc))
 
-    coverage = [gsc_state, ga4_state, monitor.state, archive.state, meta.state, tech_audit.state]
+    try:
+        keywords = collect_keywords(
+            session, client_id=client_id, url=url, meta_keywords=meta.keywords
+        )
+    except Exception as exc:  # noqa: BLE001
+        keywords = _empty_keywords(_failed_state("keywords", exc))
+
+    try:
+        screenshots = collect_screenshots(session, client_id=client_id, url=url)
+    except Exception as exc:  # noqa: BLE001
+        screenshots = UrlScreenshotsStateDTO(state=_failed_state("screenshots", exc))
+
+    coverage = [
+        gsc_state,
+        ga4_state,
+        monitor.state,
+        archive.state,
+        meta.state,
+        tech_audit.state,
+        keywords.state,
+        keywords.queries_state,
+        screenshots.state,
+    ]
 
     return UrlInspectorDTO(
         input_url=url,
@@ -135,6 +163,8 @@ def inspect_url(
         monitor=monitor,
         meta=meta,
         tech_audit=tech_audit,
+        keywords=keywords,
+        screenshots=screenshots,
         generated_at=generated_at,
     )
 
@@ -153,3 +183,7 @@ def _empty_meta(state: UrlSourceStateDTO) -> UrlMetaDTO:
 
 def _empty_tech_audit(state: UrlSourceStateDTO) -> UrlTechAuditDTO:
     return UrlTechAuditDTO(state=state)
+
+
+def _empty_keywords(state: UrlSourceStateDTO) -> UrlKeywordsDTO:
+    return UrlKeywordsDTO(state=state, queries_state=state)

@@ -196,6 +196,54 @@ class UrlTechAuditDTO(BaseModel):
     findings: list[UrlTechFindingDTO] = []
 
 
+class UrlKeywordTermDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    term: str
+    count: int
+    is_phrase: bool
+    in_title: bool
+    in_h1: bool
+    in_description: bool
+
+
+class UrlSiteQueryDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    clicks: int | None
+    impressions: int | None
+    is_brand: bool
+
+
+class UrlKeywordsDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # On-page term extraction's own coverage state.
+    state: UrlSourceStateDTO
+    on_page: list[UrlKeywordTermDTO] = []
+    meta_keywords: list[str] = []
+    # Site-level query matching has its OWN state, separate from `state`
+    # above — mirrors `UrlSearchAnalyticsDTO`'s two independent states
+    # (gsc/reporting_ninja): a page can have on-page terms with no GSC query
+    # data yet, or vice versa.
+    queries_state: UrlSourceStateDTO
+    site_queries: list[UrlSiteQueryDTO] = []
+
+
+class UrlScreenshotsStateDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Cache-only coverage state — this endpoint NEVER renders a screenshot
+    # (task-64 §5): a live capture takes ~20s, and this panel's data must
+    # render as fast as every other stored-data panel. `has_data` means a
+    # cached set already exists and the frontend should fetch it from
+    # `GET /api/v1/url-screenshots`; `no_data` means none has been captured
+    # yet and the frontend should offer to capture one.
+    state: UrlSourceStateDTO
+    preset_count: int = 0
+
+
 class UrlInspectorDTO(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -209,6 +257,8 @@ class UrlInspectorDTO(BaseModel):
     monitor: UrlMonitorDTO
     meta: UrlMetaDTO
     tech_audit: UrlTechAuditDTO
+    keywords: UrlKeywordsDTO
+    screenshots: UrlScreenshotsStateDTO
     generated_at: datetime
 
 

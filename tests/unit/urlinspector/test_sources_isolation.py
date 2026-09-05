@@ -33,7 +33,16 @@ class TestSourceIsolation:
         # Every other panel still resolved to a real (non-exceptional) state —
         # here "not_configured"/"no_data" since the fixture DB has no rows,
         # but never "failed".
-        for source in ("reporting_ninja", "monitor", "archive", "page_inventory", "tech_audit"):
+        for source in (
+            "reporting_ninja",
+            "monitor",
+            "archive",
+            "page_inventory",
+            "tech_audit",
+            "keywords",
+            "site_queries",
+            "screenshots",
+        ):
             assert by_source[source].state != "failed"
 
     def test_all_sources_broken_still_returns_a_dto(self, session):
@@ -46,6 +55,8 @@ class TestSourceIsolation:
             patch("app.urlinspector.service.collect_monitor", side_effect=RuntimeError("d")),
             patch("app.urlinspector.service.collect_meta", side_effect=RuntimeError("e")),
             patch("app.urlinspector.service.collect_tech_audit", side_effect=RuntimeError("f")),
+            patch("app.urlinspector.service.collect_keywords", side_effect=RuntimeError("g")),
+            patch("app.urlinspector.service.collect_screenshots", side_effect=RuntimeError("h")),
         ]
         for p in patches:
             p.start()

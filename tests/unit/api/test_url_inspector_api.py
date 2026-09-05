@@ -26,6 +26,7 @@ class TestGetUrlInspector:
         assert body["client_match"] == "exact"
         assert {c["source"] for c in body["coverage"]} == {
             "gsc", "reporting_ninja", "monitor", "archive", "page_inventory", "tech_audit",
+            "keywords", "site_queries", "screenshots",
         }
 
     def test_unknown_domain_is_a_200_not_an_error(self, client, db):

@@ -42,8 +42,28 @@ async function main() {
   const chips = await page.locator(".url-inspector__chip span").allTextContents();
   assert.deepEqual(
     chips,
-    ["Search Console", "GA4", "Site Monitor", "Web Archive", "Meta & Copy", "Technical Audit"],
-    "all six coverage chips render with their real labels",
+    [
+      "Search Console", "GA4", "Site Monitor", "Web Archive", "Meta & Copy", "Technical Audit",
+      "Keywords", "Site Queries", "Screenshots",
+    ],
+    "all nine coverage chips render with their real labels (task-64 adds keywords/site_queries/screenshots)",
+  );
+
+  // --- Two-column layout at desktop width (task-64 §4) ------------------------
+  const mainBox = await page.locator(".url-inspector__main").boundingBox();
+  const sidebarBox = await page.locator(".url-inspector__sidebar").boundingBox();
+  assert.ok(mainBox && sidebarBox, "main column and sidebar both render");
+  assert.ok(
+    sidebarBox.x >= mainBox.x + mainBox.width - 5,
+    "sidebar sits beside the main column, not below it, at 1440px",
+  );
+
+  // --- Keywords & queries panel renders, disclaimer present (task-64 §3.3) ----
+  await page.locator("#ui-keywords-heading").waitFor();
+  const keywordsSectionText = await page.locator("#ui-keywords-heading").locator("xpath=..").textContent();
+  assert.ok(
+    keywordsSectionText.includes("NOT this page's own search queries"),
+    "site-level query matches carry the disclaimer they are not per-page GSC data",
   );
 
   await page.screenshot({ path: path.join(screenshots, "url-inspector-full-1440.png"), fullPage: true });
@@ -87,6 +107,42 @@ async function main() {
   );
   await page.screenshot({ path: path.join(screenshots, "url-inspector-suggestions-1440.png"), clip: { x: 0, y: 0, width: 700, height: 200 } });
 
+  // --- Screenshots: real capture end-to-end (task-64 §2) ----------------------
+  // Never auto-captured (opt-in, ~20s) — starts on a "no data" state with a
+  // "Capture screenshots" prompt.
+  await page.goto(`${baseUrl}/#/url?u=${encodeURIComponent(SAPHNY_HOME)}`, { waitUntil: "load" });
+  await page.locator("#ui-shots-heading").waitFor();
+  // The button briefly reads "Capturing…" while the page's own fast cache
+  // check (`loadCachedScreenshots`, not a real capture) is in flight —
+  // wait for it to settle before asserting the resting label.
+  await page.waitForFunction(
+    () => !document.querySelector('[data-action="capture-shots"]')?.disabled,
+    { timeout: 15000 },
+  );
+  const captureButtonText = await page.locator('[data-action="capture-shots"]').textContent();
+  assert.ok(
+    /Capture screenshots|Recapture/.test(captureButtonText),
+    "the capture button reflects whether a cached set already exists",
+  );
+  await page.locator('[data-action="capture-shots"]').click();
+  await page.waitForFunction(
+    () => document.querySelector(".url-inspector__shot img, .url-inspector__shot--failed") !== null,
+    { timeout: 45000 },
+  );
+  const shotCount = await page.locator(".url-inspector__shot").count();
+  assert.ok(shotCount > 0, "at least one screenshot card rendered after capture");
+
+  // --- Full-size dialog opens on click (CSP-safe <dialog>, no inline style) ---
+  const firstOkShot = page.locator('.url-inspector__shot[data-action="open-shot"]').first();
+  if (await firstOkShot.count()) {
+    await firstOkShot.click();
+    await page.locator("#ui-shot-dialog[open]").waitFor({ timeout: 5000 });
+    const dialogImgSrc = await page.locator("#ui-shot-dialog-img").getAttribute("src");
+    assert.ok(dialogImgSrc && dialogImgSrc.includes("/api/v1/url-screenshots/"), "dialog loads the full-size image");
+    await page.locator('[data-action="close-shot-dialog"]').click();
+    await page.waitForFunction(() => !document.querySelector("#ui-shot-dialog")?.open);
+  }
+
   // --- Unknown domain is an honest 200 state, not a crash ---------------------
   await page.goto(`${baseUrl}/#/url?u=${encodeURIComponent("https://example.com/nope")}`, { waitUntil: "load" });
   await page.locator(".url-inspector__client--unknown").waitFor({ timeout: 15000 });
@@ -100,7 +156,13 @@ async function main() {
   assert.ok(scrollWidth <= 400, `no horizontal overflow on mobile (scrollWidth=${scrollWidth})`);
   await page.screenshot({ path: path.join(screenshots, "url-inspector-mobile-390.png"), fullPage: true });
 
-  assert.deepEqual(browserErrors, [], `no console/page errors: ${browserErrors.join("; ")}`);
+  // Cloudflare's own edge-injected Web Analytics beacon (only present when
+  // running BASE_URL through the real tunnel, never on localhost) is
+  // correctly blocked by this app's own CSP (`default-src 'self'`, no
+  // exception for it) — that is our CSP doing its job, not a defect in
+  // this page. Filtered out so the assertion still catches OUR errors.
+  const ownErrors = browserErrors.filter((msg) => !msg.includes("cloudflareinsights.com"));
+  assert.deepEqual(ownErrors, [], `no console/page errors: ${ownErrors.join("; ")}`);
 
   await browser.close();
   console.log("url-inspector.cjs: all assertions passed");

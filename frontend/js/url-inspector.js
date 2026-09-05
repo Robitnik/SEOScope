@@ -7,9 +7,11 @@
 // Two calls, deliberately not one (mirrors the backend split): stored data
 // renders immediately from `getUrlInspector`; the live check is a separate,
 // slow, opt-in `runUrlInspectorLive` the operator triggers explicitly.
-import { getUrlInspector, runUrlInspectorLive, isAbortError } from "./api.js?v=20260905-t61c";
-import { replaceUrlInspectorHash } from "./router.js?v=20260905-t61c";
-import { escapeHtml, formatDateRange, formatTimestamp, icon } from "./formatters.js?v=20260821-spin3";
+import {
+  getUrlInspector, runUrlInspectorLive, getUrlScreenshots, captureUrlScreenshots, isAbortError,
+} from "./api.js?v=20260905-t64";
+import { replaceUrlInspectorHash } from "./router.js?v=20260905-t64";
+import { escapeHtml, formatDateRange, formatFileSize, formatTimestamp, icon } from "./formatters.js?v=20260821-spin3";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
 
 const root = document.querySelector("#url-inspector-page-root");
@@ -54,8 +56,13 @@ const SOURCE_LABELS = {
   archive: "Web Archive",
   page_inventory: "Meta & Copy",
   tech_audit: "Technical Audit",
+  keywords: "Keywords",
+  site_queries: "Site Queries",
+  screenshots: "Screenshots",
   client: "Client",
 };
+
+const SHOT_PRESET_LABELS = { desktop: "Desktop", tablet: "Tablet", mobile: "Mobile" };
 
 const SEVERITY_META = {
   critical: { label: "Critical", tone: "ui-tone-danger" },
@@ -76,6 +83,7 @@ let requestToken = 0;
 let gscChart = null;
 let ga4Chart = null;
 let liveState = { loading: false, error: null, result: null, withSchema: false };
+let shotsState = { loading: false, error: null, result: null };
 
 export async function initUrlInspectorPage(query) {
   const url = query.get("u") || "";
@@ -86,6 +94,7 @@ export async function initUrlInspectorPage(query) {
   loadError = null;
   loading = false;
   liveState = { loading: false, error: null, result: null, withSchema: false };
+  shotsState = { loading: false, error: null, result: null };
   destroyCharts();
 
   if (!url) {
@@ -100,9 +109,15 @@ export async function initUrlInspectorPage(query) {
   // asked for the live check to happen automatically rather than wait for
   // a click. Skips silently if the initial load itself failed (loadError
   // set) or the URL changed again before this resolved (token guard inside
-  // `load()` already handles the latter for `dto`/`render()`).
-  if (dto && !liveState.result && !liveState.loading) {
-    await runLiveCheck({ withSchema: false });
+  // `load()` already handles the latter for `dto`/`render()`). Screenshots'
+  // cache read runs alongside it (both fast/instant reads) — a genuine
+  // capture never runs automatically (task-64 §5: ~20s, opt-in only).
+  if (dto) {
+    const tasks = [loadCachedScreenshots()];
+    if (!liveState.result && !liveState.loading) {
+      tasks.push(runLiveCheck({ withSchema: false }));
+    }
+    await Promise.all(tasks);
   }
 }
 
@@ -131,7 +146,18 @@ function shell() {
     </header>
     <section class="url-inspector__body" id="ui-body" aria-live="polite" aria-busy="true">
       ${sectionSkeleton({ label: "this URL's data", rows: 6, columns: 3, chart: true })}
-    </section>`;
+    </section>
+    <dialog class="url-inspector__shot-dialog" id="ui-shot-dialog">
+      <div class="url-inspector__shot-dialog-head">
+        <span id="ui-shot-dialog-caption"></span>
+        <button type="button" class="button button--quiet button--small" data-action="close-shot-dialog">
+          ${icon("x", "icon icon--tiny")}<span>Close</span>
+        </button>
+      </div>
+      <div class="url-inspector__shot-dialog-body">
+        <img id="ui-shot-dialog-img" src="" alt="">
+      </div>
+    </dialog>`;
 }
 
 async function load() {
@@ -173,14 +199,23 @@ function render() {
   if (!dto) return;
 
   header.innerHTML = headerShell(dto);
-  body.innerHTML = [
-    renderSearchAnalytics(dto),
-    renderArchive(dto),
-    renderMonitor(dto),
-    renderMeta(dto),
-    renderTechAudit(dto),
-    renderLive(),
-  ].join("");
+  // Two columns from 1200px (url-inspector.css): the main column holds the
+  // data-dense/wide panels (charts, tables, image gallery, timelines); the
+  // sidebar holds compact reference cards, sticky so they stay visible
+  // while the main column scrolls (task-64 §4).
+  body.innerHTML = `
+    <div class="url-inspector__main">
+      ${renderSearchAnalytics(dto)}
+      ${renderKeywords(dto)}
+      ${renderScreenshots(dto)}
+      ${renderArchive(dto)}
+      ${renderMonitor(dto)}
+    </div>
+    <aside class="url-inspector__sidebar">
+      ${renderLive()}
+      ${renderMeta(dto)}
+      ${renderTechAudit(dto)}
+    </aside>`;
 
   requestAnimationFrame(() => {
     renderGscChart();
@@ -390,6 +425,122 @@ function renderGa4Chart() {
     data: { labels: chartLabels(points), datasets: [chartDataset(points)] },
     options: chartOptions(points),
   });
+}
+
+// --- keywords & queries -------------------------------------------------------
+
+function renderKeywords(data) {
+  const { keywords } = data;
+  const onPageMeta = SOURCE_STATE_META[keywords.state.state] || SOURCE_STATE_META.no_data;
+  return `
+    <section class="url-inspector__section" aria-labelledby="ui-keywords-heading">
+      <h2 id="ui-keywords-heading">Keywords &amp; queries</h2>
+      <h3>On-page terms</h3>
+      ${keywords.state.state !== "has_data"
+        ? `<div class="state-panel state-panel--compact ${onPageMeta.tone}">${icon(onPageMeta.icon)}<p>${escapeHtml(keywords.state.detail || onPageMeta.label)}</p></div>`
+        : renderOnPageTerms(keywords)}
+      <h3>Site queries matched to this page</h3>
+      <p class="url-inspector__note">Site-level Search Console queries whose text fully matches this page's content — NOT this page's own search queries. Google does not expose per-page queries through this integration.</p>
+      ${renderSiteQueries(keywords)}
+    </section>`;
+}
+
+function renderOnPageTerms(keywords) {
+  const rows = keywords.on_page;
+  const badges = (t) => [t.in_title && "Title", t.in_h1 && "H1", t.in_description && "Desc"].filter(Boolean).join(", ");
+  return `
+    ${keywords.meta_keywords.length ? `<p class="url-inspector__note"><strong>Meta keywords:</strong> ${keywords.meta_keywords.map(escapeHtml).join(", ")}</p>` : ""}
+    ${rows.length === 0
+      ? `<p class="url-inspector__note">No extractable terms.</p>`
+      : `<div class="url-inspector__table-scroll">
+          <table class="metric-table url-inspector__series-table">
+            <thead><tr><th>Term</th><th>Count</th><th>Where</th></tr></thead>
+            <tbody>
+              ${rows.map((t) => `
+                <tr>
+                  <td class="url-inspector__wrap">${escapeHtml(t.term)}${t.is_phrase ? " <small>(phrase)</small>" : ""}</td>
+                  <td>${t.count}</td>
+                  <td>${escapeHtml(badges(t) || "—")}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`}`;
+}
+
+function renderSiteQueries(keywords) {
+  const meta = SOURCE_STATE_META[keywords.queries_state.state] || SOURCE_STATE_META.no_data;
+  if (keywords.queries_state.state !== "has_data") {
+    return `<div class="state-panel state-panel--compact ${meta.tone}">${icon(meta.icon)}<p>${escapeHtml(keywords.queries_state.detail || meta.label)}</p></div>`;
+  }
+  return `
+    <div class="url-inspector__table-scroll">
+      <table class="metric-table url-inspector__series-table">
+        <thead><tr><th>Query</th><th>Clicks</th><th>Impressions</th><th></th></tr></thead>
+        <tbody>
+          ${keywords.site_queries.map((q) => `
+            <tr>
+              <td class="url-inspector__wrap">${escapeHtml(q.query)}</td>
+              <td>${q.clicks ?? "—"}</td>
+              <td>${q.impressions ?? "—"}</td>
+              <td>${q.is_brand ? `<span class="url-inspector__badge ui-tone-accent">Brand</span>` : ""}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// --- screenshots ---------------------------------------------------------------
+
+function renderScreenshots(data) {
+  const { screenshots } = data;
+  const hasCache = screenshots.state.state === "has_data";
+  return `
+    <section class="url-inspector__section" aria-labelledby="ui-shots-heading">
+      <div class="url-inspector__section-head">
+        <h2 id="ui-shots-heading">Screenshots</h2>
+        <button type="button" class="button button--quiet button--small" data-action="capture-shots" ${shotsState.loading ? "disabled" : ""}>
+          ${icon(shotsState.loading ? "loader-2" : "camera", shotsState.loading ? "icon icon--tiny icon--spin" : "icon icon--tiny")}
+          <span>${shotsState.loading ? "Capturing…" : hasCache ? "Recapture" : "Capture screenshots"}</span>
+        </button>
+      </div>
+      <div id="ui-shots-body">${renderShotsBody(data)}</div>
+    </section>`;
+}
+
+function renderShotsBody(data) {
+  if (shotsState.loading) {
+    return `<p class="url-inspector__note">Rendering desktop, tablet, and mobile screenshots — this can take up to 20s.</p>`;
+  }
+  if (shotsState.error) {
+    return `<div class="state-panel state-panel--compact ui-tone-danger">${icon("alert-triangle")}<p>${escapeHtml(shotsState.error)}</p></div>`;
+  }
+  const shots = shotsState.result?.screenshots || [];
+  if (!shots.length) {
+    const meta = SOURCE_STATE_META[data.screenshots.state.state] || SOURCE_STATE_META.no_data;
+    return `<div class="state-panel state-panel--compact ${meta.tone}">${icon(meta.icon)}<p>${escapeHtml(data.screenshots.state.detail || "No screenshots captured for this URL yet.")}</p></div>`;
+  }
+  return `<div class="url-inspector__shots">${shots.map(renderShotCard).join("")}</div>`;
+}
+
+function renderShotCard(shot) {
+  const label = SHOT_PRESET_LABELS[shot.preset] || shot.preset;
+  if (shot.state !== "ok") {
+    return `
+      <figure class="url-inspector__shot url-inspector__shot--failed">
+        <figcaption>${escapeHtml(label)}</figcaption>
+        <div class="state-panel state-panel--compact ui-tone-danger">${icon("alert-triangle")}<p>${escapeHtml(shot.error || "Capture failed.")}</p></div>
+      </figure>`;
+  }
+  return `
+    <figure class="url-inspector__shot" data-action="open-shot" data-image="${escapeHtml(shot.image_url || "")}" data-caption="${escapeHtml(label)}" tabindex="0" role="button" aria-label="Open full-size ${escapeHtml(label)} screenshot">
+      <div class="url-inspector__shot-frame">
+        <img src="${escapeHtml(shot.thumb_url || shot.image_url || "")}" alt="${escapeHtml(label)} screenshot of this page" loading="lazy">
+      </div>
+      <figcaption>
+        <span>${escapeHtml(label)}</span>
+        <small>${shot.width}×${shot.height}px${shot.truncated ? " (clipped)" : ""} · ${formatFileSize(shot.byte_size || 0)} · fold at ${shot.fold_height}px</small>
+      </figcaption>
+    </figure>`;
 }
 
 // --- Web Archive -------------------------------------------------------------
@@ -648,6 +799,45 @@ function formatBool(value) {
 
 // --- wiring -------------------------------------------------------------
 
+async function loadCachedScreenshots() {
+  shotsState = { ...shotsState, loading: true, error: null };
+  renderShotsInPlace();
+  try {
+    const result = await getUrlScreenshots(current.url);
+    shotsState = { loading: false, error: null, result };
+  } catch (error) {
+    if (isAbortError(error)) return;
+    shotsState = { loading: false, error: error.message || "Could not load screenshots.", result: null };
+  }
+  renderShotsInPlace();
+}
+
+async function captureScreenshots() {
+  shotsState = { ...shotsState, loading: true, error: null };
+  renderShotsInPlace();
+  try {
+    const result = await captureUrlScreenshots(current.url, { force: true });
+    shotsState = { loading: false, error: null, result };
+  } catch (error) {
+    if (isAbortError(error)) return;
+    shotsState = { ...shotsState, loading: false, error: error.message || "Screenshot capture failed." };
+  }
+  renderShotsInPlace();
+}
+
+function renderShotsInPlace() {
+  const button = root.querySelector('[data-action="capture-shots"]');
+  if (button) {
+    const hasCache = !!shotsState.result?.screenshots?.length;
+    button.disabled = shotsState.loading;
+    button.innerHTML = `
+      ${icon(shotsState.loading ? "loader-2" : "camera", shotsState.loading ? "icon icon--tiny icon--spin" : "icon icon--tiny")}
+      <span>${shotsState.loading ? "Capturing…" : hasCache ? "Recapture" : "Capture screenshots"}</span>`;
+  }
+  const bodyEl = root.querySelector("#ui-shots-body");
+  if (bodyEl && dto) bodyEl.innerHTML = renderShotsBody(dto);
+}
+
 async function runLiveCheck({ withSchema }) {
   liveState = { ...liveState, loading: true, error: null, withSchema };
   renderLiveInPlace();
@@ -685,8 +875,53 @@ function wireControls() {
     const liveButton = event.target.closest('[data-action="run-live"]');
     if (liveButton) {
       await runLiveCheck({ withSchema: !!root.querySelector("#ui-live-schema")?.checked });
+      return;
+    }
+
+    const captureButton = event.target.closest('[data-action="capture-shots"]');
+    if (captureButton) {
+      await captureScreenshots();
+      return;
+    }
+
+    const shotCard = event.target.closest('[data-action="open-shot"]');
+    if (shotCard) {
+      openShotDialog(shotCard.dataset.image, shotCard.dataset.caption);
+      return;
+    }
+
+    if (event.target.closest('[data-action="close-shot-dialog"]')) {
+      root.querySelector("#ui-shot-dialog")?.close();
+      return;
+    }
+
+    // Native `<dialog>` backdrop click: only the dialog element itself (not
+    // its content, which is `event.target` when a child was clicked) is the
+    // backdrop area — closing on it is the expected click-outside-to-close.
+    if (event.target.id === "ui-shot-dialog") {
+      event.target.close();
     }
   });
+
+  root.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const shotCard = event.target.closest('[data-action="open-shot"]');
+    if (!shotCard) return;
+    event.preventDefault();
+    openShotDialog(shotCard.dataset.image, shotCard.dataset.caption);
+  });
+}
+
+function openShotDialog(imageUrl, caption) {
+  if (!imageUrl) return;
+  const dialog = root.querySelector("#ui-shot-dialog");
+  const img = root.querySelector("#ui-shot-dialog-img");
+  const captionEl = root.querySelector("#ui-shot-dialog-caption");
+  if (!dialog || !img) return;
+  img.src = imageUrl;
+  img.alt = caption ? `${caption} screenshot, full size` : "Screenshot, full size";
+  if (captionEl) captionEl.textContent = caption || "";
+  dialog.showModal();
 }
 
 function renderLiveInPlace() {
