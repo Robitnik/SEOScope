@@ -1,0 +1,332 @@
+/*
+ * URL Inspector (task-61) — one page rendering everything the system knows
+ * about a single operator-pasted URL. Reuses `.state-panel`/`.metric-table`/
+ * `.back-link`/`.eyebrow`/`.chart-wrap`/`.button*`/`.icon*` (app.css) and the
+ * header's own `.search-field` (app.css) for the search box. Only the
+ * `.url-inspector-*`/`.url-search` classes below are new.
+ */
+
+/* --- header search field (lives in .app-header on every route) --------- */
+/*
+ * `.app-header` is already flex-`gap`-tight with 3 children (brand/nav/
+ * header-actions) at common desktop widths — measured live at 1440px: nav's
+ * right edge sits just 24px from header-actions' left edge, i.e. zero slack
+ * before this 4th child even existed. `.app-header` is made wrap-capable
+ * here (additive to app.css, which already relies on wrapping at narrower
+ * widths for `.app-nav`) so the ONE combination that doesn't fit inline —
+ * this field AND the two dashboard-only action buttons, together, at
+ * ~1280-1500px — drops `.header-actions` to its own row instead of
+ * silently collapsing the search input to 0 width (caught live). Every
+ * other route has no `.header-actions` to compete with and stays single-row.
+ */
+
+.url-search {
+  position: relative;
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.url-search__error {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.url-search__error:empty { display: none; }
+
+@media (max-width: 720px) {
+  .url-search { order: 4; max-width: none; width: 100%; margin-top: 8px; }
+}
+
+/* --- page shell ---------------------------------------------------------- */
+
+.url-inspector__header {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px clamp(18px, 3vw, 52px) 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.url-inspector__identity { min-width: 0; }
+
+.url-inspector__url {
+  margin: 2px 0 10px;
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.4vw, 26px);
+  overflow-wrap: anywhere;
+}
+
+.url-inspector__client {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-muted);
+}
+
+.url-inspector__client small { display: block; margin-top: 2px; color: var(--ink-dim); font-size: 11px; }
+.url-inspector__client--unknown { color: var(--ink-dim); }
+.url-inspector__logo { border-radius: 4px; object-fit: contain; background: var(--surface); }
+
+.url-inspector__coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.url-inspector__chip {
+  --state-color: var(--ink-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--state-color);
+  background: var(--canvas-raised);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.url-inspector__chip .icon { color: var(--state-color); }
+
+.url-inspector__body {
+  padding: 24px clamp(18px, 3vw, 52px) 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.url-inspector__section {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 20px;
+}
+
+.url-inspector__section h2 { margin: 0 0 14px; font-size: clamp(17px, 2vw, 22px); }
+.url-inspector__section h3 { margin: 18px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-muted); }
+.url-inspector__section h3:first-of-type { margin-top: 4px; }
+
+.url-inspector__source-tag {
+  margin-left: 8px;
+  color: var(--ink-dim);
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.url-inspector__section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.url-inspector__section-head h2 { margin: 0; }
+
+/* --- segmented controls (granularity / metric pickers) ------------------- */
+
+.url-inspector__granularity,
+.url-inspector__metric-picker {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  background: var(--canvas-raised);
+}
+
+.url-inspector__granularity button,
+.url-inspector__metric-picker button {
+  padding: 6px 12px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.url-inspector__granularity button:last-child,
+.url-inspector__metric-picker button:last-child { border-right: 0; }
+
+.url-inspector__granularity button[aria-pressed="true"],
+.url-inspector__metric-picker button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--canvas);
+}
+
+.url-inspector__granularity button:focus-visible,
+.url-inspector__metric-picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* --- search analytics series --------------------------------------------- */
+
+.url-inspector__series + .url-inspector__series {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.url-inspector__series h3 { margin: 0 0 12px; font-size: 14px; color: var(--ink); text-transform: none; letter-spacing: normal; }
+
+.url-inspector__series-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.url-inspector__series-head h3 { margin: 0; }
+
+.url-inspector__chart-wrap { height: 260px; }
+
+.url-inspector__series-table { margin-top: 12px; }
+
+.url-inspector__note { margin: 8px 0 0; color: var(--ink-dim); font-size: 12px; }
+
+/* --- rows shared by archive/monitor/findings lists ----------------------- */
+
+.url-inspector__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.url-inspector__list--compact .url-inspector__row { padding: 8px 10px; }
+
+.url-inspector__row {
+  --state-color: var(--line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--state-color);
+  background: var(--canvas-raised);
+}
+
+.url-inspector__row-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.url-inspector__row-main small { display: block; margin-top: 2px; color: var(--ink-dim); font-size: 11px; }
+.url-inspector__row-time { flex: 0 0 auto; color: var(--ink-dim); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.url-inspector__badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  color: var(--state-color, var(--ink-muted));
+  border: 1px solid currentcolor;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+
+.url-inspector__old { color: var(--ink-dim); text-decoration: line-through; }
+
+/* `.metric-table td` (app.css) sets `white-space: nowrap` unconditionally —
+ * right for a dashboard of short numbers, but it silences `overflow-wrap`
+ * entirely for a cell holding a URL/title/description (caught live: a wide
+ * value forced the whole page to scroll horizontally at 390px). `td.` here
+ * matches that rule's own specificity and wins on source order (this
+ * stylesheet loads after app.css). */
+td.url-inspector__wrap { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+
+.url-inspector__facts { width: 100%; }
+.url-inspector__facts td:first-child { width: 35%; color: var(--ink-muted); }
+
+/* Belt-and-braces alongside the `td.url-inspector__wrap` specificity fix
+ * above: `contain: paint` keeps this element the actual overflow/painting
+ * boundary so a table that still ends up wider than its column can never
+ * scroll the whole document (same fix `.pi-table-scroll` needed, task-57). */
+.url-inspector__table-scroll { overflow-x: auto; contain: paint; }
+
+/* --- live micro audit ----------------------------------------------------- */
+
+.url-inspector__live-controls { display: flex; align-items: center; gap: 16px; }
+
+.url-inspector__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.url-inspector__hops {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.url-inspector__hops li {
+  display: flex;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--canvas-raised);
+  border: 1px solid var(--line);
+}
+
+.url-inspector__hops li span:first-child { flex: 0 0 auto; font-weight: 700; color: var(--ink-muted); }
+
+/* --- state panels reused compactly inside a section ----------------------- */
+
+.state-panel--compact { padding: 14px 16px; gap: 12px; }
+.state-panel--compact .icon { width: 20px; height: 20px; }
+.state-panel--compact p { margin: 0; }
+
+@media (max-width: 720px) {
+  .url-inspector__section-head,
+  .url-inspector__series-head { flex-direction: column; align-items: flex-start; }
+  .url-inspector__row { flex-wrap: wrap; }
+  .url-inspector__row-time { order: 3; width: 100%; }
+  /* Segmented controls (5 GA4 metrics + 3 granularities) overflow a narrow
+     viewport at their natural width — wrap instead of forcing page scroll. */
+  .url-inspector__granularity,
+  .url-inspector__metric-picker { flex-wrap: wrap; width: 100%; }
+  .url-inspector__granularity button,
+  .url-inspector__metric-picker button { flex: 1 1 auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .url-inspector__chip,
+  .url-inspector__row { transition: none; }
+}
+
+/* --- tone utility classes (kept LAST: --state-color is also set by base ---
+ * rules above — `.url-inspector__row`, `.url-inspector__chip` — at equal
+ * specificity, so these must win the cascade on SOURCE ORDER, not just
+ * specificity. Caught live: every tone-colored row/chip/badge/panel
+ * silently rendered with the base gray `--line` fallback until this moved
+ * here. CSP also has no `style-src` allowance (`default-src 'self'`), so a
+ * tone can never be an inline `style="--state-color:…"` either — this is
+ * the one place `--state-color` is ever set, always via a class. */
+.ui-tone-success { --state-color: var(--success); }
+.ui-tone-warning { --state-color: var(--warning); }
+.ui-tone-danger { --state-color: var(--danger); }
+.ui-tone-info { --state-color: var(--info); }
+.ui-tone-dim { --state-color: var(--ink-dim); }
+.ui-tone-accent { --state-color: var(--accent); }
