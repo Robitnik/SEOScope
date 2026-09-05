@@ -256,6 +256,16 @@ docker compose exec api poetry run yovth-report archive-backfill-assets --client
 docker compose exec api poetry run yovth-report archive-backfill-assets --client-id <HWELL>              # fetched: 50, failed: 0
 curl -s -D - -o /dev/null "http://localhost:6524/archive/r/20260904133527/https://hearwellservices.com/wp-content/uploads/2025/02/image-1.webp"
 # → HTTP/1.1 200, content-type: image/webp (був 404 до бекфілу — саме URL з репорту користувача)
+
+# DoD §1 наживо, не лише юнітами: повний recapture HWELL (не "unchanged" —
+# 207 із 269 URL реально відрендерились заново через ЖИВУ мережу і нову
+# discover-логіку, не через backfill):
+docker compose exec api poetry run yovth-report archive-capture --client-id <HWELL>
+# → HWELL: ok — 207 new, 62 unchanged, 0 failed, 0 blocked (of 269)
+docker compose exec api poetry run yovth-report archive-backfill-assets --client-id <HWELL> --dry-run
+# → HWELL: scanned 269 snapshots, 133 CSS files / missing total: 0
+# Розвідка під час звичайного капчура вже не губить нічого, що backfill
+# потім довелося б переписувати — DoD §1 виконано без застережень.
 ```
 
 Playwright (headless Chromium, `/tmp/yovth-e2e/task60-verify.cjs`, реальний бек проти localhost:6524):
@@ -277,5 +287,5 @@ Playwright (headless Chromium, `/tmp/yovth-e2e/task60-verify.cjs`, реальн�
 ### Follow-ups / борг
 
 - `app/cli.py`/`app/core/config.py` commit — чекає, поки паралельна task-58-сесія закомітить свою частину цих файлів (див. «Контрактні зміни» вище).
-- Повний портфельний `archive-backfill-assets --all` — свідомо НЕ запущений цією таскою (ризик §4: навантаження, слот 13:30/19:30). HWELL і EFFYS пролікувані живо як доказ; решту клієнтів варто прогнати оператору вручну, поза піковими слотами.
+- Повний портфельний `archive-backfill-assets --all` — свідомо НЕ запущений цією таскою (ризик §4: навантаження, слот 13:30/19:30). HWELL і EFFYS пролікувані живо як доказ (плюс HWELL отримав повний живий recapture — 207/269 URL, підтвердив DoD §1 напряму, не лише юнітами); решту клієнтів варто прогнати оператору вручну, поза піковими слотами.
 - `assets_missing` на Meta-панелі рахує тільки те, що БУЛО пов'язано зі знімком на момент захоплення (`ArchiveSnapshotAsset`) — для знімків, захоплених ДО цього фіксу, число залишиться `0` навіть якщо портфельний лічильник «Asset coverage» на хабі показує реальну діру; це чесно (архів не вигадує зв'язків заднім числом), але не інтуїтивно з першого погляду — вартий одного речення в майбутньому onboarding/tooltip, не міграції.
