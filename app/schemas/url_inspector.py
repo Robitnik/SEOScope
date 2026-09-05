@@ -261,3 +261,12 @@ class UrlInspectorLiveDTO(BaseModel):
     schema_check_id: str | None = None
     error: str | None = None
     generated_at: datetime
+
+
+# --- type-ahead suggestions (GET /url-inspector/suggest) -------------------
+
+
+class UrlSuggestResponseDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    suggestions: list[str] = []

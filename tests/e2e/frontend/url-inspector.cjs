@@ -60,6 +60,33 @@ async function main() {
   await page.waitForFunction(() => location.hash.includes("g=month"));
   await page.locator('[data-action="granularity"][data-value="month"][aria-pressed="true"]').waitFor();
 
+  // --- Live audit auto-runs without a click (follow-up: 2026-09-05) ----------
+  await page.waitForFunction(
+    () => document.querySelector('[data-action="run-live"]')?.textContent.includes("Recheck"),
+    { timeout: 20000 },
+  );
+  const liveResultHtml = await page.locator("#ui-live-result").innerHTML();
+  assert.ok(liveResultHtml.includes("url-inspector__facts"), "live audit populated automatically");
+
+  // --- Header search history + type-ahead suggestions (follow-up) ------------
+  await page.goto(`${baseUrl}/#/`, { waitUntil: "load" });
+  await searchInput.click();
+  const historyOptions = await page.locator("#url-search-suggestions li").allTextContents();
+  assert.ok(
+    historyOptions.some((text) => text.includes("nysapphire.com")),
+    "the just-visited URL shows up as a history suggestion on next focus",
+  );
+  await searchInput.fill("nysapph");
+  await page.waitForFunction(
+    () => document.querySelectorAll("#url-search-suggestions li").length > 0,
+  );
+  const typeAhead = await page.locator("#url-search-suggestions li").allTextContents();
+  assert.ok(
+    typeAhead.some((text) => text.includes("nysapphire.com")),
+    "type-ahead suggests the real client's homepage while the host is still being typed",
+  );
+  await page.screenshot({ path: path.join(screenshots, "url-inspector-suggestions-1440.png"), clip: { x: 0, y: 0, width: 700, height: 200 } });
+
   // --- Unknown domain is an honest 200 state, not a crash ---------------------
   await page.goto(`${baseUrl}/#/url?u=${encodeURIComponent("https://example.com/nope")}`, { waitUntil: "load" });
   await page.locator(".url-inspector__client--unknown").waitFor({ timeout: 15000 });

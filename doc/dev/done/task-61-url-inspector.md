@@ -450,3 +450,51 @@ NODE_PATH=/tmp/yovth-e2e/node_modules BASE_URL=http://localhost:6524 CHROMIUM_PA
 - `UrlInspectorLiveDTO.schema_check_id` персистує **спрощений** запис (`generated=None`, `raw_markup=[]`) — повний JSON-шейпінг, як у `/tools/schema-markup`, залишено за `TODO(task-61-followup)`; оператор і так має посилання на повний інструмент.
 - Пошук приймає лише повний URL, без автодоповнення за фрагментом/назвою сторінки (свідомо поза скоупом, план §7).
 - Історія інспекцій не зберігається (свідомо, план §2.5/§7).
+
+---
+
+## ✅ Completion report — follow-up (2026-09-05, same day)
+
+Оператор попросив після першого живого огляду:
+
+1. Перенести поле пошуку в шапці ближче до логотипу (зліва), не в кінець нав-бару.
+2. Покращити стиль інпута.
+3. Підказки з історії пошуку (recently searched).
+4. Підказки під час набору тексту, зі списку сторінок сайту (з сайтмапу).
+5. Перейменувати «Live micro audit» → «Live audit» і зробити його автозапуском, а не по кліку.
+
+### Що зроблено
+
+- **`app/urlinspector/suggest.py`** (новий) — `suggest_urls(session, q)`: двостадійний autocomplete.
+  - Стадія 1 (хост ще не резолвиться) — homepage клієнтів, чий домен/назва містить набраний фрагмент.
+  - Стадія 2 (хост резолвнувся в реального клієнта) — сторінки цього клієнта з `monitor_pages` **фільтровані по `in_sitemap=True`** (буквально «з сайтмапу», а не будь-який URL, який колись бачив монітор).
+  - Фільтрація по частині шляху — у Python (`urlsplit(url).path`), не SQL `LIKE` на повний URL: `LIKE '%/a%'` на повному рядку `https://acme.com/...` мовчки матчив би `://a` в самому хості (спіймано власним тестом). Кеп 2000 кандидатів на клієнта перед фільтром — з запасом проти найбільшого клієнта портфеля.
+  - `app/urlinspector/resolve.py`: додано `parse_input_url_loose` — м'який парсер для набору тексту (ніколи не кидає, `None` замість помилки на незавершеному вводі).
+  - `GET /api/v1/url-inspector/suggest?q=…` → `UrlSuggestResponseDTO`.
+- **Search-історія** — виключно клієнтська (`localStorage`, ключ `url-inspector:history`, 12 останніх), без бекенд-таблиці: та сама причина, що й у `app/urlinspector/live.py` — «нещодавно шукав» не варте сьомої таблиці.
+- **Комбобокс у шапці** (`frontend/js/router.js`, `initUrlSearch`) — `role="combobox"` + `listbox`, підказки з історії на фокус, дебаунсний (200мс) фетч підказок під час набору (мінімум 2 символи), навігація стрілками/Enter/Escape, вибір мишею.
+- **Шапка**: `.brand-lockup` і `.url-search` згруповано в новий `.header-start` (`frontend/index.html`), щоб `justify-content: space-between` тримав їх РАЗОМ зліва — інакше поле «відлипало» до кінця свого рядка. `.header-start { flex-wrap: nowrap; flex-shrink: 0 }` — блок ніколи не рветься сам, замість нього переноситься `nav`/`header-actions`.
+- **Стиль інпута** — заокруглені кути, `background: var(--canvas-raised)`, чіткий `:focus-visible` (accent-бордер + світліший фон), стрілочка/лінк-іконки в підказках, ховер/активний рядок.
+- **Live audit auto-run** — `initUrlInspectorPage` викликає `runLiveCheck({withSchema:false})` одразу після успішного `load()`, один раз на URL (не повторюється при зміні гранулярності/метрики). Кнопка перейменована на «Recheck» (ручний повтор лишається).
+
+### Живий гейт (2026-09-05)
+
+- Header на 1440px: `header-start` (лого+пошук) і `nav` на одному рядку скрізь, окрім дашборду, де `header-actions` переноситься на свій рядок (виміряно, `scrollWidth` ніде не перевищує viewport).
+- Ввід «nysapph» → підказка «nysapphire.com/» (стадія 1); ввід «https://www.nysapphire.com/locations» → 4 реальні сторінки з `/gentlemens-club-locations/...` (стадія 2, з фіксом «без прив'язки до межі слеша»).
+- Стрілка вниз + Enter у підказці → навігація на `#/url?u=…`, живі дані рендеряться.
+- Live audit розділ автоматично заповнюється реальними даними без кліку (мовою коду — за ~1-2с після завантаження сторінки), кнопка одразу показує «Recheck».
+- e2e (`tests/e2e/frontend/url-inspector.cjs`) розширено трьома новими перевірками (auto-run, історія, type-ahead) — усі зелені.
+
+### Контрактні зміни
+
+Нова DTO `UrlSuggestResponseDTO` (адитивно, `app/schemas/url_inspector.py`), новий ендпоінт `/url-inspector/suggest`. `openapi_snapshot.json` оновлено.
+
+### Тести
+
+- `tests/unit/urlinspector/test_suggest.py` — обидві стадії, виключення `in_sitemap=False`, фікс межі слеша.
+- `tests/unit/api/test_url_inspector_api.py` — 2 нові тести на `/suggest`.
+- `tests/e2e/frontend/url-inspector.cjs` — auto-run, історія, type-ahead (3 нові перевірки).
+
+### Follow-ups
+
+- Не зроблено: підказки НЕ об'єднують історію і сайтмап в один список одночасно (сайтмап-підказки, коли є, повністю замінюють історію в дропдауні) — свідомо просто, можна покращити пізніше.

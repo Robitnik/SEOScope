@@ -96,6 +96,14 @@ export async function initUrlInspectorPage(query) {
   root.innerHTML = shell();
   wireControls();
   await load();
+  // Runs once per URL, right after the stored data is in — the operator
+  // asked for the live check to happen automatically rather than wait for
+  // a click. Skips silently if the initial load itself failed (loadError
+  // set) or the URL changed again before this resolved (token guard inside
+  // `load()` already handles the latter for `dto`/`render()`).
+  if (dto && !liveState.result && !liveState.loading) {
+    await runLiveCheck({ withSchema: false });
+  }
 }
 
 function destroyCharts() {
@@ -559,15 +567,15 @@ function renderLive() {
   return `
     <section class="url-inspector__section url-inspector__live" aria-labelledby="ui-live-heading">
       <div class="url-inspector__section-head">
-        <h2 id="ui-live-heading">Live micro audit</h2>
+        <h2 id="ui-live-heading">Live audit</h2>
         <div class="url-inspector__live-controls">
           <label class="url-inspector__checkbox">
             <input type="checkbox" id="ui-live-schema" ${liveState.withSchema ? "checked" : ""}>
             <span>Also check schema markup</span>
           </label>
-          <button type="button" class="button button--primary" data-action="run-live" ${liveState.loading ? "disabled" : ""}>
-            ${icon(liveState.loading ? "loader-2" : "shield-check", liveState.loading ? "icon icon--tiny icon--spin" : "icon icon--tiny")}
-            ${liveState.loading ? "Checking…" : "Run live check"}
+          <button type="button" class="button button--quiet button--small" data-action="run-live" ${liveState.loading ? "disabled" : ""}>
+            ${icon(liveState.loading ? "loader-2" : "refresh", liveState.loading ? "icon icon--tiny icon--spin" : "icon icon--tiny")}
+            ${liveState.loading ? "Checking…" : "Recheck"}
           </button>
         </div>
       </div>
@@ -640,6 +648,19 @@ function formatBool(value) {
 
 // --- wiring -------------------------------------------------------------
 
+async function runLiveCheck({ withSchema }) {
+  liveState = { ...liveState, loading: true, error: null, withSchema };
+  renderLiveInPlace();
+  try {
+    const result = await runUrlInspectorLive(current.url, { withSchema });
+    liveState = { ...liveState, loading: false, result };
+  } catch (error) {
+    if (isAbortError(error)) return;
+    liveState = { ...liveState, loading: false, error: error.message || "Live check failed." };
+  }
+  renderLiveInPlace();
+}
+
 function wireControls() {
   root.addEventListener("click", async (event) => {
     const granularityButton = event.target.closest('[data-action="granularity"]');
@@ -663,21 +684,7 @@ function wireControls() {
 
     const liveButton = event.target.closest('[data-action="run-live"]');
     if (liveButton) {
-      liveState = {
-        ...liveState,
-        loading: true,
-        error: null,
-        withSchema: !!root.querySelector("#ui-live-schema")?.checked,
-      };
-      renderLiveInPlace();
-      try {
-        const result = await runUrlInspectorLive(current.url, { withSchema: liveState.withSchema });
-        liveState = { ...liveState, loading: false, result };
-      } catch (error) {
-        if (isAbortError(error)) return;
-        liveState = { ...liveState, loading: false, error: error.message || "Live check failed." };
-      }
-      renderLiveInPlace();
+      await runLiveCheck({ withSchema: !!root.querySelector("#ui-live-schema")?.checked });
     }
   });
 }
@@ -686,7 +693,7 @@ function renderLiveInPlace() {
   const button = root.querySelector('[data-action="run-live"]');
   if (button) {
     button.disabled = liveState.loading;
-    button.innerHTML = `${icon(liveState.loading ? "loader-2" : "shield-check", liveState.loading ? "icon icon--tiny icon--spin" : "icon icon--tiny")} ${liveState.loading ? "Checking…" : "Run live check"}`;
+    button.innerHTML = `${icon(liveState.loading ? "loader-2" : "refresh", liveState.loading ? "icon icon--tiny icon--spin" : "icon icon--tiny")} ${liveState.loading ? "Checking…" : "Recheck"}`;
   }
   const resultEl = root.querySelector("#ui-live-result");
   if (resultEl) resultEl.innerHTML = renderLiveResult();

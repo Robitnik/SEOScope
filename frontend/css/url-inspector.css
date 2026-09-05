@@ -6,28 +6,59 @@
  * `.url-inspector-*`/`.url-search` classes below are new.
  */
 
-/* --- header search field (lives in .app-header on every route) --------- */
+/* --- header search field (lives in .app-header on every route, right next --
+ * to the logo) --------------------------------------------------------- */
 /*
- * `.app-header` is already flex-`gap`-tight with 3 children (brand/nav/
- * header-actions) at common desktop widths — measured live at 1440px: nav's
- * right edge sits just 24px from header-actions' left edge, i.e. zero slack
- * before this 4th child even existed. `.app-header` is made wrap-capable
- * here (additive to app.css, which already relies on wrapping at narrower
- * widths for `.app-nav`) so the ONE combination that doesn't fit inline —
- * this field AND the two dashboard-only action buttons, together, at
- * ~1280-1500px — drops `.header-actions` to its own row instead of
- * silently collapsing the search input to 0 width (caught live). Every
- * other route has no `.header-actions` to compete with and stays single-row.
+ * `.app-header` is already flex-`gap`-tight with its other children at
+ * common desktop widths — measured live at 1440px: zero slack before this
+ * field even existed. `.app-header` is made wrap-capable here (additive to
+ * app.css, which already relies on wrapping at narrower widths for
+ * `.app-nav`) so the ONE combination that doesn't fit inline — nav, this
+ * field, AND the two dashboard-only action buttons, together, at
+ * ~1280-1500px — drops `.header-actions` (or, if still tight, `.app-nav`
+ * too) to their own row instead of silently collapsing the search input to
+ * 0 width (caught live). Every other route has no `.header-actions` to
+ * compete with and stays single-row.
  */
+
+/* Groups the logo and the search field into one left-pinned block, so
+ * `.app-header`'s `justify-content: space-between` (app.css) treats them as
+ * a single unit — otherwise, with the field as the header's own direct
+ * flex child, `space-between` stretched it away from the logo to the far
+ * end of whichever row it landed on (caught live: it visually read as
+ * belonging to the nav/actions side, not the logo it was asked to sit next to). */
+.header-start {
+  display: flex;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+}
 
 .url-search {
   position: relative;
-  flex: 1 1 240px;
-  min-width: 200px;
+  flex: 0 1 280px;
+  min-width: 220px;
   max-width: 320px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.url-search .search-field input {
+  border-radius: var(--radius-md);
+  background: var(--canvas-raised);
+  border-color: var(--line);
+  transition: border-color .14s ease, background-color .14s ease;
+}
+
+.url-search .search-field input:hover { border-color: var(--ink-muted); }
+
+.url-search .search-field input:focus-visible {
+  border-color: var(--accent);
+  background: var(--surface);
+  outline: none;
 }
 
 .url-search__error {
@@ -41,8 +72,52 @@
 
 .url-search__error:empty { display: none; }
 
+/* --- suggestions dropdown (history + sitemap type-ahead) ----------------- */
+
+.url-search__suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--canvas-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-dialog);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.url-search__suggestions[hidden] { display: none; }
+
+.url-search__suggestions li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.url-search__suggestions li .icon { flex: 0 0 auto; color: var(--ink-dim); }
+
+.url-search__suggestions li:hover,
+.url-search__suggestions li[aria-selected="true"] {
+  background: var(--surface-strong);
+  color: var(--ink);
+}
+
+.url-search__suggestions li[aria-selected="true"] .icon { color: var(--accent); }
+
 @media (max-width: 720px) {
-  .url-search { order: 4; max-width: none; width: 100%; margin-top: 8px; }
+  .header-start { flex-wrap: wrap; }
+  .url-search { max-width: none; width: 100%; margin-top: 4px; }
 }
 
 /* --- page shell ---------------------------------------------------------- */

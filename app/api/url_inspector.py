@@ -21,10 +21,12 @@ from app.schemas.url_inspector import (
     UrlInspectorDTO,
     UrlInspectorLiveDTO,
     UrlInspectorLiveRequest,
+    UrlSuggestResponseDTO,
 )
 from app.urlinspector.live import run_live_check
 from app.urlinspector.resolve import UrlValidationError, parse_input_url, resolve_client_for_url
 from app.urlinspector.service import inspect_url
+from app.urlinspector.suggest import suggest_urls
 
 router = APIRouter(prefix="/api/v1/url-inspector", tags=["url-inspector"])
 
@@ -52,6 +54,16 @@ async def get_url_inspector(
     except UrlValidationError as exc:
         raise HTTPException(status_code=400, detail=_error(exc.code, str(exc))) from exc
     return await run_in_threadpool(_run_inspect, parsed, granularity)
+
+
+def _run_suggest(q: str) -> UrlSuggestResponseDTO:
+    with worker_session_scope() as session:
+        return UrlSuggestResponseDTO(suggestions=suggest_urls(session, q=q))
+
+
+@router.get("/suggest", response_model=UrlSuggestResponseDTO)
+async def get_url_inspector_suggest(q: str = Query("", max_length=2048)) -> UrlSuggestResponseDTO:
+    return await run_in_threadpool(_run_suggest, q)
 
 
 @router.post("/live", response_model=UrlInspectorLiveDTO, responses={400: {"model": ErrorDTO}})

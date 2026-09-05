@@ -1472,6 +1472,52 @@
         "title": "ArchiveCaptureAcceptedDTO",
         "type": "object"
       },
+      "ArchiveCaptureBatchAcceptedDTO": {
+        "properties": {
+          "capture_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capture Ids",
+            "type": "array"
+          },
+          "skipped_client_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped Client Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "capture_ids",
+          "skipped_client_ids"
+        ],
+        "title": "ArchiveCaptureBatchAcceptedDTO",
+        "type": "object"
+      },
+      "ArchiveCaptureCancelDTO": {
+        "properties": {
+          "capture_id": {
+            "title": "Capture Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "cancelled",
+              "cancel_requested"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capture_id",
+          "status"
+        ],
+        "title": "ArchiveCaptureCancelDTO",
+        "type": "object"
+      },
       "ArchiveCaptureDTO": {
         "properties": {
           "assets_failed": {
@@ -1489,6 +1535,10 @@
           "bytes_stored": {
             "title": "Bytes Stored",
             "type": "integer"
+          },
+          "cancel_requested": {
+            "title": "Cancel Requested",
+            "type": "boolean"
           },
           "client_id": {
             "title": "Client Id",
@@ -1536,9 +1586,39 @@
             "title": "Id",
             "type": "string"
           },
+          "progress_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Message"
+          },
+          "queue_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Position"
+          },
           "scheduled_for": {
             "format": "date-time",
             "title": "Scheduled For",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "client",
+              "url"
+            ],
+            "title": "Scope",
             "type": "string"
           },
           "slot_key": {
@@ -1564,10 +1644,22 @@
               "ok",
               "partial",
               "failed",
-              "blocked"
+              "blocked",
+              "cancelled"
             ],
             "title": "Status",
             "type": "string"
+          },
+          "target_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Url"
           },
           "trigger": {
             "enum": [
@@ -1630,9 +1722,67 @@
           "assets_failed",
           "bytes_stored",
           "error_code",
-          "error_message"
+          "error_message",
+          "scope",
+          "target_url",
+          "progress_message",
+          "cancel_requested",
+          "queue_position"
         ],
         "title": "ArchiveCaptureDTO",
+        "type": "object"
+      },
+      "ArchiveCaptureEventDTO": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "level": {
+            "enum": [
+              "debug",
+              "info",
+              "warning",
+              "error"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          }
+        },
+        "required": [
+          "seq",
+          "level",
+          "stage",
+          "message",
+          "details",
+          "created_at"
+        ],
+        "title": "ArchiveCaptureEventDTO",
         "type": "object"
       },
       "ArchiveChangeDTO": {
@@ -1807,7 +1957,8 @@
                   "ok",
                   "partial",
                   "failed",
-                  "blocked"
+                  "blocked",
+                  "cancelled"
                 ],
                 "type": "string"
               },
@@ -1972,6 +2123,38 @@
           "recent_captures"
         ],
         "title": "ArchiveOverviewDTO",
+        "type": "object"
+      },
+      "ArchiveQueueDTO": {
+        "properties": {
+          "queued": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveCaptureDTO"
+            },
+            "title": "Queued",
+            "type": "array"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveCaptureDTO"
+            },
+            "title": "Recent",
+            "type": "array"
+          },
+          "running": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveCaptureDTO"
+            },
+            "title": "Running",
+            "type": "array"
+          }
+        },
+        "required": [
+          "running",
+          "queued",
+          "recent"
+        ],
+        "title": "ArchiveQueueDTO",
         "type": "object"
       },
       "ArchiveSnapshotDetailDTO": {
@@ -12237,6 +12420,260 @@
         ]
       }
     },
+    "/api/v1/archive/captures/all": {
+      "post": {
+        "operationId": "start_all_archive_captures_api_v1_archive_captures_all_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveCaptureBatchAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start All Archive Captures",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/captures/url": {
+      "post": {
+        "operationId": "start_archive_url_capture_api_v1_archive_captures_url_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url_id",
+            "required": true,
+            "schema": {
+              "title": "Url Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveCaptureAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Archive Url Capture",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/captures/{capture_id}": {
+      "get": {
+        "operationId": "get_archive_capture_api_v1_archive_captures__capture_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "capture_id",
+            "required": true,
+            "schema": {
+              "title": "Capture Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveCaptureDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Archive Capture",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/captures/{capture_id}/cancel": {
+      "post": {
+        "description": "Cooperative (task-62 \u00a71.6): a `queued` row is finished immediately; a\n`running` one is flagged and stops itself between URLs \u2014 this response\nreports which happened, not that the capture is necessarily over yet.",
+        "operationId": "cancel_archive_capture_api_v1_archive_captures__capture_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "capture_id",
+            "required": true,
+            "schema": {
+              "title": "Capture Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveCaptureCancelDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Archive Capture",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/captures/{capture_id}/events": {
+      "get": {
+        "operationId": "get_archive_capture_events_api_v1_archive_captures__capture_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "capture_id",
+            "required": true,
+            "schema": {
+              "title": "Capture Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Since",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ArchiveCaptureEventDTO"
+                  },
+                  "title": "Response Get Archive Capture Events Api V1 Archive Captures  Capture Id  Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Archive Capture Events",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
     "/api/v1/archive/changes": {
       "get": {
         "operationId": "list_archive_changes_api_v1_archive_changes_get",
@@ -12390,6 +12827,27 @@
           }
         },
         "summary": "Get Archive Overview",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/queue": {
+      "get": {
+        "operationId": "get_archive_queue_api_v1_archive_queue_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveQueueDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Archive Queue",
         "tags": [
           "web-archive"
         ]

@@ -60,6 +60,27 @@ def parse_input_url(raw: str) -> str:
 
 
 @dataclass(frozen=True)
+class LooseUrl:
+    url: str
+    path: str
+
+
+def parse_input_url_loose(raw: str) -> LooseUrl | None:
+    """Best-effort parse for autocomplete-while-typing (task-61 suggest
+    follow-up) — unlike `parse_input_url`, never raises: returns `None` for
+    anything that doesn't resemble a host yet (no dot at all), which is the
+    normal state of an input box mid-keystroke, not an error to report."""
+    candidate = (raw or "").strip()
+    if not candidate or len(candidate) > 2048:
+        return None
+    full = candidate if _SCHEME.match(candidate) else f"https://{candidate}"
+    parts = urlsplit(full)
+    if not parts.hostname or "." not in parts.hostname:
+        return None
+    return LooseUrl(url=full, path=parts.path or "/")
+
+
+@dataclass(frozen=True)
 class ResolvedClient:
     client: Client | None
     match: ClientMatch

@@ -98,3 +98,19 @@ class TestPostUrlInspectorLive:
 
         assert response.status_code == 200
         assert response.json()["verdict"] == "blocked"
+
+
+class TestGetUrlInspectorSuggest:
+    def test_domain_stage(self, client, db):
+        _seed_client(db, domain="acme.com", name="Acme")
+
+        response = client.get("/api/v1/url-inspector/suggest", params={"q": "acm"})
+
+        assert response.status_code == 200
+        assert response.json()["suggestions"] == ["https://acme.com/"]
+
+    def test_short_query_is_empty(self, client, db):
+        response = client.get("/api/v1/url-inspector/suggest", params={"q": "a"})
+
+        assert response.status_code == 200
+        assert response.json()["suggestions"] == []
