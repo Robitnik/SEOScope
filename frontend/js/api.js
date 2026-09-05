@@ -1515,6 +1515,33 @@ export async function getMonitorResources(clientId, kind) {
   );
 }
 
+// Synchronous re-check of robots.txt (mirrors `checkMonitorPage`) — one HTTP
+// round trip, the response IS the refreshed resource list for "robots".
+export async function checkMonitorRobots(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(700);
+    return getMonitorResources(clientId, "robots");
+  }
+  return request(
+    `/clients/${clientId}/monitor/robots/check`,
+    { method: "POST", body: "{}" },
+    `monitor-robots-check-${clientId}`,
+  );
+}
+
+// Synchronous re-check of the sitemap tree — same rationale as `checkMonitorRobots`.
+export async function checkMonitorSitemap(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(700);
+    return getMonitorResources(clientId, "sitemap");
+  }
+  return request(
+    `/clients/${clientId}/monitor/sitemap/check`,
+    { method: "POST", body: "{}" },
+    `monitor-sitemap-check-${clientId}`,
+  );
+}
+
 // Stored bytes of one fetched document. Returned as TEXT, not JSON: this is a
 // robots.txt / sitemap XML file exactly as the server sent it.
 export async function getMonitorDocumentText(sha256) {
@@ -2745,4 +2772,226 @@ export async function putClientMonthlyTableSettings(clientId, payload) {
 // convention as `techAuditExportUrl` above. The UI links straight to it.
 export function monthlyTableXlsxUrl(clientId) {
   return `${API_ROOT}/clients/${clientId}/monthly-table/xlsx`;
+}
+
+// Schema Markup Checker (task-56): plain JSON POST/GET, same shape as
+// `createRedirectCheck`/`getRedirectChecks` — persisted, list+detail with a
+// shareable `#/tools/schema-markup/<id>` link.
+export async function checkSchemaMarkup(url, clientId) {
+  return request("/tools/schema-markup/checks", {
+    method: "POST",
+    body: JSON.stringify({ url, client_id: clientId || null }),
+  }, "schema-markup-create");
+}
+
+export async function getSchemaMarkupChecks(clientId) {
+  const params = new URLSearchParams({ limit: "50" });
+  if (clientId) params.set("client_id", clientId);
+  return request(`/tools/schema-markup/checks?${params}`, {}, "schema-markup-checks");
+}
+
+export async function getSchemaMarkupCheck(checkId) {
+  return request(
+    `/tools/schema-markup/checks/${encodeURIComponent(checkId)}`,
+    {},
+    `schema-markup-check-${checkId}`,
+  );
+}
+
+// Page Inventory (task-57): architecture table + per-field SEO/slop QA,
+// built from monitor data already collected. `Re-crawl site` in the UI
+// does NOT call anything here — it drives the existing
+// `startMonitorRun`/`listMonitorRuns` above (task-36) and only calls
+// `rebuildPageInventory` once that full crawl finishes (task-57 §2.2a).
+export async function getPageInventory(clientId, { profile = "calibrated", q, status, field, severity, page, pageSize, requestKey } = {}) {
+  const params = new URLSearchParams({ profile });
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+  if (field) params.set("field", field);
+  if (severity) params.set("severity", severity);
+  if (page) params.set("page", String(page));
+  if (pageSize) params.set("page_size", String(pageSize));
+  return request(
+    `/clients/${clientId}/pages?${params}`, {}, requestKey || `page-inventory:${clientId}`,
+  );
+}
+
+// Compact counts for the client page's summary card — never fetches rows,
+// only `PageInventorySummaryDTO` (task-57 §5).
+export async function getPageInventorySummary(clientId) {
+  return request(
+    `/clients/${clientId}/pages/summary`, {}, `page-inventory-summary:${clientId}`,
+  );
+}
+
+export async function rebuildPageInventory(clientId) {
+  const result = await request(
+    `/clients/${clientId}/pages/rebuild`,
+    { method: "POST", body: "{}" },
+    `page-inventory-rebuild:${clientId}`,
+  );
+  return result.table;
+}
+
+export function pageInventoryXlsxUrl(clientId) {
+  return `${API_ROOT}/clients/${clientId}/pages/xlsx`;
+}
+
+// --- Web Archive (task-59) --------------------------------------------------
+
+export async function getArchiveOverview() {
+  return request("/archive/overview", {}, "archive-overview");
+}
+
+export async function lookupArchiveUrl(url) {
+  return request(`/archive/lookup?url=${encodeURIComponent(url)}`, {}, "archive-lookup");
+}
+
+export async function searchArchiveUrls({ clientId, q, page = 1, pageSize = 20, requestKey } = {}) {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (clientId) params.set("client_id", clientId);
+  if (q) params.set("q", q);
+  return request(`/archive/urls?${params}`, {}, requestKey || "archive-urls-search");
+}
+
+export async function getArchiveUrlTimeline(urlId) {
+  return request(`/archive/urls/${encodeURIComponent(urlId)}/snapshots`, {}, `archive-timeline:${urlId}`);
+}
+
+export async function getArchiveSnapshot(snapshotId) {
+  return request(`/archive/snapshots/${encodeURIComponent(snapshotId)}`, {}, `archive-snapshot:${snapshotId}`);
+}
+
+export async function getArchiveSnapshotSource(snapshotId) {
+  const response = await fetch(`${API_ROOT}/archive/snapshots/${encodeURIComponent(snapshotId)}/source`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.text();
+}
+
+export async function getArchiveSnapshotDiff(snapshotId) {
+  return request(
+    `/archive/snapshots/${encodeURIComponent(snapshotId)}/diff`, {}, `archive-diff:${snapshotId}`,
+  );
+}
+
+export async function listArchiveChanges({ clientId, kind, days = 30, page = 1, pageSize = 50, requestKey } = {}) {
+  const params = new URLSearchParams({ days: String(days), page: String(page), page_size: String(pageSize) });
+  if (clientId) params.set("client_id", clientId);
+  if (kind) params.set("kind", kind);
+  return request(`/archive/changes?${params}`, {}, requestKey || "archive-changes");
+}
+
+export async function listArchiveCaptures({ clientId, limit = 50, requestKey } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (clientId) params.set("client_id", clientId);
+  return request(`/archive/captures?${params}`, {}, requestKey || "archive-captures");
+}
+
+export async function startArchiveCapture(clientId) {
+  return request(
+    `/archive/captures?client_id=${encodeURIComponent(clientId)}`,
+    { method: "POST", body: "{}" },
+    `archive-capture-start:${clientId}`,
+  );
+}
+
+// task-62 §1.1 — "Refresh now" on one URL, not the whole client.
+export async function startArchiveUrlCapture(urlId) {
+  return request(
+    `/archive/captures/url?url_id=${encodeURIComponent(urlId)}`,
+    { method: "POST", body: "{}" },
+    `archive-capture-start-url:${urlId}`,
+  );
+}
+
+// task-62 §1.2 — "Capture all": one queued row per collectable client.
+export async function startAllArchiveCaptures() {
+  return request("/archive/captures/all", { method: "POST", body: "{}" }, "archive-capture-start-all");
+}
+
+// task-63 follow-up — "Archive this page now" on a URL the archive has
+// NEVER seen (the hub's lookup only ever finds an already-tracked one).
+export async function startArchiveAdhocUrlCapture(url) {
+  return request(
+    `/archive/captures/url-adhoc?url=${encodeURIComponent(url)}`,
+    { method: "POST", body: "{}" },
+    `archive-capture-start-adhoc:${url}`,
+  );
+}
+
+export async function getArchiveCapture(captureId, { requestKey } = {}) {
+  if (!requestKey) throw new Error("getArchiveCapture requires an explicit requestKey");
+  return request(`/archive/captures/${encodeURIComponent(captureId)}`, {}, requestKey);
+}
+
+export async function getArchiveCaptureEvents(captureId, { since = 0, requestKey } = {}) {
+  if (!requestKey) throw new Error("getArchiveCaptureEvents requires an explicit requestKey");
+  return request(
+    `/archive/captures/${encodeURIComponent(captureId)}/events?since=${since}`, {}, requestKey,
+  );
+}
+
+export async function cancelArchiveCapture(captureId) {
+  return request(
+    `/archive/captures/${encodeURIComponent(captureId)}/cancel`,
+    { method: "POST", body: "{}" },
+    `archive-capture-cancel:${captureId}`,
+  );
+}
+
+export async function getArchiveQueue({ requestKey } = {}) {
+  if (!requestKey) throw new Error("getArchiveQueue requires an explicit requestKey");
+  return request("/archive/queue", {}, requestKey);
+}
+
+// --- URL Inspector (task-61) -------------------------------------------------
+//
+// Two calls, deliberately not one: stored data (this one) must render
+// instantly; `runUrlInspectorLive` is a separate, slow, opt-in fetch so it
+// never blocks the five panels that don't need it. Request keys are
+// explicit, named purposes — not derived from the URL/granularity params —
+// so switching granularity correctly cancels the previous in-flight fetch
+// instead of racing it (task-36 UI, hit twice before: derived keys don't
+// collide when they should).
+
+export async function getUrlInspector(url, { granularity = "week" } = {}) {
+  const params = new URLSearchParams({ url, granularity });
+  return request(`/url-inspector?${params}`, {}, "url-inspector");
+}
+
+export async function runUrlInspectorLive(url, { withSchema = false } = {}) {
+  return request(
+    "/url-inspector/live",
+    { method: "POST", body: JSON.stringify({ url, with_schema: withSchema }) },
+    "url-inspector-live",
+  );
+}
+
+// Type-ahead while the operator types in the header search field — client
+// homepage suggestions before a site resolves, that site's own sitemap
+// pages once it does. `requestKey` is per-call (not a fixed constant) so a
+// fast typist's stale response can't ever overwrite a newer one out of order.
+export async function getUrlInspectorSuggestions(q) {
+  return request(
+    `/url-inspector/suggest?q=${encodeURIComponent(q)}`, {}, "url-inspector-suggest",
+  );
+}
+
+// Screenshots (task-64) — same instant-vs-slow split as above:
+// `getUrlScreenshots` reads whatever is cached (fast); `captureUrlScreenshots`
+// is the opt-in ~20s capture. Separate request keys so a capture in flight
+// is never cancelled by an unrelated cached-read poll.
+export async function getUrlScreenshots(url) {
+  const params = new URLSearchParams({ url });
+  return request(`/url-screenshots?${params}`, {}, "url-screenshots");
+}
+
+export async function captureUrlScreenshots(url, { presets, force = false } = {}) {
+  const body = { url, force };
+  if (presets) body.presets = presets;
+  return request(
+    "/url-screenshots",
+    { method: "POST", body: JSON.stringify(body) },
+    "url-screenshots-capture",
+  );
 }

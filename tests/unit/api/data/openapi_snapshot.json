@@ -1454,6 +1454,39 @@
         "title": "AnalyticsDatasetRowDTO",
         "type": "object"
       },
+      "ArchiveAdhocCaptureAcceptedDTO": {
+        "properties": {
+          "capture_id": {
+            "title": "Capture Id",
+            "type": "string"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          },
+          "url_id": {
+            "title": "Url Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capture_id",
+          "status_url",
+          "url_id",
+          "client_id",
+          "client_name"
+        ],
+        "title": "ArchiveAdhocCaptureAcceptedDTO",
+        "type": "object"
+      },
       "ArchiveCaptureAcceptedDTO": {
         "properties": {
           "capture_id": {
@@ -2303,6 +2336,10 @@
             ],
             "title": "Prev Snapshot Id"
           },
+          "replay_misses_for_host": {
+            "title": "Replay Misses For Host",
+            "type": "integer"
+          },
           "store_reason": {
             "enum": [
               "first",
@@ -2374,7 +2411,8 @@
           "live_iframe_hosts",
           "store_reason",
           "prev_snapshot_id",
-          "next_snapshot_id"
+          "next_snapshot_id",
+          "replay_misses_for_host"
         ],
         "title": "ArchiveSnapshotDetailDTO",
         "type": "object"
@@ -10565,6 +10603,55 @@
         "title": "ReportTypesDTO",
         "type": "object"
       },
+      "ResolvedClientDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "logo_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Path"
+          },
+          "match": {
+            "enum": [
+              "exact",
+              "subdomain"
+            ],
+            "title": "Match",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "domain",
+          "match"
+        ],
+        "title": "ResolvedClientDTO",
+        "type": "object"
+      },
       "RunRebuildRequest": {
         "additionalProperties": false,
         "properties": {
@@ -12123,6 +12210,1477 @@
         "title": "ToolsCatalogDTO",
         "type": "object"
       },
+      "UrlArchiveDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_url_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Url Id"
+          },
+          "snapshot_count": {
+            "default": 0,
+            "title": "Snapshot Count",
+            "type": "integer"
+          },
+          "snapshots": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlArchiveSnapshotDTO"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "UrlArchiveDTO",
+        "type": "object"
+      },
+      "UrlArchiveSnapshotDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "has_change": {
+            "title": "Has Change",
+            "type": "boolean"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "store_reason": {
+            "title": "Store Reason",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "observed_at",
+          "http_status",
+          "final_url",
+          "store_reason",
+          "title",
+          "has_change"
+        ],
+        "title": "UrlArchiveSnapshotDTO",
+        "type": "object"
+      },
+      "UrlChangeDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
+          "change_type": {
+            "title": "Change Type",
+            "type": "string"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "new_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Value"
+          },
+          "old_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Value"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "change_type",
+          "old_value",
+          "new_value",
+          "detected_at",
+          "resolved_at",
+          "acknowledged_at"
+        ],
+        "title": "UrlChangeDTO",
+        "type": "object"
+      },
+      "UrlFindingDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check",
+          "field",
+          "severity",
+          "message"
+        ],
+        "title": "UrlFindingDTO",
+        "type": "object"
+      },
+      "UrlInspectorDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "archive": {
+            "$ref": "#/components/schemas/UrlArchiveDTO"
+          },
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResolvedClientDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "client_match": {
+            "enum": [
+              "exact",
+              "subdomain",
+              "unknown_domain"
+            ],
+            "title": "Client Match",
+            "type": "string"
+          },
+          "coverage": {
+            "items": {
+              "$ref": "#/components/schemas/UrlSourceStateDTO"
+            },
+            "title": "Coverage",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "input_url": {
+            "title": "Input Url",
+            "type": "string"
+          },
+          "inspector_key": {
+            "title": "Inspector Key",
+            "type": "string"
+          },
+          "keywords": {
+            "$ref": "#/components/schemas/UrlKeywordsDTO"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/UrlMetaDTO"
+          },
+          "monitor": {
+            "$ref": "#/components/schemas/UrlMonitorDTO"
+          },
+          "screenshots": {
+            "$ref": "#/components/schemas/UrlScreenshotsStateDTO"
+          },
+          "search_analytics": {
+            "$ref": "#/components/schemas/UrlSearchAnalyticsDTO"
+          },
+          "tech_audit": {
+            "$ref": "#/components/schemas/UrlTechAuditDTO"
+          }
+        },
+        "required": [
+          "input_url",
+          "inspector_key",
+          "client",
+          "client_match",
+          "coverage",
+          "search_analytics",
+          "archive",
+          "monitor",
+          "meta",
+          "tech_audit",
+          "keywords",
+          "screenshots",
+          "generated_at"
+        ],
+        "title": "UrlInspectorDTO",
+        "type": "object"
+      },
+      "UrlInspectorLiveDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "findings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlFindingDTO"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "indexable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexable"
+          },
+          "input_url": {
+            "title": "Input Url",
+            "type": "string"
+          },
+          "redirect_chain": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlLiveHopDTO"
+            },
+            "title": "Redirect Chain",
+            "type": "array"
+          },
+          "schema_check_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Check Id"
+          },
+          "signals": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UrlLiveSignalsDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "input_url",
+          "verdict",
+          "generated_at"
+        ],
+        "title": "UrlInspectorLiveDTO",
+        "type": "object"
+      },
+      "UrlInspectorLiveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "with_schema": {
+            "default": false,
+            "title": "With Schema",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "UrlInspectorLiveRequest",
+        "type": "object"
+      },
+      "UrlKeywordTermDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "in_description": {
+            "title": "In Description",
+            "type": "boolean"
+          },
+          "in_h1": {
+            "title": "In H1",
+            "type": "boolean"
+          },
+          "in_title": {
+            "title": "In Title",
+            "type": "boolean"
+          },
+          "is_phrase": {
+            "title": "Is Phrase",
+            "type": "boolean"
+          },
+          "term": {
+            "title": "Term",
+            "type": "string"
+          }
+        },
+        "required": [
+          "term",
+          "count",
+          "is_phrase",
+          "in_title",
+          "in_h1",
+          "in_description"
+        ],
+        "title": "UrlKeywordTermDTO",
+        "type": "object"
+      },
+      "UrlKeywordsDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "meta_keywords": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Meta Keywords",
+            "type": "array"
+          },
+          "on_page": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlKeywordTermDTO"
+            },
+            "title": "On Page",
+            "type": "array"
+          },
+          "queries_state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          },
+          "site_queries": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlSiteQueryDTO"
+            },
+            "title": "Site Queries",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          }
+        },
+        "required": [
+          "state",
+          "queries_state"
+        ],
+        "title": "UrlKeywordsDTO",
+        "type": "object"
+      },
+      "UrlLiveHopDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "url",
+          "status"
+        ],
+        "title": "UrlLiveHopDTO",
+        "type": "object"
+      },
+      "UrlLiveSignalsDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "analytics_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Analytics Ids",
+            "type": "array"
+          },
+          "canonical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "h1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H1"
+          },
+          "hreflang": {
+            "default": [],
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Hreflang",
+            "type": "array"
+          },
+          "json_ld_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Json Ld Types",
+            "type": "array"
+          },
+          "meta_robots": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Robots"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "word_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word Count"
+          },
+          "x_robots_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Robots Tag"
+          }
+        },
+        "title": "UrlLiveSignalsDTO",
+        "type": "object"
+      },
+      "UrlMetaDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "findings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlFindingDTO"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "h1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H1"
+          },
+          "keywords": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Keywords",
+            "type": "array"
+          },
+          "meta_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "page_inventory",
+                  "monitor"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Source"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "UrlMetaDTO",
+        "type": "object"
+      },
+      "UrlMonitorDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "canonical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical"
+          },
+          "changes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlChangeDTO"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "changes_total": {
+            "default": 0,
+            "title": "Changes Total",
+            "type": "integer"
+          },
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "gone_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gone Since"
+          },
+          "hop_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hop Count"
+          },
+          "indexable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexable"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "meta_robots": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Robots"
+          },
+          "page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "versions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlMonitorPageVersionDTO"
+            },
+            "title": "Versions",
+            "type": "array"
+          },
+          "versions_total": {
+            "default": 0,
+            "title": "Versions Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "UrlMonitorDTO",
+        "type": "object"
+      },
+      "UrlMonitorPageVersionDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "changed_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Fields",
+            "type": "array"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "observed_at",
+          "http_status"
+        ],
+        "title": "UrlMonitorPageVersionDTO",
+        "type": "object"
+      },
+      "UrlScreenshotDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byte Size"
+          },
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "final_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Url"
+          },
+          "fold_height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fold Height"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "preset": {
+            "enum": [
+              "desktop",
+              "tablet",
+              "mobile"
+            ],
+            "title": "Preset",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "thumb_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumb Url"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "id",
+          "preset",
+          "state",
+          "captured_at"
+        ],
+        "title": "UrlScreenshotDTO",
+        "type": "object"
+      },
+      "UrlScreenshotRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "presets": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "desktop",
+                    "tablet",
+                    "mobile"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presets"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "UrlScreenshotRequest",
+        "type": "object"
+      },
+      "UrlScreenshotSetDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "cached": {
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "input_url": {
+            "title": "Input Url",
+            "type": "string"
+          },
+          "inspector_key": {
+            "title": "Inspector Key",
+            "type": "string"
+          },
+          "screenshots": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlScreenshotDTO"
+            },
+            "title": "Screenshots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "input_url",
+          "inspector_key",
+          "cached"
+        ],
+        "title": "UrlScreenshotSetDTO",
+        "type": "object"
+      },
+      "UrlScreenshotsStateDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "preset_count": {
+            "default": 0,
+            "title": "Preset Count",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "UrlScreenshotsStateDTO",
+        "type": "object"
+      },
+      "UrlSearchAnalyticsDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "ga4_series": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/UrlSeriesDTO"
+            },
+            "default": {},
+            "title": "Ga4 Series",
+            "type": "object"
+          },
+          "gsc": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          },
+          "gsc_series": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/UrlSeriesDTO"
+            },
+            "default": {},
+            "title": "Gsc Series",
+            "type": "object"
+          },
+          "reporting_ninja": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          }
+        },
+        "required": [
+          "gsc",
+          "reporting_ninja"
+        ],
+        "title": "UrlSearchAnalyticsDTO",
+        "type": "object"
+      },
+      "UrlSeriesDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "granularity": {
+            "enum": [
+              "week",
+              "month",
+              "quarter"
+            ],
+            "title": "Granularity",
+            "type": "string"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "other_length_periods": {
+            "default": 0,
+            "title": "Other Length Periods",
+            "type": "integer"
+          },
+          "points": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlSeriesPointDTO"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "unit": {
+            "enum": [
+              "count",
+              "ratio",
+              "position"
+            ],
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "unit",
+          "granularity"
+        ],
+        "title": "UrlSeriesDTO",
+        "type": "object"
+      },
+      "UrlSeriesPointDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "absence_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "truncated",
+                  "not_collected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Absence Reason"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "period_days": {
+            "title": "Period Days",
+            "type": "integer"
+          },
+          "period_end": {
+            "format": "date",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Quality"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "period_start",
+          "period_end",
+          "period_days",
+          "value"
+        ],
+        "title": "UrlSeriesPointDTO",
+        "type": "object"
+      },
+      "UrlSiteQueryDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "clicks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks"
+          },
+          "impressions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impressions"
+          },
+          "is_brand": {
+            "title": "Is Brand",
+            "type": "boolean"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "clicks",
+          "impressions",
+          "is_brand"
+        ],
+        "title": "UrlSiteQueryDTO",
+        "type": "object"
+      },
+      "UrlSourceStateDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "has_data",
+              "no_data",
+              "not_configured",
+              "failed",
+              "unknown_client"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "state"
+        ],
+        "title": "UrlSourceStateDTO",
+        "type": "object"
+      },
+      "UrlSuggestResponseDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "suggestions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          }
+        },
+        "title": "UrlSuggestResponseDTO",
+        "type": "object"
+      },
+      "UrlTechAuditDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "audit_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Date"
+          },
+          "findings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlTechFindingDTO"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "UrlTechAuditDTO",
+        "type": "object"
+      },
+      "UrlTechFindingDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "how_to_fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "How To Fix"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check",
+          "category",
+          "severity",
+          "detail",
+          "how_to_fix"
+        ],
+        "title": "UrlTechFindingDTO",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -12498,6 +14056,68 @@
           }
         },
         "summary": "Start Archive Url Capture",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/captures/url-adhoc": {
+      "post": {
+        "operationId": "start_archive_adhoc_url_capture_api_v1_archive_captures_url_adhoc_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveAdhocCaptureAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Archive Adhoc Url Capture",
         "tags": [
           "web-archive"
         ]
@@ -22364,6 +23984,371 @@
         ]
       }
     },
+    "/api/v1/url-inspector": {
+      "get": {
+        "operationId": "get_url_inspector_api_v1_url_inspector_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "maxLength": 2048,
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "default": "week",
+              "enum": [
+                "week",
+                "month",
+                "quarter"
+              ],
+              "title": "Granularity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlInspectorDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Url Inspector",
+        "tags": [
+          "url-inspector"
+        ]
+      }
+    },
+    "/api/v1/url-inspector/live": {
+      "post": {
+        "operationId": "post_url_inspector_live_api_v1_url_inspector_live_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UrlInspectorLiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlInspectorLiveDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Url Inspector Live",
+        "tags": [
+          "url-inspector"
+        ]
+      }
+    },
+    "/api/v1/url-inspector/suggest": {
+      "get": {
+        "operationId": "get_url_inspector_suggest_api_v1_url_inspector_suggest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 2048,
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlSuggestResponseDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Url Inspector Suggest",
+        "tags": [
+          "url-inspector"
+        ]
+      }
+    },
+    "/api/v1/url-screenshots": {
+      "get": {
+        "operationId": "get_url_screenshots_api_v1_url_screenshots_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "maxLength": 2048,
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlScreenshotSetDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Url Screenshots",
+        "tags": [
+          "url-screenshots"
+        ]
+      },
+      "post": {
+        "operationId": "post_url_screenshots_api_v1_url_screenshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UrlScreenshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlScreenshotSetDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Url Screenshots",
+        "tags": [
+          "url-screenshots"
+        ]
+      }
+    },
+    "/api/v1/url-screenshots/{screenshot_id}/image": {
+      "get": {
+        "operationId": "get_url_screenshot_image_api_v1_url_screenshots__screenshot_id__image_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "screenshot_id",
+            "required": true,
+            "schema": {
+              "title": "Screenshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Url Screenshot Image",
+        "tags": [
+          "url-screenshots"
+        ]
+      }
+    },
+    "/api/v1/url-screenshots/{screenshot_id}/thumb": {
+      "get": {
+        "operationId": "get_url_screenshot_thumb_api_v1_url_screenshots__screenshot_id__thumb_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "screenshot_id",
+            "required": true,
+            "schema": {
+              "title": "Screenshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Url Screenshot Thumb",
+        "tags": [
+          "url-screenshots"
+        ]
+      }
+    },
     "/archive/r/{ts}/{url}": {
       "get": {
         "operationId": "replay_archive_r__ts___url__get",
@@ -22477,6 +24462,64 @@
         "summary": "Replay Shim",
         "tags": [
           "web-archive-replay"
+        ]
+      }
+    },
+    "/archive/view/snapshot/{snapshot_id}/{ts}/{url}": {
+      "get": {
+        "operationId": "archive_view_shell_archive_view_snapshot__snapshot_id___ts___url__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ts",
+            "required": true,
+            "schema": {
+              "title": "Ts",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive View Shell",
+        "tags": [
+          "web-archive-view"
         ]
       }
     },

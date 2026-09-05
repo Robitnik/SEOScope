@@ -1,8 +1,8 @@
-import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, getMonitorSummary, getClientMonthlyTable, isAbortError, isFixtureMode } from "./api.js?v=20260821-spin3";
+import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, getMonitorSummary, getClientMonthlyTable, getPageInventorySummary, isAbortError, isFixtureMode } from "./api.js?v=20260821-spin3";
 import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
-import { clientStatusBadge, clientStatusNote, isPaused, openClientStatusDialog } from "./client-status.js?v=20260821-spin3";
+import { clientStatusBadge, clientStatusNote, devBadge, isPaused, openClientStatusDialog } from "./client-status.js?v=20260821-spin3";
 import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260821-spin3";
-import { buildAhrefsHash, buildBlogsHash, buildMonitorClientHash, buildMonthlyPerformanceHash, replaceClientHash } from "./router.js?v=20260821-spin3";
+import { buildBlogsHash, buildMonitorClientHash, buildMonthlyPerformanceHash, buildPagesHash, replaceClientHash } from "./router.js?v=20260821-spin3";
 import { escapeHtml, formatTimestamp, icon, initials, isTerminal, MONITOR_SEVERITY_META, percent, PROVIDERS, STAGE_LABELS, STATE_META, stateClass } from "./formatters.js?v=20260821-spin3";
 import { createAnalyticsTab } from "./analytics-tabs.js?v=20260821-spin3";
 import { renderAlertsBlock } from "./alerts-block.js?v=20260821-spin3";
@@ -91,8 +91,12 @@ let monitorSummary = null;
 // Monthly Performance (task-54). Independent of the selected period: it has
 // its own persisted month window, not the page's current/previous comparison.
 // Only a compact summary lives here — the full sheet-fidelity table is its
-// own sub-page (`monthly-performance-page.js`), same split as Ahrefs/Blogs.
+// own sub-page (`monthly-performance-page.js`), same split as Blogs.
 let monthlyTable = null;
+// Page Inventory (task-57). Same split as Monthly Performance: only the
+// compact `PageInventorySummaryDTO` lives here, the full two-tab table is
+// its own sub-page (`page-inventory-page.js`).
+let pageInventorySummary = null;
 const AUDIT_PAGE_SIZE = 25;
 const GA4_DATASETS = ["ga4_channels", "ga4_landing_pages", "ga4_events", "ga4_devices", "ga4_countries"];
 
@@ -147,6 +151,7 @@ export async function initClientPage(clientId, query) {
   blogsSummary = null;
   monitorSummary = null;
   monthlyTable = null;
+  pageInventorySummary = null;
   destroyChart();
   destroyReportingNinjaChart();
   current = { clientId, ...paramsFromQuery(query) };
@@ -228,8 +233,8 @@ function shell() {
       <section class="blogs-section" id="cp-blogs" aria-label="Client blogs" aria-live="polite" aria-busy="true">
         ${sectionSkeleton({ label: "blogs", kpis: 1 })}
       </section>
-      <section class="ahrefs-section" id="cp-ahrefs" aria-label="Ahrefs live Site Audit" aria-live="polite" aria-busy="true">
-        ${sectionSkeleton({ label: "Ahrefs Site Audit", kpis: 3 })}
+      <section class="pages-section" id="cp-pages" aria-label="Page inventory" aria-live="polite" aria-busy="true">
+        ${sectionSkeleton({ label: "the page inventory", kpis: 3 })}
       </section>
       <section class="audit-section" id="cp-audit" aria-label="Technical SEO audit" aria-live="polite" aria-busy="true">
         ${sectionSkeleton({ label: "the technical audit", kpis: 4, rows: 5, columns: 3 })}
@@ -315,17 +320,14 @@ async function loadClient({ allowAutoLive = true } = {}) {
     }
     renderHeader(client);
     const gsc = (client.providers || []).find((item) => item.provider === "gsc");
-    const ahrefs = (client.providers || []).find((item) => item.provider === "ahrefs");
     const reportingNinja = (client.providers || []).find((item) => item.provider === "reporting_ninja");
     current.gscConfigured = Boolean(gsc && gsc.state !== "not_configured");
-    current.ahrefsConfigured = Boolean(ahrefs && ahrefs.state !== "not_configured");
-    current.ahrefsSummary = ahrefs || null;
-    renderAhrefsSummaryCard();
     // Period-independent: kicked off here, never re-run by a period change.
     loadTechAudit();
     loadBlogsSummary();
     loadMonitorSummary();
     loadMonthlyTable();
+    loadPageInventorySummary();
     current.reportingNinjaConfigured = Boolean(reportingNinja && reportingNinja.state !== "not_configured");
     current.reportingNinjaSummary = reportingNinja || null;
     if (!gsc || gsc.state === "not_configured") {
@@ -405,6 +407,7 @@ function renderHeader(client) {
     <div class="client-page__status">
       <span class="status-label ${stateClass(client.overall_status)}">${icon(state.icon)}${state.label}</span>
       ${clientStatusBadge(client)}
+      ${devBadge(client)}
       <span class="client-page__sync">Last collection: ${formatTimestamp(client.last_synced_at, "not yet")}</span>
       ${isPaused(client) ? `<p class="client-status-note">${icon("info-circle", "icon icon--tiny")}<span>Bulk collections skip this client. Its history is untouched.</span></p>` : ""}
       ${clientStatusNote(client)}
@@ -455,7 +458,6 @@ function reportingNinjaHasRows(data) {
 
 function configuredLiveProviders() {
   return [
-    current.ahrefsConfigured && "ahrefs",
     current.gscConfigured && "gsc",
     current.reportingNinjaConfigured && "reporting_ninja",
   ].filter(Boolean);
@@ -508,7 +510,7 @@ async function startLiveCollection({ providers = null, automatic = false } = {})
   if (liveCollection?.active) return;
   const selectedProviders = providers || configuredLiveProviders();
   if (!selectedProviders.length) {
-    renderLiveStatus({ status: "failed", progress_percent: 0 }, { phase: "failed", message: "Connect Ahrefs, Search Console or Reporting Ninja before starting live collection." });
+    renderLiveStatus({ status: "failed", progress_percent: 0 }, { phase: "failed", message: "Connect Search Console or Reporting Ninja before starting live collection." });
     return;
   }
   if (current.period === "custom" && (!current.customStart || !current.customEnd || current.customStart > current.customEnd)) {
@@ -583,7 +585,6 @@ async function maybeStartLiveCollection(rowsCurrent, ga4, chart) {
   const key = livePeriodKey();
   if (autoLiveAttempts.has(key) || liveCollection?.active) return;
   const missing = [];
-  if (current.ahrefsConfigured && ["unavailable", "auth_required"].includes(current.ahrefsSummary?.state)) missing.push("ahrefs");
   if (current.gscConfigured && (!rowsCurrent?.rows?.length || !chartHasTrend(chart))) missing.push("gsc");
   if (current.reportingNinjaConfigured && !ga4?.error && !reportingNinjaHasRows(ga4)) missing.push("reporting_ninja");
   if (!missing.length) return;
@@ -660,31 +661,6 @@ async function loadPeriodData({ allowAutoLive = true } = {}) {
   }
 }
 
-function ahrefsMetric(summary, key) {
-  return (summary?.metrics || []).find((item) => item.metric_key === key)?.current_value ?? null;
-}
-
-function renderAhrefsSummaryCard() {
-  const container = document.querySelector("#cp-ahrefs");
-  const link = `<a class="button button--quiet" href="${buildAhrefsHash(current.clientId)}">${icon("arrow-right")}Open Site Audit</a>`;
-  if (!current.ahrefsConfigured) {
-    container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Ahrefs · Live Site Audit</p><h2>Technical health and crawl issues</h2></div></div><div class="state-panel state-not_configured">${icon("plug-off")}<p><strong>Ahrefs is not connected.</strong><br>Connect Ahrefs to see Site Audit health.</p><a class="button button--quiet" href="#/">Manage integrations</a></div>`;
-    settle("#cp-ahrefs");
-    return;
-  }
-  const summary = current.ahrefsSummary;
-  const status = summary?.state || "unavailable";
-  const cards = [
-    ["Health score", ahrefsMetric(summary, "ahrefs_health_score"), "%"],
-    ["Errors", ahrefsMetric(summary, "ahrefs_errors"), ""],
-    ["Warnings", ahrefsMetric(summary, "ahrefs_warnings"), ""],
-  ];
-  container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Ahrefs · Live Site Audit</p><h2>Technical health and crawl issues</h2><p class="ahrefs-collected">Last collection: ${formatTimestamp(summary?.last_success_at, "not collected yet")}</p></div><span class="status-label status-${escapeHtml(status)}">${escapeHtml(status)}</span></div>
-    <div class="ahrefs-kpis">${cards.map(([label, value, suffix]) => `<article class="ahrefs-kpi"><span>${label}</span><strong>${formatUaNumber(value)}${value === null || value === undefined ? "" : suffix}</strong></article>`).join("")}</div>
-    <div class="ahrefs-summary-actions">${link}</div>`;
-  settle("#cp-ahrefs");
-}
-
 // --- Client Blogs (task-26) -------------------------------------------------
 
 async function loadMonitorSummary() {
@@ -751,8 +727,8 @@ function renderBlogsSummaryCard() {
 // Independent of the selected period (own persisted month window, freezes
 // closed months server-side) — loaded once per client, like Blogs/Monitor.
 // Only a compact summary card lives here; Refresh, Configure and the full
-// sheet-fidelity table are on their own sub-page (same split as Ahrefs/Blogs
-// use `renderAhrefsSummaryCard`/`buildAhrefsHash` for).
+// sheet-fidelity table are on their own sub-page (same split as Blogs uses
+// `renderBlogsSummaryCard`/`buildBlogsHash` for).
 
 async function loadMonthlyTable() {
   try {
@@ -794,6 +770,44 @@ function renderMonthlyTableSummaryCard() {
     <div class="ahrefs-kpis">${cards.map(([label, formatted, direction]) => `<article class="ahrefs-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(formatted)}${direction === "up" ? ` <small class="mt-summary-up">▲</small>` : direction === "down" ? ` <small class="mt-summary-down">▼</small>` : ""}</strong></article>`).join("")}</div>
     <div class="ahrefs-summary-actions">${link}</div>`;
   settle("#cp-monthly");
+}
+
+// --- Page Inventory (task-57) ------------------------------------------------
+//
+// Same split as Monthly Performance: only a compact summary card lives
+// here (counts, never rows), the full two-tab table + Rebuild/Re-crawl
+// controls are on their own sub-page (`page-inventory-page.js`).
+
+async function loadPageInventorySummary() {
+  try {
+    pageInventorySummary = await getPageInventorySummary(current.clientId);
+  } catch {
+    // `never_built` (404) and every other failure render the same honest
+    // "not built yet" card — a real retry lives on the full sub-page.
+    pageInventorySummary = null;
+  }
+  renderPageInventorySummaryCard();
+}
+
+function renderPageInventorySummaryCard() {
+  const container = document.querySelector("#cp-pages");
+  if (!container) return;
+  const link = `<a class="button button--quiet" href="${buildPagesHash(current.clientId)}">${icon("arrow-right")}Open Page Inventory</a>`;
+  if (!pageInventorySummary) {
+    container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Page Inventory</p><h2>Site architecture &amp; SEO QA</h2></div></div><div class="state-panel state-not_configured">${icon("sitemap")}<p><strong>No page inventory built yet.</strong><br>Open Page Inventory and press Rebuild to read it from Site Monitor's latest crawl.</p>${link}</div>`;
+    settle("#cp-pages");
+    return;
+  }
+  const summary = pageInventorySummary;
+  const cards = [
+    ["Pages", formatUaNumber(summary.pages_unique)],
+    ["Duplicate groups", formatUaNumber(summary.duplicate_groups)],
+    ["Issues", formatUaNumber((summary.severity_counts?.error || 0) + (summary.severity_counts?.warn || 0))],
+  ];
+  container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Page Inventory</p><h2>Site architecture &amp; SEO QA</h2><p class="ahrefs-collected">${summary.built_at ? `Built ${formatTimestamp(summary.built_at)}` : "Never built"}${summary.stale ? ` <span class="tag-new">stale</span>` : ""}</p></div></div>
+    <div class="ahrefs-kpis">${cards.map(([label, formatted]) => `<article class="ahrefs-kpi"><span>${escapeHtml(label)}</span><strong>${escapeHtml(formatted)}</strong></article>`).join("")}</div>
+    <div class="ahrefs-summary-actions">${link}</div>`;
+  settle("#cp-pages");
 }
 
 // --- Technical SEO audit (task-25) ----------------------------------------

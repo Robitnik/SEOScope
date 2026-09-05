@@ -16,11 +16,15 @@
     <link rel="stylesheet" href="/css/monthly-table.css?v=20260821-spin3">
     <link rel="stylesheet" href="/css/tools.css?v=20260821-spin3">
     <link rel="stylesheet" href="/css/content-qa.css?v=20260821-spin3">
+    <link rel="stylesheet" href="/css/schema-markup.css?v=20260821-spin3">
+    <link rel="stylesheet" href="/css/page-inventory.css?v=20260904-t57">
     <link rel="stylesheet" href="/css/trends.css?v=20260821-spin3">
     <link rel="stylesheet" href="/css/monitor.css?v=20260821-spin3">
     <link rel="stylesheet" href="/css/reports.css?v=20260821-spin3">
+    <link rel="stylesheet" href="/css/archive.css?v=20260905-t63">
+    <link rel="stylesheet" href="/css/url-inspector.css?v=20260905-t64">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260821-spin3"></script>
+    <script type="module" src="/js/router.js?v=20260905-t64"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -29,9 +33,23 @@
       <div class="brand-field" aria-hidden="true"></div>
 
       <header class="app-header">
-        <div class="brand-lockup">
-          <img src="/assets/brand/logo.svg" width="205" height="42" alt="The Yovth">
-          <span class="product-name">Client Pulse</span>
+        <div class="header-start">
+          <div class="brand-lockup">
+            <img src="/assets/brand/logo.svg" width="205" height="42" alt="The Yovth">
+            <span class="product-name">Client Pulse</span>
+          </div>
+          <form class="url-search" id="url-search-form" role="search" aria-label="Inspect a page URL">
+            <label class="search-field">
+              <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-search"></use></svg>
+              <input
+                type="text" id="url-search-input" placeholder="Paste a page URL" autocomplete="off"
+                inputmode="url" translate="no" role="combobox" aria-expanded="false"
+                aria-controls="url-search-suggestions" aria-autocomplete="list">
+            </label>
+            <ul class="url-search__suggestions" id="url-search-suggestions" role="listbox"
+                aria-label="Suggestions" hidden></ul>
+            <span class="url-search__error" id="url-search-error" role="alert" aria-live="polite"></span>
+          </form>
         </div>
         <nav class="app-nav" aria-label="Sections">
           <a href="#/" data-nav="dashboard">
@@ -53,6 +71,10 @@
           <a href="#/monitor" data-nav="monitor">
             <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-radar-2"></use></svg>
             <span>Monitor</span>
+          </a>
+          <a href="#/archive" data-nav="archive">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-history"></use></svg>
+            <span>Archive</span>
           </a>
         </nav>
         <div class="header-actions" id="dashboard-header-actions" hidden>
@@ -134,7 +156,6 @@
           <span class="visually-hidden">Filter by service</span>
           <select id="provider-filter">
             <option value="">All services</option>
-            <option value="ahrefs">Ahrefs</option>
             <option value="semrush">Semrush</option>
             <option value="gsc">Google Search Console</option>
             <option value="reporting_ninja">Reporting Ninja / GA4</option>
@@ -169,6 +190,18 @@
     <main class="app-main" id="reports-batch-page-root" hidden></main>
 
     <main class="app-main" id="monthly-performance-page-root" hidden></main>
+
+    <main class="app-main" id="page-inventory-page-root" hidden></main>
+
+    <main class="app-main" id="archive-page-root" hidden></main>
+
+    <main class="app-main" id="archive-view-page-root" hidden></main>
+
+    <main class="app-main" id="archive-changes-page-root" hidden></main>
+
+    <main class="app-main" id="archive-capture-page-root" hidden></main>
+
+    <main class="app-main" id="url-inspector-page-root" hidden></main>
     </div>
 
     <div class="job-dock" id="job-dock" hidden>

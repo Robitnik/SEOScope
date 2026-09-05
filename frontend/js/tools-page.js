@@ -18,6 +18,7 @@ const TOOL_MODULES = {
   "char-counter": () => import("./char-counter-tool.js?v=20260821-spin3"),
   "strategy-check": () => import("./strategy-check-tool.js?v=20260821-spin3"),
   "framework-check": () => import("./framework-check-tool.js?v=20260821-spin3"),
+  "schema-markup": () => import("./schema-markup-tool.js?v=20260821-spin3"),
 };
 
 export async function initToolsRoute(route) {
