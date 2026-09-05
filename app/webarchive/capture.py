@@ -240,6 +240,18 @@ def _check_or_fetch_asset(
         repo.confirm_asset_version(prior_version, at=now)
         return prior_version, "revalidated"
 
+    # `asset` (`get_or_create_asset`) and `blob` (`register_blob`) may both be
+    # brand-new rows that only ever got staged, never flushed (task-65 —
+    # deferred on purpose: that used to run BEFORE this function's own
+    # network fetch above, holding the writer lock across it). Flushing
+    # HERE, after the fetch and after both of them are already fully
+    # populated, costs nothing in lock time and makes both real rows before
+    # `create_asset_version` inserts something with a FK to each — SQLite
+    # enforces that at INSERT time, and this file declares no ORM
+    # `relationship()` for SQLAlchemy to infer insert order from on its own
+    # (live-caught by this module's own test suite: a bare `FOREIGN KEY
+    # constraint failed` on `archive_asset_versions` without this).
+    repo.flush()
     version = repo.create_asset_version(
         asset_id=asset.id,
         blob_sha256=blob.sha256,
@@ -569,6 +581,17 @@ def capture_url(
         last_confirmed_at=now,
         confirmed_count=1,
     )
+    # `snapshot` is a brand-new row `create_snapshot` only staged (task-65);
+    # everything below references `snapshot.id` from a NEW row in the SAME
+    # uncommitted transaction, and this module declares no ORM
+    # `relationship()` between `ArchiveSnapshot` and
+    # `ArchiveSnapshotAsset`/`ArchiveChange` for SQLAlchemy to order those
+    # inserts correctly on its own — SQLite's own FK check needs the parent
+    # row to physically exist first (live-caught by this module's own test
+    # suite: `FOREIGN KEY constraint failed` on both tables). No network I/O
+    # happens between here and either insert, so this costs nothing in lock
+    # time — the page's own fetch and every asset fetch already happened.
+    repo.flush()
 
     for asset_id, asset_version_id, role in asset_outcome.links:
         repo.link_snapshot_asset(

@@ -635,6 +635,12 @@ def _start_adhoc_url_capture(url: str) -> tuple[str, str, str, str] | str:
             return "already_running"
         def _create() -> tuple[ArchiveUrl, ArchiveCapture]:
             url_row = repo.get_or_create_url(client.id, url, normalize_url(url), source="manual")
+            # `get_or_create_url` no longer flushes itself (task-65) — a
+            # brand-new row's id is only safe to use as another row's FK
+            # within the SAME transaction after an explicit flush here
+            # (live-confirmed 2026-09-05: `create_capture` below raised
+            # `FOREIGN KEY constraint failed` without this).
+            repo.flush()
             capture_row = repo.create_capture(
                 client.id, slot_key=f"manual:{uuid.uuid4()}", scheduled_for=datetime.now(UTC),
                 trigger="manual", scope="url", archive_url_id=url_row.id,

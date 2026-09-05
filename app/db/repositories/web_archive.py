@@ -7,6 +7,20 @@ happens when the caller (`app.webarchive.capture`) already decided the
 content actually changed; an unchanged capture instead calls
 `confirm_snapshot`/`confirm_asset_version`, which touch only the two fields
 the model's own `before_update` guard allow-lists.
+
+No method here calls `session.flush()` (task-65): SQLite takes its one
+writer lock at the FIRST write of a transaction and holds it until commit,
+so an eager flush right after `session.add(...)` — done everywhere in this
+file until task-65 — starts that transaction as early as possible instead of
+as late as possible. For most methods (mutating an already-loaded row) that
+cost nothing to defer; for `get_or_create_asset` specifically it was a live
+bug: the flush ran BEFORE `_check_or_fetch_asset`'s own network fetch for a
+brand-new asset, holding the writer lock across that round-trip. `id` is
+generated here in Python (`new_uuid()`) instead of relying on the column's
+`default=` (a callable SQLAlchemy only ever evaluates AT flush) — so a
+caller that needs `.id` right after `create_x`/`get_or_create_x` gets it
+without forcing one. The actual write happens whenever the CALLER commits
+(`ArchiveWriteController`/`commit_with_retry`, task-62 §2.2) — never before.
 """
 
 from __future__ import annotations
@@ -18,7 +32,7 @@ from typing import Any, Literal
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from app.db.base import utcnow
+from app.db.base import new_uuid, utcnow
 from app.db.models import (
     ArchiveAsset,
     ArchiveAssetVersion,
@@ -46,6 +60,16 @@ class WebArchiveRepository:
         self._session.commit()
 
     def flush(self) -> None:
+        """Explicit, targeted use only (task-65) — never called from inside
+        another method here. SQLite's own FK enforcement checks a reference
+        at INSERT time, and this file has no ORM `relationship()`s between
+        e.g. `ArchiveAsset`/`ArchiveAssetVersion` for SQLAlchemy's flush to
+        infer insert order from — so a caller that creates a brand-new
+        parent row and, in the SAME uncommitted transaction, constructs a
+        sibling row whose FK points at it, must flush in between. Never call
+        this before network I/O — that reintroduces the exact bug task-65
+        fixed (the writer lock held across a fetch).
+        """
         self._session.flush()
 
     # --- settings ------------------------------------------------------
@@ -58,9 +82,8 @@ class WebArchiveRepository:
         settings = self.get_settings(client_id)
         if settings is not None:
             return settings
-        settings = ArchiveSettings(client_id=client_id)
+        settings = ArchiveSettings(id=new_uuid(), client_id=client_id)
         self._session.add(settings)
-        self._session.flush()
         return settings
 
     def all_settings_by_client(self) -> dict[str, ArchiveSettings]:
@@ -73,7 +96,6 @@ class WebArchiveRepository:
             if value is not None:
                 setattr(settings, key, value)
         settings.updated_at = utcnow()
-        self._session.flush()
         return settings
 
     # --- captures --------------------------------------------------------
@@ -96,6 +118,7 @@ class WebArchiveRepository:
         now: datetime | None = None,
     ) -> ArchiveCapture:
         capture = ArchiveCapture(
+            id=new_uuid(),
             client_id=client_id,
             slot_key=slot_key,
             scheduled_for=scheduled_for,
@@ -106,7 +129,6 @@ class WebArchiveRepository:
             archive_url_id=archive_url_id,
         )
         self._session.add(capture)
-        self._session.flush()
         return capture
 
     def get_capture(self, capture_id: str) -> ArchiveCapture | None:
@@ -166,12 +188,11 @@ class WebArchiveRepository:
         capture.started_at = moment
         capture.owner = owner
         capture.heartbeat_at = moment
-        self._session.flush()
         return capture
 
     def update_capture_counters(self, capture_id: str, **fields: Any) -> None:
         """Generic setattr over any `ArchiveCapture` column — counters,
-        `heartbeat_at`, `progress_message` all ride the SAME periodic flush
+        `heartbeat_at`, `progress_message` all ride the SAME periodic commit
         (task-62 §2.3/§2.5), so this adds no new commit frequency.
         """
         capture = self._session.get(ArchiveCapture, capture_id)
@@ -179,7 +200,6 @@ class WebArchiveRepository:
             return
         for key, value in fields.items():
             setattr(capture, key, value)
-        self._session.flush()
 
     def request_cancel(self, capture_id: str, *, now: datetime | None = None) -> str | None:
         """`None` if the capture doesn't exist or is already terminal.
@@ -194,11 +214,9 @@ class WebArchiveRepository:
         if capture.status == "queued":
             capture.status = "cancelled"
             capture.finished_at = now or utcnow()
-            self._session.flush()
             return "cancelled"
         if capture.status == "running":
             capture.cancel_requested = True
-            self._session.flush()
             return "cancel_requested"
         return None
 
@@ -218,7 +236,6 @@ class WebArchiveRepository:
         capture.finished_at = now or utcnow()
         capture.error_code = error_code
         capture.error_message = error_message
-        self._session.flush()
 
     def list_captures(
         self, client_id: str | None = None, *, limit: int = 50
@@ -251,6 +268,7 @@ class WebArchiveRepository:
         next_seq = (last_seq or 0) + 1
         self._session.add(
             ArchiveCaptureEvent(
+                id=new_uuid(),
                 capture_id=capture_id,
                 seq=next_seq,
                 level=level,
@@ -260,7 +278,6 @@ class WebArchiveRepository:
                 created_at=now or utcnow(),
             )
         )
-        self._session.flush()
         return next_seq
 
     def events_since(self, capture_id: str, last_seq: int) -> list[ArchiveCaptureEvent]:
@@ -309,9 +326,17 @@ class WebArchiveRepository:
         existing = self.find_url(client_id, url_key)
         if existing is not None:
             return existing
-        archive_url = ArchiveUrl(client_id=client_id, url=url, url_key=url_key, source=source)
+        archive_url = ArchiveUrl(
+            id=new_uuid(), client_id=client_id, url=url, url_key=url_key, source=source
+        )
         self._session.add(archive_url)
-        self._session.flush()
+        # No internal flush (task-65's own convention — see `flush()`
+        # above): a caller that immediately creates a `create_snapshot`/
+        # `create_capture` row referencing this NEW url's id, in the same
+        # uncommitted transaction, must call `repo.flush()` itself in
+        # between (task-63 follow-up, live-confirmed 2026-09-05 — the
+        # adhoc-capture endpoint hit exactly this `FOREIGN KEY constraint
+        # failed`).
         return archive_url
 
     def list_urls_for_client(self, client_id: str, *, limit: int = 25_000) -> list[ArchiveUrl]:
@@ -365,12 +390,10 @@ class WebArchiveRepository:
         if snapshot_written:
             archive_url.snapshot_count += 1
         archive_url.gone_since = None
-        self._session.flush()
 
     def mark_url_gone(self, archive_url: ArchiveUrl, *, observed_at: datetime) -> None:
         if archive_url.gone_since is None:
             archive_url.gone_since = observed_at
-        self._session.flush()
 
     def delete_url(self, archive_url: ArchiveUrl) -> None:
         """Removes a tracked URL that turned out never to be a page (task-59,
@@ -378,7 +401,6 @@ class WebArchiveRepository:
         `ondelete="CASCADE"`.
         """
         self._session.delete(archive_url)
-        self._session.flush()
 
     # --- snapshots -----------------------------------------------------
 
@@ -395,15 +417,13 @@ class WebArchiveRepository:
         return self._session.get(ArchiveSnapshot, snapshot_id)
 
     def create_snapshot(self, **fields: Any) -> ArchiveSnapshot:
-        snapshot = ArchiveSnapshot(**fields)
+        snapshot = ArchiveSnapshot(id=new_uuid(), **fields)
         self._session.add(snapshot)
-        self._session.flush()
         return snapshot
 
     def confirm_snapshot(self, snapshot: ArchiveSnapshot, *, observed_at: datetime) -> None:
         snapshot.last_confirmed_at = observed_at
         snapshot.confirmed_count += 1
-        self._session.flush()
 
     def list_snapshots_for_url(self, archive_url_id: str) -> list[ArchiveSnapshot]:
         stmt = (
@@ -502,12 +522,18 @@ class WebArchiveRepository:
         return self._session.scalars(stmt).first()
 
     def get_or_create_asset(self, url: str, url_key: str, *, kind: str) -> ArchiveAsset:
+        """No `flush()` (task-65 — this was the one live-confirmed bug in the
+        eager-flush pattern, not just a redundancy): flushing here, before
+        the caller's own `_check_or_fetch_asset` does its network fetch for a
+        brand-new asset, held the sole SQLite writer lock across that
+        round-trip. `id` is generated in Python instead, so `.id` is usable
+        immediately without forcing one.
+        """
         existing = self.get_asset_by_key(url_key)
         if existing is not None:
             return existing
-        asset = ArchiveAsset(url=url, url_key=url_key, kind=kind)
+        asset = ArchiveAsset(id=new_uuid(), url=url, url_key=url_key, kind=kind)
         self._session.add(asset)
-        self._session.flush()
         return asset
 
     def record_asset_check(
@@ -525,7 +551,6 @@ class WebArchiveRepository:
         if last_modified is not None:
             asset.last_modified = last_modified
         asset.failure_count = asset.failure_count + 1 if failed else 0
-        self._session.flush()
 
     def latest_asset_version(self, asset_id: str) -> ArchiveAssetVersion | None:
         stmt = (
@@ -537,14 +562,12 @@ class WebArchiveRepository:
         return self._session.scalars(stmt).first()
 
     def create_asset_version(self, **fields: Any) -> ArchiveAssetVersion:
-        version = ArchiveAssetVersion(**fields)
+        version = ArchiveAssetVersion(id=new_uuid(), **fields)
         self._session.add(version)
-        self._session.flush()
         return version
 
     def confirm_asset_version(self, version: ArchiveAssetVersion, *, at: datetime) -> None:
         version.last_confirmed_at = at
-        self._session.flush()
 
     def resolve_asset_version(
         self, asset_id: str, at: datetime
@@ -663,7 +686,6 @@ class WebArchiveRepository:
         if existing is not None:
             if content_type and not existing.content_type:
                 existing.content_type = content_type
-                self._session.flush()
             return existing
         blob = ArchiveBlob(
             sha256=sha256,
@@ -673,7 +695,6 @@ class WebArchiveRepository:
             path=path,
         )
         self._session.add(blob)
-        self._session.flush()
         return blob
 
     def blobs_not_uploaded(self, *, limit: int = 200) -> list[ArchiveBlob]:
@@ -690,14 +711,12 @@ class WebArchiveRepository:
         if blob is None:
             return
         blob.uploaded_at = at or utcnow()
-        self._session.flush()
 
     def mark_local_deleted(self, sha256: str, *, at: datetime | None = None) -> None:
         blob = self.get_blob(sha256)
         if blob is None:
             return
         blob.local_deleted_at = at or utcnow()
-        self._session.flush()
 
     def blob_stats(self) -> dict[str, int]:
         total = self._session.execute(
@@ -718,9 +737,8 @@ class WebArchiveRepository:
     # --- changes ---------------------------------------------------------
 
     def create_change(self, **fields: Any) -> ArchiveChange:
-        change = ArchiveChange(**fields)
+        change = ArchiveChange(id=new_uuid(), **fields)
         self._session.add(change)
-        self._session.flush()
         return change
 
     def has_change_for_snapshot(self, snapshot_id: str) -> bool:
@@ -780,11 +798,10 @@ class WebArchiveRepository:
         else:
             self._session.add(
                 ArchiveReplayMiss(
-                    url=url, url_key=url_key, hit_count=1,
+                    id=new_uuid(), url=url, url_key=url_key, hit_count=1,
                     first_seen_at=now, last_seen_at=now,
                 )
             )
-        self._session.flush()
 
     def count_replay_misses_for_host(self, host: str) -> int:
         """Rows in `archive_replay_misses` whose `url_key` starts with this

@@ -21,6 +21,10 @@ def _seed_snapshot(db, client_id: str):
     archive_url = repo.get_or_create_url(
         client_id, "https://acme.com/", "acme.com/", source="manual"
     )
+    # `get_or_create_url` no longer flushes itself (task-65) — required
+    # before another row's FK can reference this brand-new one in the same
+    # transaction (task-63 follow-up, live-confirmed 2026-09-05).
+    repo.flush()
     snapshot = repo.create_snapshot(
         archive_url_id=archive_url.id,
         client_id=client_id,
@@ -162,6 +166,7 @@ def _seed_snapshot_with_html_body(db, client_id: str, html: bytes):
     archive_url = repo.get_or_create_url(
         client_id, "https://acme.com/", "acme.com/", source="manual"
     )
+    repo.flush()  # task-63 follow-up — see `_seed_snapshot` above
     snapshot = repo.create_snapshot(
         archive_url_id=archive_url.id,
         client_id=client_id,

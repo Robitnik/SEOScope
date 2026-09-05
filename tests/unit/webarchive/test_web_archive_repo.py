@@ -23,6 +23,11 @@ def _snapshot(session, repo, client, *, url: str = "https://acme.com/", observed
     archive_url = repo.get_or_create_url(
         client.id, url, url.replace("https://", ""), source="manual"
     )
+    # `get_or_create_url` no longer flushes itself (task-65) — a brand-new
+    # row's id must be flushed before another row's FK can reference it
+    # within the same transaction (task-63 follow-up, live-confirmed
+    # 2026-09-05).
+    repo.flush()
     at = observed_at or datetime(2026, 1, 1, tzinfo=UTC)
     snapshot = repo.create_snapshot(
         archive_url_id=archive_url.id,
