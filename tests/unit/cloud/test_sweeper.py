@@ -2,6 +2,12 @@
 failures, retry-next-tick for a `failed` row, the "only new" watermark, and
 the report-file name-collision guard — all against `FakeCloudStore`, never
 real B2 (see `tests/unit/cloud/test_client.py`'s docstring for why).
+
+Also `prune_monitor_bodies` (2026-09-04 follow-up): local body retention
+must never outrun what the cloud ledger has actually confirmed — this is
+the fix for a live gap where the archive watermark left ~7,900 pre-existing
+blobs with no cloud copy at all, and age-only pruning would have deleted
+them a second time, for good.
 """
 
 from __future__ import annotations
@@ -12,9 +18,14 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.cloud.keys import monitor_blob_key, report_object_key
-from app.cloud.sweeper import ARCHIVE_WATERMARK, sweep_monitor_blobs, sweep_report_files
+from app.cloud.sweeper import (
+    ARCHIVE_WATERMARK,
+    prune_monitor_bodies,
+    sweep_monitor_blobs,
+    sweep_report_files,
+)
 from app.core.config import Settings
-from app.db.models import MonitorBlob, ReportFile
+from app.db.models import MonitorBlob, MonitorPage, MonitorPageVersion, ReportFile
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.cloud import CloudLedgerRepository
 
@@ -256,3 +267,161 @@ def test_sweep_report_files_disambiguates_a_name_collision(session: Session, tmp
     disambiguated_key = report_object_key("acme", 2026, "a.pdf", disambiguator="2" * 8)
     assert store.objects[base_key] == b"pdf-bytes"
     assert store.objects[disambiguated_key] == b"different-bytes"
+
+
+# --- prune_monitor_bodies (local retention, cloud-gated) ----------------------
+
+
+def _old_page_version(
+    session: Session, client_id: str, *, sha256: str, observed_at: datetime
+) -> None:
+    """One page whose only version is old and points at `sha256` — exactly
+    the shape `blobs_referenced_only_by_versions_older_than` targets."""
+    page = MonitorPage(client_id=client_id, url="https://acme.com/old-page")
+    session.add(page)
+    session.flush()
+    session.add(
+        MonitorPageVersion(
+            page_id=page.id,
+            client_id=client_id,
+            observed_at=observed_at,
+            body_blob_sha256=sha256,
+        )
+    )
+    session.commit()
+
+
+def test_prune_monitor_bodies_defers_a_blob_the_cloud_has_not_confirmed(
+    session: Session, tmp_path: Path
+):
+    settings = _settings(tmp_path, monitor_body_retention_days=3)
+    client_id = _client(session)
+    blob = _write_blob(settings.artifacts_dir, "a" * 64)
+    session.add(blob)
+    session.commit()
+    _old_page_version(session, client_id, sha256="a" * 64, observed_at=T0 - timedelta(days=10))
+    store = FakeCloudStore()  # nothing ever uploaded
+
+    result = prune_monitor_bodies(session, settings, older_than_days=3, store=store)
+
+    assert result.candidates == 1
+    assert result.deferred_not_uploaded == 1
+    assert result.removed == 0
+    local_path = settings.artifacts_dir / "monitor" / "aa" / ("a" * 64 + ".gz")
+    assert local_path.exists()
+    assert session.get(MonitorBlob, "a" * 64) is not None
+
+
+def test_prune_monitor_bodies_removes_once_the_cloud_confirms_it(
+    session: Session, tmp_path: Path
+):
+    settings = _settings(tmp_path, monitor_body_retention_days=3)
+    client_id = _client(session)
+    blob = _write_blob(settings.artifacts_dir, "a" * 64)
+    session.add(blob)
+    session.commit()
+    _old_page_version(session, client_id, sha256="a" * 64, observed_at=T0 - timedelta(days=10))
+    store = FakeCloudStore()
+    CloudLedgerRepository(session).record_uploaded(
+        kind="monitor_blob", source_ref="a" * 64, key="archive/aa/" + "a" * 64 + ".gz",
+        sha256="deadbeef", size_bytes=10,
+    )
+    session.commit()
+
+    result = prune_monitor_bodies(session, settings, older_than_days=3, store=store)
+
+    assert result.removed == 1
+    assert result.deferred_not_uploaded == 0
+    local_path = settings.artifacts_dir / "monitor" / "aa" / ("a" * 64 + ".gz")
+    assert not local_path.exists()
+    assert session.get(MonitorBlob, "a" * 64) is None
+
+
+def test_prune_monitor_bodies_falls_back_to_age_only_when_cloud_disabled(
+    session: Session, tmp_path: Path
+):
+    settings = _settings(tmp_path, monitor_body_retention_days=3, cloud_sync_monitor_blobs=False)
+    client_id = _client(session)
+    blob = _write_blob(settings.artifacts_dir, "a" * 64)
+    session.add(blob)
+    session.commit()
+    _old_page_version(session, client_id, sha256="a" * 64, observed_at=T0 - timedelta(days=10))
+    store = FakeCloudStore()  # nothing uploaded, but sync is off — no safety net to defer to
+
+    result = prune_monitor_bodies(session, settings, older_than_days=3, store=store)
+
+    assert result.removed == 1
+    assert result.deferred_not_uploaded == 0
+
+
+def test_prune_monitor_bodies_ignores_a_recent_version(session: Session, tmp_path: Path):
+    settings = _settings(tmp_path, monitor_body_retention_days=3)
+    client_id = _client(session)
+    blob = _write_blob(settings.artifacts_dir, "a" * 64)
+    session.add(blob)
+    session.commit()
+    recent = datetime.now(UTC) - timedelta(hours=1)
+    _old_page_version(session, client_id, sha256="a" * 64, observed_at=recent)
+    store = FakeCloudStore()
+
+    result = prune_monitor_bodies(session, settings, older_than_days=3, store=store)
+
+    assert result.candidates == 0
+    assert result.removed == 0
+
+
+def test_prune_monitor_bodies_keeps_the_file_when_the_row_delete_cannot_commit(
+    session: Session, tmp_path: Path, monkeypatch
+):
+    """The 2026-09-04 regression, pinned: a locked DB mid-pass must leave the
+    body ON DISK with its row intact — never a row pointing at a file that
+    is already gone. Rows commit first precisely so this is the failure mode.
+    """
+    from sqlalchemy.exc import OperationalError
+
+    settings = _settings(tmp_path, monitor_body_retention_days=3)
+    client_id = _client(session)
+    blob = _write_blob(settings.artifacts_dir, "a" * 64)
+    session.add(blob)
+    session.commit()
+    _old_page_version(session, client_id, sha256="a" * 64, observed_at=T0 - timedelta(days=10))
+    store = FakeCloudStore()
+    CloudLedgerRepository(session).record_uploaded(
+        kind="monitor_blob", source_ref="a" * 64, key="archive/aa/" + "a" * 64 + ".gz",
+        sha256="deadbeef", size_bytes=10,
+    )
+    session.commit()
+
+    def _locked(*_args: object, **_kwargs: object) -> None:
+        raise OperationalError("COMMIT", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(session, "commit", _locked)
+
+    result = prune_monitor_bodies(session, settings, older_than_days=3, store=store)
+
+    assert result.removed == 0
+    assert result.chunks_failed == 1
+    local_path = settings.artifacts_dir / "monitor" / "aa" / ("a" * 64 + ".gz")
+    assert local_path.exists(), "a locked commit must never leave the body deleted"
+
+
+def test_prune_monitor_bodies_dry_run_deletes_nothing(session: Session, tmp_path: Path):
+    settings = _settings(tmp_path, monitor_body_retention_days=3)
+    client_id = _client(session)
+    blob = _write_blob(settings.artifacts_dir, "a" * 64)
+    session.add(blob)
+    session.commit()
+    _old_page_version(session, client_id, sha256="a" * 64, observed_at=T0 - timedelta(days=10))
+    store = FakeCloudStore()
+    CloudLedgerRepository(session).record_uploaded(
+        kind="monitor_blob", source_ref="a" * 64, key="archive/aa/" + "a" * 64 + ".gz",
+        sha256="deadbeef", size_bytes=10,
+    )
+    session.commit()
+
+    result = prune_monitor_bodies(session, settings, older_than_days=3, store=store, dry_run=True)
+
+    assert result.removed == 1  # reports what WOULD be removed
+    local_path = settings.artifacts_dir / "monitor" / "aa" / ("a" * 64 + ".gz")
+    assert local_path.exists()
+    assert session.get(MonitorBlob, "a" * 64) is not None

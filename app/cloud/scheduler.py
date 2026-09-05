@@ -23,8 +23,9 @@ from sqlalchemy.orm import Session
 
 from app.cloud.backup import prune_backups, run_daily_backup
 from app.cloud.client import CloudStore
-from app.cloud.sweeper import sweep_monitor_blobs, sweep_report_files
+from app.cloud.sweeper import prune_monitor_bodies, sweep_monitor_blobs, sweep_report_files
 from app.core.config import Settings
+from app.db.repositories.cloud import CloudLedgerRepository
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ class CloudScheduler:
         with self._session_scope() as session:
             sweep_monitor_blobs(session, self._store, self._settings)
             sweep_report_files(session, self._store, self._settings)
+        self._run_local_retention_if_due()
 
     def _run_backup_if_due(self) -> None:
         now = datetime.now(UTC)
@@ -94,3 +96,49 @@ class CloudScheduler:
                 outcome.promoted_tiers,
             )
             prune_backups(session, self._store, self._settings)
+
+    def _run_local_retention_if_due(self) -> None:
+        """Once a day, at or after `cloud_backup_at_utc` (same window as the
+        DB backup — by then the day's monitor blobs have had many sweep
+        ticks to reach B2), drop local page/resource bodies older than
+        `monitor_body_retention_days`. Own idempotency key
+        (`monitor_prune_day`), independent of the DB backup's: this should
+        still run on a day the backup itself is a no-op (e.g. cloud storage
+        briefly down and recovered), and must never run twice for one day.
+        `prune_monitor_bodies` is cloud-gated by construction — nothing
+        local is dropped until the ledger confirms B2 has that exact blob.
+        """
+        if self._settings.monitor_body_retention_days <= 0:
+            return
+        # Never run unattended without the cloud safety net. `cloud_enabled=False`
+        # already stops this scheduler from starting at all, but
+        # `cloud_sync_monitor_blobs=False` would leave the thread running while
+        # `prune_monitor_bodies` falls back to age-only deletion — dropping the
+        # only copy of a body nothing ever archived. The CLI's explicit
+        # `--ignore-cloud` is the one supported way to prune without the net.
+        if not self._settings.cloud_sync_monitor_blobs:
+            return
+        now = datetime.now(UTC)
+        if (now.hour, now.minute) < (self._backup_hour, self._backup_minute):
+            return
+        date_key = now.date().isoformat()
+        with self._session_scope() as session:
+            ledger = CloudLedgerRepository(session)
+            if ledger.is_uploaded("monitor_prune_day", date_key):
+                return
+            result = prune_monitor_bodies(
+                session,
+                self._settings,
+                older_than_days=self._settings.monitor_body_retention_days,
+                store=self._store,
+            )
+            ledger.record_uploaded(
+                kind="monitor_prune_day", source_ref=date_key, key="", sha256=None, size_bytes=None
+            )
+            session.commit()
+            logger.info(
+                "monitor_local_retention_done candidates=%d removed=%d deferred_not_uploaded=%d",
+                result.candidates,
+                result.removed,
+                result.deferred_not_uploaded,
+            )

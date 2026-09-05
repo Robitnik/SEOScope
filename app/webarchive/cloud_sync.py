@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from functools import partial
 from pathlib import Path
 
 from sqlalchemy import select
@@ -26,7 +25,7 @@ from app.core.config import Settings
 from app.db.models import ArchiveBlob
 from app.db.repositories.web_archive import WebArchiveRepository
 from app.webarchive import storage
-from app.webarchive.db_retry import commit_with_retry
+from app.webarchive.writequeue import ArchiveWriteController
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +53,12 @@ class SweepResult:
 
 
 def sweep_archive_blobs(
-    session: Session, store: CloudStore, settings: Settings, *, batch_size: int | None = None
+    session: Session,
+    store: CloudStore,
+    settings: Settings,
+    *,
+    write_controller: ArchiveWriteController,
+    batch_size: int | None = None,
 ) -> SweepResult:
     """Upload every `archive_blobs` row with `uploaded_at IS NULL`, one at a
     time, committing after each — a crash mid-sweep loses nothing already
@@ -75,13 +79,17 @@ def sweep_archive_blobs(
             result.note_failure("missing_local_file")
             continue
         try:
-            # `commit_with_retry` re-runs the upload itself on a transient
-            # `database is locked` (task-59 live incident, 2026-09-04) — safe
-            # here too: B2 upload is idempotent on this content-addressed
-            # key, so a retried re-upload of the same bytes is a no-op cost,
-            # never a duplicate or a corruption.
-            upload = partial(_upload_one, repo, store, settings, local_path, blob)
-            commit_with_retry(session, upload)
+            # The B2 upload runs directly on this (the scheduler's own tick)
+            # thread — not through `write_controller.submit` — same reason
+            # as `run_client_capture`'s per-URL loop (task-62 §2.2 fix,
+            # 2026-09-05): submitting the whole call would put a real
+            # network upload on the controller's one shared thread and stall
+            # every parallel capture's writes for as long as B2 takes to
+            # answer. `_upload_one` only stages `mark_uploaded` via
+            # `session.add`; this flush is what actually commits it,
+            # serialized against every other archive write in the process.
+            _upload_one(repo, store, settings, local_path, blob)
+            write_controller.submit(session, lambda: None)
             result.uploaded += 1
         except Exception as exc:  # noqa: BLE001 - one bad blob must never stop the sweep
             session.rollback()

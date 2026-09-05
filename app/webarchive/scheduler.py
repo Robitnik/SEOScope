@@ -253,7 +253,9 @@ class ArchiveScheduler:
             # not a separate scheduler, mirroring how `CloudScheduler` folds
             # its own sweep into one loop rather than spinning up another.
             if self._store.enabled:
-                sweep_archive_blobs(session, self._store, self._settings)
+                sweep_archive_blobs(
+                    session, self._store, self._settings, write_controller=self._write_controller
+                )
 
     def _submit(self, client: Client, capture_id: str) -> None:
         with self._in_flight_lock:

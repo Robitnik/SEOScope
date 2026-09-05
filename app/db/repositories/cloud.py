@@ -100,6 +100,21 @@ class CloudLedgerRepository:
         )
         return list(self._session.scalars(stmt))
 
+    def uploaded_source_refs(self, kind: str, source_refs: set[str]) -> set[str]:
+        """Subset of `source_refs` confirmed `uploaded` under `kind` — the
+        safety gate for local retention (`app/cloud/sweeper.py:prune_monitor_bodies`):
+        a blob only ever loses its local copy once this says the cloud has
+        it too, never on age alone.
+        """
+        if not source_refs:
+            return set()
+        stmt = select(CloudObject.source_ref).where(
+            CloudObject.kind == kind,
+            CloudObject.status == "uploaded",
+            CloudObject.source_ref.in_(source_refs),
+        )
+        return set(self._session.scalars(stmt))
+
     def report_file_key_taken_by_other(self, key: str, *, exclude_source_ref: str) -> bool:
         """True if some OTHER report_file already owns this human-readable
         key (task-52 §3.7 name-collision guard) — the sweeper appends a
