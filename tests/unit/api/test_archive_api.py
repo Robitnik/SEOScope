@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.core.config import get_settings
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.web_archive import WebArchiveRepository
+from app.webarchive import storage
 
 
 def _create_client(db, *, slug: str = "acme") -> str:
@@ -144,6 +146,75 @@ def test_changes_feed_empty(client, db):
     body = response.json()
     assert body["items"] == []
     assert body["total"] == 0
+
+
+def _seed_snapshot_with_html_body(db, client_id: str, html: bytes):
+    """Like `_seed_snapshot`, but with a real stored body — needed for
+    `live_iframe_hosts` (task-60 §2.3), which re-reads the snapshot's HTML.
+    """
+    settings = get_settings()
+    blob = storage.store_blob(settings.artifacts_dir, html)
+    repo = WebArchiveRepository(db)
+    repo.register_blob(
+        blob.sha256, size_bytes=blob.size_bytes, gzip_size_bytes=blob.gzip_size_bytes,
+        content_type="text/html", path=blob.path,
+    )
+    archive_url = repo.get_or_create_url(
+        client_id, "https://acme.com/", "acme.com/", source="manual"
+    )
+    snapshot = repo.create_snapshot(
+        archive_url_id=archive_url.id,
+        client_id=client_id,
+        capture_id=None,
+        observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        http_status=200,
+        final_url="https://acme.com/",
+        headers_json={"Content-Type": "text/html"},
+        content_type="text/html",
+        content_fingerprint="deadbeef",
+        raw_sha256=blob.sha256,
+        body_blob_sha256=blob.sha256,
+        title="Acme home", description=None, canonical=None, meta_robots=None, word_count=1,
+        asset_count=0, assets_truncated=False, store_reason="first", prev_snapshot_id=None,
+        last_confirmed_at=datetime(2026, 1, 1, tzinfo=UTC), confirmed_count=1,
+    )
+    db.commit()
+    return snapshot
+
+
+def test_overview_reports_asset_coverage_totals(client, db):
+    repo = WebArchiveRepository(db)
+    repo.register_blob(
+        "a" * 64, size_bytes=3, gzip_size_bytes=3, content_type="image/jpeg", path="x"
+    )
+    captured = repo.get_or_create_asset("https://cdn.com/a.jpg", "cdn.com/a.jpg", kind="img")
+    repo.create_asset_version(
+        asset_id=captured.id, blob_sha256="a" * 64, content_type="image/jpeg",
+        http_status=200, first_seen_at=datetime(2026, 1, 1, tzinfo=UTC),
+        last_confirmed_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    repo.get_or_create_asset("https://cdn.com/dead.jpg", "cdn.com/dead.jpg", kind="img")
+    db.commit()
+
+    response = client.get("/api/v1/archive/overview")
+    body = response.json()
+    assert body["assets_referenced"] == 2
+    assert body["assets_captured"] == 1
+
+
+def test_snapshot_detail_reports_live_iframe_hosts(client, db):
+    client_id = _create_client(db)
+    html = (
+        b"<html><head><title>Acme</title></head><body>"
+        b'<iframe src="https://www.google.com/maps/embed?pb=abc"></iframe>'
+        b'<iframe src="https://www.googletagmanager.com/ns.html?id=GTM-X"></iframe>'
+        b"</body></html>"
+    )
+    snapshot = _seed_snapshot_with_html_body(db, client_id, html)
+
+    response = client.get(f"/api/v1/archive/snapshots/{snapshot.id}")
+    body = response.json()
+    assert body["live_iframe_hosts"] == ["www.google.com"]  # GTM excluded
 
 
 def test_start_capture_refuses_a_second_concurrent_run(client, db):

@@ -367,6 +367,7 @@ function renderOverview() {
       <div class="archive-stat"><p class="archive-stat__value">${o.urls_total.toLocaleString("en-US")}</p><p class="archive-stat__label">URLs tracked</p></div>
       <div class="archive-stat"><p class="archive-stat__value">${o.snapshots_total.toLocaleString("en-US")}</p><p class="archive-stat__label">Versions stored</p></div>
       <div class="archive-stat"><p class="archive-stat__value">${o.blobs_total.toLocaleString("en-US")}</p><p class="archive-stat__label">Unique files</p></div>
+      <div class="archive-stat"><p class="archive-stat__value">${o.assets_captured.toLocaleString("en-US")} / ${o.assets_referenced.toLocaleString("en-US")}</p><p class="archive-stat__label">Asset coverage</p></div>
       <div class="archive-stat"><p class="archive-stat__value">${formatFileSize(o.bytes_local)}</p><p class="archive-stat__label">Stored locally</p></div>
       <div class="archive-stat"><p class="archive-stat__value">${o.cloud_enabled ? formatFileSize(o.bytes_uploaded) : "—"}</p><p class="archive-stat__label">${o.cloud_enabled ? "In cloud storage" : "Cloud storage off"}</p></div>
       <div class="archive-stat"><p class="archive-stat__value">${escapeHtml(o.capture_times.join(" · "))}</p><p class="archive-stat__label">Daily captures (${escapeHtml(o.timezone)})</p></div>

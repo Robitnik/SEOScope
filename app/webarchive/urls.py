@@ -140,6 +140,32 @@ def looks_like_binary_content_type(content_type: str) -> bool:
     )
 
 
+# Analytics/tracking beacon hosts an iframe must NEVER be left pointing at
+# the live internet even though task-60 §2 otherwise leaves embeds live —
+# see `app.webarchive.rewrite`'s module note. Overridable via
+# `Settings.archive_iframe_analytics_hosts`; this frozenset is only the
+# fallback for callers (tests, the CLI backfill path) that don't thread
+# settings through.
+_DEFAULT_ANALYTICS_IFRAME_HOSTS = frozenset(
+    {"googletagmanager.com", "google-analytics.com", "doubleclick.net", "connect.facebook.net"}
+)
+
+
+def is_analytics_iframe_src(absolute_url: str, *, hosts: frozenset[str] | None = None) -> bool:
+    """True for an iframe `src` that is a known analytics/tracking beacon,
+    not real embedded content. `facebook.com/tr` is Meta's own pixel
+    endpoint specifically — other `facebook.com` paths are real embeds (a
+    video/post iframe) and stay live like any other third-party embed.
+    """
+    parts = urlsplit(absolute_url)
+    host = (parts.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if host in (hosts if hosts is not None else _DEFAULT_ANALYTICS_IFRAME_HOSTS):
+        return True
+    return host == "facebook.com" and parts.path.startswith("/tr")
+
+
 def _ascii_safe(url: str) -> str:
     """Percent-encode any character an href can carry literally that
     `urllib`'s HTTP client refuses to put on the request line — live-measured

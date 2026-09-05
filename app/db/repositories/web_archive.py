@@ -338,6 +338,18 @@ class WebArchiveRepository:
     def count_snapshots_total(self) -> int:
         return int(self._session.scalar(select(func.count()).select_from(ArchiveSnapshot)) or 0)
 
+    def all_snapshots(self, client_id: str | None = None) -> list[ArchiveSnapshot]:
+        """Every stored snapshot, optionally scoped to one client — used by
+        `backfill_css_assets` (task-60 §1.3) to re-scan already-captured
+        HTML for CSS-only references the discovery fix now catches but an
+        earlier capture pass missed. Not a hot path: a one-off CLI sweep,
+        not something called during a normal capture or replay.
+        """
+        stmt: Select[Any] = select(ArchiveSnapshot)
+        if client_id is not None:
+            stmt = stmt.where(ArchiveSnapshot.client_id == client_id)
+        return list(self._session.scalars(stmt))
+
     # --- assets ----------------------------------------------------------
 
     def get_asset_by_key(self, url_key: str) -> ArchiveAsset | None:
@@ -441,6 +453,47 @@ class WebArchiveRepository:
             .where(ArchiveSnapshotAsset.snapshot_id == snapshot_id)
         )
         return [tuple(row) for row in self._session.execute(stmt).all()]
+
+    def all_css_assets(self) -> list[ArchiveAsset]:
+        """Every tracked CSS file, portfolio-wide — `backfill_css_assets`
+        (task-60 §1.3) reads each one's stored body for `url(...)`
+        references a capture pass before the discovery fix never followed.
+        """
+        stmt = select(ArchiveAsset).where(ArchiveAsset.kind == "css")
+        return list(self._session.scalars(stmt))
+
+    def css_assets_for_client(self, client_id: str) -> list[ArchiveAsset]:
+        """The CSS files ONE client's own captured pages reference —
+        `ArchiveAsset` carries no `client_id` of its own (task-60: it is a
+        global, content-addressed registry, potentially shared across
+        clients), so scoping goes through the snapshots that link to it.
+        """
+        stmt = (
+            select(ArchiveAsset)
+            .join(ArchiveSnapshotAsset, ArchiveSnapshotAsset.asset_id == ArchiveAsset.id)
+            .join(ArchiveSnapshot, ArchiveSnapshot.id == ArchiveSnapshotAsset.snapshot_id)
+            .where(ArchiveSnapshot.client_id == client_id, ArchiveAsset.kind == "css")
+            .distinct()
+        )
+        return list(self._session.scalars(stmt))
+
+    def asset_coverage_totals(self) -> dict[str, int]:
+        """Portfolio-wide `{"referenced": N, "captured": M}` for the hub's
+        Asset coverage tile (task-60 §1.4) — "referenced" is every asset
+        discovery has ever turned up (an `ArchiveAsset` row exists as soon
+        as it is FIRST seen, fetch outcome notwithstanding); "captured" is
+        the subset that actually has at least one stored version. The gap
+        between them is either a genuinely-dead source-site file (honest —
+        the archive never invents bytes) or a not-yet-run backfill.
+        """
+        referenced = int(self._session.scalar(select(func.count()).select_from(ArchiveAsset)) or 0)
+        captured = int(
+            self._session.scalar(
+                select(func.count(func.distinct(ArchiveAssetVersion.asset_id)))
+            )
+            or 0
+        )
+        return {"referenced": referenced, "captured": captured}
 
     # --- blobs -----------------------------------------------------------
 

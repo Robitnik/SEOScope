@@ -82,6 +82,7 @@ class ArchiveSnapshotDetailDTO(BaseModel):
     asset_count: int
     assets_truncated: bool
     assets_missing: int
+    live_iframe_hosts: list[str]  # task-60 §2.3 — hostnames loaded live, not archived
     store_reason: StoreReason
     prev_snapshot_id: str | None
     next_snapshot_id: str | None
@@ -166,6 +167,8 @@ class ArchiveOverviewDTO(BaseModel):
     bytes_local: int
     bytes_uploaded: int
     bytes_not_uploaded: int
+    assets_referenced: int  # task-60 §1.4 — every discovered asset, fetch outcome notwithstanding
+    assets_captured: int  # the subset with at least one stored version
     top_changing_urls: list[ArchiveUrlDTO]
     recent_captures: list[ArchiveCaptureDTO]
 

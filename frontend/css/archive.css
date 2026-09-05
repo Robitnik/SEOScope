@@ -155,6 +155,12 @@
 .archive-meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 20px; }
 .archive-meta-label { margin: 0; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); }
 .archive-meta-value { margin: 2px 0 0; overflow-wrap: anywhere; }
+.archive-meta-note { margin: 4px 0 0; color: var(--ink-dim); font-size: 11px; }
+/* Scoped to the Meta panel on purpose: other archive pages already use
+ * `.tag-new[data-tone=...]` (e.g. "gone since", an HTTP status) without a
+ * styled tone — out of scope here, so this rule stays local instead of
+ * changing their look too. */
+.archive-meta-panel .tag-new[data-tone="warning"] { border-color: var(--warning); color: var(--warning); }
 .archive-meta-headers { margin-top: 14px; }
 .archive-meta-headers summary { cursor: pointer; color: var(--ink-muted); font-size: 12px; }
 

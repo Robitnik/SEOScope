@@ -35,23 +35,35 @@ from app.webarchive.urls import looks_like_binary_content_type, normalize_url
 
 router = APIRouter(tags=["web-archive-replay"])
 
-# No external origin anywhere in this list — see module docstring. `data:`/
-# `blob:` cover inline images/fonts a rewritten stylesheet may still embed
-# that way; every actual HTTP(S) subresource must resolve through our own
+# The ONE external-origin exception in this whole policy: `frame-src
+# https:` (task-60 §2), gated on `Settings.archive_live_iframes` — the
+# user's own call, live-data-backed (task-60 plan §0.6/§0.7): archiving an
+# iframe (maps/video/audio widgets, ~85 across the portfolio) is slower
+# than the page itself AND trips antibot, so its `src` is left pointing at
+# the real, live host instead of being archived. Every OTHER directive
+# stays `'self'`-only. `app.webarchive.rewrite`'s analytics-host denylist
+# still rewrites (and thus blocks, at replay) the one iframe class this
+# does NOT apply to — GTM/GA/Meta-pixel beacons — because loading one for
+# real on every archived-snapshot view would send a live hit into the
+# CLIENT's own GA/Meta account. `data:`/`blob:` cover inline images/fonts a
+# rewritten stylesheet may still embed that way; every actual HTTP(S)
+# subresource besides a live iframe must resolve through our own
 # `/archive/r/...` path or it does not load at all.
-_REPLAY_CSP = (
-    "default-src 'self'; "
-    "img-src 'self' data: blob:; "
-    "media-src 'self' data: blob:; "
-    "style-src 'self' 'unsafe-inline'; "
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-    "font-src 'self' data:; "
-    "connect-src 'self'; "
-    "frame-src 'self'; "
-    "form-action 'none'; "
-    "frame-ancestors 'self'; "
-    "base-uri 'none'"
-)
+def _replay_csp(*, live_iframes: bool) -> str:
+    frame_src = "https:" if live_iframes else "'self'"
+    return (
+        "default-src 'self'; "
+        "img-src 'self' data: blob:; "
+        "media-src 'self' data: blob:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        f"frame-src {frame_src}; "
+        "form-action 'none'; "
+        "frame-ancestors 'self'; "
+        "base-uri 'none'"
+    )
 # The replay iframe has an OPAQUE origin (`Origin: null`, no
 # `allow-same-origin`) — live-measured (task-59, 2026-09-04): without
 # `Access-Control-Allow-Origin`, a real captured page's own `@font-face`
@@ -74,21 +86,25 @@ _ACCESS_CONTROL_ALLOW_ORIGIN = {"Access-Control-Allow-Origin": "*"}
 # offloads repeat views within a session, while keeping any future replay
 # bug's blast radius to "self-heals within the hour" instead of "needs a
 # manual Cloudflare purge we have no API token configured for".
-_REPLAY_HEADERS = {
-    "Content-Security-Policy": _REPLAY_CSP,
-    "X-Frame-Options": "SAMEORIGIN",
-    "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "no-referrer",
-    "Cache-Control": "public, max-age=3600",
-    **_ACCESS_CONTROL_ALLOW_ORIGIN,
-}
-_MISS_HEADERS = {
-    "Content-Security-Policy": _REPLAY_CSP,
-    "X-Frame-Options": "SAMEORIGIN",
-    "X-Content-Type-Options": "nosniff",
-    "Cache-Control": "no-store",
-    **_ACCESS_CONTROL_ALLOW_ORIGIN,
-}
+def _replay_headers(*, live_iframes: bool) -> dict[str, str]:
+    return {
+        "Content-Security-Policy": _replay_csp(live_iframes=live_iframes),
+        "X-Frame-Options": "SAMEORIGIN",
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Cache-Control": "public, max-age=3600",
+        **_ACCESS_CONTROL_ALLOW_ORIGIN,
+    }
+
+
+def _miss_headers(*, live_iframes: bool) -> dict[str, str]:
+    return {
+        "Content-Security-Policy": _replay_csp(live_iframes=live_iframes),
+        "X-Frame-Options": "SAMEORIGIN",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+        **_ACCESS_CONTROL_ALLOW_ORIGIN,
+    }
 
 _SHIM_JS = r"""(function () {
   "use strict";
@@ -145,12 +161,16 @@ _SHIM_JS = r"""(function () {
 
   // src/href setters on the common elements a script might assign to
   // directly (`img.src = "..."`, `new Image().src = "..."`, etc).
+  // HTMLIFrameElement is deliberately NOT here (task-60 §2): an iframe's
+  // `src` is left pointing at the real, live host instead of being
+  // archived — see the `setAttribute` patch below for the matching
+  // exception (a lazy-load plugin promoting `data-lazy-src` to `src` at
+  // runtime goes through THAT path, not this one).
   var PATCHED = [
     [window.HTMLImageElement, "src"],
     [window.HTMLScriptElement, "src"],
     [window.HTMLMediaElement, "src"],
     [window.HTMLSourceElement, "src"],
-    [window.HTMLIFrameElement, "src"],
     [window.HTMLLinkElement, "href"],
     [window.HTMLAnchorElement, "href"],
   ];
@@ -170,11 +190,16 @@ _SHIM_JS = r"""(function () {
   });
 
   // setAttribute("src"/"href", ...) covers everything the property setters
-  // above miss (frameworks that go through the DOM API directly).
+  // above miss (frameworks that go through the DOM API directly). IFRAME is
+  // excluded from the `src`/`href` rewrite for the same reason it is absent
+  // from PATCHED above (task-60 §2) — this is also the path a lazy-load
+  // plugin's `iframe.src = iframe.dataset.lazySrc` promotion goes through
+  // via `setAttribute`, and it must resolve against the real host, not ours.
   var REWRITTEN_ATTRS = { src: true, href: true, action: true };
   var originalSetAttribute = Element.prototype.setAttribute;
   Element.prototype.setAttribute = function (name, value) {
-    if (REWRITTEN_ATTRS[String(name).toLowerCase()]) {
+    var isIframe = this.tagName === "IFRAME";
+    if (REWRITTEN_ATTRS[String(name).toLowerCase()] && !isIframe) {
       value = toReplayUrl(value);
     }
     return originalSetAttribute.call(this, name, value);
@@ -331,6 +356,9 @@ async def replay_preflight(ts: str, url: str) -> Response:
 
 @router.get("/archive/r/{ts}/{url:path}")
 async def replay(ts: str, url: str, request: Request) -> Response:
+    settings = get_settings()
+    live_iframes = settings.archive_live_iframes
+    analytics_hosts = frozenset(settings.archive_iframe_analytics_hosts)
     parsed: URL = request.url
     original_url = _full_requested_url(ts, url, parsed.query)
     target = await run_in_threadpool(_resolve_replay, original_url, ts)
@@ -342,12 +370,15 @@ async def replay(ts: str, url: str, request: Request) -> Response:
             content="Not archived at this point in time.",
             status_code=404,
             media_type="text/plain",
-            headers=_MISS_HEADERS,
+            headers=_miss_headers(live_iframes=live_iframes),
         )
 
     if kind == "page":
         text = decode_body(raw, content_type=content_type)
-        rewritten = rewritemod.rewrite_html(text, base_url=base_url or original_url, ts=ts)
+        rewritten = rewritemod.rewrite_html(
+            text, base_url=base_url or original_url, ts=ts,
+            live_iframes=live_iframes, analytics_hosts=analytics_hosts,
+        )
         rewritten = _inject_shim(
             rewritten,
             ts=ts,
@@ -355,7 +386,8 @@ async def replay(ts: str, url: str, request: Request) -> Response:
             snapshot_id=target.snapshot_id,
         )
         return Response(
-            content=rewritten, media_type="text/html; charset=utf-8", headers=_REPLAY_HEADERS
+            content=rewritten, media_type="text/html; charset=utf-8",
+            headers=_replay_headers(live_iframes=live_iframes),
         )
 
     # asset
@@ -364,17 +396,21 @@ async def replay(ts: str, url: str, request: Request) -> Response:
         text = raw.decode("utf-8", errors="replace")
         rewritten_css = rewritemod.rewrite_css(text, base_url=base_url or original_url, ts=ts)
         return Response(
-            content=rewritten_css, media_type="text/css; charset=utf-8", headers=_REPLAY_HEADERS
+            content=rewritten_css, media_type="text/css; charset=utf-8",
+            headers=_replay_headers(live_iframes=live_iframes),
         )
-    return Response(content=raw, media_type=media_type, headers=_REPLAY_HEADERS)
+    return Response(
+        content=raw, media_type=media_type, headers=_replay_headers(live_iframes=live_iframes)
+    )
 
 
 @router.get("/archive/static/shim.js")
 async def replay_shim() -> Response:
+    settings = get_settings()
     return Response(
         content=_SHIM_JS,
         media_type="application/javascript; charset=utf-8",
-        headers=_REPLAY_HEADERS,
+        headers=_replay_headers(live_iframes=settings.archive_live_iframes),
     )
 
 

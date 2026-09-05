@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.webarchive.urls import (
+    is_analytics_iframe_src,
     is_asset_like_url,
     looks_like_binary_content_type,
     normalize_url,
@@ -119,3 +120,39 @@ def test_looks_like_binary_content_type_allows_html_and_text() -> None:
     assert not looks_like_binary_content_type("text/html; charset=UTF-8")
     assert not looks_like_binary_content_type("text/plain")
     assert not looks_like_binary_content_type("application/xhtml+xml")
+
+
+def test_is_analytics_iframe_src_flags_gtm_and_www_variants() -> None:
+    """349 of the portfolio's iframe embeds are GTM's own noscript pixel
+    (task-60 plan §0.6) — `www.googletagmanager.com` is the form actually
+    seen in real markup, so the `www.`-stripping matters, not just the
+    bare host.
+    """
+    assert is_analytics_iframe_src("https://www.googletagmanager.com/ns.html?id=GTM-XXXX")
+    assert is_analytics_iframe_src("https://googletagmanager.com/ns.html?id=GTM-XXXX")
+    assert is_analytics_iframe_src("https://google-analytics.com/x")
+    assert is_analytics_iframe_src("https://doubleclick.net/x")
+    assert is_analytics_iframe_src("https://connect.facebook.net/x")
+
+
+def test_is_analytics_iframe_src_flags_facebook_pixel_path_only() -> None:
+    assert is_analytics_iframe_src("https://www.facebook.com/tr?id=123&ev=PageView")
+    assert not is_analytics_iframe_src("https://www.facebook.com/video/embed?video_id=1")
+
+
+def test_is_analytics_iframe_src_allows_real_embeds() -> None:
+    """The ~85 real embeds (task-60 plan §0.6) — maps, Spotify, YouTube,
+    Vimeo — must never be misclassified as analytics beacons.
+    """
+    assert not is_analytics_iframe_src("https://www.google.com/maps/embed?pb=abc")
+    assert not is_analytics_iframe_src("https://open.spotify.com/embed/track/abc")
+    assert not is_analytics_iframe_src("https://www.youtube.com/embed/abc")
+    assert not is_analytics_iframe_src("https://player.vimeo.com/video/abc")
+
+
+def test_is_analytics_iframe_src_honors_custom_host_set() -> None:
+    custom = frozenset({"tracker.example.com"})
+    assert is_analytics_iframe_src("https://tracker.example.com/beacon", hosts=custom)
+    # A custom set REPLACES the built-in default for this call, matching
+    # `Settings.archive_iframe_analytics_hosts` being the canonical list.
+    assert not is_analytics_iframe_src("https://googletagmanager.com/ns.html", hosts=custom)

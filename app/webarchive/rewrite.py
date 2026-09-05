@@ -18,13 +18,27 @@ bodies are stashed out before the attribute pass and restored after —
 `<style>` bodies get `rewrite_css`, `<script>` bodies are left completely
 alone (live network calls FROM a script are handled at runtime by
 `archive_replay.py`'s injected shim, not rewritten statically here).
+
+`<iframe>`/`<frame>` tags get the SAME stash treatment, but for the
+opposite reason (task-60 §2): the user's own decision, backed by measured
+data (task-60 plan §0.6/§0.7), is to leave a real embed (a map/video/audio
+widget) pointing at its live host instead of archiving it — archiving one
+is slower than the page itself AND trips antibot, and almost all of them
+are maps that "just work" against the live site. So these tags are handed
+back byte-for-byte, UNREWRITTEN, rather than protected-then-rewritten like
+script/style. The one exception is a known analytics/tracking beacon host
+(`app.webarchive.urls.is_analytics_iframe_src`) — GTM/GA/Meta-pixel iframes
+stay on the normal rewrite path below and 404 at replay, because loading
+one for real on every archived-snapshot view would send a live hit into
+the CLIENT's own GA/Meta account.
 """
 
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 
-from app.webarchive.urls import resolve
+from app.webarchive.urls import is_analytics_iframe_src, resolve
 
 _PLACEHOLDER = "\x00WEBARCHIVE-{index}\x00"
 _PLACEHOLDER_RE = re.compile(r"\x00WEBARCHIVE-(\d+)\x00")
@@ -32,6 +46,9 @@ _PLACEHOLDER_RE = re.compile(r"\x00WEBARCHIVE-(\d+)\x00")
 _SCRIPT_OR_STYLE_RE = re.compile(
     r"(<(script|style)\b[^>]*>)(.*?)(</\2\s*>)", re.IGNORECASE | re.DOTALL
 )
+_IFRAME_ELEMENT_RE = re.compile(r"<iframe\b[^>]*>.*?</iframe\s*>", re.IGNORECASE | re.DOTALL)
+_FRAME_TAG_RE = re.compile(r"<frame\b[^>]*/?>", re.IGNORECASE)
+_IFRAME_SRC_RE = re.compile(r"""\bsrc\s*=\s*(["'])([^"']*)\1""", re.IGNORECASE)
 
 # `\b` in front of the attribute-name alternation is enough to keep e.g.
 # `data-src` from being (mis)matched as a bare `src` occurrence: the regex
@@ -115,6 +132,19 @@ def _rewrite_tag_attrs(text: str, *, base_url: str, ts: str) -> str:
     return out
 
 
+def _iframe_absolute_src(tag_text: str, *, base_url: str) -> str | None:
+    """The absolute `src` an `<iframe>`/`<frame>` tag's raw text resolves
+    to, or `None` for anything with no usable `src` at all — including the
+    ~1,521-portfolio-wide `src="about:blank"` lazy-load placeholders
+    (`resolve` excludes the `about:` scheme), which is exactly right: an
+    empty placeholder has nothing live to leave alone or block either way.
+    """
+    src_match = _IFRAME_SRC_RE.search(tag_text)
+    if src_match is None:
+        return None
+    return resolve(base_url, src_match.group(2))
+
+
 def rewrite_css(css_text: str, *, base_url: str, ts: str) -> str:
     """Rewrite every `url(...)` in a CSS document or an inline `style="..."`
     value. Safe to run on raw CSS text directly — `url()` syntax is
@@ -129,12 +159,40 @@ def rewrite_css(css_text: str, *, base_url: str, ts: str) -> str:
     return _CSS_URL_RE.sub(_sub, css_text)
 
 
-def rewrite_html(html: str, *, base_url: str, ts: str) -> str:
+def rewrite_html(
+    html: str,
+    *,
+    base_url: str,
+    ts: str,
+    live_iframes: bool = True,
+    analytics_hosts: frozenset[str] | None = None,
+) -> str:
     """Rewrite an HTML document for replay at `ts` (14-digit
     `app.webarchive.replay.format_ts` form), resolving every relative
     reference against `base_url` (the page's own original absolute URL).
+
+    `live_iframes` is `Settings.archive_live_iframes` (task-60 §2) — the
+    kill-switch for leaving embeds live; `False` reproduces the pre-task-60
+    behavior of rewriting (and thus 404ing) every iframe, no exceptions.
+    `analytics_hosts` is `Settings.archive_iframe_analytics_hosts`; `None`
+    falls back to `is_analytics_iframe_src`'s own built-in default.
     """
     placeholders: list[str] = []
+
+    def _stash_iframe(match: re.Match[str]) -> str:
+        whole = match.group(0)
+        absolute_src = _iframe_absolute_src(whole, base_url=base_url)
+        if absolute_src is not None and is_analytics_iframe_src(
+            absolute_src, hosts=analytics_hosts
+        ):
+            # Analytics beacons fall through to the normal rewrite path
+            # below, which 404s them at replay — see module docstring.
+            return whole
+        # A live embed, or an inert `about:blank` placeholder: handed back
+        # byte-for-byte, UNREWRITTEN — see module docstring.
+        index = len(placeholders)
+        placeholders.append(whole)
+        return _PLACEHOLDER.format(index=index)
 
     def _stash(match: re.Match[str]) -> str:
         open_tag, tag_name, body, close_tag = match.groups()
@@ -149,10 +207,41 @@ def rewrite_html(html: str, *, base_url: str, ts: str) -> str:
         placeholders.append(f"{open_tag}{body}{close_tag}")
         return _PLACEHOLDER.format(index=index)
 
-    stashed = _SCRIPT_OR_STYLE_RE.sub(_stash, html)
+    stashed = html
+    if live_iframes:
+        stashed = _IFRAME_ELEMENT_RE.sub(_stash_iframe, stashed)
+        stashed = _FRAME_TAG_RE.sub(_stash_iframe, stashed)
+    stashed = _SCRIPT_OR_STYLE_RE.sub(_stash, stashed)
     rewritten = _rewrite_tag_attrs(stashed, base_url=base_url, ts=ts)
 
     def _restore(match: re.Match[str]) -> str:
         return placeholders[int(match.group(1))]
 
     return _PLACEHOLDER_RE.sub(_restore, rewritten)
+
+
+def live_iframe_hosts(
+    html: str,
+    *,
+    base_url: str,
+    live_iframes: bool = True,
+    analytics_hosts: frozenset[str] | None = None,
+) -> list[str]:
+    """Distinct hostnames of the iframes a replayed snapshot loads LIVE
+    (task-60 §2.3) — everything `rewrite_html`'s iframe stash also leaves
+    live, computed independently here (no new DB column: this task adds no
+    migration) so the Meta panel can show it without re-rendering the page.
+    Sorted, for a stable UI and stable test assertions.
+    """
+    if not live_iframes:
+        return []
+    hosts: set[str] = set()
+    for pattern in (_IFRAME_ELEMENT_RE, _FRAME_TAG_RE):
+        for match in pattern.finditer(html):
+            absolute = _iframe_absolute_src(match.group(0), base_url=base_url)
+            if absolute is None or is_analytics_iframe_src(absolute, hosts=analytics_hosts):
+                continue
+            hostname = urlsplit(absolute).hostname
+            if hostname:
+                hosts.add(hostname)
+    return sorted(hosts)

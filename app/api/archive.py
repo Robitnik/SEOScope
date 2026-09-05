@@ -23,6 +23,7 @@ from app.db.models import ArchiveCapture, ArchiveSnapshot, ArchiveUrl
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.web_archive import WebArchiveRepository
 from app.db.session import worker_session_scope
+from app.monitor.page import decode_body
 from app.schemas.api import ErrorDTO
 from app.schemas.web_archive import (
     ArchiveCaptureAcceptedDTO,
@@ -41,6 +42,7 @@ from app.schemas.web_archive import (
     ArchiveUrlTimelineDTO,
 )
 from app.webarchive import changes as changesmod
+from app.webarchive import rewrite as rewritemod
 from app.webarchive import storage
 from app.webarchive.replay import format_ts
 from app.webarchive.urls import normalize_url
@@ -155,6 +157,7 @@ def _overview() -> ArchiveOverviewDTO:
         all_settings = repo.all_settings_by_client()
         recent = repo.list_captures(limit=10)
         blob_stats = repo.blob_stats()
+        asset_coverage = repo.asset_coverage_totals()
 
         coverage: list[ArchiveClientCoverageDTO] = []
         for client in clients:
@@ -195,6 +198,8 @@ def _overview() -> ArchiveOverviewDTO:
             bytes_local=blob_stats["bytes_local"],
             bytes_uploaded=blob_stats["bytes_uploaded"],
             bytes_not_uploaded=blob_stats["bytes_not_uploaded"],
+            assets_referenced=asset_coverage["referenced"],
+            assets_captured=asset_coverage["captured"],
             top_changing_urls=top_dtos,
             recent_captures=recent_dtos,
         )
@@ -284,6 +289,7 @@ async def get_url_timeline(url_id: str) -> ArchiveUrlTimelineDTO:
 
 
 def _snapshot_detail(snapshot_id: str) -> ArchiveSnapshotDetailDTO | None:
+    settings = get_settings()
     with worker_session_scope() as session:
         repo = WebArchiveRepository(session)
         snapshot = repo.get_snapshot(snapshot_id)
@@ -301,6 +307,20 @@ def _snapshot_detail(snapshot_id: str) -> ArchiveSnapshotDetailDTO | None:
         )
         asset_links = repo.snapshot_assets(snapshot.id)
         assets_missing = sum(1 for _sa, _asset, version in asset_links if version is None)
+        live_hosts: list[str] = []
+        if snapshot.body_blob_sha256:
+            try:
+                raw_html = storage.read_blob(settings.artifacts_dir, snapshot.body_blob_sha256)
+            except OSError:
+                raw_html = None
+            if raw_html is not None:
+                html_text = decode_body(raw_html, content_type=snapshot.content_type)
+                live_hosts = rewritemod.live_iframe_hosts(
+                    html_text,
+                    base_url=snapshot.final_url or archive_url.url,
+                    live_iframes=settings.archive_live_iframes,
+                    analytics_hosts=frozenset(settings.archive_iframe_analytics_hosts),
+                )
         ts = format_ts(snapshot.observed_at)
         return ArchiveSnapshotDetailDTO(
             id=snapshot.id,
@@ -325,6 +345,7 @@ def _snapshot_detail(snapshot_id: str) -> ArchiveSnapshotDetailDTO | None:
             asset_count=snapshot.asset_count,
             assets_truncated=snapshot.assets_truncated,
             assets_missing=assets_missing,
+            live_iframe_hosts=live_hosts,
             store_reason=snapshot.store_reason,  # type: ignore[arg-type]
             prev_snapshot_id=prev_id,
             next_snapshot_id=next_id,

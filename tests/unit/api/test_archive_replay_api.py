@@ -160,3 +160,59 @@ def test_replay_options_preflight_answered(client, db):
     response = client.options(f"/archive/r/{ts}/{url}")
     assert response.status_code == 204
     assert response.headers["access-control-allow-origin"] == "*"
+
+
+# --- task-60 §2: iframes left live ------------------------------------------
+
+
+def test_replay_csp_allows_https_iframes_by_default(client, db):
+    """The ONE external-origin exception in the whole replay CSP (task-60
+    §2) — everything else stays `'self'`-only.
+    """
+    ts, url = _seed_page(db)
+    response = client.get(f"/archive/r/{ts}/{url}")
+    csp = response.headers["content-security-policy"]
+    assert "frame-src https:" in csp
+    assert "default-src 'self'" in csp
+
+
+def test_live_iframe_src_survives_replay_untouched(client, db):
+    """A real map embed: the user's own decision (task-60 §2) — left
+    pointing at its live host instead of being archived.
+    """
+    html = (
+        b"<html><head><title>Acme</title></head><body>"
+        b'<iframe src="https://www.google.com/maps/embed?pb=abc"></iframe>'
+        b"</body></html>"
+    )
+    ts, url = _seed_page(db, body=html)
+    response = client.get(f"/archive/r/{ts}/{url}")
+    assert 'src="https://www.google.com/maps/embed?pb=abc"' in response.text
+    assert "/archive/r/" not in response.text.split("<iframe")[1].split("</iframe>")[0]
+
+
+def test_analytics_iframe_still_gets_rewritten_and_blocked_at_replay(client, db):
+    """349 of the portfolio's iframes are GTM's own noscript pixel
+    (task-60 plan §0.6/§2.2) — must never be left live, or every archived-
+    snapshot view sends a real hit into the client's own GA account.
+    """
+    html = (
+        b"<html><head><title>Acme</title></head><body>"
+        b'<iframe src="https://www.googletagmanager.com/ns.html?id=GTM-X"></iframe>'
+        b"</body></html>"
+    )
+    ts, url = _seed_page(db, body=html)
+    response = client.get(f"/archive/r/{ts}/{url}")
+    assert f"/archive/r/{ts}/https://www.googletagmanager.com/ns.html?id=GTM-X" in response.text
+
+
+def test_shim_js_no_longer_patches_iframe_src_setter(client):
+    """`HTMLIFrameElement` must be absent from the patched-setter list, and
+    `setAttribute`'s own IFRAME exception must be present (task-60 §2.1) —
+    otherwise a JS-driven lazy-load embed (41 of the portfolio's iframes
+    use `data-lazy-src`, task-60 plan §0.6) still gets funneled through
+    `/archive/r/...` and 404s.
+    """
+    response = client.get("/archive/static/shim.js")
+    assert "[window.HTMLIFrameElement" not in response.text  # not in the patched-setter list
+    assert 'this.tagName === "IFRAME"' in response.text

@@ -28,6 +28,7 @@ _MEDIA_SRC_RE = re.compile(
 _STYLE_ATTR_URL_RE = re.compile(
     r"""style\s*=\s*["'][^"']*?url\(\s*(['"]?)(?!data:)([^)'"]+)\1""", re.IGNORECASE
 )
+_STYLE_TAG_RE = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.IGNORECASE | re.DOTALL)
 _CSS_URL_RE = re.compile(r"""url\(\s*(['"]?)(?!data:)([^)'"]+)\1\s*\)""", re.IGNORECASE)
 _AS_ATTR_RE = re.compile(r"""\bas\s*=\s*["']?([a-z]+)["']?""", re.IGNORECASE)
 
@@ -54,8 +55,13 @@ def _looks_like_font(url: str) -> bool:
 def discover_html_assets(html: str, base_url: str) -> list[AssetRef]:
     """Every subresource an ordinary browser would fetch for this page —
     stylesheets/preloaded/icon `<link>`s, `<script src>`, `<img src>` and
-    `srcset`, `<source>`/`<video>`/`<audio> src`, and `url(...)` inside an
-    inline `style="..."` attribute. First-seen kind wins on a URL collision.
+    `srcset`, `<source>`/`<video>`/`<audio> src`, `url(...)` inside an
+    inline `style="..."` attribute, AND `url(...)` inside inline
+    `<style>...</style>` block bodies (task-60 §1.1 — live-root-caused: a
+    real client's `.elementor-motion-effects-layer{background-image:
+    url(...)}` rule sat in exactly this kind of block and was never
+    discovered, so the image was never captured and 404'd at replay).
+    First-seen kind wins on a URL collision.
     """
     found: dict[str, str] = {}
 
@@ -99,6 +105,9 @@ def discover_html_assets(html: str, base_url: str) -> list[AssetRef]:
         _add("media", match)
     for _quote, match in _STYLE_ATTR_URL_RE.findall(html):
         _add("font" if _looks_like_font(match) else "img", match)
+    for style_body in _STYLE_TAG_RE.findall(html):
+        for ref in discover_css_assets(style_body, base_url):
+            found.setdefault(ref.url, ref.kind)
 
     return [AssetRef(kind=kind, url=url) for url, kind in found.items()]
 

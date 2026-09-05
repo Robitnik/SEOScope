@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -102,6 +103,24 @@ class UrlCaptureResult:
     assets_fetched: int = 0
     assets_reused: int = 0
     assets_failed: int = 0
+
+
+@dataclass
+class BackfillOutcome:
+    """Result of `backfill_css_assets` (task-60 §1.3) — a retroactive sweep
+    for CSS-only references that predate the discovery fix above, or that
+    slipped past it (a CSS file whose own body changed after capture).
+    """
+    dry_run: bool
+    scanned_snapshots: int = 0
+    scanned_css_files: int = 0
+    missing_by_kind: dict[str, int] = field(default_factory=dict)
+    fetched: int = 0
+    failed: int = 0
+
+    @property
+    def missing_total(self) -> int:
+        return sum(self.missing_by_kind.values())
 
 
 def _strip_headers(headers: dict[str, str]) -> dict[str, str]:
@@ -224,6 +243,20 @@ def _check_or_fetch_asset(
     return version, "fetched"
 
 
+def _read_css_text(artifacts_dir: Path, version: ArchiveAssetVersion | None) -> str | None:
+    """The stored body of an already-fetched CSS asset version, decoded for
+    a second regex pass (task-60 §1.2) — `None` for anything not actually
+    on disk (a truncated/failed asset has no blob at all).
+    """
+    if version is None or not version.blob_sha256:
+        return None
+    try:
+        raw = storage.read_blob(artifacts_dir, version.blob_sha256)
+    except OSError:
+        return None
+    return raw.decode("utf-8", errors="replace")
+
+
 def _capture_assets_for_page(
     session: Session,
     repo: WebArchiveRepository,
@@ -239,7 +272,22 @@ def _capture_assets_for_page(
     outcome = _AssetCaptureOutcome()
     remaining_new_budget = settings.archive_new_assets_per_page
 
-    for ref in assetsmod.discover_html_assets(html_text, base_url):
+    # A queue, not a flat loop (task-60 §1.2): once a `kind == "css"` asset's
+    # body is on disk, it is scanned for its OWN `url(...)` references
+    # (backgrounds, `@font-face` sources) and anything new is enqueued —
+    # this is the fix for the CSS-only asset gap (task-60 §0.1: a real
+    # background-image was referenced ONLY from a fetched CSS file's body
+    # and so was never discovered at all). One level deep ONLY: a ref
+    # discovered THIS way is always tagged "img"/"font" by
+    # `discover_css_assets`, never "css", so it is never itself expanded —
+    # matching the measured, accepted limit (task-60 §0.4: one `@import`
+    # across the whole portfolio).
+    queue: deque[assetsmod.AssetRef] = deque(assetsmod.discover_html_assets(html_text, base_url))
+    seen_keys: set[str] = {normalize_url(ref.url) for ref in queue}
+    css_expanded: set[str] = set()
+
+    while queue:
+        ref = queue.popleft()
         key = normalize_url(ref.url)
         asset = repo.get_or_create_asset(ref.url, key, kind=ref.kind)
         last_checked_at = asset.last_checked_at
@@ -249,53 +297,62 @@ def _capture_assets_for_page(
             and now - last_checked_at >= timedelta(days=settings.archive_asset_revalidate_days)
         )
 
+        version: ArchiveAssetVersion | None
         if not needs_check:
             version = repo.latest_asset_version(asset.id)
             outcome.links.append((asset.id, version.id if version else None, ref.kind))
             outcome.reused += 1
-            continue
-
-        if never_checked and remaining_new_budget <= 0:
+        elif never_checked and remaining_new_budget <= 0:
             outcome.truncated = True
             outcome.links.append((asset.id, None, ref.kind))
             outcome.failed += 1
-            continue
-
-        try:
-            version, result_kind = _check_or_fetch_asset(
-                repo, asset, settings=settings, artifacts_dir=artifacts_dir,
-                throttle=throttle, stats=stats, now=now,
-            )
-        except Exception:  # noqa: BLE001 - one bad asset must never fail the whole page
-            # Live incident (task-59, 2026-09-04): a real filename containing
-            # a bare en-dash crashed `urllib`'s ASCII-only request line
-            # before `app.webarchive.urls._ascii_safe` existed — that one
-            # asset took the ENTIRE page down with it, which PLAN §9.1's
-            # cell-isolation principle applies here one level deeper than
-            # just "one URL": one asset is its own cell within the page.
-            logger.warning("archive_asset_crashed asset_url=%s", asset.url, exc_info=True)
-            version, result_kind = None, "failed"
-        # Commit per asset, and this is the single most important write in
-        # the pipeline for portfolio-wide health: SQLite takes its one
-        # writer lock at the FIRST write of a transaction and holds it until
-        # commit, so batching a page's assets into one transaction pins that
-        # lock across every asset's NETWORK round-trip — a 200-asset page
-        # held it for minutes. Live incident (task-59, 2026-09-04): with six
-        # clients capturing at once that starved everything else past
-        # SQLite's 30s `busy_timeout`, and the resulting
-        # `database is locked` crashes are what left seven captures wedged
-        # at "in progress…". One asset per transaction keeps the lock held
-        # for microseconds of local writes instead.
-        commit_with_retry(session, lambda: None)
-        outcome.links.append((asset.id, version.id if version else None, ref.kind))
-        if result_kind == "fetched":
-            outcome.fetched += 1
-            if never_checked:
-                remaining_new_budget -= 1
-        elif result_kind == "revalidated":
-            outcome.reused += 1
+            version = None
         else:
-            outcome.failed += 1
+            try:
+                version, result_kind = _check_or_fetch_asset(
+                    repo, asset, settings=settings, artifacts_dir=artifacts_dir,
+                    throttle=throttle, stats=stats, now=now,
+                )
+            except Exception:  # noqa: BLE001 - one bad asset must never fail the whole page
+                # Live incident (task-59, 2026-09-04): a real filename containing
+                # a bare en-dash crashed `urllib`'s ASCII-only request line
+                # before `app.webarchive.urls._ascii_safe` existed — that one
+                # asset took the ENTIRE page down with it, which PLAN §9.1's
+                # cell-isolation principle applies here one level deeper than
+                # just "one URL": one asset is its own cell within the page.
+                logger.warning("archive_asset_crashed asset_url=%s", asset.url, exc_info=True)
+                version, result_kind = None, "failed"
+            # Commit per asset, and this is the single most important write in
+            # the pipeline for portfolio-wide health: SQLite takes its one
+            # writer lock at the FIRST write of a transaction and holds it until
+            # commit, so batching a page's assets into one transaction pins that
+            # lock across every asset's NETWORK round-trip — a 200-asset page
+            # held it for minutes. Live incident (task-59, 2026-09-04): with six
+            # clients capturing at once that starved everything else past
+            # SQLite's 30s `busy_timeout`, and the resulting
+            # `database is locked` crashes are what left seven captures wedged
+            # at "in progress…". One asset per transaction keeps the lock held
+            # for microseconds of local writes instead.
+            commit_with_retry(session, lambda: None)
+            outcome.links.append((asset.id, version.id if version else None, ref.kind))
+            if result_kind == "fetched":
+                outcome.fetched += 1
+                if never_checked:
+                    remaining_new_budget -= 1
+            elif result_kind == "revalidated":
+                outcome.reused += 1
+            else:
+                outcome.failed += 1
+
+        if ref.kind == "css" and key not in css_expanded and version is not None:
+            css_expanded.add(key)
+            css_text = _read_css_text(artifacts_dir, version)
+            if css_text:
+                for nested in assetsmod.discover_css_assets(css_text, ref.url):
+                    nested_key = normalize_url(nested.url)
+                    if nested_key not in seen_keys:
+                        seen_keys.add(nested_key)
+                        queue.append(nested)
 
     return outcome
 
@@ -608,5 +665,96 @@ def run_client_capture(
         outcome.status = "partial"
     else:
         outcome.status = "ok"
+
+    return outcome
+
+
+def backfill_css_assets(
+    session: Session,
+    repo: WebArchiveRepository,
+    *,
+    client_id: str | None,
+    settings: Settings,
+    artifacts_dir: Path,
+    dry_run: bool,
+    now: datetime | None = None,
+) -> BackfillOutcome:
+    """Retroactively fetches every image/font referenced ONLY from a CSS
+    source — an inline `<style>` block or a fetched CSS file's own body —
+    that predates task-60's discovery fix and so was never tracked at all
+    (task-60 §1.3). Not date-scoped: `WebArchiveRepository.resolve_asset_version`
+    falls back to the earliest available version when none exists yet AT a
+    requested time, so fetching an asset ONCE, today, retroactively heals
+    replay for every existing snapshot that references it (task-60 §0.5).
+
+    `client_id=None` scans the whole portfolio; a given client scopes to
+    that client's OWN stored snapshots and the CSS assets THEY reference
+    (`ArchiveAsset` itself carries no `client_id` — it is a global,
+    content-addressed registry — so scoping goes through
+    `ArchiveSnapshot`/`ArchiveSnapshotAsset` instead).
+    """
+    now = now or datetime.now(UTC)
+    outcome = BackfillOutcome(dry_run=dry_run)
+    throttle = HostThrottle(
+        min_interval_seconds=settings.archive_host_min_interval_seconds,
+        concurrency=settings.archive_host_concurrency,
+    )
+    stats = FetchStats()
+
+    missing: dict[str, assetsmod.AssetRef] = {}
+
+    def _collect(refs: list[assetsmod.AssetRef]) -> None:
+        for ref in refs:
+            key = normalize_url(ref.url)
+            if repo.get_asset_by_key(key) is not None:
+                continue  # already tracked — captured or genuinely failed, not this sweep's job
+            missing.setdefault(key, ref)
+
+    for snapshot in repo.all_snapshots(client_id):
+        outcome.scanned_snapshots += 1
+        if not snapshot.body_blob_sha256:
+            continue
+        try:
+            html_bytes = storage.read_blob(artifacts_dir, snapshot.body_blob_sha256)
+        except OSError:
+            continue
+        base_url = snapshot.final_url or ""
+        if not base_url:
+            continue
+        html_text = decode_body(html_bytes, content_type=snapshot.content_type)
+        # The full discoverer, not just the inline-`<style>` half of it: any
+        # OTHER kind of reference this sweep turns up that isn't tracked yet
+        # either is worth backfilling too, at zero extra cost (`_collect`
+        # already skips anything `get_asset_by_key` finds).
+        _collect(assetsmod.discover_html_assets(html_text, base_url))
+
+    css_assets = repo.css_assets_for_client(client_id) if client_id else repo.all_css_assets()
+    for asset in css_assets:
+        outcome.scanned_css_files += 1
+        css_text = _read_css_text(artifacts_dir, repo.latest_asset_version(asset.id))
+        if css_text:
+            _collect(assetsmod.discover_css_assets(css_text, asset.url))
+
+    for ref in missing.values():
+        outcome.missing_by_kind[ref.kind] = outcome.missing_by_kind.get(ref.kind, 0) + 1
+
+    if dry_run:
+        return outcome
+
+    for key, ref in missing.items():
+        asset = repo.get_or_create_asset(ref.url, key, kind=ref.kind)
+        try:
+            version, result_kind = _check_or_fetch_asset(
+                repo, asset, settings=settings, artifacts_dir=artifacts_dir,
+                throttle=throttle, stats=stats, now=now,
+            )
+        except Exception:  # noqa: BLE001 - one bad asset must never abort the whole backfill
+            logger.warning("archive_backfill_asset_crashed asset_url=%s", ref.url, exc_info=True)
+            version, result_kind = None, "failed"
+        commit_with_retry(session, lambda: None)
+        if result_kind == "failed" or version is None:
+            outcome.failed += 1
+        else:
+            outcome.fetched += 1
 
     return outcome

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.webarchive.rewrite import replay_url, rewrite_css, rewrite_html
+from app.webarchive.rewrite import live_iframe_hosts, replay_url, rewrite_css, rewrite_html
 
 TS = "20260904133000"
 BASE = "https://example.com/page/"
@@ -104,3 +104,91 @@ def test_rewrite_css_file() -> None:
 
 def test_replay_url_format() -> None:
     assert replay_url("https://example.com/x", ts=TS) == f"/archive/r/{TS}/https://example.com/x"
+
+
+# --- task-60 §2: iframes left live -----------------------------------------
+
+
+def test_live_iframe_is_left_byte_for_byte_unrewritten() -> None:
+    """The user's own decision (task-60 §2): a map/video/audio embed is
+    left pointing at its live host instead of being archived.
+    """
+    html = '<iframe src="https://www.google.com/maps/embed?pb=abc" width="600"></iframe>'
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert html in out
+    assert "/archive/r/" not in out
+
+
+def test_frame_tag_is_left_live_too() -> None:
+    html = '<frameset><frame src="https://www.google.com/maps/embed?pb=abc"></frameset>'
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert 'src="https://www.google.com/maps/embed?pb=abc"' in out
+    assert "/archive/r/" not in out
+
+
+def test_about_blank_iframe_placeholder_is_left_alone() -> None:
+    """~1,521 of the portfolio's iframes are exactly this — an inert
+    lazy-load placeholder (task-60 plan §0.6) — left alone either way.
+    """
+    html = '<iframe src="about:blank" data-lazy-src="/widget"></iframe>'
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert html in out
+
+
+def test_analytics_iframe_still_rewritten_and_blocked_at_replay() -> None:
+    """349 of the portfolio's iframes are GTM's own noscript pixel
+    (task-60 plan §0.6/§2.2) — loading it for real would send a live hit
+    into the client's own GA account on every archived-snapshot view.
+    """
+    html = '<iframe src="https://www.googletagmanager.com/ns.html?id=GTM-X"></iframe>'
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert f"/archive/r/{TS}/https://www.googletagmanager.com/ns.html?id=GTM-X" in out
+
+
+def test_live_iframes_flag_off_reverts_to_the_old_rewrite_behavior() -> None:
+    """`Settings.archive_live_iframes=False` — the kill-switch (task-60
+    §2) — must fully revert to archiving/blocking every iframe, no
+    exceptions, matching pre-task-60 behavior.
+    """
+    html = '<iframe src="https://www.google.com/maps/embed?pb=abc"></iframe>'
+    out = rewrite_html(html, base_url=BASE, ts=TS, live_iframes=False)
+    assert f"/archive/r/{TS}/https://www.google.com/maps/embed?pb=abc" in out
+
+
+def test_live_iframe_custom_analytics_hosts_setting_is_honored() -> None:
+    html = '<iframe src="https://tracker.example.com/beacon"></iframe>'
+    out = rewrite_html(
+        html, base_url=BASE, ts=TS, analytics_hosts=frozenset({"tracker.example.com"})
+    )
+    assert f"/archive/r/{TS}/https://tracker.example.com/beacon" in out
+
+
+def test_iframe_src_property_and_lazy_attributes_are_untouched_by_html_rewrite() -> None:
+    """A lazy-load plugin's `data-lazy-src` on a live-left iframe must
+    survive unrewritten too — the whole tag is stashed byte-for-byte, not
+    just its `src`.
+    """
+    html = '<iframe src="about:blank" data-lazy-src="https://open.spotify.com/embed/track/x"></iframe>'
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert 'data-lazy-src="https://open.spotify.com/embed/track/x"' in out
+
+
+def test_live_iframe_hosts_lists_distinct_non_analytics_hosts() -> None:
+    html = (
+        '<iframe src="https://www.google.com/maps/embed?pb=abc"></iframe>'
+        '<iframe src="https://open.spotify.com/embed/track/x"></iframe>'
+        '<iframe src="https://www.google.com/maps/embed?pb=xyz"></iframe>'  # same host again
+        '<iframe src="https://www.googletagmanager.com/ns.html?id=GTM-X"></iframe>'  # excluded
+        '<iframe src="about:blank"></iframe>'  # excluded, nothing to report
+    )
+    hosts = live_iframe_hosts(html, base_url=BASE)
+    assert hosts == ["open.spotify.com", "www.google.com"]
+
+
+def test_live_iframe_hosts_empty_when_flag_off() -> None:
+    html = '<iframe src="https://www.google.com/maps/embed?pb=abc"></iframe>'
+    assert live_iframe_hosts(html, base_url=BASE, live_iframes=False) == []
+
+
+def test_live_iframe_hosts_empty_for_a_page_with_no_iframes() -> None:
+    assert live_iframe_hosts("<p>No embeds here.</p>", base_url=BASE) == []

@@ -452,6 +452,198 @@ def test_has_running_capture_blocks_a_second_manual_run(session):
     assert repo.has_running_capture(client.id) is False
 
 
+def test_css_link_body_is_expanded_for_background_and_font_urls(
+    session, artifacts_dir, settings, fake_fetch
+):
+    """task-60 §1.2 — the fix for the reported bug (plan §0.1): a
+    background image (and a font) referenced ONLY from a fetched CSS
+    file's own body was never discovered before this queue existed.
+    """
+    css_url = "https://acme.example.com/style.css"
+    bg_url = "https://acme.example.com/bg.jpg"
+    font_url = "https://acme.example.com/fonts/acme.woff2"
+    html = (
+        b'<html><head><title>Acme</title>'
+        b'<link rel="stylesheet" href="/style.css"></head><body></body></html>'
+    )
+    css_body = (
+        b".hero{background:url(/bg.jpg)}"
+        b"@font-face{font-family:'Acme';src:url(/fonts/acme.woff2)}"
+    )
+    client, repo, archive_url = _seed(session)
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, html, headers={"Content-Type": "text/html"}))
+    fake_fetch.set(css_url, _result(css_url, css_body, headers={"Content-Type": "text/css"}))
+    fake_fetch.set(bg_url, _result(bg_url, b"JPEGDATA", headers={"Content-Type": "image/jpeg"}))
+    fake_fetch.set(
+        font_url, _result(font_url, b"WOFF2DATA", headers={"Content-Type": "font/woff2"})
+    )
+
+    result = _capture_one(
+        session, repo, client, archive_url,
+        settings=settings, artifacts_dir=artifacts_dir,
+        now=datetime(2026, 1, 1, tzinfo=UTC), capture_assets=True,
+    )
+
+    assert result.outcome == "new"
+    assert fake_fetch.calls[bg_url] == 1
+    assert fake_fetch.calls[font_url] == 1
+    bg_asset = repo.get_asset_by_key("acme.example.com/bg.jpg")
+    font_asset = repo.get_asset_by_key("acme.example.com/fonts/acme.woff2")
+    assert bg_asset is not None and repo.latest_asset_version(bg_asset.id) is not None
+    assert font_asset is not None and repo.latest_asset_version(font_asset.id) is not None
+
+
+def test_css_body_is_expanded_at_most_once_per_page_even_with_aliased_refs(
+    session, artifacts_dir, settings, fake_fetch, monkeypatch
+):
+    """Two `<link>` tags reference the same stylesheet under URL strings
+    that only collapse to one asset AFTER `normalize_url` strips a
+    tracking parameter — `discover_html_assets` dedups by exact string,
+    not by normalized key, so both surface as separate initial queue
+    entries. The css body must still only be parsed for nested assets
+    once per page (task-60 §1.2, §3 step 2).
+    """
+    css_url = "https://acme.example.com/style.css"
+    html = (
+        b'<html><head><title>Acme</title>'
+        b'<link rel="stylesheet" href="/style.css">'
+        b'<link rel="stylesheet" href="/style.css?utm_source=aliased">'
+        b"</head><body></body></html>"
+    )
+    css_body = b".hero{background:url(/bg.jpg)}"
+    client, repo, archive_url = _seed(session)
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, html, headers={"Content-Type": "text/html"}))
+    fake_fetch.set(css_url, _result(css_url, css_body, headers={"Content-Type": "text/css"}))
+    fake_fetch.set(
+        "https://acme.example.com/bg.jpg",
+        _result(
+            "https://acme.example.com/bg.jpg", b"JPEGDATA", headers={"Content-Type": "image/jpeg"}
+        ),
+    )
+    calls = {"n": 0}
+    original = capturemod.assetsmod.discover_css_assets
+
+    def _spy(css_text, base_url):
+        calls["n"] += 1
+        return original(css_text, base_url)
+
+    monkeypatch.setattr(capturemod.assetsmod, "discover_css_assets", _spy)
+
+    _capture_one(
+        session, repo, client, archive_url,
+        settings=settings, artifacts_dir=artifacts_dir,
+        now=datetime(2026, 1, 1, tzinfo=UTC), capture_assets=True,
+    )
+
+    assert calls["n"] == 1
+    assert fake_fetch.calls[css_url] == 1
+
+
+def test_backfill_css_assets_dry_run_reports_missing_without_fetching(
+    session, artifacts_dir, settings, fake_fetch
+):
+    """task-60 §1.3 — a stored snapshot from BEFORE the discovery fix has
+    an inline `<style>` background the old capture never found; the
+    backfill's dry run must count it without writing anything.
+    """
+    client, repo, archive_url = _seed(session)
+    html = (
+        b'<html><head><title>Acme</title><style>'
+        b'.hero{background-image:url("https://acme.example.com/old-bg.jpg")}'
+        b"</style></head><body></body></html>"
+    )
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, html, headers={"Content-Type": "text/html"}))
+    _capture_one(
+        session, repo, client, archive_url,
+        settings=settings, artifacts_dir=artifacts_dir,
+        now=datetime(2026, 1, 1, tzinfo=UTC), capture_assets=False,
+    )
+
+    outcome = capturemod.backfill_css_assets(
+        session, repo, client_id=None, settings=settings, artifacts_dir=artifacts_dir,
+        dry_run=True, now=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+
+    assert outcome.scanned_snapshots == 1
+    assert outcome.missing_by_kind.get("img") == 1
+    assert outcome.missing_total == 1
+    assert repo.get_asset_by_key("acme.example.com/old-bg.jpg") is None  # nothing written
+    assert "https://acme.example.com/old-bg.jpg" not in fake_fetch.calls
+
+
+def test_backfill_css_assets_fetches_missing_and_registers_versions(
+    session, artifacts_dir, settings, fake_fetch
+):
+    client, repo, archive_url = _seed(session)
+    bg_url = "https://acme.example.com/old-bg.jpg"
+    html = (
+        b'<html><head><title>Acme</title><style>'
+        b'.hero{background-image:url("https://acme.example.com/old-bg.jpg")}'
+        b"</style></head><body></body></html>"
+    )
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, html, headers={"Content-Type": "text/html"}))
+    _capture_one(
+        session, repo, client, archive_url,
+        settings=settings, artifacts_dir=artifacts_dir,
+        now=datetime(2026, 1, 1, tzinfo=UTC), capture_assets=False,
+    )
+    fake_fetch.set(bg_url, _result(bg_url, b"JPEGDATA", headers={"Content-Type": "image/jpeg"}))
+
+    outcome = capturemod.backfill_css_assets(
+        session, repo, client_id=None, settings=settings, artifacts_dir=artifacts_dir,
+        dry_run=False, now=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    session.commit()
+
+    assert outcome.fetched == 1
+    assert outcome.failed == 0
+    asset = repo.get_asset_by_key("acme.example.com/old-bg.jpg")
+    assert asset is not None
+    assert repo.latest_asset_version(asset.id) is not None
+
+
+def test_backfill_css_assets_scopes_to_one_client(session, artifacts_dir, settings, fake_fetch):
+    client_a, repo, archive_url_a = _seed(session)
+    client_b = ClientRepository(session).create(
+        name="Beta", slug="beta", domain="beta.example.com", timezone="America/New_York"
+    )
+    session.commit()
+    url_b = "https://beta.example.com/"
+    archive_url_b = repo.get_or_create_url(client_b.id, url_b, "beta.example.com/", source="manual")
+    session.commit()
+
+    html_a = (
+        b'<html><head><title>A</title><style>.h{background:url(https://acme.example.com/a.jpg)}'
+        b"</style></head><body></body></html>"
+    )
+    html_b = (
+        b'<html><head><title>B</title><style>.h{background:url(https://beta.example.com/b.jpg)}'
+        b"</style></head><body></body></html>"
+    )
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, html_a, headers={"Content-Type": "text/html"}))
+    fake_fetch.set(url_b, _result(url_b, html_b, headers={"Content-Type": "text/html"}))
+
+    _capture_one(
+        session, repo, client_a, archive_url_a,
+        settings=settings, artifacts_dir=artifacts_dir,
+        now=datetime(2026, 1, 1, tzinfo=UTC), capture_assets=False,
+    )
+    _capture_one(
+        session, repo, client_b, archive_url_b,
+        settings=settings, artifacts_dir=artifacts_dir,
+        now=datetime(2026, 1, 1, tzinfo=UTC), capture_assets=False,
+    )
+
+    outcome = capturemod.backfill_css_assets(
+        session, repo, client_id=client_a.id, settings=settings, artifacts_dir=artifacts_dir,
+        dry_run=True, now=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+
+    assert outcome.scanned_snapshots == 1  # only client A's own snapshot
+    assert outcome.missing_total == 1
+    assert "img" in outcome.missing_by_kind
+
+
 def test_capture_writes_urls_total_before_visiting_any_url(
     session, artifacts_dir, settings, fake_fetch
 ):

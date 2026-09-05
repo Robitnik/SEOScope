@@ -281,8 +281,20 @@ function metaPanelMarkup(s) {
         <div><p class="archive-meta-label">Canonical</p><p class="archive-meta-value">${s.canonical ? escapeHtml(s.canonical) : "—"}</p></div>
         <div><p class="archive-meta-label">Meta robots</p><p class="archive-meta-value">${s.meta_robots ? escapeHtml(s.meta_robots) : "—"}</p></div>
         <div><p class="archive-meta-label">Word count</p><p>${s.word_count ?? "—"}</p></div>
-        <div><p class="archive-meta-label">Assets</p><p>${s.asset_count} captured${s.assets_missing ? `, ${s.assets_missing} missing` : ""}${s.assets_truncated ? " (truncated)" : ""}</p></div>
+        <div>
+          <p class="archive-meta-label">Assets</p>
+          <p>${s.asset_count} captured
+            ${s.assets_missing ? `<span class="tag-new" data-tone="warning">${s.assets_missing} missing</span>` : ""}
+            ${s.assets_truncated ? `<span class="tag-new" data-tone="warning">truncated</span>` : ""}
+          </p>
+        </div>
         <div><p class="archive-meta-label">Reason stored</p><p>${escapeHtml(s.store_reason)}</p></div>
+        ${s.live_iframe_hosts && s.live_iframe_hosts.length ? `
+        <div>
+          <p class="archive-meta-label">Live embeds</p>
+          <p>${s.live_iframe_hosts.length} (${s.live_iframe_hosts.map(escapeHtml).join(", ")})</p>
+          <p class="archive-meta-note">Embedded third-party frames are loaded live, not archived.</p>
+        </div>` : ""}
       </div>
       <details class="archive-meta-headers">
         <summary>Response headers</summary>

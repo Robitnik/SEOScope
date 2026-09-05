@@ -1885,6 +1885,14 @@
             "title": "Archive Enabled",
             "type": "boolean"
           },
+          "assets_captured": {
+            "title": "Assets Captured",
+            "type": "integer"
+          },
+          "assets_referenced": {
+            "title": "Assets Referenced",
+            "type": "integer"
+          },
           "blobs_total": {
             "title": "Blobs Total",
             "type": "integer"
@@ -1958,6 +1966,8 @@
           "bytes_local",
           "bytes_uploaded",
           "bytes_not_uploaded",
+          "assets_referenced",
+          "assets_captured",
           "top_changing_urls",
           "recent_captures"
         ],
@@ -2065,6 +2075,13 @@
             "title": "Last Confirmed At",
             "type": "string"
           },
+          "live_iframe_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Live Iframe Hosts",
+            "type": "array"
+          },
           "meta_robots": {
             "anyOf": [
               {
@@ -2171,6 +2188,7 @@
           "asset_count",
           "assets_truncated",
           "assets_missing",
+          "live_iframe_hosts",
           "store_reason",
           "prev_snapshot_id",
           "next_snapshot_id"
