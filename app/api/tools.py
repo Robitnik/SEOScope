@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.api import register_router
 from app.api.deps import SessionDep
-from app.db.models import AltTextReport, RedirectCheck
+from app.db.models import AltTextReport, RedirectCheck, SchemaMarkupCheck
 from app.schemas.tools import ToolCardDTO, ToolsCatalogDTO
 
 router = APIRouter(prefix="/api/v1", tags=["tools"])
@@ -92,6 +92,18 @@ _TOOLS: tuple[_ToolEntry, ...] = (
         route="#/tools/framework-check",
         icon="file-type-docx",
     ),
+    _ToolEntry(
+        key="schema-markup",
+        name="Schema Markup Checker",
+        summary=(
+            "Paste a URL, see what schema.org structured data is already there "
+            "against live Google rich-result rules, and get a ready-to-paste "
+            "JSON-LD snippet for what's missing."
+        ),
+        tags=("schema.org", "json-ld", "structured-data", "rich-results", "seo", "audit"),
+        route="#/tools/schema-markup",
+        icon="braces",
+    ),
 )
 
 
@@ -114,6 +126,13 @@ def _redirects_stat(session: Session) -> tuple[str | None, str | None]:
     return ("check" if total == 1 else "checks"), str(total)
 
 
+def _schema_markup_stat(session: Session) -> tuple[str | None, str | None]:
+    total = session.scalar(select(func.count()).select_from(SchemaMarkupCheck)) or 0
+    if not total:
+        return None, None
+    return ("check" if total == 1 else "checks"), str(total)
+
+
 # Статистику дає сам інструмент: хаб не знає, що для нього «одиниця роботи».
 # `char-counter` тут навмисно немає: він нічого не зберігає в БД, тож
 # stat_label/stat_value лишаються `None` (картка чесно показує «Not used
@@ -121,6 +140,7 @@ def _redirects_stat(session: Session) -> tuple[str | None, str | None]:
 _STATS: dict[str, Callable[[Session], tuple[str | None, str | None]]] = {
     "alt-text": _alt_text_stat,
     "redirects": _redirects_stat,
+    "schema-markup": _schema_markup_stat,
 }
 
 

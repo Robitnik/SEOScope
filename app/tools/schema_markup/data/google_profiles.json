@@ -1,0 +1,103 @@
+{
+  "_meta": {
+    "checked_at": "2026-09-04",
+    "note": "Рукописний профіль Google Search structured data вимог — вокабуляр (vocab.json.gz) не несе required/recommended/rich_result_status, бо schema.org їх не визначає (це політика Google, не властивість типу). Покриває вузький набір, реально живий для агенційного SEO (task-56 §2.1); не претендує на повноту всього Google Search Gallery.",
+    "docs_index": "https://developers.google.com/search/docs/appearance/structured-data/search-gallery"
+  },
+  "Organization": {
+    "rich_result_status": "live",
+    "docs_url": "https://developers.google.com/search/docs/appearance/structured-data/organization",
+    "checked_at": "2026-09-04",
+    "required": ["name", "url"],
+    "recommended": ["logo", "sameAs", "contactPoint", "image"]
+  },
+  "LocalBusiness": {
+    "rich_result_status": "live",
+    "docs_url": "https://developers.google.com/search/docs/appearance/structured-data/local-business",
+    "checked_at": "2026-09-04",
+    "required": ["name", "address"],
+    "recommended": [
+      "image", "telephone", "priceRange", "openingHoursSpecification",
+      "geo", "url", "sameAs", "aggregateRating", "review"
+    ],
+    "notes": "aggregateRating/review не можна самим генерувати з даних клієнта — тільки якщо на сторінці вже є реальний доведений відгук/рейтинг з іншого джерела (PLAN §12, Google general guidelines проти self-serving розмітки)."
+  },
+  "WebSite": {
+    "rich_result_status": "live",
+    "docs_url": "https://developers.google.com/search/docs/appearance/site-names",
+    "checked_at": "2026-09-04",
+    "required": ["name", "url"],
+    "recommended": ["potentialAction"],
+    "notes": "potentialAction/SearchAction (sitelinks searchbox) генерується лише якщо на сайті підтверджено реально працюючий пошук з передбачуваним query-параметром — інакше розмітка описує функціонал, якого немає."
+  },
+  "BreadcrumbList": {
+    "rich_result_status": "live",
+    "docs_url": "https://developers.google.com/search/docs/appearance/structured-data/breadcrumb",
+    "checked_at": "2026-09-04",
+    "required": ["itemListElement"],
+    "recommended": []
+  },
+  "Article": {
+    "rich_result_status": "live",
+    "docs_url": "https://developers.google.com/search/docs/appearance/structured-data/article",
+    "checked_at": "2026-09-04",
+    "required": ["headline", "image", "datePublished"],
+    "recommended": ["dateModified", "author", "publisher"]
+  },
+  "BlogPosting": {
+    "rich_result_status": "live",
+    "docs_url": "https://developers.google.com/search/docs/appearance/structured-data/article",
+    "checked_at": "2026-09-04",
+    "required": ["headline", "image", "datePublished"],
+    "recommended": ["dateModified", "author", "publisher"],
+    "notes": "Google документує вимоги на рівні `Article` (спільні для NewsArticle/BlogPosting/Article) — той самий профіль, застосований до підтипу."
+  },
+  "Product": {
+    "rich_result_status": "live",
+    "docs_url": "https://developers.google.com/search/docs/appearance/structured-data/product",
+    "checked_at": "2026-09-04",
+    "required": ["name"],
+    "recommended": ["image", "description", "sku", "offers", "review", "aggregateRating", "brand"],
+    "notes": "offers (Offer.price/priceCurrency/availability) фактично обов'язкові для rich result, хоч Google формально лишає Product без офера валідним — генеруємо лише якщо ціну й валюту реально видно на сторінці."
+  },
+  "Service": {
+    "rich_result_status": "no_rich_result_but_valid",
+    "docs_url": "https://schema.org/Service",
+    "checked_at": "2026-09-04",
+    "required": ["name"],
+    "recommended": ["provider", "areaServed", "description"],
+    "notes": "Немає окремої Google Search Gallery фічі для Service — розмітка валідна й корисна для Knowledge Graph/AI-краулерів, але rich result не дає."
+  },
+  "Person": {
+    "rich_result_status": "live",
+    "docs_url": "https://developers.google.com/search/docs/appearance/structured-data/profile-page",
+    "checked_at": "2026-09-04",
+    "required": ["name"],
+    "recommended": ["image", "sameAs", "jobTitle", "worksFor"],
+    "notes": "Повний rich result (Profile page) вимагає ProfilePage-обгортки навколо; голий Person — валідний допоміжний тип (напр. author у BlogPosting)."
+  },
+  "FAQPage": {
+    "rich_result_status": "no_rich_result_but_valid",
+    "docs_url": "https://developers.google.com/search/docs/appearance/structured-data/faqpage",
+    "checked_at": "2026-09-04",
+    "required": ["mainEntity"],
+    "recommended": [],
+    "notes": "Rich result вимкнено в Google Search 07.05.2026 (Rich Results Test/API — до серпня 2026). Тип лишається валідним schema.org, корисний для Bing/AI-краулерів, але Search-фічі не дає. Генератор навмисно НЕ пропонує FAQPage автоматично — лише за явним запитом оператора з цим попередженням."
+  },
+  "HowTo": {
+    "rich_result_status": "retired",
+    "docs_url": "https://developers.google.com/search/docs/appearance/structured-data/how-to",
+    "checked_at": "2026-09-04",
+    "required": [],
+    "recommended": [],
+    "notes": "Rich result прибрано в Google Search у вересні 2023 (десктоп і мобайл). Генератор НІКОЛИ не пропонує цей тип."
+  },
+  "BookSeriesAction": {
+    "rich_result_status": "retired",
+    "docs_url": "https://developers.google.com/search/docs/appearance/structured-data/book-actions",
+    "checked_at": "2026-09-04",
+    "required": [],
+    "recommended": [],
+    "notes": "Один із 7 типів, знятих 12.06.2025 (Book Actions/Course Info/ClaimReview/Estimated Salary/Learning Video/Special Announcement/Vehicle Listing). Book Actions пізніше повернули (банер знято в листопаді 2025) — але для нашої агенційної ніші (SEO для локального бізнесу/e-commerce) жоден із 7 не релевантний, тому в профілі позначений retired, а не окремо реактивований."
+  }
+}
