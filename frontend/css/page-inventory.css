@@ -1,0 +1,104 @@
+/* Page Inventory (task-57): the "Pages | URL | Breadcrumbs | Title |
+ * Description | Keywords" architecture table + per-field SEO/slop QA.
+ * Reuses `.analytics-table`/`.table-scroll`/`.search-field`/`.tablist`/
+ * `.state-panel`/`.pagination` base styles (client-page.css/app.css) —
+ * only page-inventory-specific pieces live here.
+ */
+
+.pi-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.pi-recrawl-note {
+  display: flex; align-items: center; gap: 6px; margin: 6px 20px 0;
+  color: var(--ink-muted); font-size: 12px;
+}
+.pi-recrawl-note .icon { width: 15px; height: 15px; color: var(--info); flex: 0 0 auto; }
+
+.pi-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin: 14px 20px 0;
+}
+
+.pi-profile-toggle { display: flex; gap: 6px; margin: 10px 20px 0; }
+.pi-profile-toggle .pi-profile-active { border-color: var(--accent); color: var(--accent); }
+.pi-profile-note { margin: 6px 20px 0; color: var(--ink-dim); font-size: 11px; max-width: 640px; }
+
+/* The wide architecture table must scroll INSIDE this wrapper, never the
+ * whole page — `contain: paint` forces this element to be the real
+ * painting/overflow boundary its `overflow-x: auto` already implies
+ * (task-54's own fix for the identical Chromium leak, task-57 reuses it). */
+.pi-table-scroll { margin: 12px 20px 0; border: 1px solid var(--line); contain: paint; }
+
+/* This table is entirely textual (URLs/titles/descriptions, no numeric
+ * columns) — `.analytics-table`'s right-aligned/nowrap default is built for
+ * metric tables and is wrong here, so every cell is overridden to the
+ * left-aligned/wrapping shape `.analytics-row__value` uses for its one
+ * text column. */
+.pi-table th, .pi-table td { text-align: left; white-space: normal; vertical-align: top; }
+.pi-table th:first-child, .pi-table td:first-child { min-width: 160px; }
+.pi-table td { overflow-wrap: anywhere; max-width: 320px; }
+.pi-table td a { color: var(--ink); }
+.pi-table td a:hover { color: var(--accent); }
+
+.pi-cell-muted, .pi-cell-empty { color: var(--ink-dim); font-style: italic; }
+
+.pi-row--broken td { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.pi-row--warn td { background: color-mix(in srgb, var(--warning) 8%, transparent); }
+.pi-row--duplicate td { background: color-mix(in srgb, var(--info) 8%, transparent); }
+.pi-row--pending td { color: var(--ink-dim); }
+
+.pi-status {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: var(--radius-sm);
+  font-size: 9px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
+}
+.pi-status--live { color: var(--success); border: 1px solid var(--success); }
+.pi-status--broken { color: var(--danger); border: 1px solid var(--danger); }
+.pi-status--redirect { color: var(--warning); border: 1px solid var(--warning); }
+.pi-status--noindex { color: var(--warning); border: 1px solid var(--warning); }
+.pi-status--not_checked { color: var(--ink-dim); border: 1px solid var(--line); }
+
+/* --- SEO QA tab ----------------------------------------------------- */
+
+.pi-cluster-summary { margin: 14px 20px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+.pi-cluster-summary__label { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-weight: 700; font-size: 12px; }
+.pi-cluster-summary__label .icon { width: 15px; height: 15px; color: var(--info); }
+.pi-cluster-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pi-cluster-chip { padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; color: var(--ink-muted); }
+.pi-cluster-chip--more { color: var(--ink-dim); font-style: italic; }
+
+.pi-row-toggle {
+  display: flex; align-items: center; gap: 4px; background: none; border: none; padding: 0;
+  color: var(--ink); font: inherit; cursor: pointer; text-align: left;
+}
+.pi-row-toggle .icon { width: 14px; height: 14px; color: var(--ink-dim); flex: 0 0 auto; }
+.pi-row-toggle:hover { color: var(--accent); }
+
+.pi-qa-cell { position: relative; }
+.pi-badge {
+  display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 1px 6px;
+  border-radius: 999px; font-size: 10px; font-weight: 700; vertical-align: middle;
+}
+.pi-badge .icon { width: 12px; height: 12px; }
+.pi-badge--error { color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); }
+.pi-badge--warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 16%, transparent); }
+.pi-badge--info { color: var(--info); background: color-mix(in srgb, var(--info) 16%, transparent); }
+
+.pi-qa-detail-row td { background: var(--canvas-raised); padding: 12px 16px; }
+.pi-qa-detail-group + .pi-qa-detail-group { margin-top: 10px; }
+.pi-qa-detail-field { margin: 0 0 4px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); }
+.pi-qa-detail-group ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.pi-qa-detail-empty { display: flex; align-items: center; gap: 6px; color: var(--success); margin: 0; font-size: 12px; }
+.pi-qa-detail-empty .icon { width: 15px; height: 15px; }
+
+.pi-badge--error-inline, .pi-badge--warn-inline, .pi-badge--info-inline {
+  display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: var(--radius-sm);
+  font-size: 12px; font-weight: 400; width: fit-content;
+}
+.pi-badge--error-inline .icon, .pi-badge--warn-inline .icon, .pi-badge--info-inline .icon { width: 14px; height: 14px; flex: 0 0 auto; }
+.pi-badge--error-inline { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.pi-badge--warn-inline { color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); }
+.pi-badge--info-inline { color: var(--info); background: color-mix(in srgb, var(--info) 10%, transparent); }
+
+@media (max-width: 640px) {
+  .pi-toolbar { flex-direction: column; align-items: stretch; }
+  .pi-actions { flex-direction: column; align-items: stretch; }
+}
