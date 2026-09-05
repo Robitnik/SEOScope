@@ -19,9 +19,11 @@ export const PROVIDERS = {
 
 // Semrush is limited by source (paid plan required for full data) — hidden from the
 // card block until that's resolved. Keep the entry in PROVIDERS so it's a one-line revert.
+// Ahrefs is hidden the same way: collection stopped long ago, so its snapshot
+// data is stale and no longer meaningful to show.
 // `tech_audit`/`blogs` are excluded for a different reason: neither has KPIs for a card.
 export const PROVIDER_ORDER = Object.keys(PROVIDERS).filter(
-  (key) => key !== "semrush" && key !== "tech_audit" && key !== "blogs",
+  (key) => key !== "ahrefs" && key !== "semrush" && key !== "tech_audit" && key !== "blogs",
 );
 
 export const STATE_META = {

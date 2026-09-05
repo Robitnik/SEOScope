@@ -57,9 +57,11 @@ a { color: var(--ink); }
   padding: 14px clamp(18px, 3vw, 52px);
   border-bottom: 1px solid var(--line);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
+  row-gap: 10px;
   /* Шапка прозора: стрічка проходить крізь увесь masthead без стику. */
   background: transparent;
 }
@@ -197,6 +199,16 @@ input::placeholder { color: var(--ink-dim); }
 .client-status__since { color: var(--ink-dim); font-weight: 400; }
 .client-status--paused { border-color: var(--warning); color: var(--warning); }
 .client-status--paused .client-status__since { color: var(--warning); opacity: .8; }
+
+/* Позначка тестового/dev-клієнта — не кнопка, лише мітка (client-status.js
+   `devBadge`), тому окремий колір (--info), щоб не зливатись зі status/health. */
+.dev-badge {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 24px;
+  padding: 3px 8px; border: 1px solid var(--info); color: var(--info);
+  font-size: 11px; font-weight: 700; border-radius: var(--radius-sm);
+  justify-self: start;
+}
+.dev-badge .icon { flex: 0 0 auto; }
 .client-status-note {
   display: flex; align-items: center; gap: 6px; margin: 0;
   padding: 7px 16px; border-bottom: 1px solid var(--line-soft);

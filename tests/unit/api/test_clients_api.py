@@ -87,6 +87,46 @@ def test_patch_client_partial_update(client, db):
     assert response.json()["name"] == "Acme"
 
 
+# --- dev/test client marker --------------------------------------------------
+
+
+def test_new_client_is_not_dev_by_default(client):
+    response = client.post(
+        "/api/v1/clients",
+        json={
+            "name": "Acme",
+            "slug": "acme",
+            "domain": "acme.com",
+            "timezone": "America/New_York",
+        },
+    )
+
+    assert response.json()["is_dev"] is False
+
+
+def test_create_dev_client_and_toggle_via_patch(client, db):
+    created = client.post(
+        "/api/v1/clients",
+        json={
+            "name": "Alpha Version",
+            "slug": "alpha-dev",
+            "domain": "alfa.tyvdev.com",
+            "timezone": "America/New_York",
+            "is_dev": True,
+        },
+    )
+    assert created.status_code == 201
+    client_id = created.json()["id"]
+    assert created.json()["is_dev"] is True
+
+    got = client.get(f"/api/v1/clients/{client_id}")
+    assert got.json()["is_dev"] is True
+
+    toggled = client.patch(f"/api/v1/clients/{client_id}", json={"is_dev": False})
+    assert toggled.status_code == 200
+    assert toggled.json()["is_dev"] is False
+
+
 # --- client lifecycle status (task-34) --------------------------------------
 
 

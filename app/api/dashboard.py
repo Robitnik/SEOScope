@@ -706,6 +706,7 @@ def _build_client_card(
         status=client.status,
         status_changed_at=client.status_changed_at,
         status_note=client.status_note,
+        is_dev=client.is_dev,
         overall_status=overall_status,
         providers=summaries,
         last_synced_at=max(successes) if successes else None,

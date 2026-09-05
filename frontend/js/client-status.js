@@ -40,6 +40,16 @@ export function clientStatusBadge(client) {
     </button>`;
 }
 
+// Позначка тестового/dev-клієнта (не пов'язана зі status/enabled вище) —
+// нерозмовний `<span>`, а не `<button>`: це лише мітка, вона нічим не керує.
+export function devBadge(client) {
+  if (!client.is_dev) return "";
+  return `
+    <span class="dev-badge" title="Test/dev client — not a real client">
+      ${icon("flask", "icon icon--tiny")}<span>DEV</span>
+    </span>`;
+}
+
 // Нотатка оператора («payment stopped 01.07») — окремим рядком під бейджем,
 // а не в `title`: інформація, потрібна щоб не робити зайву роботу, не має
 // ховатись за hover (AGENTS §3).

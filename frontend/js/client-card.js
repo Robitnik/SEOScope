@@ -1,6 +1,6 @@
 import { PROVIDERS, PROVIDER_ORDER, SOURCE_LABELS, STATE_META, escapeHtml, formatDate, formatDelta, formatRange, formatShortDate, formatTimestamp, formatValue, icon, initials, metricLabel, stateClass, trend } from "./formatters.js?v=20260821-spin3";
 import { buildClientHash, buildMonitorClientHash } from "./router.js?v=20260821-spin3";
-import { clientStatusBadge, clientStatusNote, isPaused } from "./client-status.js?v=20260821-spin3";
+import { clientStatusBadge, clientStatusNote, devBadge, isPaused } from "./client-status.js?v=20260821-spin3";
 import { cardSkeletons } from "./skeleton.js?v=20260821-spin3";
 
 function providerIcon(provider) {
@@ -148,9 +148,9 @@ function healthGauge(health) {
     </div>`;
 }
 
-// Two blocks above the Ahrefs section, both driven by the composite health
-// score the corner gauge shows — the same number, so the dial, the arrow and
-// the line always tell one story:
+// Two blocks rendered once at the top of the providers list, both driven by
+// the composite health score the corner gauge shows — the same number, so
+// the dial, the arrow and the line always tell one story:
 //
 //   1. `trendDeltaBlock` — which way this client moved over the past week.
 //   2. `trendSparkline`  — the daily shape of that move.
@@ -159,7 +159,10 @@ function healthGauge(health) {
 // records a point per client per day and returns `delta_pct` + `history`), so
 // they render synchronously with the card. That replaces the previous slot,
 // which fetched a *per-card* history request after paint and charted Ahrefs'
-// own Health Score — a different series from the gauge it sat under.
+// own Health Score — a different series from the gauge it sat under. It used
+// to piggyback on the Ahrefs provider row (composite health has nothing to
+// do with Ahrefs specifically), but Ahrefs is no longer shown on the card
+// (stale, uncollected data), so this now renders unconditionally instead.
 //
 // The same pair also drives the GSC clicks block above Search Console
 // (`gscClicksTrendBlocks`) and the GBP website-clicks block above Reporting
@@ -378,13 +381,15 @@ export function renderClientCard(client, dashboard) {
       <div class="client-card__meta">
         <span class="status-label ${stateClass(client.overall_status)}">${icon(state.icon)}${state.label}</span>
         ${clientStatusBadge(client)}
+        ${devBadge(client)}
         ${monitorBadge(client, dashboard)}
         <span>Last collection: ${formatTimestamp(client.last_synced_at)}</span>
       </div>
       ${clientStatusNote(client)}
       ${techAuditStrip(client)}
       <div class="client-card__providers">
-        ${withMetrics.map((summary) => `${summary.provider === "ahrefs" ? healthTrendBlocks(client.health) : ""}${summary.provider === "gsc" ? gscClicksTrendBlocks(client.gsc_clicks_trend) : ""}${summary.provider === "reporting_ninja" ? gbpClicksTrendBlocks(client.gbp_clicks_trend) : ""}${providerBlock(summary, { current: dashboard.current_range, previous: dashboard.previous_range })}`).join("")}
+        ${healthTrendBlocks(client.health)}
+        ${withMetrics.map((summary) => `${summary.provider === "gsc" ? gscClicksTrendBlocks(client.gsc_clicks_trend) : ""}${summary.provider === "reporting_ninja" ? gbpClicksTrendBlocks(client.gbp_clicks_trend) : ""}${providerBlock(summary, { current: dashboard.current_range, previous: dashboard.previous_range })}`).join("")}
         ${setupPanel(withoutMetrics)}
       </div>
     </article>`;

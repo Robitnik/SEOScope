@@ -25,6 +25,25 @@ def test_list_active_excludes_disabled(session):
     assert disabled.id not in [c.id for c in active]
 
 
+def test_create_defaults_to_not_dev(session):
+    repo = ClientRepository(session)
+
+    client = repo.create(name="Acme", slug="acme", domain="acme.com")
+
+    assert client.is_dev is False
+
+
+def test_create_dev_client(session):
+    repo = ClientRepository(session)
+
+    client = repo.create(
+        name="Alpha Version", slug="alpha-dev", domain="alfa.tyvdev.com", is_dev=True
+    )
+
+    assert client.is_dev is True
+    assert repo.get(client.id).is_dev is True
+
+
 # --- client lifecycle status (task-34) --------------------------------------
 
 

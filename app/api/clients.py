@@ -123,6 +123,7 @@ def _to_client_dto(client: Client) -> ClientDTO:
         status=client.status,
         status_changed_at=client.status_changed_at,
         status_note=client.status_note,
+        is_dev=client.is_dev,
         created_at=client.created_at,
         updated_at=client.updated_at,
     )
@@ -161,6 +162,7 @@ async def create_client(body: ClientCreateRequest, session: SessionDep) -> Clien
             timezone=body.timezone,
             enabled=body.enabled,
             status=body.status,
+            is_dev=body.is_dev,
         )
 
     try:

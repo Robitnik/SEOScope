@@ -67,6 +67,10 @@ class Client(Base):
     # `enabled` — технічна видимість рядка: `False` ховає клієнта з дашборду
     # (`ClientRepository.list_active`). Це НЕ «пауза».
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # `is_dev` — рядок не є реальним (платним) клієнтом (sandbox/dev-домен,
+    # тестовий запис). На відміну від `enabled`/`status` нижче — не ховає
+    # рядок і не впливає на масові операції, лише позначка «DEV» в UI.
+    is_dev: Mapped[bool] = mapped_column(Boolean, default=False)
     # `status` (task-34) — комерційний стан співпраці: `paused` = оплата
     # припинена. Клієнт лишається видимим і зберігає історію, але випадає з
     # масових операцій (`list_collectable`). Індексу немає навмисно: у таблиці

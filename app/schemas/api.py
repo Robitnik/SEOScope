@@ -204,6 +204,7 @@ class ClientCardDTO(BaseModel):
     status: ClientStatus = ClientStatus.active
     status_changed_at: datetime | None = None
     status_note: str | None = None
+    is_dev: bool = False
     overall_status: Literal["ok", "attention", "stale", "failed_all"]
     providers: list[ProviderSummaryDTO]
     last_synced_at: datetime | None = None
@@ -242,6 +243,7 @@ class ClientDTO(BaseModel):
     status: ClientStatus = ClientStatus.active
     status_changed_at: datetime | None = None
     status_note: str | None = None
+    is_dev: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -256,6 +258,7 @@ class ClientCreateRequest(BaseModel):
     timezone: str
     enabled: bool = True
     status: ClientStatus = ClientStatus.active
+    is_dev: bool = False
 
 
 class ClientUpdateRequest(BaseModel):
@@ -266,6 +269,7 @@ class ClientUpdateRequest(BaseModel):
     market: str | None = None
     timezone: str | None = None
     enabled: bool | None = None
+    is_dev: bool | None = None
     # `status` тут навмисно відсутній: його міняє лише
     # `POST /clients/{id}/status`, і саме там ставиться `status_changed_at`.
     # Другий шлях запису означав би два місця, де народжується ця дата.

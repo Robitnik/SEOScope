@@ -78,6 +78,7 @@ class ClientRepository:
         timezone: str = "America/New_York",
         enabled: bool = True,
         status: ClientStatus = ClientStatus.active,
+        is_dev: bool = False,
     ) -> Client:
         client = Client(
             name=name,
@@ -88,6 +89,7 @@ class ClientRepository:
             enabled=enabled,
             # `status_changed_at` лишається NULL: створення — не зміна статусу.
             status=status,
+            is_dev=is_dev,
         )
         self._session.add(client)
         self._session.flush()
