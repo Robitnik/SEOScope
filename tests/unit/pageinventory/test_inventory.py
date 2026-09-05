@@ -113,7 +113,9 @@ def test_never_checked_page_stays_none_not_empty_string(session, tmp_path):
 
 def test_breadcrumbs_extracted_from_stored_blob(session, tmp_path):
     client_id = _client(session)
-    _checked_page(session, client_id, "https://acme.com/shop/", tmp_path, html=_HTML_WITH_BREADCRUMBS)
+    _checked_page(
+        session, client_id, "https://acme.com/shop/", tmp_path, html=_HTML_WITH_BREADCRUMBS
+    )
 
     result = build_inventory(session, client_id, artifacts_dir=tmp_path)
 
@@ -181,7 +183,9 @@ def test_status_label_classification(session, tmp_path):
     _checked_page(session, client_id, "https://acme.com/live/", tmp_path, status=200)
     _checked_page(session, client_id, "https://acme.com/gone/", tmp_path, status=404)
     _checked_page(session, client_id, "https://acme.com/moved/", tmp_path, status=301)
-    _checked_page(session, client_id, "https://acme.com/hidden/", tmp_path, status=200, indexable=False)
+    _checked_page(
+        session, client_id, "https://acme.com/hidden/", tmp_path, status=200, indexable=False
+    )
 
     result = build_inventory(session, client_id, artifacts_dir=tmp_path)
     labels = {row.url: row.status_label for row in result.rows}

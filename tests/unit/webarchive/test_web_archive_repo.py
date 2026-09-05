@@ -286,7 +286,9 @@ def test_resolve_snapshot_resolves_a_version_to_itself(session):
 def test_resolve_snapshot_picks_the_right_one_of_several_versions(session):
     repo = WebArchiveRepository(session)
     client = _client(session)
-    archive_url = repo.get_or_create_url(client.id, "https://acme.com/", "acme.com/", source="manual")
+    archive_url = repo.get_or_create_url(
+        client.id, "https://acme.com/", "acme.com/", source="manual"
+    )
     session.commit()
 
     def _make(observed_at):
@@ -370,7 +372,9 @@ def test_find_asset_by_key_prefix_escapes_like_wildcards_in_the_prefix(session):
     repo.get_or_create_asset(
         "https://acme.com/a_b%20c.css?v=1", "acme.com/a_b%20c.css?v=1", kind="css"
     )
-    repo.get_or_create_asset("https://acme.com/aXbYYc.css?v=1", "acme.com/aXbYYc.css?v=1", kind="css")
+    repo.get_or_create_asset(
+        "https://acme.com/aXbYYc.css?v=1", "acme.com/aXbYYc.css?v=1", kind="css"
+    )
     session.commit()
 
     found = repo.find_asset_by_key_prefix("acme.com/a_b%20c.css?")

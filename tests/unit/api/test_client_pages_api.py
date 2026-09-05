@@ -119,7 +119,9 @@ def test_profile_toggle_changes_severity_but_not_cluster_count(client, db):
     assert calibrated["summary"]["duplicate_groups"] == strict["summary"]["duplicate_groups"] == 1
     # Strict shows every pairwise finding (more of them); calibrated collapses
     # each row to one synthetic cluster finding per check (task-57 §2.3).
-    assert strict["summary"]["severity_counts"]["error"] > calibrated["summary"]["severity_counts"]["error"]
+    strict_errors = strict["summary"]["severity_counts"]["error"]
+    calibrated_errors = calibrated["summary"]["severity_counts"]["error"]
+    assert strict_errors > calibrated_errors
 
 
 def test_xlsx_export_has_two_sheets_with_expected_headers(client, db):

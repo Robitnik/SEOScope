@@ -67,7 +67,8 @@ def test_view_shell_sets_a_page_specific_title_and_canonical(client, db):
     response = client.get(f"/archive/view/snapshot/{snapshot_id}/{ts}/{url}")
 
     assert url in response.text
-    assert f'<link rel="canonical" href="/archive/view/snapshot/{snapshot_id}/{ts}/{url}">' in response.text
+    canonical = f'<link rel="canonical" href="/archive/view/snapshot/{snapshot_id}/{ts}/{url}">'
+    assert canonical in response.text
 
 
 def test_view_shell_accepts_a_percent_encoded_url(client, db):

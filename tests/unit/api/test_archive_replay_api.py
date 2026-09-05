@@ -253,7 +253,9 @@ def _seed_css_asset(db, *, url_key: str, css: bytes = b".a{color:red}") -> None:
         blob.sha256, size_bytes=blob.size_bytes, gzip_size_bytes=blob.gzip_size_bytes,
         content_type="text/css", path=blob.path,
     )
-    asset = repo.get_or_create_asset(f"https://acme.com/{url_key.split('/', 1)[1]}", url_key, kind="css")
+    asset = repo.get_or_create_asset(
+        f"https://acme.com/{url_key.split('/', 1)[1]}", url_key, kind="css"
+    )
     now = datetime(2026, 9, 4, 13, 30, tzinfo=UTC)
     repo.create_asset_version(
         asset_id=asset.id, blob_sha256=blob.sha256, content_type="text/css",

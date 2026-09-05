@@ -83,7 +83,10 @@ def test_discover_js_string_assets_finds_a_same_host_js_reference() -> None:
     js = "load_js('/wp-content/plugins/rocket-lazy-load/assets/js/16.1/lazyload.min.js');"
     refs = discover_js_string_assets(js, BASE)
     urls = {ref.url: ref.kind for ref in refs}
-    assert urls["https://example.com/wp-content/plugins/rocket-lazy-load/assets/js/16.1/lazyload.min.js"] == "js"
+    lazyload_url = (
+        "https://example.com/wp-content/plugins/rocket-lazy-load/assets/js/16.1/lazyload.min.js"
+    )
+    assert urls[lazyload_url] == "js"
 
 
 def test_discover_js_string_assets_drops_a_cache_buster_query() -> None:
