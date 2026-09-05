@@ -240,12 +240,21 @@ def test_monitor_blocked_self_heals_on_a_clean_run(session, tmp_path, monkeypatc
 
 
 def test_a_block_streak_aborts_the_run_early(session, tmp_path, monkeypatch):
+    """task-58 §2.2: a sliding-window RATIO replaced the old exact
+    `consecutive_blocked` streak count — "consecutive" stopped meaning
+    anything once several page workers can each finish a page at once. With
+    every target blocked, the ratio window (20 results, 80% threshold by
+    default) fills with nothing but blocks and the run must still stop well
+    short of the full 51 targets — just not at an exact count, since a few
+    workers can each have one more URL already in flight when the shared
+    stop signal lands.
+    """
     client = ClientRepository(session).create(name="Acme", slug="acme", domain="acme.com")
     session.commit()
     urls = [f"{BASE}/p{i}/" for i in range(50)]
     blocked = set(urls) | {f"{BASE}/"}  # + homepage: always a key page (task-35 §1.5)
 
-    settings = Settings(_env_file=None, monitor_block_streak_abort=5)
+    settings = Settings(_env_file=None, monitor_block_ratio_abort=0.8)
     monkeypatch.setattr(runner_mod, "fetch", _fake_fetch(sitemap_urls=urls, blocked_urls=blocked))
     outcome = run_client_monitor(
         session,
@@ -257,7 +266,7 @@ def test_a_block_streak_aborts_the_run_early(session, tmp_path, monkeypatch):
     )
 
     assert outcome.truncated is True
-    assert outcome.urls_checked == 5, "must stop at the streak threshold, not grind through all 51"
+    assert outcome.urls_checked < 51, "must stop well short of the full target list"
 
 
 def test_a_partially_blocked_run_still_reports_the_real_data_it_gathered(
@@ -269,7 +278,7 @@ def test_a_partially_blocked_run_still_reports_the_real_data_it_gathered(
     ok_urls = [f"{BASE}/ok-{i}/" for i in range(3)]
     blocked_urls = {f"{BASE}/blocked-{i}/" for i in range(2)}
 
-    settings = Settings(_env_file=None, monitor_block_streak_abort=10)
+    settings = Settings(_env_file=None)
     monkeypatch.setattr(
         runner_mod,
         "fetch",
@@ -315,29 +324,30 @@ def test_classify_block_matches_the_live_cloudflare_shopify_interstitial():
 
 
 def test_effective_fetch_mode_resolution():
+    """task-58 §1.3: escalation moved from a whole-run, time-sticky choice
+    (task-50 §B4/§B5) to a per-PAGE decision remade inside `run_client_
+    monitor` on every run — `effective_fetch_mode` no longer has anything to
+    resolve beyond a straight passthrough of the operator's own setting.
+    `blocked_detected_at` no longer feeds back into this at all (still
+    written, for visibility only — see `test_auto_mode_escalates_settings_
+    after_a_run_confirms_a_block` below).
+    """
     from app.db.models import MonitorSettings
 
     now = datetime.now(UTC)
-    assert effective_fetch_mode(None, now=now, sticky_days=14) == "http"
+    assert effective_fetch_mode(None, now=now) == "auto"
+    assert effective_fetch_mode(MonitorSettings(fetch_mode="http"), now=now) == "http"
+    assert effective_fetch_mode(MonitorSettings(fetch_mode="browser"), now=now) == "browser"
+    assert effective_fetch_mode(MonitorSettings(fetch_mode="auto"), now=now) == "auto"
 
-    forced_http = MonitorSettings(fetch_mode="http")
-    assert effective_fetch_mode(forced_http, now=now, sticky_days=14) == "http"
-
-    forced_browser = MonitorSettings(fetch_mode="browser")
-    assert effective_fetch_mode(forced_browser, now=now, sticky_days=14) == "browser"
-
-    auto_never_blocked = MonitorSettings(fetch_mode="auto", blocked_detected_at=None)
-    assert effective_fetch_mode(auto_never_blocked, now=now, sticky_days=14) == "http"
-
-    auto_recently_blocked = MonitorSettings(
+    # A recent OR a stale block leaves the resolution exactly the same now —
+    # no more sticky window to fall in or out of.
+    recently_blocked = MonitorSettings(
         fetch_mode="auto", blocked_detected_at=now - timedelta(days=2)
     )
-    assert effective_fetch_mode(auto_recently_blocked, now=now, sticky_days=14) == "browser"
-
-    auto_stale_block = MonitorSettings(
-        fetch_mode="auto", blocked_detected_at=now - timedelta(days=20)
-    )
-    assert effective_fetch_mode(auto_stale_block, now=now, sticky_days=14) == "http"
+    assert effective_fetch_mode(recently_blocked, now=now) == "auto"
+    stale_block = MonitorSettings(fetch_mode="auto", blocked_detected_at=now - timedelta(days=20))
+    assert effective_fetch_mode(stale_block, now=now) == "auto"
 
 
 def test_auto_mode_escalates_settings_after_a_run_confirms_a_block(session, tmp_path, monkeypatch):

@@ -120,34 +120,78 @@ def safe_host(url: str) -> str:
 
 
 class HostThrottle:
-    """Не більше одного одночасного запиту на хост + мінімальний інтервал.
+    """Не більше `concurrency` одночасних запитів на хост + мінімальний
+    інтервал.
 
     Гард живе на сервері, а не на фронті: вставлений список на 200 URL одного
     клієнта інакше став би міні-нагрузочним тестом його сайту, і покладатися в
     такому на клієнтський JS не можна.
+
+    `concurrency=1` (дефолт) — це рівно наявна поведінка байт-в-байт: повний
+    м'ютекс на хост, `min_interval` рахується від моменту, коли попередній
+    запит **завершився**. Кожен наявний виклик (`app/tools/redirects`,
+    `app/tools/alt_text`) створює `HostThrottle()` без аргументів і має цю
+    поведінку не чіпати.
+
+    `concurrency > 1` (task-58, Site Monitor's паралельний обхід) — окрема
+    гілка: до `concurrency` запитів на хост одночасно, `min_interval`
+    рахується від моменту, коли попередній запит **стартував**, а не
+    завершився (інакше найповільніша сторінка сайту диктувала б темп усім
+    іншим). Обидві гілки поділяють один клас, щоб дозвіл на паралелізм
+    залишався локальним рішенням викликача (`HostThrottle(concurrency=N)`),
+    а не окремим типом, який довелося б синхронізувати з цим.
     """
 
-    def __init__(self, min_interval_seconds: float = 0.25, ttl_seconds: float = 300.0) -> None:
+    def __init__(
+        self,
+        min_interval_seconds: float = 0.25,
+        ttl_seconds: float = 300.0,
+        *,
+        concurrency: int = 1,
+    ) -> None:
         self._min_interval = min_interval_seconds
         self._ttl = ttl_seconds
+        self._concurrency = max(1, concurrency)
         self._guard = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
         self._last_call: dict[str, float] = {}
+        # Only used when `concurrency > 1` — kept separate from the fields
+        # above so the `concurrency == 1` path never touches new state.
+        self._semaphores: dict[str, threading.Semaphore] = {}
+        self._start_locks: dict[str, threading.Lock] = {}
+        self._last_start: dict[str, float] = {}
 
     @contextmanager
     def slot(self, host: str) -> Iterator[None]:
         key = host.casefold()
+        if self._concurrency == 1:
+            with self._guard:
+                self._prune()
+                lock = self._locks.setdefault(key, threading.Lock())
+            with lock:
+                wait = self._min_interval - (time.monotonic() - self._last_call.get(key, 0.0))
+                if 0 < wait <= self._min_interval:
+                    time.sleep(wait)
+                try:
+                    yield
+                finally:
+                    self._last_call[key] = time.monotonic()
+            return
+
         with self._guard:
             self._prune()
-            lock = self._locks.setdefault(key, threading.Lock())
-        with lock:
-            wait = self._min_interval - (time.monotonic() - self._last_call.get(key, 0.0))
-            if 0 < wait <= self._min_interval:
-                time.sleep(wait)
-            try:
-                yield
-            finally:
-                self._last_call[key] = time.monotonic()
+            semaphore = self._semaphores.setdefault(key, threading.Semaphore(self._concurrency))
+            start_lock = self._start_locks.setdefault(key, threading.Lock())
+        semaphore.acquire()
+        try:
+            with start_lock:
+                wait = self._min_interval - (time.monotonic() - self._last_start.get(key, 0.0))
+                if 0 < wait <= self._min_interval:
+                    time.sleep(wait)
+                self._last_start[key] = time.monotonic()
+            yield
+        finally:
+            semaphore.release()
 
     def _prune(self) -> None:
         """Не тримати запис для кожного хоста, який колись бачили."""
@@ -158,3 +202,6 @@ class HostThrottle:
             lock = self._locks.get(key)
             if lock is not None and not lock.locked():
                 self._locks.pop(key, None)
+        stale_starts = [key for key, seen in self._last_start.items() if seen < cutoff]
+        for key in stale_starts:
+            self._last_start.pop(key, None)

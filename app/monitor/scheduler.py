@@ -69,21 +69,15 @@ class MonitorScheduler:
         self._settings = settings
         self._tick_interval_seconds = tick_interval_seconds
         self._stop_event = threading.Event()
+        # task-58 §1.3: no separate antibot pool any more — task-50's whole
+        # reason for one (a slow browser-lane client must never occupy one
+        # of the 4 main slots the rest of the portfolio needs) is now solved
+        # inside `run_client_monitor` itself: Chromium usage is bounded by
+        # the process-wide `_browser_semaphore`, not by which pool a client
+        # landed in, so every client — browser-mode or not — shares this
+        # ONE pool.
         self._pool = ThreadPoolExecutor(
             max_workers=max(1, settings.monitor_client_workers), thread_name_prefix="monitor"
-        )
-        # Separate, deliberately small pool for antibot-lane clients
-        # (task-50 §B2) — a client escalated to the slow browser lane runs
-        # for ~10-15 minutes at its own throttled pace and must NEVER occupy
-        # one of the 4 main slots the rest of the portfolio needs. Default 1:
-        # two concurrent Chromium instances against the same class of site
-        # is both a memory cost and a second independent source of traffic
-        # hitting the same anti-bot systems we are trying not to trip
-        # further (mirrors the project invariant: one provider/profile
-        # browser session at a time).
-        self._antibot_pool = ThreadPoolExecutor(
-            max_workers=max(1, settings.monitor_antibot_workers),
-            thread_name_prefix="monitor-antibot",
         )
         self._in_flight: set[tuple[str, str]] = set()
         self._in_flight_lock = threading.Lock()
@@ -106,7 +100,6 @@ class MonitorScheduler:
     def stop(self) -> None:
         self._stop_event.set()
         self._pool.shutdown(wait=True, cancel_futures=False)
-        self._antibot_pool.shutdown(wait=True, cancel_futures=False)
         if self._thread is not None:
             self._thread.join(timeout=30)
 
@@ -150,11 +143,7 @@ class MonitorScheduler:
                 client = clients_repo.get(queued.client_id)
                 if client is None:
                     continue
-                mode = effective_fetch_mode(
-                    monitor_repo.get_settings(client.id),
-                    now=now,
-                    sticky_days=self._settings.monitor_antibot_sticky_days,
-                )
+                mode = effective_fetch_mode(monitor_repo.get_settings(client.id), now=now)
                 self._submit(
                     client,
                     queued.kind,
@@ -204,9 +193,7 @@ class MonitorScheduler:
                 light_due = _due(
                     monitor_repo, client.id, kind=LIGHT, interval_hours=light_interval, now=now
                 )
-                mode = effective_fetch_mode(
-                    client_settings, now=now, sticky_days=self._settings.monitor_antibot_sticky_days
-                )
+                mode = effective_fetch_mode(client_settings, now=now)
 
                 if full_due and not monitor_repo.has_running_run(client.id):
                     self._submit(client, FULL, trigger="scheduled", fetch_mode=mode)
@@ -224,7 +211,7 @@ class MonitorScheduler:
         *,
         trigger: str,
         existing_run_id: str | None = None,
-        fetch_mode: str = "http",
+        fetch_mode: str = "auto",
     ) -> None:
         key = (client.id, kind)
         with self._in_flight_lock:
@@ -262,9 +249,4 @@ class MonitorScheduler:
                 with self._in_flight_lock:
                     self._in_flight.discard(key)
 
-        # task-50 §B2: the antibot lane runs at its own slow pace in a pool
-        # sized independently of `monitor_client_workers` — routing here,
-        # not in `run_client_monitor`, is what keeps a slow client from ever
-        # occupying one of the main pool's 4 slots.
-        pool = self._antibot_pool if fetch_mode == "browser" else self._pool
-        pool.submit(_run)
+        self._pool.submit(_run)

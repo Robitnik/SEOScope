@@ -45,7 +45,13 @@ from app.monitor.redirects.credentials import (
     credentials_status,
     login_credentials_status,
 )
-from app.monitor.runner import PageCheckConflict, resolve_base_url, run_single_page_check
+from app.monitor.runner import (
+    PageCheckConflict,
+    check_robots_now,
+    check_sitemap_now,
+    resolve_base_url,
+    run_single_page_check,
+)
 from app.monitor.storage import read_blob
 from app.schemas.api import ErrorDTO
 from app.schemas.monitor import (
@@ -713,6 +719,57 @@ async def list_monitor_resources(
     if resources is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return resources
+
+
+def _check_robots(client_id: str) -> list[MonitorResourceDTO] | None:
+    settings = get_settings()
+    with worker_session_scope() as session:
+        client = ClientRepository(session).get(client_id)
+        if client is None:
+            return None
+        check_robots_now(session, client, settings=settings, artifacts_dir=settings.artifacts_dir)
+    return _resources(client_id, "robots")
+
+
+@router.post(
+    "/clients/{client_id}/monitor/robots/check",
+    response_model=list[MonitorResourceDTO],
+    responses={404: {"model": ErrorDTO}},
+)
+async def check_monitor_robots(client_id: str) -> list[MonitorResourceDTO]:
+    """Synchronous re-check of robots.txt (mirrors `check_monitor_page` /
+    `check_monitor_redirects`) — runs inline right now and returns the same
+    shape `GET .../resources/robots` does, so the "Robots" block can refresh
+    itself without waiting for the next scheduled run.
+    """
+    result = await run_in_threadpool(_check_robots, client_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return result
+
+
+def _check_sitemap(client_id: str) -> list[MonitorResourceDTO] | None:
+    settings = get_settings()
+    with worker_session_scope() as session:
+        client = ClientRepository(session).get(client_id)
+        if client is None:
+            return None
+        check_sitemap_now(session, client, settings=settings, artifacts_dir=settings.artifacts_dir)
+    return _resources(client_id, "sitemap")
+
+
+@router.post(
+    "/clients/{client_id}/monitor/sitemap/check",
+    response_model=list[MonitorResourceDTO],
+    responses={404: {"model": ErrorDTO}},
+)
+async def check_monitor_sitemap(client_id: str) -> list[MonitorResourceDTO]:
+    """Synchronous re-check of the sitemap tree — same rationale as
+    `check_monitor_robots`."""
+    result = await run_in_threadpool(_check_sitemap, client_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    return result
 
 
 def _resource_versions(

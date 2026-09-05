@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from dataclasses import replace as dataclass_replace
 from datetime import UTC, date, datetime, timedelta
@@ -73,6 +75,28 @@ class PageCheckConflict(Exception):
 # process enqueueing a run) still relies on `busy_timeout`, exactly as it
 # already does today without this module.
 _COMMIT_LOCK = threading.Lock()
+
+# task-58 §1.3: ONE process-wide cap on concurrently-live Chromium instances,
+# shared by every client's run and every page worker inside it — replaces
+# the old dedicated `_antibot_pool` (one worker, one client at a time). A
+# page-worker thread's `_LazyBrowser` acquires a slot on first actual need
+# and holds it for that worker's whole run, so this bounds "how many
+# Chromiums exist right now across the whole portfolio", not "how many
+# clients are on the browser lane" (a client can have several page workers
+# each holding a slot). Sized lazily from `Settings` rather than at import
+# time so tests can vary it without needing a process restart.
+_BROWSER_SEMAPHORE_LOCK = threading.Lock()
+_BROWSER_SEMAPHORE: threading.Semaphore | None = None
+_BROWSER_SEMAPHORE_SIZE: int | None = None
+
+
+def _browser_semaphore(max_concurrent: int) -> threading.Semaphore:
+    global _BROWSER_SEMAPHORE, _BROWSER_SEMAPHORE_SIZE  # noqa: PLW0603 - one process-wide pool, by design
+    with _BROWSER_SEMAPHORE_LOCK:
+        if _BROWSER_SEMAPHORE is None or _BROWSER_SEMAPHORE_SIZE != max_concurrent:
+            _BROWSER_SEMAPHORE = threading.Semaphore(max(1, max_concurrent))
+            _BROWSER_SEMAPHORE_SIZE = max_concurrent
+        return _BROWSER_SEMAPHORE
 
 
 # task-35 §3.4: which change types represent an ongoing condition that can
@@ -210,30 +234,32 @@ def resolve_base_url(
     return f"https://{host}".rstrip("/")
 
 
-def effective_fetch_mode(
-    monitor_settings: MonitorSettings | None, *, now: datetime, sticky_days: float
-) -> str:
-    """`"http" | "browser"` — what THIS run should actually use, resolving
-    `MonitorSettings.fetch_mode` (task-50 §B4/§B5).
+def effective_fetch_mode(monitor_settings: MonitorSettings | None, *, now: datetime) -> str:
+    """`"http" | "browser" | "auto"` — what THIS run should use, resolving
+    `MonitorSettings.fetch_mode` (task-50 §B4/§B5, revised task-58 §1.1/§1.3).
 
     `"http"`/`"browser"` are an explicit operator choice and win outright —
     an operator who forced `"http"` (the emergency kill switch, §B6) is never
-    silently overridden by auto-escalation. `"auto"` (the
-    default) starts on the cheap HTTP lane and stays escalated to the slow
-    browser lane for `sticky_days` after the last confirmed block, rather
-    than flipping back the very next clean run — a site that blocks at
-    request #58 of 362 still blocks on the NEXT full run too, and bouncing
-    between lanes every few hours would just alternate between "clean" and
-    "corrupted with garbage pages" instead of settling.
+    silently overridden. `"auto"` (the default) now passes straight through:
+    the decision of whether any given PAGE needs the browser is made
+    per-page, inside `run_client_monitor`'s page loop (`_should_escalate_to_
+    browser`), not once for the whole run here.
+
+    This used to also resolve `"auto"` to a whole-run `"browser"` for
+    `sticky_days` after the last confirmed block (task-50 §B5) — that made
+    sense when the ONLY way to escalate was "every page on this transport
+    for the whole run" (task-50's fetch_mode was a per-run choice). task-58
+    made escalation a per-page decision instead, remade fresh every single
+    page every single run: a site that blocked at request #58 last time
+    isn't dragged onto the slow lane for its other 795 pages, or for the
+    next 14 days, on the strength of that one page. `now` is kept as a
+    parameter for call-site stability even though this revision no longer
+    reads a timestamp off `monitor_settings` — a future per-run signal is
+    not being ruled out here, just none exists today.
     """
     if monitor_settings is None:
-        return "http"
-    if monitor_settings.fetch_mode != "auto":
-        return monitor_settings.fetch_mode
-    detected = monitor_settings.blocked_detected_at
-    if detected is not None and now - detected < timedelta(days=sticky_days):
-        return "browser"
-    return "http"
+        return "auto"
+    return monitor_settings.fetch_mode
 
 
 def _process_robots(
@@ -544,6 +570,113 @@ def _key_pages(session: Session, client: Client, *, limit: int, base_url: str) -
     return pages
 
 
+# task-58 §1.2: which non-200 outcomes are worth a browser retry, uncondi-
+# tionally — a classic bot-wall status, or a failure that could plausibly be
+# OUR side of the connection rather than the site's.
+_ALWAYS_ESCALATE_STATUSES = frozenset({403, 429, 503})
+
+
+def _should_escalate_to_browser(result: FetchResult, *, previous_status: int | None) -> bool:
+    """Whether a failed/suspicious HTTP fetch is worth retrying through
+    Chromium (task-58 §1.2) — deliberately narrower than a blanket "any
+    non-200": a `404`/`410` only escalates if the URL was genuinely `200`
+    last time, never on a URL already confirmed dead. Without that carve-out
+    a client whose sitemap still lists old, truly-gone URLs (live case:
+    ALPHA's 39 post-Shopify-migration 404s) would pay a Chromium
+    launch+navigation on every one of them, every single run, forever, for a
+    fact already established. A final `3xx` never escalates — `fetch()`
+    already follows redirects itself, so a 3xx reaching here is a redirect
+    loop or cap, not something a browser resolves differently.
+    """
+    if result.error in ("blocked", "timeout", "connection_error"):
+        return True
+    status = result.status
+    if status is None:
+        return False  # e.g. `unsafe_url` — a browser will not fetch it either
+    if status in _ALWAYS_ESCALATE_STATUSES or 500 <= status < 600:
+        return True
+    if status in (404, 410):
+        return previous_status == 200
+    return False
+
+
+class _LazyBrowser:
+    """One Chromium per page-worker THREAD (task-58 §1.3/§1.4) — launched on
+    first actual need, reused for every subsequent page that SAME thread
+    handles, and never shared with another thread: a Playwright `Page` is
+    not thread-safe, so `monitor_page_workers` threads each need their own.
+    Reuse across a thread's whole run is what keeps the ~0.5s launch cost
+    (task-50 §0.7) from being paid once per fallback instead of once per
+    worker.
+
+    Bounded portfolio-wide by `semaphore`, acquired on first `get()` and
+    released by `close()` — this is the "global semaphore on concurrent
+    Chromium instances" task-58 §1.3 replaces the old dedicated antibot pool
+    with: a slot is held for as long as this worker might still need
+    Chromium, not per individual navigation.
+    """
+
+    def __init__(self, semaphore: threading.Semaphore) -> None:
+        self._semaphore = semaphore
+        self._session: BrowserFetchSession | None = None
+        self._acquired = False
+
+    def get(self) -> BrowserFetchSession:
+        if self._session is None:
+            self._semaphore.acquire()
+            self._acquired = True
+            try:
+                self._session = BrowserFetchSession()
+            except Exception:
+                self._semaphore.release()
+                self._acquired = False
+                raise
+        return self._session
+
+    def close(self) -> None:
+        try:
+            if self._session is not None:
+                self._session.close()
+        finally:
+            self._session = None
+            if self._acquired:
+                self._semaphore.release()
+                self._acquired = False
+
+
+class _FallbackBudget:
+    """Caps how many pages one run may escalate to Chromium (task-58 §1.2)
+    — a site that has gone down entirely must not turn into hundreds of
+    Chromium launches chasing a fact `_should_escalate_to_browser` already
+    knows on the first few: this is a blunt, cheap backstop underneath that
+    smarter per-page logic, not a replacement for it. Shared, so it caps the
+    whole run regardless of how many page workers are pulling from it.
+    """
+
+    def __init__(self, max_per_run: int) -> None:
+        self._remaining = max_per_run
+        self._lock = threading.Lock()
+
+    def try_consume(self) -> bool:
+        with self._lock:
+            if self._remaining <= 0:
+                return False
+            self._remaining -= 1
+            return True
+
+
+@dataclass
+class PageFallback:
+    """Per-run HTTP→browser escalation config, handed to every page worker
+    (task-58 §1.1). `lazy_browser` is intentionally per-CALLER (each page
+    worker constructs and owns its own `_LazyBrowser`); `budget` and the
+    browser throttle are shared across the whole run's workers.
+    """
+
+    browser_throttle: HostThrottle
+    budget: _FallbackBudget
+
+
 def _process_page(
     repo: MonitorRepository,
     client: Client,
@@ -559,27 +692,45 @@ def _process_page(
     is_baseline_run: bool,
     now: datetime,
     browser_session: BrowserFetchSession | None = None,
-) -> tuple[bool, str | None, bool]:
-    """Returns `(changed, status_kind, blocked)` — `status_kind` feeds the
-    run's `urls_new/urls_changed/urls_gone` counters and the sitemap-health
-    count; `blocked` tells the caller this fetch hit an antibot wall rather
-    than observing anything real (task-50 §A2).
+    fallback: PageFallback | None = None,
+    lazy_browser: _LazyBrowser | None = None,
+) -> tuple[bool, str | None, bool, bool]:
+    """Returns `(changed, status_kind, blocked, is_new)` — `status_kind` feeds
+    the run's `urls_new/urls_changed/urls_gone` counters and the
+    sitemap-health count; `blocked` tells the caller this fetch hit an
+    antibot wall rather than observing anything real (task-50 §A2); `is_new`
+    is whether this URL had no prior observation, straight from the same DB
+    read `_persist_page_result` already has to do — the caller used to make
+    its OWN redundant `repo.get_page(...)` call for exactly this, and that
+    call ran on the shared `Session` **outside** `_COMMIT_LOCK` (task-58 §2.1:
+    harmless under the old one-URL-at-a-time loop, a real race the moment
+    more than one worker touches the session at once — SQLAlchemy's `Session`
+    is not thread-safe).
 
-    The network fetch happens before the lock below is acquired, and
-    everything from there on (state reads, writes, diffing) happens inside
-    it: `monitor_client_workers` (default 4) threads hit the same SQLite
-    file, which only ever allows one writer, so every DB touch — including a
-    plain `session.flush()` inside a repository call, not just the periodic
-    `_commit()` — must be serialized process-wide (task-35 §3.6, live-measured
-    2026-08-11: unserialized writes under real 4-way concurrency produced
-    "database is locked"). Doing the fetch first keeps the slow, genuinely
-    parallel part — the network round trip — outside the lock.
+    The network fetch AND all HTML parsing/fingerprinting happen before the
+    lock below is acquired — none of it depends on database state, and
+    `extract_signals`'s `html.parser` pass is real CPU, not free (task-58
+    §0.4: ~41ms on a 780KB page, next to ~0.3ms for a commit). Only the
+    fingerprint COMPARISON (against `prev_version`, a DB read) and the
+    resulting writes happen inside `_COMMIT_LOCK`: `monitor_client_workers`
+    threads — now also `monitor_page_workers` threads per client — hit the
+    same SQLite file, which only ever allows one writer, so every DB touch —
+    including a plain `session.flush()` inside a repository call, not just
+    the periodic `_commit()` — must be serialized process-wide (task-35
+    §3.6, live-measured 2026-08-11: unserialized writes under real 4-way
+    concurrency produced "database is locked").
 
-    `browser_session` is `None` on the plain HTTP lane (`fetch_mode="http"`,
-    the default for every client) and a live `BrowserFetchSession` only when
-    this client's run has been escalated to the antibot lane (task-50 §B1) —
-    the ONLY thing that differs between the two lanes is which function
-    produces the `FetchResult`; everything below this point is identical.
+    Three ways this gets called (task-58 §1.1/§1.3):
+    - `browser_session` given, `fallback=None` — this client's `fetch_mode`
+      is the explicit `"browser"` override: every page goes straight to
+      Chromium, no HTTP attempt at all (task-50 §B1 behavior, unchanged).
+    - `fallback` given, `browser_session=None` — `fetch_mode="auto"`
+      (the default): try the cheap HTTP lane first; escalate through
+      `lazy_browser` only if `_should_escalate_to_browser` says so AND the
+      run's `_FallbackBudget` still has room.
+    - Neither given — `fetch_mode="http"` (the emergency kill switch, task-50
+      §B6) or the single-page "Check now" path (`run_single_page_check`):
+      plain HTTP, never escalates.
     """
     if browser_session is not None:
         result = fetch_via_browser(
@@ -598,6 +749,29 @@ def _process_page(
             timeout=settings.monitor_request_timeout_seconds,
             max_body_bytes=settings.monitor_max_body_bytes,
         )
+        if fallback is not None and lazy_browser is not None and result.status != 200:
+            # A quick, LOCKED read of just the prior status — cheap (this is
+            # not the removed §2.1 bug: that read decided a COUNTER off the
+            # session outside any lock; this one decides which TRANSPORT to
+            # use next, still fully inside `_COMMIT_LOCK`, and only runs for
+            # the ~2-5% of pages that didn't already come back `200`.
+            with _COMMIT_LOCK:
+                previous = repo.get_page(client.id, url)
+            previous_status = previous.status if previous is not None else None
+            if (
+                _should_escalate_to_browser(result, previous_status=previous_status)
+                and fallback.budget.try_consume()
+            ):
+                result = fetch_via_browser(
+                    url,
+                    session=lazy_browser.get(),
+                    throttle=fallback.browser_throttle,
+                    stats=stats,
+                    timeout=settings.monitor_request_timeout_seconds,
+                    max_body_bytes=settings.monitor_max_body_bytes,
+                )
+
+    parsed = None if result.error == "blocked" else _parse_fetch_result(result)
 
     with _COMMIT_LOCK:
         return _persist_page_result(
@@ -605,6 +779,7 @@ def _process_page(
             client,
             url,
             result,
+            parsed,
             run_id=run_id,
             is_key_page=is_key_page,
             in_sitemap=in_sitemap,
@@ -615,11 +790,66 @@ def _process_page(
         )
 
 
+@dataclass(frozen=True)
+class _ParsedPage:
+    """Everything `_persist_page_result` needs that is a pure function of
+    `FetchResult` alone — computed once, outside `_COMMIT_LOCK` (task-58
+    §2.5/§0.4): no field here ever depends on database state, so none of it
+    belongs inside the lock that serializes the DB.
+    """
+
+    signals: pagemod.PageSignals
+    x_robots_tag: str | None
+    indexable: bool | None
+    signals_dict: dict[str, Any]
+    signals_sha256: str
+    text_sha256: str | None
+    raw_sha256: str | None
+
+
+def _parse_fetch_result(result: FetchResult) -> _ParsedPage:
+    html = (
+        pagemod.decode_body(result.body, content_type=result.headers.get("Content-Type"))
+        if result.body
+        else ""
+    )
+    signals = pagemod.extract_signals(html) if html else pagemod.PageSignals()
+    x_robots_tag = result.headers.get("X-Robots-Tag")
+    indexable = pagemod.is_indexable(
+        meta_robots=signals.meta_robots, x_robots_tag=x_robots_tag, status=result.status
+    )
+    signals_dict = fp.build_signals(
+        status=result.status,
+        final_url=result.final_url,
+        meta_robots=signals.meta_robots,
+        x_robots_tag=x_robots_tag,
+        canonical=signals.canonical,
+        title=signals.title,
+        description=signals.description,
+        h1=signals.h1,
+        hreflang=signals.hreflang,
+        json_ld_types=signals.json_ld_types,
+        analytics_ids=signals.analytics_ids,
+        google_site_verifications=signals.google_site_verifications,
+        indexable=indexable,
+    )
+    return _ParsedPage(
+        signals=signals,
+        x_robots_tag=x_robots_tag,
+        indexable=indexable,
+        signals_dict=signals_dict,
+        signals_sha256=fp.signals_fingerprint(signals_dict),
+        text_sha256=fp.text_fingerprint(signals.visible_text) if result.body else None,
+        raw_sha256=fp.raw_fingerprint(result.body) if result.body else None,
+    )
+
+
 def _persist_page_result(
     repo: MonitorRepository,
     client: Client,
     url: str,
     result: FetchResult,
+    parsed: _ParsedPage | None,
     *,
     run_id: str,
     is_key_page: bool,
@@ -628,7 +858,7 @@ def _persist_page_result(
     artifacts_dir: Path,
     is_baseline_run: bool,
     now: datetime,
-) -> tuple[bool, str | None, bool]:
+) -> tuple[bool, str | None, bool, bool]:
     if result.error == "blocked":
         # An antibot interstitial is not a fact about the page (task-50
         # §A2/PLAN §12: absence of real data is never coerced into a value).
@@ -639,7 +869,8 @@ def _persist_page_result(
         # URL this run into one `monitor_blocked` change instead of one row
         # per URL (task-50 §A3 — this is what LIVE 2026-08-19 wrote 304
         # individual `sitemap_url_broken`/`sitemap_url_unavailable` rows for).
-        return False, None, True
+        return False, None, True, False
+    assert parsed is not None  # only `None` when `result.error == "blocked"`, handled above
 
     page = repo.get_or_create_page(client.id, url, is_key_page=is_key_page)
     prev_version = repo.latest_page_version(page.id)
@@ -670,35 +901,13 @@ def _persist_page_result(
         else None
     )
 
-    html = (
-        pagemod.decode_body(result.body, content_type=result.headers.get("Content-Type"))
-        if result.body
-        else ""
-    )
-    signals = pagemod.extract_signals(html) if html else pagemod.PageSignals()
-    x_robots_tag = result.headers.get("X-Robots-Tag")
-    indexable = pagemod.is_indexable(
-        meta_robots=signals.meta_robots, x_robots_tag=x_robots_tag, status=result.status
-    )
-
-    signals_dict = fp.build_signals(
-        status=result.status,
-        final_url=result.final_url,
-        meta_robots=signals.meta_robots,
-        x_robots_tag=x_robots_tag,
-        canonical=signals.canonical,
-        title=signals.title,
-        description=signals.description,
-        h1=signals.h1,
-        hreflang=signals.hreflang,
-        json_ld_types=signals.json_ld_types,
-        analytics_ids=signals.analytics_ids,
-        google_site_verifications=signals.google_site_verifications,
-        indexable=indexable,
-    )
-    signals_sha256 = fp.signals_fingerprint(signals_dict)
-    text_sha256 = fp.text_fingerprint(signals.visible_text) if result.body else None
-    raw_sha256 = fp.raw_fingerprint(result.body) if result.body else None
+    signals = parsed.signals
+    x_robots_tag = parsed.x_robots_tag
+    indexable = parsed.indexable
+    signals_dict = parsed.signals_dict
+    signals_sha256 = parsed.signals_sha256
+    text_sha256 = parsed.text_sha256
+    raw_sha256 = parsed.raw_sha256
 
     fingerprint_changed = (
         prev_version is None
@@ -832,7 +1041,7 @@ def _persist_page_result(
     is_new = old_observation is None
     is_changed = bool(changed_fields) and not is_new
     repo.commit()
-    return (is_new or is_changed), status_kind, False
+    return (is_new or is_changed), status_kind, False, is_new
 
 
 def _process_dns(
@@ -1027,6 +1236,171 @@ def _sitemap_aggregate(
         repo.commit()
 
 
+class _TargetQueue:
+    """Thread-safe puller over the ordered `targets` list (task-58 §1.4).
+
+    Workers still pull in `targets`'s existing priority order (key pages,
+    then open-issue pages, then oldest-checked-first — `pages_in_ring_
+    order`) — parallelism only changes how many are IN FLIGHT at once, never
+    the order they're offered in.
+    """
+
+    def __init__(self, targets: list[str]) -> None:
+        self._targets = targets
+        self._next_index = 0
+        self._lock = threading.Lock()
+
+    def next(self) -> str | None:
+        with self._lock:
+            if self._next_index >= len(self._targets):
+                return None
+            url = self._targets[self._next_index]
+            self._next_index += 1
+            return url
+
+    def remaining(self) -> int:
+        with self._lock:
+            return len(self._targets) - self._next_index
+
+
+class _PageLoopState:
+    """Shared tallies across every page worker of one run (task-58 §2.2/
+    §2.3) — plain local variables under the old one-URL-at-a-time loop, now
+    genuinely touched by `monitor_page_workers` threads at once.
+
+    Replaces `consecutive_blocked`/`monitor_block_streak_abort` (task-50
+    §A4) with a sliding-window RATIO (`monitor_block_ratio_abort`):
+    "consecutive" has no meaning once results arrive out of order from
+    parallel workers, but "most of the last N attempts came back blocked"
+    still says the same thing — the site (or its bot-mitigation) is not
+    going to clear up mid-run, so stop paying for it.
+    """
+
+    def __init__(self, *, block_ratio_abort: float, window_size: int = 20) -> None:
+        self._lock = threading.Lock()
+        self.checked = 0
+        self.changed_count = 0
+        self.new_count = 0
+        self.blocked_urls: list[str] = []
+        self.truncated = False
+        self.interrupted = False
+        self._recent_blocked: deque[bool] = deque(maxlen=window_size)
+        self._block_ratio_abort = block_ratio_abort
+        self._stop = threading.Event()
+
+    def record(self, *, url: str, blocked: bool, changed: bool, is_new: bool) -> bool:
+        """Returns whether the CALLING worker should flush progress to the
+        DB now — decided under the same lock as the increment, so exactly
+        one thread ever sees `True` for a given multiple of ten, however
+        many workers finish at the same instant."""
+        with self._lock:
+            self.checked += 1
+            if blocked:
+                self.blocked_urls.append(url)
+            elif is_new:
+                self.new_count += 1
+            elif changed:
+                self.changed_count += 1
+            self._recent_blocked.append(blocked)
+            if (
+                len(self._recent_blocked) == self._recent_blocked.maxlen
+                and sum(self._recent_blocked) / len(self._recent_blocked)
+                >= self._block_ratio_abort
+            ):
+                self.truncated = True
+                self._stop.set()
+            return self.checked % 10 == 0
+
+    def mark_truncated(self, *, interrupted: bool = False) -> None:
+        with self._lock:
+            self.truncated = True
+            if interrupted:
+                self.interrupted = True
+        self._stop.set()
+
+    def should_stop(self) -> bool:
+        return self._stop.is_set()
+
+
+def _run_page_worker(
+    queue: _TargetQueue,
+    state: _PageLoopState,
+    *,
+    repo: MonitorRepository,
+    client: Client,
+    run_id: str,
+    key_pages: set[str],
+    target_in_sitemap: dict[str, bool],
+    throttle: HostThrottle,
+    stats: FetchStats,
+    settings: Settings,
+    artifacts_dir: Path,
+    is_baseline_run: bool,
+    now: datetime,
+    stop_event: threading.Event | None,
+    deadline: datetime,
+    fetch_mode: str,
+    fallback: PageFallback | None,
+    browser_semaphore: threading.Semaphore | None,
+) -> None:
+    """One `monitor_page_workers` slot for one client run (task-58 §1.4):
+    pulls URLs off the shared `queue` until it is drained, `state` says to
+    stop, the deadline passes, or `stop_event` fires. Owns exactly one
+    `_LazyBrowser` for its whole lifetime here — never shared with another
+    worker (task-58 §1.3: a Playwright `Page` is not thread-safe).
+    """
+    lazy_browser = _LazyBrowser(browser_semaphore) if browser_semaphore is not None else None
+    try:
+        while not state.should_stop():
+            # "Зупинка: stop_event перевіряється між URL, тож SIGTERM не
+            # чекає кінець обходу" (task-35 §3.6) — now per-worker instead of
+            # once globally, same granularity as before.
+            if stop_event is not None and stop_event.is_set():
+                state.mark_truncated(interrupted=True)
+                return
+            if datetime.now(UTC) >= deadline:
+                state.mark_truncated()
+                return
+            url = queue.next()
+            if url is None:
+                return
+            browser_session = (
+                lazy_browser.get() if fetch_mode == "browser" and lazy_browser is not None else None
+            )
+            changed, _status_kind, blocked, is_new_page = _process_page(
+                repo,
+                client,
+                url,
+                run_id=run_id,
+                is_key_page=(url in key_pages),
+                in_sitemap=target_in_sitemap.get(url, False),
+                throttle=throttle,
+                stats=stats,
+                settings=settings,
+                artifacts_dir=artifacts_dir,
+                is_baseline_run=is_baseline_run,
+                now=now,
+                browser_session=browser_session,
+                fallback=fallback,
+                lazy_browser=lazy_browser,
+            )
+            should_flush = state.record(
+                url=url, blocked=blocked, changed=changed, is_new=is_new_page
+            )
+            if should_flush:
+                with _COMMIT_LOCK:
+                    repo.update_run_counters(
+                        run_id,
+                        urls_checked=state.checked,
+                        requests_made=stats.requests_made,
+                        bytes_downloaded=stats.bytes_downloaded,
+                    )
+                    repo.commit()
+    finally:
+        if lazy_browser is not None:
+            lazy_browser.close()
+
+
 def run_client_monitor(
     session: Session,
     client: Client,
@@ -1044,13 +1418,28 @@ def run_client_monitor(
     now" enqueues one; the scheduler claims and runs it — same split as
     `SyncJob`) instead of creating a fresh `running` row.
 
-    `fetch_mode` ("http" | "browser", task-50 §B) is resolved by the CALLER
-    (`effective_fetch_mode`, scheduler `_tick`) — this function just acts on
-    it. "browser" only changes which transport fetches PAGE bodies; robots.txt
-    and sitemap fetches always stay on the cheap `urllib` lane regardless
-    (task-50 §B1: those succeed fine even on a client that later rate-limits
-    the bulk of its page requests — live-measured on alphastyle.store, robots
-    + sitemap all came back 200 before the 429 wall hit around request #58).
+    `fetch_mode` ("http" | "browser" | "auto", task-50 §B, revised task-58
+    §1.1/§1.3) is resolved by the CALLER (`effective_fetch_mode`, scheduler
+    `_tick`) — this function just acts on it. `"browser"` sends every PAGE
+    fetch straight to Chromium; `"http"` never touches Chromium at all
+    (the emergency kill switch, unchanged from task-50 §B6); `"auto"` (the
+    default) tries the cheap HTTP lane on every page first and escalates
+    only the specific pages that need it (task-58's per-page fallback,
+    `PageFallback`/`_should_escalate_to_browser`). robots.txt and sitemap
+    fetches always stay on the cheap `urllib` lane regardless of
+    `fetch_mode` (task-50 §B1: those succeed fine even on a client that
+    later rate-limits the bulk of its page requests — live-measured on
+    alphastyle.store, robots + sitemap all came back 200 before the 429
+    wall hit around request #58).
+
+    Pages themselves are checked by a pool of `settings.monitor_page_workers`
+    threads (task-58 §1.4) pulling from one shared, priority-ordered queue —
+    not one at a time. This is safe against the same SQLite-single-writer
+    constraint that already governs `monitor_client_workers` (task-35 §3.6):
+    every worker shares this ONE `session`/`repo`, and `_COMMIT_LOCK` is what
+    makes that safe — every single touch of `session` from any worker thread,
+    read or write, happens inside it, never outside (task-58 §2.1 is the
+    postmortem for what happens when a read skips that rule).
     """
     now = now or datetime.now(UTC)
     repo = MonitorRepository(session)
@@ -1077,7 +1466,6 @@ def run_client_monitor(
     throttle = HostThrottle(min_interval_seconds=min_interval)
     stats = FetchStats()
     deadline = now + timedelta(minutes=settings.monitor_run_max_minutes)
-    browser_session: BrowserFetchSession | None = None
 
     try:
         robots_doc, robots_ok = _process_robots(
@@ -1173,82 +1561,76 @@ def run_client_monitor(
             repo.update_run_counters(run.id, urls_total=len(targets))
             session.commit()
 
-        if fetch_mode == "browser":
-            # A separate, deliberately slower throttle for the antibot lane
-            # (task-50 §B3) — 2.0s default vs. the plain lane's 0.25s. One
-            # browser for the whole run, not one per page: launch alone
-            # measured ~0.5s (task-50 §0.7), and 350+ launches would burn
-            # minutes on nothing.
-            page_throttle = HostThrottle(
-                min_interval_seconds=settings.monitor_antibot_min_interval_seconds
+        # task-58 §1.1/§1.3: transport is a per-page decision now, not a
+        # per-run one — `page_throttle` allows `monitor_host_concurrency`
+        # simultaneous requests to the client's own host (still one shared
+        # `HostThrottle`, so all `monitor_page_workers` obey the same cap);
+        # `browser_throttle` is the antibot lane's own, deliberately slower
+        # pace (task-50 §B3 — 2.0s default vs. the plain lane's 0.25s),
+        # shared by every worker's `_LazyBrowser` fallback fetches.
+        page_throttle = HostThrottle(
+            min_interval_seconds=min_interval, concurrency=settings.monitor_host_concurrency
+        )
+        browser_throttle = HostThrottle(
+            min_interval_seconds=settings.monitor_antibot_min_interval_seconds
+        )
+        # `"browser"`/`"auto"` both need Chromium available (always, or as a
+        # per-page fallback); `"http"` — the kill switch — never touches it,
+        # so its pages never even try to acquire a slot from the shared cap.
+        browser_semaphore = (
+            _browser_semaphore(settings.monitor_browser_concurrency)
+            if fetch_mode in ("browser", "auto")
+            else None
+        )
+        fallback = (
+            PageFallback(
+                browser_throttle=browser_throttle,
+                budget=_FallbackBudget(settings.monitor_browser_fallback_max_per_run),
             )
-            browser_session = BrowserFetchSession()
-        else:
-            page_throttle = throttle
+            if fetch_mode == "auto"
+            else None
+        )
 
-        checked = 0
-        changed_count = 0
-        new_count = 0
         gone_count = 0
-        truncated = False
-        interrupted = False
-        blocked_urls: list[str] = []
-        consecutive_blocked = 0
-        for url in targets:
-            # "Зупинка: stop_event перевіряється між URL, тож SIGTERM не
-            # чекає кінець обходу" (task-35 §3.6).
-            if stop_event is not None and stop_event.is_set():
-                truncated = True
-                interrupted = True
-                break
-            if datetime.now(UTC) >= deadline:
-                truncated = True
-                break
-            is_new_page = repo.get_page(client.id, url) is None
-            changed, _status_kind, blocked = _process_page(
-                repo,
-                client,
-                url,
-                run_id=run.id,
-                is_key_page=(url in key_pages),
-                in_sitemap=target_in_sitemap.get(url, False),
-                throttle=page_throttle,
-                stats=stats,
-                settings=settings,
-                artifacts_dir=artifacts_dir,
-                is_baseline_run=is_baseline_run,
-                now=now,
-                browser_session=browser_session,
-            )
-            checked += 1
-            if blocked:
-                blocked_urls.append(url)
-                consecutive_blocked += 1
-                # task-50 §A4/§0.6: 304 of the 362 requests in the run that
-                # exposed this were spent hammering a wall that had already
-                # been up for 250+ requests — every one of them wasted, and
-                # every one of them a few more seconds added to whatever
-                # penalty window the site is already serving. A run-ending
-                # streak stops paying that cost the moment it is clear this
-                # is not going to clear itself mid-run.
-                if consecutive_blocked >= settings.monitor_block_streak_abort:
-                    truncated = True
-                    break
-            else:
-                consecutive_blocked = 0
-                if is_new_page:
-                    new_count += 1
-                elif changed:
-                    changed_count += 1
-            if checked % 10 == 0:
-                with _COMMIT_LOCK:
-                    repo.update_run_counters(
-                        run.id,
-                        urls_checked=checked,
-                        requests_made=stats.requests_made,
-                        bytes_downloaded=stats.bytes_downloaded,
-                    )
-                    session.commit()
+        queue = _TargetQueue(targets)
+        state = _PageLoopState(block_ratio_abort=settings.monitor_block_ratio_abort)
+        worker_count = max(1, settings.monitor_page_workers)
+        with ThreadPoolExecutor(
+            max_workers=worker_count, thread_name_prefix=f"monitor-page-{client.id[:8]}"
+        ) as pool:
+            futures = [
+                pool.submit(
+                    _run_page_worker,
+                    queue,
+                    state,
+                    repo=repo,
+                    client=client,
+                    run_id=run.id,
+                    key_pages=key_pages,
+                    target_in_sitemap=target_in_sitemap,
+                    throttle=page_throttle,
+                    stats=stats,
+                    settings=settings,
+                    artifacts_dir=artifacts_dir,
+                    is_baseline_run=is_baseline_run,
+                    now=now,
+                    stop_event=stop_event,
+                    deadline=deadline,
+                    fetch_mode=fetch_mode,
+                    fallback=fallback,
+                    browser_semaphore=browser_semaphore,
+                )
+                for _ in range(worker_count)
+            ]
+            for future in futures:
+                future.result()  # re-raise a worker's exception, if any
+
+        checked = state.checked
+        changed_count = state.changed_count
+        new_count = state.new_count
+        blocked_urls = state.blocked_urls
+        truncated = state.truncated
+        interrupted = state.interrupted
 
         with _COMMIT_LOCK:
             # One aggregate change for the whole run, not one row per blocked
@@ -1401,9 +1783,6 @@ def run_client_monitor(
             )
             session.commit()
         return RunOutcome(run_id=run.id, status="failed", urls_checked=0, truncated=False)
-    finally:
-        if browser_session is not None:
-            browser_session.close()
 
 
 def run_single_page_check(
@@ -1493,3 +1872,115 @@ def run_single_page_check(
     finally:
         with _PAGE_CHECK_GUARD:
             _PAGE_CHECK_IN_FLIGHT.discard(page.id)
+
+
+def check_robots_now(
+    session: Session,
+    client: Client,
+    *,
+    settings: Settings,
+    artifacts_dir: Path,
+    now: datetime | None = None,
+) -> None:
+    """Re-check robots.txt on demand (mirrors `run_single_page_check`,
+    task-38 §2) — an operator who just fixed a `Disallow` should not have to
+    wait for the next scheduled sweep to confirm it. `is_baseline_run=False`
+    unconditionally: this path only ever runs for a client that already has
+    at least one finished run (the "Robots" block only renders once data
+    exists), so it is never the client's first-ever look at the file.
+    """
+    now = now or datetime.now(UTC)
+    repo = MonitorRepository(session)
+    with _COMMIT_LOCK:
+        run = repo.create_run(client.id, kind=LIGHT, trigger="manual")
+        session.commit()
+    monitor_settings = repo.get_or_create_settings(client.id)
+    base_url = resolve_base_url(
+        client, monitor_settings.base_url_override, monitor_settings.canonical_www
+    )
+    min_interval = crawl_delay_floor(None, settings.monitor_host_min_interval_seconds)
+    throttle = HostThrottle(min_interval_seconds=min_interval)
+    stats = FetchStats()
+    try:
+        _process_robots(
+            repo,
+            client,
+            base_url,
+            run_id=run.id,
+            throttle=throttle,
+            stats=stats,
+            settings=settings,
+            artifacts_dir=artifacts_dir,
+            is_baseline_run=False,
+            now=now,
+        )
+    except Exception as exc:  # noqa: BLE001 - the run row must reflect the failure either way
+        logger.exception("monitor_robots_check_failed client_id=%s", client.id)
+        with _COMMIT_LOCK:
+            repo.finish_run(
+                run.id, status="failed", error_code="run_failed", error_message=str(exc)[:900]
+            )
+            session.commit()
+        raise
+    with _COMMIT_LOCK:
+        repo.finish_run(run.id, status="succeeded")
+        session.commit()
+
+
+def check_sitemap_now(
+    session: Session,
+    client: Client,
+    *,
+    settings: Settings,
+    artifacts_dir: Path,
+    now: datetime | None = None,
+) -> None:
+    """Re-check the sitemap tree on demand — same rationale as
+    `check_robots_now`. Reads the last-fetched robots.txt from storage
+    (rather than re-fetching it) purely to find declared `Sitemap:` entries;
+    a missing/never-fetched robots resource falls back to the same
+    `{base_url}/sitemap.xml` default `_process_sitemaps` uses.
+    """
+    now = now or datetime.now(UTC)
+    repo = MonitorRepository(session)
+    with _COMMIT_LOCK:
+        run = repo.create_run(client.id, kind=LIGHT, trigger="manual")
+        session.commit()
+    monitor_settings = repo.get_or_create_settings(client.id)
+    base_url = resolve_base_url(
+        client, monitor_settings.base_url_override, monitor_settings.canonical_www
+    )
+    robots_resource = repo.get_resource(client.id, f"{base_url}/robots.txt")
+    robots_doc = (
+        robotsmod.from_structure(robots_resource.structure_json)
+        if robots_resource and robots_resource.structure_json
+        else robotsmod.RobotsDocument()
+    )
+    min_interval = crawl_delay_floor(None, settings.monitor_host_min_interval_seconds)
+    throttle = HostThrottle(min_interval_seconds=min_interval)
+    stats = FetchStats()
+    try:
+        _process_sitemaps(
+            repo,
+            client,
+            base_url,
+            robots_doc,
+            run_id=run.id,
+            throttle=throttle,
+            stats=stats,
+            settings=settings,
+            artifacts_dir=artifacts_dir,
+            is_baseline_run=False,
+            now=now,
+        )
+    except Exception as exc:  # noqa: BLE001 - the run row must reflect the failure either way
+        logger.exception("monitor_sitemap_check_failed client_id=%s", client.id)
+        with _COMMIT_LOCK:
+            repo.finish_run(
+                run.id, status="failed", error_code="run_failed", error_message=str(exc)[:900]
+            )
+            session.commit()
+        raise
+    with _COMMIT_LOCK:
+        repo.finish_run(run.id, status="succeeded")
+        session.commit()

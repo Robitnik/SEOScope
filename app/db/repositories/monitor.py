@@ -11,7 +11,7 @@ fingerprint changed.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from sqlalchemy import Select, and_, func, or_, select
@@ -388,30 +388,47 @@ class MonitorRepository:
         )
 
     def pages_in_ring_order(self, client_id: str, *, key_only: bool = False) -> list[MonitorPage]:
-        """Key pages + open-critical/warning first, then oldest-checked-first
+        """Key pages + open-CRITICAL first, then oldest-checked-first
         (task-35 §3.3 ring traversal) — used to pick up where a truncated run
         left off instead of re-checking the same head of the list forever.
+
+        Narrowed from "critical or warning" to critical-only (task-58 §2.6,
+        live case: ALPHA had 1,805 open warnings after a Shopify->WordPress
+        migration left stale sitemap entries behind — every one of them sat
+        ahead of the rest of the site in this order, so the run's whole time
+        budget went to re-confirming the same known warnings instead of ever
+        reaching most of the site). Warnings still get checked, just in the
+        same oldest-first order as everything else, not jumped to the front.
         """
         stmt = select(MonitorPage).where(MonitorPage.client_id == client_id)
         if key_only:
             stmt = stmt.where(MonitorPage.is_key_page.is_(True))
         pages = list(self._session.scalars(stmt))
 
-        open_subjects = {
+        open_critical_subjects = {
             change.subject
             for change in self._session.scalars(
                 select(MonitorChange).where(
                     MonitorChange.client_id == client_id,
                     MonitorChange.scope == "page",
                     MonitorChange.resolved_at.is_(None),
-                    MonitorChange.severity.in_(("critical", "warning")),
+                    MonitorChange.severity == "critical",
                 )
             )
         }
 
+        # `MonitorPage.last_checked_at` reads back timezone-AWARE
+        # (`UTCDateTime`) — a naive `datetime.min` fallback here would raise
+        # `TypeError: can't compare offset-naive and offset-aware datetimes`
+        # the moment `sorted()` has to compare a never-checked page against
+        # a checked one (latent since this function's introduction; task-58
+        # made it more likely to surface simply by running more clients at
+        # once, not by changing this function's own logic).
+        never_checked = datetime.min.replace(tzinfo=UTC)
+
         def _sort_key(page: MonitorPage) -> tuple[int, int, datetime]:
-            priority = 0 if page.is_key_page else (1 if page.url in open_subjects else 2)
-            checked = page.last_checked_at or datetime.min.replace(tzinfo=None)
+            priority = 0 if page.is_key_page else (1 if page.url in open_critical_subjects else 2)
+            checked = page.last_checked_at or never_checked
             return (priority, 0, checked)
 
         return sorted(pages, key=lambda p: _sort_key(p))
@@ -944,3 +961,33 @@ class MonitorRepository:
         for client_id, severity, count in self._session.execute(stmt):
             result.setdefault(client_id, {"critical": 0, "warning": 0, "info": 0})[severity] = count
         return result
+
+    # --- Added by task-61 (URL Inspector) --------------------------------
+    #
+    # Two read-only lookups by a SET of URL-variant spellings, not the exact
+    # single URL `get_page`/`list_changes` take — the URL Inspector matches
+    # `http(s)`/`www.`/trailing-slash variants of an operator-pasted URL
+    # (task-61 §0.2/§0.5), and this module's own docstring reserves all
+    # `monitor_*` table access to `MonitorRepository`, so the variant lookup
+    # lives here rather than as a raw query in `app.urlinspector.sources.monitor`.
+
+    def get_page_by_url_variants(
+        self, client_id: str, variants: Sequence[str]
+    ) -> MonitorPage | None:
+        stmt = select(MonitorPage).where(
+            MonitorPage.client_id == client_id, MonitorPage.url.in_(variants)
+        )
+        return self._session.scalars(stmt).first()
+
+    def changes_for_subjects(
+        self, client_id: str, variants: Sequence[str], *, limit: int = 50
+    ) -> tuple[list[MonitorChange], int]:
+        """`(page, total_count)` — total is the full match count before
+        `limit`, so a caller can tell "here are the 50 newest" apart from
+        "these are all of them" (same reasoning as `DimensionRepository.for_period`)."""
+        base = select(MonitorChange).where(
+            MonitorChange.client_id == client_id, MonitorChange.subject.in_(variants)
+        )
+        total = self._session.scalar(select(func.count()).select_from(base.subquery())) or 0
+        stmt = base.order_by(MonitorChange.detected_at.desc()).limit(limit)
+        return list(self._session.scalars(stmt)), total

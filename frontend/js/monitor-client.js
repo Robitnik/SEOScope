@@ -73,6 +73,7 @@ import {
   listClientMonitorChanges, ackMonitorChange, getMonitorPages, checkMonitorPage, getMonitorDnsRecords,
   monitorExportCsvUrl, monitorExportXlsxUrl, getDashboard, isAbortError,
   getMonitorRedirects, getMonitorRedirectsStatus, checkMonitorRedirects,
+  checkMonitorRobots, checkMonitorSitemap,
 } from "./api.js?v=20260821-spin3";
 import { clientHeaderSkeleton, sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
 import { buildClientHash, replaceMonitorClientHash } from "./router.js?v=20260821-spin3";
@@ -144,6 +145,8 @@ let redirectsState = "active"; // "active" | "removed" | "all"
 let redirectsQuery = "";
 let redirectsSearchTimer = null;
 let redirectsChecking = false;
+let robotsChecking = false;
+let sitemapChecking = false;
 
 function toast(message) {
   const region = document.querySelector("#toast-region");
@@ -398,6 +401,8 @@ function handleContentClick(event) {
     // and lets the backend return whatever it already tracked.
     case "robots-history": diffViewer.open({ kind: "robots", clientId: current.clientId, resourceUrl: robotsUrl(), trigger: target }); break;
     case "sitemap-history": diffViewer.open({ kind: "sitemap", clientId: current.clientId, trigger: target }); break;
+    case "robots-check": checkRobotsNow(); break;
+    case "sitemap-check": checkSitemapNow(); break;
     // "What does the file actually say right now" — a different question from
     // "what changed between two versions", hence a different viewer.
     case "robots-content": contentViewer.open({ kind: "robots", clientId: current.clientId, trigger: target }); break;
@@ -858,10 +863,30 @@ function renderRobots() {
       : blocked
         ? { text: "Site blocked for Googlebot", tone: "alert-triangle", modifier: "critical" }
         : { text: "Googlebot: allowed", tone: "circle-check", modifier: "ok" };
+  const checkButton = `<button type="button" class="button button--quiet" data-action="robots-check" ${robotsChecking ? "disabled" : ""}>${icon(robotsChecking ? "loader-2" : "refresh", robotsChecking ? "icon icon--spin" : "icon")}${robotsChecking ? "Checking…" : "Check now"}</button>`;
   el.innerHTML = `
-    ${sectionHeadingWithAction("Robots.txt", status !== null && status !== undefined ? `HTTP ${status}` : "", `<button type="button" class="button button--quiet" data-action="robots-content">${icon("file-text")}View file</button><button type="button" class="button button--quiet" data-action="robots-history">${icon("history")}History</button>`)}
+    ${sectionHeadingWithAction("Robots.txt", status !== null && status !== undefined ? `HTTP ${status}` : "", `${checkButton}<button type="button" class="button button--quiet" data-action="robots-content">${icon("file-text")}View file</button><button type="button" class="button button--quiet" data-action="robots-history">${icon("history")}History</button>`)}
     <p class="monitor-conclusion monitor-conclusion--${conclusion.modifier}">${icon(conclusion.tone)}<span>${conclusion.text}</span></p>
     <p class="monitor-changed-at">Last checked: ${formatTimestamp(lastChecked, "not checked yet")}</p>`;
+}
+
+async function checkRobotsNow() {
+  if (robotsChecking) return;
+  robotsChecking = true;
+  renderRobots();
+  try {
+    await checkMonitorRobots(current.clientId);
+    robotsChecking = false;
+    toast("Robots.txt checked.");
+    try { monitorSummary = await getMonitorSummary(current.clientId); } catch { /* keep the last known summary */ }
+    renderRobots();
+    loadChangesFeed();
+    loadRuns();
+  } catch (error) {
+    robotsChecking = false;
+    toast(`Could not check robots.txt: ${error.message}`);
+    renderRobots();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -891,8 +916,9 @@ function renderSitemap() {
   const truncatedChip = lastRun?.truncated
     ? `<p class="chip-button monitor-chip">${icon("cut")}Truncated · showing first ${formatCount(lastRun.urls_checked)} of ${formatCount(lastRun.urls_checked + (lastRun.remaining_count ?? 0))}</p>`
     : "";
+  const checkButton = `<button type="button" class="button button--quiet" data-action="sitemap-check" ${sitemapChecking ? "disabled" : ""}>${icon(sitemapChecking ? "loader-2" : "refresh", sitemapChecking ? "icon icon--spin" : "icon")}${sitemapChecking ? "Checking…" : "Check now"}</button>`;
   el.innerHTML = `
-    ${sectionHeadingWithAction("Sitemap", health ? `${formatCount(health.total)} URLs tracked` : "", `<button type="button" class="button button--quiet" data-action="sitemap-content">${icon("list-details")}View URLs</button><button type="button" class="button button--quiet" data-action="sitemap-history">${icon("history")}History</button>`)}
+    ${sectionHeadingWithAction("Sitemap", health ? `${formatCount(health.total)} URLs tracked` : "", `${checkButton}<button type="button" class="button button--quiet" data-action="sitemap-content">${icon("list-details")}View URLs</button><button type="button" class="button button--quiet" data-action="sitemap-history">${icon("history")}History</button>`)}
     ${truncatedChip}
     <dl class="monitor-sitemap-health">
       <div><dt>OK</dt><dd>${formatCount(health?.ok)}</dd></div>
@@ -901,6 +927,25 @@ function renderSitemap() {
       <div><dt>Unavailable</dt><dd>${sitemapHealthCell(health?.unavailable)}</dd></div>
     </dl>
     <p class="monitor-changed-at">Last checked: ${formatTimestamp(lastChecked, "not checked yet")}</p>`;
+}
+
+async function checkSitemapNow() {
+  if (sitemapChecking) return;
+  sitemapChecking = true;
+  renderSitemap();
+  try {
+    await checkMonitorSitemap(current.clientId);
+    sitemapChecking = false;
+    toast("Sitemap checked.");
+    try { monitorSummary = await getMonitorSummary(current.clientId); } catch { /* keep the last known summary */ }
+    renderSitemap();
+    loadChangesFeed();
+    loadRuns();
+  } catch (error) {
+    sitemapChecking = false;
+    toast(`Could not check sitemap: ${error.message}`);
+    renderSitemap();
+  }
 }
 
 function jumpToPages(patch) {
