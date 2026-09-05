@@ -632,6 +632,39 @@ def _discover_same_host_links(
             repo.get_or_create_url(client.id, link, key, source="link")
 
 
+def _capture_url_and_commit(
+    session: Session,
+    repo: WebArchiveRepository,
+    client: Client,
+    archive_url: ArchiveUrl,
+    *,
+    capture_id: str,
+    settings: Settings,
+    artifacts_dir: Path,
+    throttle: HostThrottle,
+    stats: FetchStats,
+    now: datetime,
+    capture_assets: bool,
+    write_controller: ArchiveWriteController,
+) -> UrlCaptureResult:
+    """`capture_url` itself only ever stages via `session.add` — this is the
+    one place that actually commits it, routed through `write_controller`
+    (task-62 §2.2) so it is never in flight at the same time as another
+    capture's own commit. Kept as a named function, not a closure, so
+    `commit_with_retry`'s redo-from-scratch on a lock error re-invokes it via
+    `functools.partial` with THIS call's arguments bound immediately, not a
+    closure over a `for` loop variable that has already moved on.
+    """
+    result = capture_url(
+        session, repo, client, archive_url,
+        capture_id=capture_id, settings=settings, artifacts_dir=artifacts_dir,
+        throttle=throttle, stats=stats, now=now, capture_assets=capture_assets,
+        write_controller=write_controller,
+    )
+    write_controller.submit(session, lambda: None)
+    return result
+
+
 def run_client_capture(
     session: Session,
     client: Client,
@@ -650,7 +683,17 @@ def run_client_capture(
     """
     now = now or datetime.now(UTC)
     repo = WebArchiveRepository(session)
-    archive_settings = repo.get_or_create_settings(client.id)
+    # Routed through the controller for the same reason `seed_urls_from_monitor`
+    # already batches its own inserts this way (task-59 live incident,
+    # 2026-09-04, see its docstring): `get_or_create_settings` flushes a new
+    # row on a client's first-ever capture, and a bare call here raced five
+    # other clients' own first-flush at the very top of their own
+    # `run_client_capture`, live-reproduced 2026-09-05 with every one of them
+    # exhausting SQLite's `busy_timeout` at once — the one call in this
+    # function with no fetch before it and nothing else protecting it.
+    archive_settings = write_controller.submit(
+        session, partial(repo.get_or_create_settings, client.id)
+    )
     max_urls = archive_settings.max_urls or settings.archive_max_urls_per_client
     capture_assets = archive_settings.capture_assets and settings.archive_capture_assets
 
@@ -679,10 +722,19 @@ def run_client_capture(
     outcome = CaptureOutcome(status="ok", urls_total=len(url_ids))
     # Written BEFORE the first URL is touched: without a denominator the
     # hub can only say "in progress…", and a capture of 500 URLs looks
-    # identical to a wedged one for the better part of an hour.
-    write_controller.submit(
-        session, partial(repo.update_capture_counters, capture_id, urls_total=outcome.urls_total)
-    )
+    # identical to a wedged one for the better part of an hour. Best-effort
+    # (regression, live 2026-09-05): this is a progress hint, not data the
+    # rest of the function depends on — losing it to a lock collision right
+    # as six clients bootstrap together must not fail the capture before a
+    # single URL has even been tried.
+    try:
+        write_controller.submit(
+            session,
+            partial(repo.update_capture_counters, capture_id, urls_total=outcome.urls_total),
+        )
+    except Exception:  # noqa: BLE001 - best-effort telemetry, see comment above
+        session.rollback()
+        logger.warning("archive_capture_counters_write_failed capture_id=%s", capture_id)
     last_counter_flush = time.monotonic()
     throttle = HostThrottle(
         min_interval_seconds=settings.archive_host_min_interval_seconds,
@@ -705,32 +757,50 @@ def run_client_capture(
         if archive_url is None:  # genuinely gone (should not happen; defensive)
             outcome.urls_failed += 1
             continue
+        # Read BEFORE the try, not inside the `except` (regression,
+        # live 2026-09-05): a failed flush auto-rolls-back the session and
+        # SQLAlchemy then refuses any further use — including re-loading an
+        # expired attribute — until an explicit `rollback()`, so touching
+        # `archive_url.url` for the log message AFTER the exception raised a
+        # SECOND, unhandled error there and crashed the whole capture instead
+        # of just this one URL.
+        archive_url_str = archive_url.url
         try:
-            # Called directly, NOT via `write_controller.submit` (regression,
-            # live 2026-09-05: six clients' worth of these calling
-            # `commit_with_retry` directly, each on its own thread, put the
-            # exact pre-task-62 lock storm right back — `database is locked`
-            # crashed most of the portfolio's captures within one tick).
-            # `capture_url` only ever stages via `session.add`, never commits,
-            # so the fetch — including every asset fetch inside it — runs
-            # fully in parallel on THIS thread; only the flush below needs
-            # the controller. Submitting the whole call instead would run
-            # the network fetch ON the controller's one shared thread
-            # (serializing every other client's writes behind it) and
-            # deadlock the moment `_capture_assets_for_page`'s own nested
-            # `submit` tried to queue behind itself.
-            url_result = capture_url(
-                session, repo, client, archive_url,
-                capture_id=capture_id, settings=settings, artifacts_dir=artifacts_dir,
-                throttle=throttle, stats=stats, now=now, capture_assets=capture_assets,
-                write_controller=write_controller,
+            # `capture_url`'s own repo calls (`register_blob`, `create_snapshot`,
+            # `touch_url`, ...) flush eagerly and directly — live-reproduced
+            # 2026-09-05: `get_or_create_settings`-style contention is not
+            # limited to that one call, so a `database is locked` can surface
+            # from ANYWHERE inside `capture_url`, not only at the end.
+            # `commit_with_retry` wraps the WHOLE call for exactly that
+            # reason: on a lock error it rolls back and redoes the entire URL
+            # from scratch — safe, because nothing here has committed yet,
+            # and `_capture_assets_for_page`'s own per-asset writes are
+            # idempotent (an asset already checked this attempt skips
+            # re-fetching on the redo). Only the actual commit hops to
+            # `write_controller`'s thread (task-62 §2.2) — regression fix,
+            # 2026-09-05: six clients' worth of this calling `session.commit()`
+            # directly, all finishing pages around the same moment, put the
+            # exact pre-task-62 lock storm right back. The fetch — including
+            # every asset fetch inside `capture_url` — always runs here, on
+            # this (parallel) thread; only the commit is ever serialized.
+            # `functools.partial` binds THIS iteration's `archive_url`
+            # immediately (unlike a closure over the loop variable) —
+            # matters here specifically because the retry above re-invokes
+            # the same callable synchronously.
+            url_result = commit_with_retry(
+                session,
+                partial(
+                    _capture_url_and_commit, session, repo, client, archive_url,
+                    capture_id=capture_id, settings=settings, artifacts_dir=artifacts_dir,
+                    throttle=throttle, stats=stats, now=now, capture_assets=capture_assets,
+                    write_controller=write_controller,
+                ),
             )
-            write_controller.submit(session, lambda: None)
         except Exception:  # noqa: BLE001 - one URL's crash must never take down the whole capture
-            logger.exception(
-                "archive_capture_url_crashed client_id=%s url=%s", client.id, archive_url.url
-            )
             session.rollback()
+            logger.exception(
+                "archive_capture_url_crashed client_id=%s url=%s", client.id, archive_url_str
+            )
             url_result = UrlCaptureResult(outcome="failed")
 
         if url_result.outcome == "new":
@@ -752,14 +822,27 @@ def run_client_capture(
         # §0.5: `run_client_capture` wrote nothing anywhere before this).
         # `debug` for the routine outcomes, loud enough to filter to on the
         # capture-detail page without drowning it by default.
-        write_controller.submit(
-            session,
-            partial(
-                repo.append_event, capture_id,
-                "warning" if url_result.outcome in ("failed", "blocked") else "debug",
-                stage="url", message=f"{archive_url.url} -> {url_result.outcome}",
-            ),
-        )
+        #
+        # Best-effort, not `except Exception` around the URL's OWN capture
+        # above (regression, live 2026-09-05): this is telemetry about a URL
+        # that already succeeded or was already recorded as failed — losing
+        # ONE log line or ONE counter tick to a lock collision must never
+        # crash the REST of the capture. Live-caught the same day: with six
+        # clients bootstrapping at once, this exact `append_event` call
+        # exhausted even the controller's short retry budget and crashed an
+        # otherwise-healthy ALPHA capture outright.
+        try:
+            write_controller.submit(
+                session,
+                partial(
+                    repo.append_event, capture_id,
+                    "warning" if url_result.outcome in ("failed", "blocked") else "debug",
+                    stage="url", message=f"{archive_url_str} -> {url_result.outcome}",
+                ),
+            )
+        except Exception:  # noqa: BLE001 - best-effort telemetry, see comment above
+            session.rollback()
+            logger.warning("archive_capture_event_write_failed capture_id=%s", capture_id)
 
         # Also time-based, not just every Nth URL: a slow client (one URL
         # can take many seconds behind the per-host throttle) otherwise
@@ -768,20 +851,24 @@ def run_client_capture(
         due_by_time = time.monotonic() - last_counter_flush >= _COUNTER_FLUSH_SECONDS
         if due_by_count or due_by_time:
             last_counter_flush = time.monotonic()
-            write_controller.submit(
-                session,
-                partial(
-                    repo.update_capture_counters,
-                    capture_id,
-                    urls_total=outcome.urls_total,
-                    urls_captured=outcome.urls_captured, urls_new=outcome.urls_new,
-                    urls_unchanged=outcome.urls_unchanged, urls_failed=outcome.urls_failed,
-                    urls_blocked=outcome.urls_blocked, assets_fetched=outcome.assets_fetched,
-                    assets_reused=outcome.assets_reused, assets_failed=outcome.assets_failed,
-                    bytes_stored=outcome.bytes_stored,
-                    heartbeat_at=datetime.now(UTC), progress_message=archive_url.url,
-                ),
-            )
+            try:
+                write_controller.submit(
+                    session,
+                    partial(
+                        repo.update_capture_counters,
+                        capture_id,
+                        urls_total=outcome.urls_total,
+                        urls_captured=outcome.urls_captured, urls_new=outcome.urls_new,
+                        urls_unchanged=outcome.urls_unchanged, urls_failed=outcome.urls_failed,
+                        urls_blocked=outcome.urls_blocked, assets_fetched=outcome.assets_fetched,
+                        assets_reused=outcome.assets_reused, assets_failed=outcome.assets_failed,
+                        bytes_stored=outcome.bytes_stored,
+                        heartbeat_at=datetime.now(UTC), progress_message=archive_url_str,
+                    ),
+                )
+            except Exception:  # noqa: BLE001 - best-effort telemetry, see comment above
+                session.rollback()
+                logger.warning("archive_capture_counters_write_failed capture_id=%s", capture_id)
 
     if was_cancelled:
         outcome.status = "cancelled"

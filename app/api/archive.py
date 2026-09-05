@@ -51,6 +51,7 @@ from app.urlinspector.resolve import resolve_client_for_url
 from app.webarchive import changes as changesmod
 from app.webarchive import rewrite as rewritemod
 from app.webarchive import storage
+from app.webarchive.db_retry import commit_with_retry
 from app.webarchive.replay import format_ts
 from app.webarchive.urls import normalize_url
 
@@ -535,10 +536,21 @@ def _start_capture(client_id: str) -> str:
         if repo.has_active_capture(client_id):
             return "already_running"
         slot_key = f"manual:{uuid.uuid4()}"
-        capture = repo.create_capture(
-            client_id, slot_key=slot_key, scheduled_for=datetime.now(UTC), trigger="manual"
-        )
-        session.commit()
+
+        def _create() -> ArchiveCapture:
+            return repo.create_capture(
+                client_id, slot_key=slot_key, scheduled_for=datetime.now(UTC), trigger="manual"
+            )
+
+        # This API process has no `ArchiveWriteController` of its own to
+        # route through (that only lives inside the worker's scheduler loop,
+        # task-62 §2.2) — a click here can land while the worker is mid-tick
+        # across up to `archive_client_workers` clients, live-observed
+        # 2026-09-05 raising a bare `database is locked` straight to a 500.
+        # `commit_with_retry` is the same cross-process fallback the CLI
+        # already relies on for this exact reason (`writequeue.py`'s own
+        # docstring): rare tail, but no reason to leave it unretried.
+        capture = commit_with_retry(session, _create)
         return capture.id
 
 
@@ -574,11 +586,15 @@ def _start_url_capture(url_id: str) -> str:
         if repo.has_active_capture(archive_url.client_id):
             return "already_running"
         slot_key = f"manual:{uuid.uuid4()}"
-        capture = repo.create_capture(
-            archive_url.client_id, slot_key=slot_key, scheduled_for=datetime.now(UTC),
-            trigger="manual", scope="url", archive_url_id=url_id,
-        )
-        session.commit()
+
+        def _create() -> ArchiveCapture:
+            return repo.create_capture(
+                archive_url.client_id, slot_key=slot_key, scheduled_for=datetime.now(UTC),
+                trigger="manual", scope="url", archive_url_id=url_id,
+            )
+
+        # Cross-process retry, same reasoning as `_start_capture` above.
+        capture = commit_with_retry(session, _create)
         return capture.id
 
 
@@ -617,12 +633,16 @@ def _start_adhoc_url_capture(url: str) -> tuple[str, str, str, str] | str:
         repo = WebArchiveRepository(session)
         if repo.has_active_capture(client.id):
             return "already_running"
-        archive_url = repo.get_or_create_url(client.id, url, normalize_url(url), source="manual")
-        capture = repo.create_capture(
-            client.id, slot_key=f"manual:{uuid.uuid4()}", scheduled_for=datetime.now(UTC),
-            trigger="manual", scope="url", archive_url_id=archive_url.id,
-        )
-        session.commit()
+        def _create() -> tuple[ArchiveUrl, ArchiveCapture]:
+            url_row = repo.get_or_create_url(client.id, url, normalize_url(url), source="manual")
+            capture_row = repo.create_capture(
+                client.id, slot_key=f"manual:{uuid.uuid4()}", scheduled_for=datetime.now(UTC),
+                trigger="manual", scope="url", archive_url_id=url_row.id,
+            )
+            return url_row, capture_row
+
+        # Cross-process retry, same reasoning as `_start_capture` above.
+        archive_url, capture = commit_with_retry(session, _create)
         return capture.id, archive_url.id, client.id, client.name
 
 
@@ -654,19 +674,26 @@ def _start_all_captures() -> tuple[list[str], list[str]]:
     with worker_session_scope() as session:
         clients_repo = ClientRepository(session)
         repo = WebArchiveRepository(session)
-        created: list[str] = []
-        skipped: list[str] = []
-        for client in clients_repo.list_collectable():
-            if repo.has_active_capture(client.id):
-                skipped.append(client.id)
-                continue
-            capture = repo.create_capture(
-                client.id, slot_key=f"manual:{uuid.uuid4()}",
-                scheduled_for=datetime.now(UTC), trigger="manual",
-            )
-            created.append(capture.id)
-        session.commit()
-        return created, skipped
+
+        def _create_all() -> tuple[list[str], list[str]]:
+            created: list[str] = []
+            skipped: list[str] = []
+            for client in clients_repo.list_collectable():
+                if repo.has_active_capture(client.id):
+                    skipped.append(client.id)
+                    continue
+                capture = repo.create_capture(
+                    client.id, slot_key=f"manual:{uuid.uuid4()}",
+                    scheduled_for=datetime.now(UTC), trigger="manual",
+                )
+                created.append(capture.id)
+            return created, skipped
+
+        # Cross-process retry, same reasoning as `_start_capture` above — a
+        # whole-batch redo on a lock error is safe: nothing here committed,
+        # so rolling back and re-running the loop (fresh `uuid4()` slot keys)
+        # just recreates the same logical set of rows, never a duplicate.
+        return commit_with_retry(session, _create_all)
 
 
 @router.post("/captures/all", status_code=202)
@@ -733,9 +760,8 @@ async def get_archive_capture_events(
 def _cancel_capture(capture_id: str) -> str | None:
     with worker_session_scope() as session:
         repo = WebArchiveRepository(session)
-        status = repo.request_cancel(capture_id)
-        session.commit()
-        return status
+        # Cross-process retry, same reasoning as `_start_capture` above.
+        return commit_with_retry(session, lambda: repo.request_cancel(capture_id))
 
 
 @router.post("/captures/{capture_id}/cancel", responses={404: {"model": ErrorDTO}})

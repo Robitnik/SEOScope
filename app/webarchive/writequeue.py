@@ -59,6 +59,19 @@ class _WriteJob(Generic[_T]):
 
 _STOP = object()
 
+# Short, not `db_retry.LOCK_RETRY_DELAYS_SECONDS` (task-62 §2.2 follow-up,
+# live-reproduced 2026-09-05): this thread processes one job at a time, so
+# the only thing a controller job's lock error can be waiting on is a
+# DIRECT (non-controller) writer's own brief local-staging window —
+# `capture.py`'s `commit_with_retry`-wrapped call — never another
+# controller job (those never overlap by construction). Sleeping seconds
+# here, on the LONG schedule, blocks every OTHER already-queued job behind
+# this one too — including, some of the time, the very commit that would
+# release the lock this job is waiting on, which starved the queue for
+# 50+ seconds per stuck job in testing. A few short attempts either clear
+# the brief window or fail fast and let the queue keep moving.
+_CONTROLLER_RETRY_DELAYS_SECONDS = (0.05, 0.1, 0.2, 0.4, 0.8)
+
 
 class ArchiveWriteController:
     """One instance per `ArchiveScheduler` (one per worker process). Start it
@@ -96,6 +109,10 @@ class ArchiveWriteController:
             if job is _STOP:
                 return
             try:
-                job.future.set_result(commit_with_retry(job.session, job.fn))
+                job.future.set_result(
+                    commit_with_retry(
+                        job.session, job.fn, delays=_CONTROLLER_RETRY_DELAYS_SECONDS
+                    )
+                )
             except BaseException as exc:  # noqa: BLE001 - travels via Future, not a raise here
                 job.future.set_exception(exc)

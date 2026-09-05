@@ -17,6 +17,7 @@ same correct result, never a duplicate.
 from __future__ import annotations
 
 import logging
+import random
 import time
 from collections.abc import Callable
 from typing import TypeVar
@@ -38,15 +39,32 @@ _T = TypeVar("_T")
 LOCK_RETRY_DELAYS_SECONDS = (1.0, 5.0, 15.0, 30.0)
 
 
-def commit_with_retry(session: Session, fn: Callable[[], _T]) -> _T:
+def commit_with_retry(
+    session: Session, fn: Callable[[], _T], *, delays: tuple[float, ...] | None = None
+) -> _T:
     """Run `fn()` then commit `session`, retrying the whole thing a few
     times on `database is locked`. Any other `OperationalError`, or any
     other exception `fn()` raises, propagates immediately — this is a
     narrow fix for one specific, observed failure mode, not a general
     retry-everything wrapper.
+
+    `delays` defaults to the long, "a genuinely external process is holding
+    this" schedule above — resolved INSIDE the function body, not as a
+    parameter default (a default is bound once, at import time, so it would
+    never see a test's `monkeypatch.setattr(db_retry, "LOCK_RETRY_DELAYS_SECONDS", ...)`
+    on a later call). `ArchiveWriteController` passes its own, much shorter
+    one (task-62 §2.2 follow-up, live-reproduced 2026-09-05): its single
+    background thread processes one job at a time, so sleeping seconds here
+    on a lock held by a DIRECT (non-controller) writer — e.g. `capture.py`'s
+    own `commit_with_retry`-wrapped call — blocks every OTHER already-queued
+    job behind it too, including, sometimes, the very commit that would
+    release that lock. A short retry fails fast instead and lets the queue
+    keep moving; the caller (a heartbeat or counter update, not the page
+    content itself) tolerates an occasional miss.
     """
+    delays = delays if delays is not None else LOCK_RETRY_DELAYS_SECONDS
     last_exc: OperationalError | None = None
-    for attempt, delay in enumerate(LOCK_RETRY_DELAYS_SECONDS):
+    for attempt, delay in enumerate(delays):
         try:
             result = fn()
             session.commit()
@@ -58,8 +76,15 @@ def commit_with_retry(session: Session, fn: Callable[[], _T]) -> _T:
             last_exc = exc
             logger.warning(
                 "archive_db_locked_retry attempt=%d/%d",
-                attempt + 1, len(LOCK_RETRY_DELAYS_SECONDS),
+                attempt + 1, len(delays),
             )
-            time.sleep(delay)
+            # Jittered, not the fixed `delay` (regression, live-reproduced
+            # 2026-09-05): two callers that collide once tend to have started
+            # within milliseconds of each other and so keep colliding —
+            # every retry lands on the exact same fixed schedule and they
+            # never desynchronize. ±50% spread is enough that two colliding
+            # retries drift apart within one or two cycles instead of
+            # lockstepping through the whole budget together.
+            time.sleep(random.uniform(delay * 0.5, delay * 1.5))
     assert last_exc is not None
     raise last_exc
