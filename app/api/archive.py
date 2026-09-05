@@ -27,13 +27,17 @@ from app.monitor.page import decode_body
 from app.schemas.api import ErrorDTO
 from app.schemas.web_archive import (
     ArchiveCaptureAcceptedDTO,
+    ArchiveCaptureBatchAcceptedDTO,
+    ArchiveCaptureCancelDTO,
     ArchiveCaptureDTO,
+    ArchiveCaptureEventDTO,
     ArchiveChangeDiffDTO,
     ArchiveChangeDTO,
     ArchiveChangesPageDTO,
     ArchiveClientCoverageDTO,
     ArchiveLookupDTO,
     ArchiveOverviewDTO,
+    ArchiveQueueDTO,
     ArchiveSnapshotDetailDTO,
     ArchiveSnapshotSummaryDTO,
     ArchiveUrlDTO,
@@ -57,6 +61,9 @@ _SNAPSHOT_NOT_FOUND = ErrorDTO(
 ).model_dump()
 _CLIENT_NOT_FOUND = ErrorDTO(
     error_code="client_not_found", message="Client not found"
+).model_dump()
+_CAPTURE_NOT_FOUND = ErrorDTO(
+    error_code="capture_not_found", message="Capture not found"
 ).model_dump()
 _ALREADY_RUNNING = ErrorDTO(
     error_code="already_running", message="A capture is already running for this client"
@@ -85,7 +92,13 @@ def _url_dto(archive_url: ArchiveUrl, client_name: str) -> ArchiveUrlDTO:
     )
 
 
-def _capture_dto(capture: ArchiveCapture, client_name: str) -> ArchiveCaptureDTO:
+def _capture_dto(
+    capture: ArchiveCapture,
+    client_name: str,
+    *,
+    target_url: str | None = None,
+    queue_position: int | None = None,
+) -> ArchiveCaptureDTO:
     return ArchiveCaptureDTO(
         id=capture.id,
         client_id=capture.client_id,
@@ -108,7 +121,19 @@ def _capture_dto(capture: ArchiveCapture, client_name: str) -> ArchiveCaptureDTO
         bytes_stored=capture.bytes_stored,
         error_code=capture.error_code,
         error_message=capture.error_message,
+        scope=capture.scope,  # type: ignore[arg-type]
+        target_url=target_url,
+        progress_message=capture.progress_message,
+        cancel_requested=capture.cancel_requested,
+        queue_position=queue_position,
     )
+
+
+def _resolve_target_url(repo: WebArchiveRepository, capture: ArchiveCapture) -> str | None:
+    if capture.scope != "url" or capture.archive_url_id is None:
+        return None
+    archive_url = repo.get_url(capture.archive_url_id)
+    return archive_url.url if archive_url is not None else None
 
 
 def _snapshot_summary_dto(
@@ -183,7 +208,11 @@ def _overview() -> ArchiveOverviewDTO:
         top_dtos = [_url_dto(u, _name_or(client_names, u.client_id)) for u in top_urls]
         recent_client_names = repo.clients_by_id([c.client_id for c in recent])
         recent_dtos = [
-            _capture_dto(c, _name_or(recent_client_names, c.client_id)) for c in recent
+            _capture_dto(
+                c, _name_or(recent_client_names, c.client_id),
+                target_url=_resolve_target_url(repo, c),
+            )
+            for c in recent
         ]
 
         return ArchiveOverviewDTO(
@@ -471,7 +500,13 @@ def _captures(client_id: str | None, limit: int) -> list[ArchiveCaptureDTO]:
         repo = WebArchiveRepository(session)
         rows = repo.list_captures(client_id, limit=limit)
         client_names = repo.clients_by_id([r.client_id for r in rows])
-        return [_capture_dto(row, _name_or(client_names, row.client_id)) for row in rows]
+        return [
+            _capture_dto(
+                row, _name_or(client_names, row.client_id),
+                target_url=_resolve_target_url(repo, row),
+            )
+            for row in rows
+        ]
 
 
 @router.get("/captures")
@@ -488,17 +523,16 @@ def _start_capture(client_id: str) -> str:
         if client is None:
             return "client_not_found"
         repo = WebArchiveRepository(session)
-        # Mirrors `ArchiveScheduler._tick`'s own guard: without this, a
-        # manual trigger can start a SECOND capture for a client whose
-        # scheduled one is still running (live-observed, task-59
-        # 2026-09-04) — wasted duplicate work, not a data-safety issue
-        # (cells are isolated), but confusing and worth refusing outright.
-        if repo.has_running_capture(client_id):
+        # Both `running` AND `queued` (task-62 §1.3) — guarding only
+        # `running` let two rapid clicks queue two rows for the same client
+        # before the scheduler's next tick claimed the first one.
+        if repo.has_active_capture(client_id):
             return "already_running"
         slot_key = f"manual:{uuid.uuid4()}"
         capture = repo.create_capture(
             client_id, slot_key=slot_key, scheduled_for=datetime.now(UTC), trigger="manual"
         )
+        session.commit()
         return capture.id
 
 
@@ -517,7 +551,177 @@ async def start_archive_capture(client_id: str) -> ArchiveCaptureAcceptedDTO:
         raise HTTPException(status_code=404, detail=_CLIENT_NOT_FOUND)
     if result == "already_running":
         raise HTTPException(status_code=409, detail=_ALREADY_RUNNING)
-    return ArchiveCaptureAcceptedDTO(capture_id=result, status_url="/api/v1/archive/captures")
+    return ArchiveCaptureAcceptedDTO(
+        capture_id=result, status_url=f"/api/v1/archive/captures/{result}"
+    )
+
+
+def _start_url_capture(url_id: str) -> str:
+    """"Refresh now" on one URL (task-62 §1.1/§2.7) — `urls_total=1`,
+    seconds, not the whole client's list.
+    """
+    with worker_session_scope() as session:
+        repo = WebArchiveRepository(session)
+        archive_url = repo.get_url(url_id)
+        if archive_url is None:
+            return "url_not_found"
+        if repo.has_active_capture(archive_url.client_id):
+            return "already_running"
+        slot_key = f"manual:{uuid.uuid4()}"
+        capture = repo.create_capture(
+            archive_url.client_id, slot_key=slot_key, scheduled_for=datetime.now(UTC),
+            trigger="manual", scope="url", archive_url_id=url_id,
+        )
+        session.commit()
+        return capture.id
+
+
+@router.post(
+    "/captures/url",
+    status_code=202,
+    responses={404: {"model": ErrorDTO}, 409: {"model": ErrorDTO}},
+)
+async def start_archive_url_capture(url_id: str) -> ArchiveCaptureAcceptedDTO:
+    result = await run_in_threadpool(_start_url_capture, url_id)
+    if result == "url_not_found":
+        raise HTTPException(status_code=404, detail=_URL_NOT_FOUND)
+    if result == "already_running":
+        raise HTTPException(status_code=409, detail=_ALREADY_RUNNING)
+    return ArchiveCaptureAcceptedDTO(
+        capture_id=result, status_url=f"/api/v1/archive/captures/{result}"
+    )
+
+
+def _start_all_captures() -> tuple[list[str], list[str]]:
+    """"Capture all" (task-62 §1.2) — one `queued` row per collectable
+    client, skipping any that already has one active. The FIFO queue
+    (§1.3) is what makes this safe to fire for the whole portfolio at once
+    instead of a 7-hour foreground operation (§0.6).
+    """
+    with worker_session_scope() as session:
+        clients_repo = ClientRepository(session)
+        repo = WebArchiveRepository(session)
+        created: list[str] = []
+        skipped: list[str] = []
+        for client in clients_repo.list_collectable():
+            if repo.has_active_capture(client.id):
+                skipped.append(client.id)
+                continue
+            capture = repo.create_capture(
+                client.id, slot_key=f"manual:{uuid.uuid4()}",
+                scheduled_for=datetime.now(UTC), trigger="manual",
+            )
+            created.append(capture.id)
+        session.commit()
+        return created, skipped
+
+
+@router.post("/captures/all", status_code=202)
+async def start_all_archive_captures() -> ArchiveCaptureBatchAcceptedDTO:
+    created, skipped = await run_in_threadpool(_start_all_captures)
+    return ArchiveCaptureBatchAcceptedDTO(capture_ids=created, skipped_client_ids=skipped)
+
+
+def _capture_detail(capture_id: str) -> ArchiveCaptureDTO | None:
+    with worker_session_scope() as session:
+        repo = WebArchiveRepository(session)
+        capture = repo.get_capture(capture_id)
+        if capture is None:
+            return None
+        client_name = repo.client_name(capture.client_id) or "?"
+        queue_position = None
+        if capture.status == "queued":
+            queued_ids = [c.id for c in repo.queued_captures()]
+            if capture.id in queued_ids:
+                queue_position = queued_ids.index(capture.id) + 1
+        return _capture_dto(
+            capture, client_name,
+            target_url=_resolve_target_url(repo, capture), queue_position=queue_position,
+        )
+
+
+@router.get("/captures/{capture_id}", responses={404: {"model": ErrorDTO}})
+async def get_archive_capture(capture_id: str) -> ArchiveCaptureDTO:
+    result = await run_in_threadpool(_capture_detail, capture_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=_CAPTURE_NOT_FOUND)
+    return result
+
+
+def _capture_events(capture_id: str, since: int) -> list[ArchiveCaptureEventDTO] | None:
+    with worker_session_scope() as session:
+        repo = WebArchiveRepository(session)
+        if repo.get_capture(capture_id) is None:
+            return None
+        rows = repo.events_since(capture_id, since)
+        return [
+            ArchiveCaptureEventDTO(
+                seq=row.seq,
+                level=row.level,  # type: ignore[arg-type]
+                stage=row.stage,
+                message=row.message,
+                details=row.details_json or {},
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+
+@router.get("/captures/{capture_id}/events", responses={404: {"model": ErrorDTO}})
+async def get_archive_capture_events(
+    capture_id: str, since: int = 0
+) -> list[ArchiveCaptureEventDTO]:
+    result = await run_in_threadpool(_capture_events, capture_id, since)
+    if result is None:
+        raise HTTPException(status_code=404, detail=_CAPTURE_NOT_FOUND)
+    return result
+
+
+def _cancel_capture(capture_id: str) -> str | None:
+    with worker_session_scope() as session:
+        repo = WebArchiveRepository(session)
+        status = repo.request_cancel(capture_id)
+        session.commit()
+        return status
+
+
+@router.post("/captures/{capture_id}/cancel", responses={404: {"model": ErrorDTO}})
+async def cancel_archive_capture(capture_id: str) -> ArchiveCaptureCancelDTO:
+    """Cooperative (task-62 §1.6): a `queued` row is finished immediately; a
+    `running` one is flagged and stops itself between URLs — this response
+    reports which happened, not that the capture is necessarily over yet.
+    """
+    status = await run_in_threadpool(_cancel_capture, capture_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail=_CAPTURE_NOT_FOUND)
+    return ArchiveCaptureCancelDTO(capture_id=capture_id, status=status)  # type: ignore[arg-type]
+
+
+def _queue_view() -> ArchiveQueueDTO:
+    with worker_session_scope() as session:
+        repo = WebArchiveRepository(session)
+        running = repo.running_captures()
+        queued = repo.queued_captures()
+        recent = repo.list_captures(limit=10)
+        all_rows = running + queued + recent
+        client_names = repo.clients_by_id([r.client_id for r in all_rows])
+
+        def _dto(row: ArchiveCapture, *, position: int | None = None) -> ArchiveCaptureDTO:
+            return _capture_dto(
+                row, _name_or(client_names, row.client_id),
+                target_url=_resolve_target_url(repo, row), queue_position=position,
+            )
+
+        return ArchiveQueueDTO(
+            running=[_dto(r) for r in running],
+            queued=[_dto(r, position=i + 1) for i, r in enumerate(queued)],
+            recent=[_dto(r) for r in recent],
+        )
+
+
+@router.get("/queue")
+async def get_archive_queue() -> ArchiveQueueDTO:
+    return await run_in_threadpool(_queue_view)
 
 
 register_router(router)

@@ -95,7 +95,7 @@
 
 .archive-capture-list, .archive-top-changing-list { margin: 0 20px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .archive-capture-row {
-  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line-soft);
+  display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 1px solid var(--line-soft);
   border-left: 3px solid var(--state-color, var(--ink-dim)); font-size: 13px;
 }
 .archive-capture-row .icon { width: 16px; height: 16px; color: var(--state-color, var(--ink-dim)); flex: 0 0 auto; }
@@ -103,13 +103,22 @@
 .archive-capture-row.state-partial { --state-color: var(--warning); }
 .archive-capture-row.state-failed, .archive-capture-row.state-blocked { --state-color: var(--danger); }
 .archive-capture-row.state-running, .archive-capture-row.state-queued { --state-color: var(--info); }
+.archive-capture-row.state-cancelled { --state-color: var(--ink-dim); }
 .archive-capture-row__counts { color: var(--ink-muted); font-size: 12px; margin-left: auto; }
 .archive-capture-row__time { color: var(--ink-dim); font-size: 12px; white-space: nowrap; }
 /* The bar spans the full row on its own line under the label/counts, so a
    moving fraction is readable at a glance down a column of clients. */
 .archive-capture-row { flex-wrap: wrap; }
+/* task-62: the row's own content moved into an `<a>` (links to the capture
+   detail page) so the whole label/counts/time strip is one click target;
+   the row itself keeps the border/left-accent, padding moves to the link. */
+.archive-capture-row__link {
+  display: flex; align-items: center; gap: 10px; flex: 1 1 100%; padding: 8px 0;
+  color: var(--ink); text-decoration: none;
+}
+.archive-capture-row__link:hover .archive-capture-row__counts { color: var(--ink); }
 .archive-capture-row__bar {
-  flex: 1 0 100%; width: 100%; height: 3px; margin-top: 2px;
+  flex: 1 0 100%; width: 100%; height: 3px; margin: 0 0 8px;
   appearance: none; border: 0; background: var(--line-soft);
 }
 .archive-capture-row__bar::-webkit-progress-bar { background: var(--line-soft); }
@@ -194,6 +203,46 @@
 .archive-change-row + .archive-diff-panel,
 .archive-change-row .archive-diff-panel { flex-basis: 100%; margin: 8px -14px -12px; border-bottom: none; }
 
+/* --- One capture: progress + log (task-62 §1.5) --------------------------- */
+
+.archive-hero--compact { padding: 20px 20px 16px; gap: 10px; }
+.archive-hero--compact h1 { display: flex; align-items: center; gap: 10px; font-size: clamp(20px, 3vw, 28px); }
+.archive-hero--compact h1 .icon { width: 22px; height: 22px; }
+
+.archive-capture-detail { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+
+.archive-progress-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.archive-progress-summary__bar { flex: 1 1 260px; height: 6px; appearance: none; border: 0; background: var(--line-soft); accent-color: var(--accent); }
+.archive-progress-summary__bar::-webkit-progress-bar { background: var(--line-soft); }
+.archive-progress-summary__bar::-webkit-progress-value { background: var(--accent); }
+.archive-progress-summary__bar::-moz-progress-bar { background: var(--accent); }
+.archive-progress-summary__count { color: var(--ink-muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.archive-capture-counts {
+  margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+}
+.archive-capture-counts div { background: var(--surface); padding: 10px 14px; }
+.archive-capture-counts dt { margin: 0; color: var(--ink-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.archive-capture-counts dd { margin: 2px 0 0; font-family: var(--font-display); font-size: 18px; font-weight: 900; }
+
+.archive-log-panel { border: 1px solid var(--line); background: var(--canvas-raised); }
+.archive-log-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.archive-log-toolbar select { min-width: 130px; }
+.archive-log-list {
+  list-style: none; margin: 0; padding: 8px 0; max-height: 360px; overflow-y: auto;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 12px;
+}
+.archive-log-row { display: grid; grid-template-columns: 78px 90px minmax(0, 1fr); gap: 10px; padding: 4px 16px; align-items: baseline; }
+.archive-log-row time { color: var(--ink-dim); }
+.archive-log-row__level { display: inline-flex; align-items: center; gap: 4px; text-transform: uppercase; font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+.archive-log-row__level .icon { width: 12px; height: 12px; }
+.archive-log-row--info .archive-log-row__level { color: var(--info); }
+.archive-log-row--warning .archive-log-row__level { color: var(--warning); }
+.archive-log-row--error .archive-log-row__level { color: var(--danger); }
+.archive-log-row--debug .archive-log-row__level { color: var(--ink-dim); }
+.archive-log-row__message { overflow-wrap: anywhere; }
+
 @media (max-width: 640px) {
   .archive-lookup-form { flex-direction: column; align-items: stretch; }
   .archive-banner { flex-direction: column; align-items: stretch; }
@@ -201,4 +250,6 @@
   .archive-banner__actions { margin-left: 0; }
   .archive-changes-filters { flex-direction: column; }
   .archive-change-row__meta { align-items: flex-start; }
+  .archive-log-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .archive-log-row time { display: none; }
 }

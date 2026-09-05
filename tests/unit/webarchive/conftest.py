@@ -7,6 +7,7 @@ from app.core.config import Settings
 from app.db import models  # noqa: F401 - registers tables on Base.metadata
 from app.db.base import Base
 from app.db.session import build_sync_engine
+from app.webarchive.writequeue import ArchiveWriteController
 
 
 @pytest.fixture
@@ -24,6 +25,25 @@ def session(engine) -> Session:
     maker = sessionmaker(bind=engine, expire_on_commit=False)
     with maker() as s:
         yield s
+
+
+@pytest.fixture
+def session_scope(engine):
+    """A REAL second session-opener bound to the same file-backed engine as
+    `session` (task-62) — not the same object as the `session` fixture, so
+    tests that exercise cross-session freshness (the cancel-check, task-62
+    §1.6) see genuinely independent connections, exactly like the worker's
+    own session vs. the API's own session in production.
+    """
+    return sessionmaker(bind=engine, expire_on_commit=False)
+
+
+@pytest.fixture
+def write_controller():
+    controller = ArchiveWriteController()
+    controller.start()
+    yield controller
+    controller.stop()
 
 
 @pytest.fixture

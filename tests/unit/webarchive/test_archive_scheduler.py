@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from app.monitor.fetcher import FetchResult
+from app.webarchive import capture as capturemod
 from app.webarchive.scheduler import _parse_slot_times, most_recent_slot, slot_key_for
 
 KYIV = ZoneInfo("Europe/Kyiv")
@@ -55,12 +57,17 @@ def test_slot_key_distinguishes_dst_transition() -> None:
     assert "+02:00" in slot_key_for(after_dst_end)
 
 
-def test_reclaim_dead_captures_frees_a_row_this_process_is_not_running(session, tmp_path) -> None:
+def test_reclaim_dead_captures_frees_a_row_with_a_stale_heartbeat(session, tmp_path) -> None:
     """Live incident (task-59, 2026-09-04): a `database is locked` burst
     crashed six captures at once AND blocked the `finish_capture` in their
     own crash handler, leaving rows `running` for three hours. Because
     `_tick` skips any client with `has_running_capture`, each of those rows
     also locked its client out of every later slot.
+
+    task-62 §2.3: liveness is `heartbeat_at`, not membership in an
+    in-process set — a row whose heartbeat was last touched long ago (here,
+    at claim time, back-dated to simulate a process that died right after)
+    is reclaimed regardless of which process claimed it.
     """
     from contextlib import contextmanager
 
@@ -78,7 +85,7 @@ def test_reclaim_dead_captures_frees_a_row_this_process_is_not_running(session, 
         client.id, slot_key="2026-09-04T13:30+03:00",
         scheduled_for=datetime(2026, 9, 4, 10, 30, tzinfo=UTC), trigger="scheduled",
     )
-    repo.claim_capture(zombie.id)
+    repo.claim_capture(zombie.id, owner="test", now=datetime(2026, 9, 4, 10, 30, tzinfo=UTC))
     session.commit()
     assert repo.has_running_capture(client.id) is True
 
@@ -90,7 +97,11 @@ def test_reclaim_dead_captures_frees_a_row_this_process_is_not_running(session, 
         session_scope=_scope,
         settings=Settings(_env_file=None, artifacts_dir=tmp_path),
     )
-    scheduler._reclaim_dead_captures()
+    scheduler._write_controller.start()
+    try:
+        scheduler._reclaim_dead_captures()
+    finally:
+        scheduler._write_controller.stop()
 
     reclaimed = repo.get_capture(zombie.id)
     assert reclaimed.status == "failed"
@@ -100,7 +111,16 @@ def test_reclaim_dead_captures_frees_a_row_this_process_is_not_running(session, 
     assert repo.has_running_capture(client.id) is False
 
 
-def test_reclaim_dead_captures_leaves_this_process_own_run_alone(session, tmp_path) -> None:
+def test_reclaim_dead_captures_leaves_a_fresh_heartbeat_alone(session, tmp_path) -> None:
+    """A capture with a heartbeat from just now is alive — whether this
+    scheduler's OWN process claimed it (the worker's usual case) or a
+    DIFFERENT process did (`yovth-report archive-capture` in its own OS
+    process, keeping its own heartbeat current on the same row): the
+    heartbeat carries no notion of which process, on purpose, since that
+    cross-process case is exactly the false-kill this replaces (task-62
+    §0.4, reproduced live 2026-09-05: a CLI capture was declared
+    `interrupted` within a minute of starting while it kept working).
+    """
     from contextlib import contextmanager
 
     from app.core.config import Settings
@@ -117,7 +137,10 @@ def test_reclaim_dead_captures_leaves_this_process_own_run_alone(session, tmp_pa
         client.id, slot_key="2026-09-04T13:30+03:00",
         scheduled_for=datetime(2026, 9, 4, 10, 30, tzinfo=UTC), trigger="scheduled",
     )
-    repo.claim_capture(capture.id)
+    # No `now=` override — a genuinely fresh, real-wall-clock heartbeat,
+    # exactly as a capture running RIGHT NOW (in this process or another)
+    # would have, regardless of who claimed it.
+    repo.claim_capture(capture.id, owner="cli")
     session.commit()
 
     @contextmanager
@@ -128,7 +151,71 @@ def test_reclaim_dead_captures_leaves_this_process_own_run_alone(session, tmp_pa
         session_scope=_scope,
         settings=Settings(_env_file=None, artifacts_dir=tmp_path),
     )
-    scheduler._in_flight.add(capture.id)  # a live capture, however long it runs
     scheduler._reclaim_dead_captures()
 
     assert repo.get_capture(capture.id).status == "running"
+
+
+def test_submit_reads_scope_url_and_captures_exactly_one_url(
+    session, tmp_path, monkeypatch
+) -> None:
+    """Regression (caught live, 2026-09-05): `_submit`/`_run` claimed a
+    `scope="url"` row but never read `archive_url_id` back off it, so
+    `run_client_capture` silently fell back to the whole client's URL list
+    — a "Refresh now" on one GOREPORT page captured 2 URLs instead of 1.
+    """
+    from contextlib import contextmanager
+
+    from app.core.config import Settings
+    from app.db.repositories.clients import ClientRepository
+    from app.db.repositories.web_archive import WebArchiveRepository
+    from app.webarchive.scheduler import ArchiveScheduler
+
+    client = ClientRepository(session).create(
+        name="Acme", slug="acme", domain="acme.example.com", timezone="America/New_York"
+    )
+    session.commit()
+    repo = WebArchiveRepository(session)
+    url_a = repo.get_or_create_url(
+        client.id, "https://acme.example.com/a", "acme.example.com/a", source="manual"
+    )
+    repo.get_or_create_url(
+        client.id, "https://acme.example.com/b", "acme.example.com/b", source="manual"
+    )
+    session.commit()
+
+    def _fake_fetch(url, **kwargs):
+        return FetchResult(
+            requested_url=url, final_url=url, status=200, hop_count=0,
+            headers={"Content-Type": "text/html"},
+            body=b"<html><head><title>T</title></head><body>hi</body></html>",
+            truncated_body=False, elapsed_ms=1, error=None,
+        )
+
+    monkeypatch.setattr(capturemod, "fetch", _fake_fetch)
+
+    capture = repo.create_capture(
+        client.id, slot_key="manual:scope-test", scheduled_for=datetime.now(UTC),
+        trigger="manual", scope="url", archive_url_id=url_a.id,
+    )
+    session.commit()
+
+    @contextmanager
+    def _scope():
+        yield session
+
+    settings = Settings(
+        _env_file=None, artifacts_dir=tmp_path, archive_host_min_interval_seconds=0.0,
+        archive_client_workers=1,
+    )
+    scheduler = ArchiveScheduler(session_scope=_scope, settings=settings)
+    scheduler._write_controller.start()
+    try:
+        scheduler._submit(client, capture.id)
+        scheduler._pool.shutdown(wait=True)
+    finally:
+        scheduler._write_controller.stop()
+
+    finished = repo.get_capture(capture.id)
+    assert finished.status == "ok"
+    assert finished.urls_total == 1  # not 2 — the OTHER url must stay untouched

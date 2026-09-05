@@ -24,6 +24,7 @@ from app.db.models import (
     ArchiveAssetVersion,
     ArchiveBlob,
     ArchiveCapture,
+    ArchiveCaptureEvent,
     ArchiveChange,
     ArchiveReplayMiss,
     ArchiveSettings,
@@ -34,7 +35,7 @@ from app.db.models import (
     MonitorPage,
 )
 
-CaptureStatus = Literal["queued", "running", "ok", "partial", "failed", "blocked"]
+CaptureStatus = Literal["queued", "running", "ok", "partial", "failed", "blocked", "cancelled"]
 
 
 class WebArchiveRepository:
@@ -84,7 +85,15 @@ class WebArchiveRepository:
         return self._session.scalars(stmt).first()
 
     def create_capture(
-        self, client_id: str, *, slot_key: str, scheduled_for: datetime, trigger: str
+        self,
+        client_id: str,
+        *,
+        slot_key: str,
+        scheduled_for: datetime,
+        trigger: str,
+        scope: str = "client",
+        archive_url_id: str | None = None,
+        now: datetime | None = None,
     ) -> ArchiveCapture:
         capture = ArchiveCapture(
             client_id=client_id,
@@ -92,6 +101,9 @@ class WebArchiveRepository:
             scheduled_for=scheduled_for,
             trigger=trigger,
             status="queued",
+            queued_at=now or utcnow(),
+            scope=scope,
+            archive_url_id=archive_url_id,
         )
         self._session.add(capture)
         self._session.flush()
@@ -100,8 +112,14 @@ class WebArchiveRepository:
     def get_capture(self, capture_id: str) -> ArchiveCapture | None:
         return self._session.get(ArchiveCapture, capture_id)
 
-    def queued_captures(self) -> list[ArchiveCapture]:
+    def queued_captures(self, *, limit: int | None = None) -> list[ArchiveCapture]:
+        """FIFO order (task-62 §1.3) — no priority class: a manual "Refresh
+        now" and a scheduled slot both just join the tail.
+        """
         stmt = select(ArchiveCapture).where(ArchiveCapture.status == "queued")
+        stmt = stmt.order_by(ArchiveCapture.queued_at.asc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(self._session.scalars(stmt))
 
     def running_captures(self) -> list[ArchiveCapture]:
@@ -114,24 +132,75 @@ class WebArchiveRepository:
         )
         return self._session.scalars(stmt).first() is not None
 
+    def has_active_capture(self, client_id: str) -> bool:
+        """`running` OR `queued` — the admission check a NEW `POST /captures`
+        must use (task-62 §1.3): guarding only `running` let two rapid
+        clicks queue two rows for the same client before the scheduler's
+        next tick claimed the first one.
+        """
+        stmt = select(ArchiveCapture.id).where(
+            ArchiveCapture.client_id == client_id,
+            ArchiveCapture.status.in_(("running", "queued")),
+        )
+        return self._session.scalars(stmt).first() is not None
+
     def claim_capture(
-        self, capture_id: str, *, now: datetime | None = None
+        self, capture_id: str, *, owner: str, now: datetime | None = None
     ) -> ArchiveCapture | None:
+        """Only ever called from inside an `ArchiveWriteController` job
+        (task-62 §2.2/§2.3): since that controller guarantees no OTHER
+        archive write is in flight anywhere in this process while this
+        function runs, the "is a capture already running for this client"
+        check below and the `status="running"` write it guards are
+        effectively atomic — the same admission-control-at-claim-time
+        `cells.py:28 claim_next_cell` uses, just enforced by the
+        controller's own serialization instead of a raw atomic `UPDATE`.
+        """
         capture = self._session.get(ArchiveCapture, capture_id)
         if capture is None or capture.status != "queued":
             return None
+        if self.has_running_capture(capture.client_id):
+            return None
+        moment = now or utcnow()
         capture.status = "running"
-        capture.started_at = now or utcnow()
+        capture.started_at = moment
+        capture.owner = owner
+        capture.heartbeat_at = moment
         self._session.flush()
         return capture
 
-    def update_capture_counters(self, capture_id: str, **counters: int) -> None:
+    def update_capture_counters(self, capture_id: str, **fields: Any) -> None:
+        """Generic setattr over any `ArchiveCapture` column — counters,
+        `heartbeat_at`, `progress_message` all ride the SAME periodic flush
+        (task-62 §2.3/§2.5), so this adds no new commit frequency.
+        """
         capture = self._session.get(ArchiveCapture, capture_id)
         if capture is None:
             return
-        for key, value in counters.items():
+        for key, value in fields.items():
             setattr(capture, key, value)
         self._session.flush()
+
+    def request_cancel(self, capture_id: str, *, now: datetime | None = None) -> str | None:
+        """`None` if the capture doesn't exist or is already terminal.
+        A `queued` row is finished immediately (it never started, nothing to
+        stop mid-flight). A `running` row is only flagged — `run_client_capture`
+        checks `cancel_requested` between URLs and stops itself there
+        (task-62 §1.6); the row stays `running` until it does.
+        """
+        capture = self._session.get(ArchiveCapture, capture_id)
+        if capture is None:
+            return None
+        if capture.status == "queued":
+            capture.status = "cancelled"
+            capture.finished_at = now or utcnow()
+            self._session.flush()
+            return "cancelled"
+        if capture.status == "running":
+            capture.cancel_requested = True
+            self._session.flush()
+            return "cancel_requested"
+        return None
 
     def finish_capture(
         self,
@@ -158,6 +227,51 @@ class WebArchiveRepository:
         if client_id is not None:
             stmt = stmt.where(ArchiveCapture.client_id == client_id)
         stmt = stmt.order_by(ArchiveCapture.scheduled_for.desc()).limit(limit)
+        return list(self._session.scalars(stmt))
+
+    def append_event(
+        self,
+        capture_id: str,
+        level: str,
+        *,
+        stage: str | None = None,
+        message: str,
+        details: dict[str, Any] | None = None,
+        now: datetime | None = None,
+    ) -> int:
+        """Same shape as `ReportRunRepository.append_event` — `seq` monotonic
+        WITHIN this capture (task-62 §2.4). `run_client_capture` had no log
+        at all before this (task-62 §0.5).
+        """
+        last_seq = self._session.scalar(
+            select(func.max(ArchiveCaptureEvent.seq)).where(
+                ArchiveCaptureEvent.capture_id == capture_id
+            )
+        )
+        next_seq = (last_seq or 0) + 1
+        self._session.add(
+            ArchiveCaptureEvent(
+                capture_id=capture_id,
+                seq=next_seq,
+                level=level,
+                stage=stage,
+                message=message,
+                details_json=details or {},
+                created_at=now or utcnow(),
+            )
+        )
+        self._session.flush()
+        return next_seq
+
+    def events_since(self, capture_id: str, last_seq: int) -> list[ArchiveCaptureEvent]:
+        stmt = (
+            select(ArchiveCaptureEvent)
+            .where(
+                ArchiveCaptureEvent.capture_id == capture_id,
+                ArchiveCaptureEvent.seq > last_seq,
+            )
+            .order_by(ArchiveCaptureEvent.seq.asc())
+        )
         return list(self._session.scalars(stmt))
 
     def captures_on_date(self, client_id: str, day: datetime) -> list[ArchiveCapture]:

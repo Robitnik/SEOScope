@@ -7,9 +7,12 @@
 // health, and the pages that change most often — so the hub also answers
 // "is the archive actually working" without opening a client.
 import {
-  getArchiveOverview, getArchiveUrlTimeline, lookupArchiveUrl, startArchiveCapture, isAbortError,
-} from "./api.js?v=20260821-spin3";
-import { buildArchiveViewHash, buildArchiveChangesHash } from "./router.js?v=20260821-spin3";
+  getArchiveOverview, getArchiveQueue, getArchiveUrlTimeline, lookupArchiveUrl,
+  startAllArchiveCaptures, startArchiveCapture, startArchiveUrlCapture, isAbortError,
+} from "./api.js?v=20260905-t62";
+import {
+  buildArchiveCaptureHash, buildArchiveViewHash, buildArchiveChangesHash,
+} from "./router.js?v=20260905-t62";
 import {
   escapeHtml, formatFileSize, formatTimestamp, icon, statusIcon,
 } from "./formatters.js?v=20260821-spin3";
@@ -45,7 +48,10 @@ export async function initArchivePage(query) {
     overview: null,
     overviewLoading: true,
     overviewError: null,
+    queue: null, // ArchiveQueueDTO — running/queued/recent (task-62 §1.4)
     captureStarting: null, // client_id currently being triggered
+    urlCaptureStarting: false, // "Refresh now" on the currently looked-up URL
+    allCapturesStarting: false,
   };
   stopLivePolling();
   root.innerHTML = shell();
@@ -199,11 +205,33 @@ function renderLookup() {
           <p class="archive-result__meta">${snapshots.length} version${snapshots.length === 1 ? "" : "s"} captured
           ${url.gone_since ? `<span class="tag-new" data-tone="warning">gone since ${formatTimestamp(url.gone_since)}</span>` : ""}</p>
         </div>
+        <button type="button" class="button button--quiet" id="archive-refresh-url" ${state.urlCaptureStarting ? "disabled" : ""}>
+          ${icon(state.urlCaptureStarting ? "loader-2" : "refresh", state.urlCaptureStarting ? "icon icon--spin" : "icon")}Refresh now
+        </button>
       </div>
       ${calendarMarkup(groups)}
       ${selectedDayMarkup(groups)}
     </div>`;
   bindCalendarActions(groups);
+  container.querySelector("#archive-refresh-url").addEventListener("click", () => triggerUrlCapture(url.id));
+}
+
+// One URL, seconds — not the whole client's list (task-62 §1.1/§2.7). The
+// operator is already looking at a stale page; the answer is "go fetch
+// THIS one", not "re-run everything this client owns".
+async function triggerUrlCapture(urlId) {
+  if (state.urlCaptureStarting) return;
+  state.urlCaptureStarting = true;
+  renderLookup();
+  try {
+    await startArchiveUrlCapture(urlId);
+    toast("Refresh queued — check back in a few seconds.");
+  } catch (error) {
+    if (!isAbortError(error)) toast(`Could not refresh this URL: ${error.message}`);
+  } finally {
+    state.urlCaptureStarting = false;
+    renderLookup();
+  }
 }
 
 function calendarMarkup(groups) {
@@ -290,7 +318,12 @@ async function loadOverview() {
   state.overviewError = null;
   renderOverview();
   try {
-    state.overview = await getArchiveOverview();
+    const [overview, queue] = await Promise.all([
+      getArchiveOverview(),
+      getArchiveQueue({ requestKey: "archive-queue" }),
+    ]);
+    state.overview = overview;
+    state.queue = queue;
   } catch (error) {
     if (isAbortError(error)) return;
     state.overview = null;
@@ -304,9 +337,7 @@ async function loadOverview() {
 // Polls only while something is actually running, and stops itself the tick
 // after the last capture finishes — an idle hub costs no requests.
 function syncLivePolling() {
-  const running = (state.overview?.recent_captures || []).some(
-    (c) => c.status === "running" || c.status === "queued"
-  );
+  const running = (state.queue?.running.length || 0) > 0 || (state.queue?.queued.length || 0) > 0;
   if (!running) {
     stopLivePolling();
     return;
@@ -330,7 +361,12 @@ async function refreshOverviewQuietly() {
     return;
   }
   try {
-    state.overview = await getArchiveOverview();
+    const [overview, queue] = await Promise.all([
+      getArchiveOverview(),
+      getArchiveQueue({ requestKey: "archive-queue" }),
+    ]);
+    state.overview = overview;
+    state.queue = queue;
   } catch (error) {
     if (isAbortError(error)) return;
     return; // a failed poll keeps the last good numbers on screen
@@ -372,12 +408,17 @@ function renderOverview() {
       <div class="archive-stat"><p class="archive-stat__value">${o.cloud_enabled ? formatFileSize(o.bytes_uploaded) : "—"}</p><p class="archive-stat__label">${o.cloud_enabled ? "In cloud storage" : "Cloud storage off"}</p></div>
       <div class="archive-stat"><p class="archive-stat__value">${escapeHtml(o.capture_times.join(" · "))}</p><p class="archive-stat__label">Daily captures (${escapeHtml(o.timezone)})</p></div>
     </div>
-    <div class="section-heading"><div><p class="eyebrow">Coverage</p><h2>Clients</h2></div></div>
+    <div class="section-heading">
+      <div><p class="eyebrow">Coverage</p><h2>Clients</h2></div>
+      <button type="button" class="button button--quiet" id="archive-capture-all" ${state.allCapturesStarting ? "disabled" : ""}>
+        ${icon(state.allCapturesStarting ? "loader-2" : "player-play", state.allCapturesStarting ? "icon icon--spin" : "icon")}Capture all
+      </button>
+    </div>
     ${clientsTableMarkup(o.clients)}
     <div class="archive-columns">
       <div>
-        <div class="section-heading"><div><p class="eyebrow">Health</p><h2>Recent captures</h2></div></div>
-        ${capturesListMarkup(o.recent_captures)}
+        <div class="section-heading"><div><p class="eyebrow">Health</p><h2>Queue &amp; activity</h2></div></div>
+        ${capturesListMarkup(combinedQueueRows())}
       </div>
       <div>
         <div class="section-heading"><div><p class="eyebrow">Attention</p><h2>Changes most often</h2></div></div>
@@ -385,6 +426,21 @@ function renderOverview() {
       </div>
     </div>`;
   bindOverviewActions(container);
+}
+
+// `running` + `queued` (in FIFO order) + `recent` — deduped by id, active
+// rows first, so a capture that is BOTH running AND among the 10 most
+// recent overall (the common case) shows once, at the top (task-62 §1.4).
+function combinedQueueRows() {
+  if (!state.queue) return [];
+  const seen = new Set();
+  const rows = [];
+  for (const c of [...state.queue.running, ...state.queue.queued, ...state.queue.recent]) {
+    if (seen.has(c.id)) continue;
+    seen.add(c.id);
+    rows.push(c);
+  }
+  return rows;
 }
 
 function clientsTableMarkup(clients) {
@@ -417,7 +473,10 @@ function clientsTableMarkup(clients) {
 }
 
 function captureStatusLabel(status) {
-  return { ok: "OK", partial: "Partial", failed: "Failed", blocked: "Blocked", running: "Running", queued: "Queued" }[status] || "—";
+  return {
+    ok: "OK", partial: "Partial", failed: "Failed", blocked: "Blocked",
+    running: "Running", queued: "Queued", cancelled: "Cancelled",
+  }[status] || "—";
 }
 
 function capturesListMarkup(captures) {
@@ -432,12 +491,17 @@ function captureRowMarkup(c) {
   // glyph and nothing else, because a bar there would claim progress that
   // has not started.
   const running = c.status === "running";
+  const label = c.scope === "url" && c.target_url
+    ? `${escapeHtml(c.client_name)}: ${escapeHtml(c.target_url)}`
+    : escapeHtml(c.client_name);
   return `
       <li class="archive-capture-row state-${escapeHtml(c.status)}">
-        ${statusIcon(captureIcon(c.status), "icon")}
-        <span class="analytics-row__value">${escapeHtml(c.client_name)}</span>
-        <span class="archive-capture-row__counts">${captureCountsText(c)}</span>
-        <span class="archive-capture-row__time">${c.finished_at ? formatTimestamp(c.finished_at) : captureProgressText(c)}</span>
+        <a class="archive-capture-row__link" href="${buildArchiveCaptureHash({ id: c.id })}">
+          ${statusIcon(captureIcon(c.status), "icon")}
+          <span class="analytics-row__value">${label}</span>
+          <span class="archive-capture-row__counts">${captureCountsText(c)}</span>
+          <span class="archive-capture-row__time">${c.finished_at ? formatTimestamp(c.finished_at) : captureProgressText(c)}</span>
+        </a>
         ${running ? captureProgressBarMarkup(c) : ""}
       </li>`;
 }
@@ -453,7 +517,7 @@ function captureCountsText(c) {
 // takes the better part of an hour, and only a moving number tells that
 // apart from a capture that died.
 function captureProgressText(c) {
-  if (c.status === "queued") return "queued…";
+  if (c.status === "queued") return c.queue_position ? `#${c.queue_position} in queue` : "queued…";
   if (!c.urls_total) return "starting…";
   return `${c.urls_captured} / ${c.urls_total} URLs`;
 }
@@ -472,7 +536,10 @@ function captureProgressBarMarkup(c) {
 }
 
 function captureIcon(status) {
-  return { ok: "circle-check", partial: "alert-triangle", failed: "circle-x", blocked: "shield-lock", running: "loader-2", queued: "clock" }[status] || "circle";
+  return {
+    ok: "circle-check", partial: "alert-triangle", failed: "circle-x", blocked: "shield-lock",
+    running: "loader-2", queued: "clock", cancelled: "player-stop",
+  }[status] || "circle";
 }
 
 function topChangingMarkup(urls) {
@@ -495,6 +562,7 @@ function bindOverviewActions(container) {
   container.querySelectorAll('[data-action="capture-now"]').forEach((button) => {
     button.addEventListener("click", () => triggerCapture(button.dataset.clientId));
   });
+  container.querySelector("#archive-capture-all")?.addEventListener("click", triggerAllCaptures);
 }
 
 async function triggerCapture(clientId) {
@@ -508,6 +576,29 @@ async function triggerCapture(clientId) {
     if (!isAbortError(error)) toast(`Could not start the capture: ${error.message}`);
   } finally {
     state.captureStarting = null;
+    renderOverview();
+  }
+}
+
+// task-62 §1.2/§0.6: safe precisely BECAUSE the queue is now real — this
+// used to be either a crash-prone `archive-capture --all` run or a
+// multi-hour foreground operation; now it's just N rows joining the tail.
+async function triggerAllCaptures() {
+  if (state.allCapturesStarting) return;
+  state.allCapturesStarting = true;
+  renderOverview();
+  try {
+    const result = await startAllArchiveCaptures();
+    const skipped = result.skipped_client_ids.length;
+    toast(
+      `Queued ${result.capture_ids.length} client${result.capture_ids.length === 1 ? "" : "s"}`
+      + (skipped ? ` — ${skipped} already active, left alone.` : "."),
+    );
+    await loadOverview();
+  } catch (error) {
+    if (!isAbortError(error)) toast(`Could not start captures: ${error.message}`);
+  } finally {
+    state.allCapturesStarting = false;
     renderOverview();
   }
 }

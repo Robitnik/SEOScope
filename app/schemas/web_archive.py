@@ -14,7 +14,9 @@ from pydantic import BaseModel
 
 ArchiveUrlSource = Literal["sitemap", "link", "manual"]
 CaptureTrigger = Literal["scheduled", "manual"]
-CaptureStatus = Literal["queued", "running", "ok", "partial", "failed", "blocked"]
+CaptureStatus = Literal["queued", "running", "ok", "partial", "failed", "blocked", "cancelled"]
+CaptureScope = Literal["client", "url"]
+CaptureEventLevel = Literal["debug", "info", "warning", "error"]
 StoreReason = Literal["first", "changed", "weekly_refresh", "status_changed"]
 ChangeKind = Literal[
     "title", "description", "h1", "text", "links", "images", "status", "redirect", "noindex"
@@ -136,11 +138,45 @@ class ArchiveCaptureDTO(BaseModel):
     bytes_stored: int
     error_code: str | None
     error_message: str | None
+    # task-62: real queue + per-URL progress/log.
+    scope: CaptureScope
+    target_url: str | None  # the one URL for `scope="url"`; `None` for `scope="client"`
+    progress_message: str | None  # the URL last touched, structured (§2.5), not parsed from a log
+    cancel_requested: bool
+    queue_position: int | None  # 1-based, among `queued` rows only; `None` off that list
+
+
+class ArchiveCaptureEventDTO(BaseModel):
+    seq: int
+    level: CaptureEventLevel
+    stage: str | None
+    message: str
+    details: dict[str, Any]
+    created_at: datetime
+
+
+class ArchiveQueueDTO(BaseModel):
+    running: list[ArchiveCaptureDTO]
+    queued: list[ArchiveCaptureDTO]  # FIFO order, §1.3 — no priority class
+    recent: list[ArchiveCaptureDTO]
 
 
 class ArchiveCaptureAcceptedDTO(BaseModel):
     capture_id: str
     status_url: str
+
+
+class ArchiveCaptureBatchAcceptedDTO(BaseModel):
+    capture_ids: list[str]  # one per client actually enqueued (§1.2 "Capture all")
+    skipped_client_ids: list[str]  # already had an active capture — not double-queued
+
+
+class ArchiveCaptureCancelDTO(BaseModel):
+    capture_id: str
+    # Not `CaptureStatus`: "cancelled" (a `queued` row, finished right away
+    # since it never started) or "cancel_requested" (a `running` row, only
+    # flagged — the capture loop stops itself between URLs, task-62 §1.6).
+    status: Literal["cancelled", "cancel_requested"]
 
 
 class ArchiveClientCoverageDTO(BaseModel):

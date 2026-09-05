@@ -122,7 +122,7 @@ def test_start_capture_enqueues_and_lists(client, db):
     assert response.status_code == 202
     body = response.json()
     assert body["capture_id"]
-    assert body["status_url"] == "/api/v1/archive/captures"
+    assert body["status_url"] == f"/api/v1/archive/captures/{body['capture_id']}"
 
     listing = client.get("/api/v1/archive/captures", params={"client_id": client_id})
     assert listing.status_code == 200
@@ -224,9 +224,168 @@ def test_start_capture_refuses_a_second_concurrent_run(client, db):
         client_id, slot_key="2026-09-04T13:30+03:00", scheduled_for=datetime.now(UTC),
         trigger="scheduled",
     )
-    repo.claim_capture(running.id)
+    repo.claim_capture(running.id, owner="test")
     db.commit()
 
     response = client.post("/api/v1/archive/captures", params={"client_id": client_id})
     assert response.status_code == 409
     assert response.json()["detail"]["error_code"] == "already_running"
+
+
+def test_start_capture_refuses_when_one_is_still_queued(client, db):
+    """task-62 §1.3: guarding only `running` let two rapid clicks queue two
+    rows for the same client before the scheduler's next tick claimed the
+    first one — this is the fix, tested at the API surface.
+    """
+    client_id = _create_client(db)
+    first = client.post("/api/v1/archive/captures", params={"client_id": client_id})
+    assert first.status_code == 202
+
+    second = client.post("/api/v1/archive/captures", params={"client_id": client_id})
+    assert second.status_code == 409
+    assert second.json()["detail"]["error_code"] == "already_running"
+
+
+def test_start_url_capture_enqueues_scoped_to_that_url(client, db):
+    client_id = _create_client(db)
+    archive_url, _snapshot = _seed_snapshot(db, client_id)
+
+    response = client.post("/api/v1/archive/captures/url", params={"url_id": archive_url.id})
+    assert response.status_code == 202
+    capture_id = response.json()["capture_id"]
+
+    detail = client.get(f"/api/v1/archive/captures/{capture_id}")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["scope"] == "url"
+    assert body["target_url"] == archive_url.url
+    assert body["status"] == "queued"
+
+
+def test_start_url_capture_unknown_url_is_404(client):
+    response = client.post("/api/v1/archive/captures/url", params={"url_id": "does-not-exist"})
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "url_not_found"
+
+
+def test_start_all_captures_skips_clients_already_active(client, db):
+    client_a = _create_client(db, slug="acme")
+    client_b = _create_client(db, slug="beta")
+    repo = WebArchiveRepository(db)
+    running = repo.create_capture(
+        client_a, slot_key="already-running", scheduled_for=datetime.now(UTC), trigger="scheduled"
+    )
+    repo.claim_capture(running.id, owner="test")
+    db.commit()
+
+    response = client.post("/api/v1/archive/captures/all")
+    assert response.status_code == 202
+    body = response.json()
+    assert client_a in body["skipped_client_ids"]
+    assert len(body["capture_ids"]) == 1  # only client B got a new row
+
+    listing = client.get("/api/v1/archive/captures", params={"client_id": client_b})
+    assert len(listing.json()) == 1
+    assert listing.json()[0]["status"] == "queued"
+
+
+def test_capture_detail_unknown_is_404(client):
+    response = client.get("/api/v1/archive/captures/does-not-exist")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "capture_not_found"
+
+
+def test_capture_detail_reports_queue_position(client, db):
+    client_id = _create_client(db)
+    repo = WebArchiveRepository(db)
+    first = repo.create_capture(
+        client_id, slot_key="a", scheduled_for=datetime.now(UTC), trigger="manual",
+        now=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
+    )
+    other_client = _create_client(db, slug="beta")
+    second = repo.create_capture(
+        other_client, slot_key="b", scheduled_for=datetime.now(UTC), trigger="manual",
+        now=datetime(2026, 1, 1, 11, 0, tzinfo=UTC),
+    )
+    db.commit()
+
+    body_first = client.get(f"/api/v1/archive/captures/{first.id}").json()
+    body_second = client.get(f"/api/v1/archive/captures/{second.id}").json()
+    assert body_first["queue_position"] == 1
+    assert body_second["queue_position"] == 2
+
+
+def test_capture_events_round_trip_and_since_filters(client, db):
+    client_id = _create_client(db)
+    repo = WebArchiveRepository(db)
+    capture = repo.create_capture(
+        client_id, slot_key="a", scheduled_for=datetime.now(UTC), trigger="manual"
+    )
+    repo.append_event(capture.id, "debug", stage="url", message="first")
+    repo.append_event(capture.id, "warning", stage="url", message="second")
+    db.commit()
+
+    all_events = client.get(f"/api/v1/archive/captures/{capture.id}/events")
+    assert [e["message"] for e in all_events.json()] == ["first", "second"]
+
+    tail = client.get(f"/api/v1/archive/captures/{capture.id}/events", params={"since": 1})
+    assert [e["message"] for e in tail.json()] == ["second"]
+
+
+def test_capture_events_unknown_capture_is_404(client):
+    response = client.get("/api/v1/archive/captures/does-not-exist/events")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "capture_not_found"
+
+
+def test_cancel_queued_capture_finishes_it_immediately(client, db):
+    client_id = _create_client(db)
+    repo = WebArchiveRepository(db)
+    capture = repo.create_capture(
+        client_id, slot_key="a", scheduled_for=datetime.now(UTC), trigger="manual"
+    )
+    db.commit()
+
+    response = client.post(f"/api/v1/archive/captures/{capture.id}/cancel")
+    assert response.status_code == 200
+    assert response.json() == {"capture_id": capture.id, "status": "cancelled"}
+
+
+def test_cancel_running_capture_only_flags_it(client, db):
+    client_id = _create_client(db)
+    repo = WebArchiveRepository(db)
+    capture = repo.create_capture(
+        client_id, slot_key="a", scheduled_for=datetime.now(UTC), trigger="manual"
+    )
+    repo.claim_capture(capture.id, owner="test")
+    db.commit()
+
+    response = client.post(f"/api/v1/archive/captures/{capture.id}/cancel")
+    assert response.status_code == 200
+    assert response.json() == {"capture_id": capture.id, "status": "cancel_requested"}
+    assert client.get(f"/api/v1/archive/captures/{capture.id}").json()["status"] == "running"
+
+
+def test_cancel_unknown_capture_is_404(client):
+    response = client.post("/api/v1/archive/captures/does-not-exist/cancel")
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "capture_not_found"
+
+
+def test_queue_view_separates_running_queued_and_recent(client, db):
+    client_id = _create_client(db)
+    repo = WebArchiveRepository(db)
+    running = repo.create_capture(
+        client_id, slot_key="a", scheduled_for=datetime.now(UTC), trigger="manual"
+    )
+    repo.claim_capture(running.id, owner="test")
+    repo.create_capture(client_id, slot_key="b", scheduled_for=datetime.now(UTC), trigger="manual")
+    db.commit()
+
+    response = client.get("/api/v1/archive/queue")
+    assert response.status_code == 200
+    body = response.json()
+    assert [c["id"] for c in body["running"]] == [running.id]
+    assert len(body["queued"]) == 1
+    assert body["queued"][0]["queue_position"] == 1
+    assert len(body["recent"]) == 2

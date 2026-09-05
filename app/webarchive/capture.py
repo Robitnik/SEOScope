@@ -22,6 +22,8 @@ import logging
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -44,6 +46,7 @@ from app.webarchive import storage
 from app.webarchive.db_retry import commit_with_retry
 from app.webarchive.fingerprint import content_fingerprint
 from app.webarchive.urls import is_asset_like_url, looks_like_binary_content_type, normalize_url
+from app.webarchive.writequeue import ArchiveWriteController
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +134,12 @@ def _strip_headers(headers: dict[str, str]) -> dict[str, str]:
 
 
 def seed_urls_from_monitor(
-    session: Session, repo: WebArchiveRepository, client: Client, *, max_urls: int
+    session: Session,
+    repo: WebArchiveRepository,
+    client: Client,
+    *,
+    max_urls: int,
+    write_controller: ArchiveWriteController,
 ) -> int:
     """Every `monitor_pages` row this client already has becomes a tracked
     `ArchiveUrl` (`source="sitemap"`) if it isn't one yet — the monitor's
@@ -164,7 +172,7 @@ def seed_urls_from_monitor(
     with _SEED_LOCK:
         for start in range(0, len(urls), _SEED_COMMIT_BATCH):
             batch = urls[start : start + _SEED_COMMIT_BATCH]
-            added += commit_with_retry(session, partial(_seed_batch, batch))
+            added += write_controller.submit(session, partial(_seed_batch, batch))
     return added
 
 
@@ -268,6 +276,8 @@ def _capture_assets_for_page(
     throttle: HostThrottle,
     stats: FetchStats,
     now: datetime,
+    capture_id: str,
+    write_controller: ArchiveWriteController,
 ) -> _AssetCaptureOutcome:
     outcome = _AssetCaptureOutcome()
     remaining_new_budget = settings.archive_new_assets_per_page
@@ -332,8 +342,22 @@ def _capture_assets_for_page(
             # SQLite's 30s `busy_timeout`, and the resulting
             # `database is locked` crashes are what left seven captures wedged
             # at "in progress…". One asset per transaction keeps the lock held
-            # for microseconds of local writes instead.
-            commit_with_retry(session, lambda: None)
+            # for microseconds of local writes instead — routed through
+            # `write_controller` (task-62 §2.2) so it never even contends with
+            # another capture's own commit.
+            #
+            # Piggybacks a `heartbeat_at` touch on this SAME commit (task-62
+            # §2.3): a page with a p90 of 476 subresources (task-59 §0.4) can
+            # spend minutes inside THIS loop between two outer per-URL flushes
+            # — without this, `_reclaim_dead_captures`'s heartbeat-staleness
+            # check could wrongly kill a capture that is still working, just
+            # slowly, on one asset-heavy page.
+            write_controller.submit(
+                session,
+                partial(
+                    repo.update_capture_counters, capture_id, heartbeat_at=datetime.now(UTC)
+                ),
+            )
             outcome.links.append((asset.id, version.id if version else None, ref.kind))
             if result_kind == "fetched":
                 outcome.fetched += 1
@@ -355,6 +379,30 @@ def _capture_assets_for_page(
                         queue.append(nested)
 
     return outcome
+
+
+def _make_cancel_checker(
+    session_scope: Callable[[], AbstractContextManager[Session]], capture_id: str
+) -> Callable[[], bool]:
+    """Same shape as `app.jobs.runner._make_cancel_checker`: a brand-new,
+    short-lived session per check, not the capture's own long-lived one —
+    that session's identity map holds `capture_id`'s row from way back at
+    `update_capture_counters`'s first call, and this project's sessionmaker
+    is `expire_on_commit=False` (`app/db/session.py`), so re-reading it on
+    the SAME session would keep returning the stale cached object and never
+    observe `cancel_requested` being set by a different session (the API
+    request that handled "Cancel").
+    """
+
+    def _check() -> bool:
+        try:
+            with session_scope() as session:
+                capture = WebArchiveRepository(session).get_capture(capture_id)
+                return capture is not None and bool(capture.cancel_requested)
+        except Exception:  # noqa: BLE001 - a failed poll must never abort the capture
+            return False
+
+    return _check
 
 
 def _resolve_reason(
@@ -380,6 +428,7 @@ def capture_url(
     stats: FetchStats,
     now: datetime,
     capture_assets: bool,
+    write_controller: ArchiveWriteController,
 ) -> UrlCaptureResult:
     """One URL, one cell (PLAN §9.1). The caller tallies the result into the
     capture's own counters and NEVER lets one raise stop the pass (see
@@ -456,6 +505,7 @@ def capture_url(
         asset_outcome = _capture_assets_for_page(
             session, repo, html_text, base_url=result.final_url, settings=settings,
             artifacts_dir=artifacts_dir, throttle=throttle, stats=stats, now=now,
+            capture_id=capture_id, write_controller=write_controller,
         )
 
     new_fields = changesmod.snapshot_fields(
@@ -556,36 +606,48 @@ def run_client_capture(
     capture_id: str,
     settings: Settings,
     artifacts_dir: Path,
+    write_controller: ArchiveWriteController,
+    session_scope: Callable[[], AbstractContextManager[Session]],
     now: datetime | None = None,
+    only_url_id: str | None = None,
 ) -> CaptureOutcome:
+    """`only_url_id` (task-62 §2.7, the per-page "Refresh now" button) skips
+    seeding and the client's full URL list entirely — the capture is exactly
+    one cell, `urls_total=1`.
+    """
     now = now or datetime.now(UTC)
     repo = WebArchiveRepository(session)
     archive_settings = repo.get_or_create_settings(client.id)
     max_urls = archive_settings.max_urls or settings.archive_max_urls_per_client
     capture_assets = archive_settings.capture_assets and settings.archive_capture_assets
 
-    seed_urls_from_monitor(session, repo, client, max_urls=max_urls)
-    urls = repo.list_urls_for_client(client.id, limit=max_urls)
-    ignore_patterns = archive_settings.ignore_patterns_json or []
-    if ignore_patterns:
-        urls = [u for u in urls if not any(pattern in u.url for pattern in ignore_patterns)]
-    # Only ids survive past this point (task-59 live incident, 2026-09-04):
-    # `Session.rollback()` expires every ORM instance in the session's
-    # identity map by default, including every `ArchiveUrl` already loaded
-    # here for URLs further down the list that haven't been processed yet.
-    # Holding onto the ORM objects across the loop meant one URL's rollback
-    # (a transient `database is locked` under concurrent scheduler load,
-    # live-measured) corrupted every LATER cell's object too — the opposite
-    # of the "(client, url) cell isolation" PLAN §9.1 requires. Re-fetching
-    # a fresh row by id at the top of each iteration makes each cell
-    # genuinely independent of whatever happened to the one before it.
-    url_ids = [u.id for u in urls]
+    if only_url_id is not None:
+        url_ids = [only_url_id]
+    else:
+        seed_urls_from_monitor(
+            session, repo, client, max_urls=max_urls, write_controller=write_controller
+        )
+        urls = repo.list_urls_for_client(client.id, limit=max_urls)
+        ignore_patterns = archive_settings.ignore_patterns_json or []
+        if ignore_patterns:
+            urls = [u for u in urls if not any(pattern in u.url for pattern in ignore_patterns)]
+        # Only ids survive past this point (task-59 live incident, 2026-09-04):
+        # `Session.rollback()` expires every ORM instance in the session's
+        # identity map by default, including every `ArchiveUrl` already loaded
+        # here for URLs further down the list that haven't been processed yet.
+        # Holding onto the ORM objects across the loop meant one URL's rollback
+        # (a transient `database is locked` under concurrent scheduler load,
+        # live-measured) corrupted every LATER cell's object too — the opposite
+        # of the "(client, url) cell isolation" PLAN §9.1 requires. Re-fetching
+        # a fresh row by id at the top of each iteration makes each cell
+        # genuinely independent of whatever happened to the one before it.
+        url_ids = [u.id for u in urls]
 
     outcome = CaptureOutcome(status="ok", urls_total=len(url_ids))
     # Written BEFORE the first URL is touched: without a denominator the
     # hub can only say "in progress…", and a capture of 500 URLs looks
     # identical to a wedged one for the better part of an hour.
-    commit_with_retry(
+    write_controller.submit(
         session, partial(repo.update_capture_counters, capture_id, urls_total=outcome.urls_total)
     )
     last_counter_flush = time.monotonic()
@@ -594,8 +656,18 @@ def run_client_capture(
         concurrency=settings.archive_host_concurrency,
     )
     stats = FetchStats()
+    was_cancelled = False
+    is_cancel_requested = _make_cancel_checker(session_scope, capture_id)
 
     for index, url_id in enumerate(url_ids, start=1):
+        # Cooperative cancellation (task-62 §1.6): checked once per URL, not
+        # more often — cheap (WAL readers never contend with the write
+        # controller), but no point polling faster than the smallest unit
+        # of work this loop can actually stop between.
+        if is_cancel_requested():
+            was_cancelled = True
+            break
+
         archive_url = repo.get_url(url_id)
         if archive_url is None:  # genuinely gone (should not happen; defensive)
             outcome.urls_failed += 1
@@ -611,6 +683,7 @@ def run_client_capture(
                     capture_url, session, repo, client, archive_url,
                     capture_id=capture_id, settings=settings, artifacts_dir=artifacts_dir,
                     throttle=throttle, stats=stats, now=now, capture_assets=capture_assets,
+                    write_controller=write_controller,
                 ),
             )
         except Exception:  # noqa: BLE001 - one URL's crash must never take down the whole capture
@@ -635,6 +708,19 @@ def run_client_capture(
         outcome.assets_reused += url_result.assets_reused
         outcome.assets_failed += url_result.assets_failed
 
+        # The only per-URL trace of what a capture actually did (task-62
+        # §0.5: `run_client_capture` wrote nothing anywhere before this).
+        # `debug` for the routine outcomes, loud enough to filter to on the
+        # capture-detail page without drowning it by default.
+        write_controller.submit(
+            session,
+            partial(
+                repo.append_event, capture_id,
+                "warning" if url_result.outcome in ("failed", "blocked") else "debug",
+                stage="url", message=f"{archive_url.url} -> {url_result.outcome}",
+            ),
+        )
+
         # Also time-based, not just every Nth URL: a slow client (one URL
         # can take many seconds behind the per-host throttle) otherwise
         # leaves the hub's progress frozen on its last multiple of 20.
@@ -642,7 +728,7 @@ def run_client_capture(
         due_by_time = time.monotonic() - last_counter_flush >= _COUNTER_FLUSH_SECONDS
         if due_by_count or due_by_time:
             last_counter_flush = time.monotonic()
-            commit_with_retry(
+            write_controller.submit(
                 session,
                 partial(
                     repo.update_capture_counters,
@@ -653,8 +739,13 @@ def run_client_capture(
                     urls_blocked=outcome.urls_blocked, assets_fetched=outcome.assets_fetched,
                     assets_reused=outcome.assets_reused, assets_failed=outcome.assets_failed,
                     bytes_stored=outcome.bytes_stored,
+                    heartbeat_at=datetime.now(UTC), progress_message=archive_url.url,
                 ),
             )
+
+    if was_cancelled:
+        outcome.status = "cancelled"
+        return outcome
 
     blocked_ratio = outcome.urls_blocked / outcome.urls_total if outcome.urls_total else 0.0
     if outcome.urls_total > 0 and blocked_ratio >= _BLOCKED_RATIO_THRESHOLD:

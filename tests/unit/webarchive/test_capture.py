@@ -82,19 +82,38 @@ def _throttle():
 
 
 def _capture_one(
-    session, repo, client, archive_url, *, settings, artifacts_dir, now, capture_assets=False
+    session, repo, client, archive_url, *, settings, artifacts_dir, now, capture_assets=False,
+    write_controller=None,
 ):
     capture = repo.create_capture(
         client.id, slot_key=f"manual:{now.isoformat()}", scheduled_for=now, trigger="manual"
     )
     session.commit()
+    controller = write_controller or _OwnController()
     result = capturemod.capture_url(
         session, repo, client, archive_url,
         capture_id=capture.id, settings=settings, artifacts_dir=artifacts_dir,
         throttle=_throttle(), stats=capturemod.FetchStats(), now=now, capture_assets=capture_assets,
+        write_controller=controller,
     )
     session.commit()
     return result
+
+
+class _OwnController:
+    """A throwaway `ArchiveWriteController` for tests that don't otherwise
+    need one: same `submit(session, fn)` shape, but applies the write
+    immediately on the calling thread — there is only ever one caller in
+    these single-threaded tests, so real cross-thread serialization buys
+    nothing and starting/stopping a background thread per call is wasted
+    setup. Tests that care about the controller's OWN behavior use the real
+    `write_controller` fixture instead.
+    """
+
+    def submit(self, session, fn):
+        from app.webarchive.db_retry import commit_with_retry
+
+        return commit_with_retry(session, fn)
 
 
 def _seed(session):
@@ -279,7 +298,9 @@ def test_asset_is_not_rechecked_within_revalidate_window(
     assert fake_fetch.calls[asset_url] == 2
 
 
-def test_run_client_capture_isolates_one_url_crash(session, artifacts_dir, settings, monkeypatch):
+def test_run_client_capture_isolates_one_url_crash(
+    session, artifacts_dir, settings, monkeypatch, write_controller, session_scope
+):
     client = _client(session)
     repo = WebArchiveRepository(session)
     repo.get_or_create_url(
@@ -303,6 +324,7 @@ def test_run_client_capture_isolates_one_url_crash(session, artifacts_dir, setti
 
     outcome = capturemod.run_client_capture(
         session, client, capture_id=capture.id, settings=settings, artifacts_dir=artifacts_dir,
+        write_controller=write_controller, session_scope=session_scope,
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
@@ -313,7 +335,7 @@ def test_run_client_capture_isolates_one_url_crash(session, artifacts_dir, setti
 
 
 def test_run_client_capture_refetches_each_url_by_id(
-    session, artifacts_dir, settings, fake_fetch, monkeypatch
+    session, artifacts_dir, settings, fake_fetch, monkeypatch, write_controller, session_scope
 ):
     """Live incident (task-59, 2026-09-04): a rollback on one cell expires
     every ORM object already loaded in the session, including OTHER
@@ -346,6 +368,7 @@ def test_run_client_capture_refetches_each_url_by_id(
 
     outcome = capturemod.run_client_capture(
         session, client, capture_id=capture.id, settings=settings, artifacts_dir=artifacts_dir,
+        write_controller=write_controller, session_scope=session_scope,
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
@@ -442,7 +465,7 @@ def test_has_running_capture_blocks_a_second_manual_run(session):
         client.id, slot_key="2026-09-04T13:30+03:00", scheduled_for=datetime.now(UTC),
         trigger="scheduled",
     )
-    repo.claim_capture(running.id)
+    repo.claim_capture(running.id, owner="test")
     session.commit()
 
     assert repo.has_running_capture(client.id) is True
@@ -645,7 +668,7 @@ def test_backfill_css_assets_scopes_to_one_client(session, artifacts_dir, settin
 
 
 def test_capture_writes_urls_total_before_visiting_any_url(
-    session, artifacts_dir, settings, fake_fetch
+    session, artifacts_dir, settings, fake_fetch, write_controller, session_scope
 ):
     """The hub can only animate real progress against a denominator, and it
     has to exist from the first second — a 500-URL client is otherwise
@@ -657,14 +680,115 @@ def test_capture_writes_urls_total_before_visiting_any_url(
         client.id, slot_key="progress", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
         trigger="manual",
     )
-    repo.claim_capture(capture.id)
+    repo.claim_capture(capture.id, owner="test")
     session.commit()
 
     capturemod.run_client_capture(
         session, client, capture_id=capture.id, settings=settings,
-        artifacts_dir=artifacts_dir, now=datetime(2026, 1, 1, tzinfo=UTC),
+        artifacts_dir=artifacts_dir, write_controller=write_controller,
+        session_scope=session_scope, now=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     stored = repo.get_capture(capture.id)
     assert stored.urls_total == 1
     assert stored.urls_captured == 1
+
+
+def test_run_client_capture_writes_a_per_url_event(
+    session, artifacts_dir, settings, fake_fetch, write_controller, session_scope
+):
+    """task-62 §0.5/§2.4: before this, `run_client_capture` logged nothing
+    anywhere — the only per-URL trace of a capture was an `ArchiveSnapshot`
+    row, and only for URLs whose content actually changed.
+    """
+    client, repo, archive_url = _seed(session)
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, HTML_V1, headers={"Content-Type": "text/html"}))
+    capture = repo.create_capture(
+        client.id, slot_key="manual:events", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+        trigger="manual",
+    )
+    session.commit()
+
+    capturemod.run_client_capture(
+        session, client, capture_id=capture.id, settings=settings, artifacts_dir=artifacts_dir,
+        write_controller=write_controller, session_scope=session_scope,
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    events = repo.events_since(capture.id, 0)
+    assert len(events) == 1
+    assert events[0].seq == 1
+    assert PAGE_URL in events[0].message
+    assert "new" in events[0].message
+    assert events[0].level == "debug"
+
+
+def test_run_client_capture_only_url_id_captures_exactly_one(
+    session, artifacts_dir, settings, fake_fetch, write_controller, session_scope
+):
+    """task-62 §1.1/§2.7: the per-page "Refresh now" button — one cell,
+    seconds, none of the client's OTHER URLs touched.
+    """
+    url_a, url_b = "https://acme.example.com/a", "https://acme.example.com/b"
+    client = _client(session)
+    repo = WebArchiveRepository(session)
+    archive_url_a = repo.get_or_create_url(client.id, url_a, "acme.example.com/a", source="manual")
+    repo.get_or_create_url(client.id, url_b, "acme.example.com/b", source="manual")
+    session.commit()
+    fake_fetch.set(url_a, _result(url_a, HTML_V1, headers={"Content-Type": "text/html"}))
+    fake_fetch.set(url_b, _result(url_b, HTML_V1, headers={"Content-Type": "text/html"}))
+    capture = repo.create_capture(
+        client.id, slot_key="manual:one-url", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+        trigger="manual", scope="url", archive_url_id=archive_url_a.id,
+    )
+    session.commit()
+
+    outcome = capturemod.run_client_capture(
+        session, client, capture_id=capture.id, settings=settings, artifacts_dir=artifacts_dir,
+        write_controller=write_controller, session_scope=session_scope,
+        now=datetime(2026, 1, 1, tzinfo=UTC), only_url_id=archive_url_a.id,
+    )
+
+    assert outcome.urls_total == 1
+    assert outcome.urls_new == 1
+    assert url_a in fake_fetch.calls
+    assert url_b not in fake_fetch.calls  # the client's other URL, untouched
+
+
+def test_run_client_capture_stops_when_cancel_requested(
+    session, artifacts_dir, settings, fake_fetch, write_controller, session_scope
+):
+    """Cooperative cancellation (task-62 §1.6) — checked once per URL via a
+    FRESH session (`_make_cancel_checker`), not the capture's own long-lived
+    one: this project's sessionmaker is `expire_on_commit=False`
+    (`app/db/session.py`), so re-reading `cancel_requested` on the SAME
+    session would keep returning the stale cached row and never see a flag
+    set by a different session (here, simulating the API's cancel request).
+    """
+    url_a, url_b = "https://acme.example.com/a", "https://acme.example.com/b"
+    client = _client(session)
+    repo = WebArchiveRepository(session)
+    repo.get_or_create_url(client.id, url_a, "acme.example.com/a", source="manual")
+    repo.get_or_create_url(client.id, url_b, "acme.example.com/b", source="manual")
+    session.commit()
+    fake_fetch.set(url_a, _result(url_a, HTML_V1, headers={"Content-Type": "text/html"}))
+    fake_fetch.set(url_b, _result(url_b, HTML_V1, headers={"Content-Type": "text/html"}))
+    capture = repo.create_capture(
+        client.id, slot_key="manual:cancel", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+        trigger="manual",
+    )
+    session.commit()
+    repo.claim_capture(capture.id, owner="test")
+    session.commit()
+    assert repo.request_cancel(capture.id) == "cancel_requested"
+    session.commit()
+
+    outcome = capturemod.run_client_capture(
+        session, client, capture_id=capture.id, settings=settings, artifacts_dir=artifacts_dir,
+        write_controller=write_controller, session_scope=session_scope,
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert outcome.status == "cancelled"
+    assert outcome.urls_captured == 0
+    assert fake_fetch.calls == {}  # stopped before touching either URL

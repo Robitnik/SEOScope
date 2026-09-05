@@ -97,3 +97,161 @@ def test_asset_coverage_totals_counts_referenced_vs_captured(session):
 
     totals = repo.asset_coverage_totals()
     assert totals == {"referenced": 2, "captured": 1}
+
+
+def test_queued_captures_are_fifo_by_queued_at(session):
+    """task-62 §1.3: one queue, no priority class — a manual and a scheduled
+    trigger both just join the tail in the order they were created.
+    """
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    first = repo.create_capture(
+        client.id, slot_key="a", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+        trigger="scheduled", now=datetime(2026, 1, 1, 10, 0, tzinfo=UTC),
+    )
+    second = repo.create_capture(
+        client.id, slot_key="b", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+        trigger="manual", now=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
+    )
+    session.commit()
+
+    ordered = repo.queued_captures()
+    assert [c.id for c in ordered] == [second.id, first.id]  # earlier queued_at first
+
+
+def test_has_active_capture_true_for_both_queued_and_running(session):
+    """task-62 §1.3: guarding only `running` (the pre-task-62 behaviour) let
+    two rapid "Capture now" clicks queue two rows for the same client.
+    """
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    assert repo.has_active_capture(client.id) is False
+
+    queued = repo.create_capture(
+        client.id, slot_key="a", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC), trigger="manual"
+    )
+    session.commit()
+    assert repo.has_active_capture(client.id) is True
+    assert repo.has_running_capture(client.id) is False  # still just queued
+
+    repo.claim_capture(queued.id, owner="test")
+    session.commit()
+    assert repo.has_active_capture(client.id) is True
+    assert repo.has_running_capture(client.id) is True
+
+
+def test_claim_capture_refuses_a_second_queued_row_for_the_same_client(session):
+    """The admission check now lives INSIDE `claim_capture` itself (task-62
+    §2.3) rather than only at `POST /captures` time — two queued rows for
+    one client (however they got created) can never both end up `running`.
+    """
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    first = repo.create_capture(
+        client.id, slot_key="a", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC), trigger="manual"
+    )
+    second = repo.create_capture(
+        client.id, slot_key="b", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC), trigger="manual"
+    )
+    session.commit()
+
+    claimed_first = repo.claim_capture(first.id, owner="worker")
+    session.commit()
+    assert claimed_first is not None
+
+    claimed_second = repo.claim_capture(second.id, owner="worker")
+    assert claimed_second is None  # refused — client A already has one running
+    assert repo.get_capture(second.id).status == "queued"  # untouched, still claimable later
+
+
+def test_request_cancel_on_queued_row_finishes_it_immediately(session):
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    capture = repo.create_capture(
+        client.id, slot_key="a", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC), trigger="manual"
+    )
+    session.commit()
+
+    result = repo.request_cancel(capture.id)
+
+    assert result == "cancelled"
+    stored = repo.get_capture(capture.id)
+    assert stored.status == "cancelled"
+    assert stored.finished_at is not None
+
+
+def test_request_cancel_on_running_row_only_flags_it(session):
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    capture = repo.create_capture(
+        client.id, slot_key="a", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC), trigger="manual"
+    )
+    session.commit()
+    repo.claim_capture(capture.id, owner="worker")
+    session.commit()
+
+    result = repo.request_cancel(capture.id)
+
+    assert result == "cancel_requested"
+    stored = repo.get_capture(capture.id)
+    assert stored.status == "running"  # the capture loop stops itself, not this call
+    assert stored.cancel_requested is True
+
+
+def test_request_cancel_on_terminal_row_is_a_noop(session):
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    capture = repo.create_capture(
+        client.id, slot_key="a", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC), trigger="manual"
+    )
+    session.commit()
+    repo.finish_capture(capture.id, status="ok")
+    session.commit()
+
+    assert repo.request_cancel(capture.id) is None
+    assert repo.get_capture(capture.id).status == "ok"
+
+
+def test_append_event_seq_is_monotonic_per_capture_and_events_since_returns_the_tail(session):
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    capture_a = repo.create_capture(
+        client.id, slot_key="a", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC), trigger="manual"
+    )
+    capture_b = repo.create_capture(
+        client.id, slot_key="b", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC), trigger="manual"
+    )
+    session.commit()
+
+    seq1 = repo.append_event(capture_a.id, "debug", stage="url", message="first")
+    seq2 = repo.append_event(capture_a.id, "warning", stage="url", message="second")
+    # A different capture's own numbering starts fresh at 1 — `seq` is
+    # per-capture, not a shared global counter (unlike `job_events.seq`).
+    seq_b = repo.append_event(capture_b.id, "info", message="unrelated")
+    session.commit()
+
+    assert (seq1, seq2, seq_b) == (1, 2, 1)
+    tail = repo.events_since(capture_a.id, seq1)
+    assert [e.message for e in tail] == ["second"]
+    assert repo.events_since(capture_a.id, 0)[0].level == "debug"
+
+
+def test_append_event_redacts_nothing_by_itself_but_stores_details_json(session):
+    """PLAN §13 (no secrets in events) is enforced by the CALLER choosing
+    what to pass as `details` — this just verifies the plumbing round-trips
+    structured data faithfully, which is what a redaction step would rely on.
+    """
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    capture = repo.create_capture(
+        client.id, slot_key="a", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC), trigger="manual"
+    )
+    session.commit()
+
+    repo.append_event(
+        capture.id, "error", stage="url", message="failed", details={"status": 500}
+    )
+    session.commit()
+
+    event = repo.events_since(capture.id, 0)[0]
+    assert event.details_json == {"status": 500}
