@@ -6,6 +6,31 @@
  * `.url-inspector-*`/`.url-search` classes below are new.
  */
 
+/* `.app-header` and `.app-main` (app.css) share one `z-index: 1` rule —
+ * fine when their boxes never overlap, but the suggestions dropdown below
+ * is an absolutely-positioned descendant of `.app-header` that can be
+ * taller than the header itself and spill into the page body underneath
+ * (caught live: on the dashboard, with several suggestions open, the
+ * dropdown's lower rows rendered BEHIND `#dashboard-view`'s own content —
+ * tied z-index falls back to DOM order, and page content comes after the
+ * header in the document). A plain `.app-header` selector here ties app.css's
+ * grouped selector on specificity and wins on source order (this stylesheet
+ * loads after it), so the header — and anything escaping its box, like this
+ * dropdown — always paints above page content, without touching app.css. */
+.app-header { z-index: 3; }
+
+/* `.masthead` (app.css) also sets `overflow: hidden` — load-bearing for the
+ * brand ribbon, which is deliberately clipped there — but it clips this
+ * dropdown too the moment it's taller than the remaining masthead height
+ * (caught live: the dropdown's lower rows were hard-clipped at the
+ * masthead's own bottom edge, not merely painted under something — the
+ * z-index fix above did nothing on its own because the content past that
+ * edge was never rendered at all). `router.js` toggles this class via
+ * `classList` (never inline style — CSP has no `style-src` allowance) for
+ * exactly as long as the dropdown is open; a `.masthead`-more-specific
+ * override wins on specificity even before source order settles it. */
+.masthead--search-open { overflow: visible; }
+
 /* --- header search field (lives in .app-header on every route, right next --
  * to the logo) --------------------------------------------------------- */
 /*

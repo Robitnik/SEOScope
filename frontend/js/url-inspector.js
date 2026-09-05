@@ -7,8 +7,8 @@
 // Two calls, deliberately not one (mirrors the backend split): stored data
 // renders immediately from `getUrlInspector`; the live check is a separate,
 // slow, opt-in `runUrlInspectorLive` the operator triggers explicitly.
-import { getUrlInspector, runUrlInspectorLive, isAbortError } from "./api.js?v=20260905-t61b";
-import { replaceUrlInspectorHash } from "./router.js?v=20260905-t61b";
+import { getUrlInspector, runUrlInspectorLive, isAbortError } from "./api.js?v=20260905-t61c";
+import { replaceUrlInspectorHash } from "./router.js?v=20260905-t61c";
 import { escapeHtml, formatDateRange, formatTimestamp, icon } from "./formatters.js?v=20260821-spin3";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
 
