@@ -15,13 +15,15 @@ never a live fetch of today's real page under yesterday's byline.
 
 from __future__ import annotations
 
+import json
 import logging
 from html import escape
 from typing import Literal, NamedTuple
+from urllib.parse import quote
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.exc import OperationalError
 from starlette.datastructures import URL
 
@@ -33,7 +35,7 @@ from app.monitor.page import decode_body
 from app.webarchive import rewrite as rewritemod
 from app.webarchive import storage
 from app.webarchive.replay import parse_ts
-from app.webarchive.urls import looks_like_binary_content_type, normalize_url
+from app.webarchive.urls import is_asset_like_url, looks_like_binary_content_type, normalize_url
 
 router = APIRouter(tags=["web-archive-replay"])
 logger = logging.getLogger(__name__)
@@ -108,6 +110,57 @@ def _miss_headers(*, live_iframes: bool) -> dict[str, str]:
         "Cache-Control": "no-store",
         **_ACCESS_CONTROL_ALLOW_ORIGIN,
     }
+
+
+def _miss_page_html(*, original_url: str, ts: str) -> str:
+    """A page-shaped miss hit FROM INSIDE the replay iframe (task-70) —
+    replaces a bare `text/plain` "Not archived" with something the
+    operator can actually act on, WITHOUT escaping the sandbox: no
+    navigation happens here, this whole response IS the 404. Its own
+    button posts `__archiveMiss` to the parent window — `archive-viewer.js`
+    resolves whether the url even belongs to one of our clients and shows
+    the SAME shared "not in the archive" panel the hub and the direct-URL
+    404 already use (`archive-not-archived.js`), so all three surfaces
+    agree.
+
+    Inline `<style>`/`<script>` only, no external asset of any kind: this
+    response carries the SAME CSP every other replay response does
+    (`style-src`/`script-src 'unsafe-inline'`, no external origin listed at
+    all), so nothing else could load here even if it tried. `original_url`
+    is untrusted (an arbitrary path segment) — `json.dumps` for the two
+    values embedded in the inline script (never raw string interpolation
+    into JS) and `html.escape` for the one shown as visible text.
+    """
+    safe_url = escape(original_url)
+    js_url = json.dumps(original_url)
+    js_ts = json.dumps(ts)
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Not archived</title>
+<style>
+  body {{ margin: 0; padding: 15vh 24px 24px; font-family: system-ui, -apple-system, sans-serif;
+    background: #0b0d10; color: #e8e8e8; }}
+  .archive-miss {{ max-width: 480px; margin: 0 auto; text-align: center; }}
+  .archive-miss code {{ display: block; margin: 12px 0; padding: 8px 10px; background: #1a1d21;
+    border-radius: 4px; word-break: break-all; font-size: 12px; color: #9aa0a6; }}
+  .archive-miss button {{ margin-top: 16px; padding: 10px 18px; border: 0; border-radius: 6px;
+    background: #ff5a1f; color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; }}
+  .archive-miss button:disabled {{ opacity: .6; cursor: default; }}
+</style></head>
+<body>
+  <div class="archive-miss">
+    <p><strong>Not archived at this point in time.</strong></p>
+    <code>{safe_url}</code>
+    <button type="button" id="archive-miss-capture">Archive this page now</button>
+  </div>
+  <script>
+    document.getElementById("archive-miss-capture").addEventListener("click", function (event) {{
+      event.target.disabled = true;
+      try {{
+        window.parent.postMessage({{ __archiveMiss: true, url: {js_url}, ts: {js_ts} }}, "*");
+      }} catch (err) {{ /* no parent, or postMessage unavailable */ }}
+    }});
+  </script>
+</body></html>"""
 
 _SHIM_JS = r"""(function () {
   "use strict";
@@ -357,19 +410,55 @@ def _resolve_replay(original_url: str, ts_value: str) -> ReplayTarget:
             if version is not None and version.blob_sha256:
                 raw = storage.read_blob(settings.artifacts_dir, version.blob_sha256)
                 return ReplayTarget("asset", raw, version.content_type, asset.url)
+        return _MISS
+
+
+def _record_replay_miss(original_url: str, key: str) -> None:
+    """Scheduled via `BackgroundTasks` (task-63 follow-up, live-reported
+    2026-09-05) — runs AFTER the response is already sent, on its OWN
+    session, never on the request path that decides hit vs. miss.
+
+    Live-measured root cause of a ~30s hang on this exact response: a
+    concurrent writer (a capture in progress) held SQLite's write lock, and
+    this write's own `session.commit()` sat waiting out the FULL
+    `busy_timeout` (30s, `app/db/session.py`) before the read path could
+    even answer — the operator's own "27 seconds" almost exactly matches
+    it. This is pure telemetry (an honest list of rewriter gaps), never
+    archive data, so it is fine for it to finish late, and fine to
+    occasionally lose one row if the process exits before it runs — neither
+    is fine for the operator's own response to wait on.
+    """
+    with worker_session_scope() as session:
+        repo = WebArchiveRepository(session)
         try:
             repo.record_replay_miss(original_url, key)
             session.commit()
         except OperationalError:
             # Telemetry, not archive data — a busy SQLite writer (task-62's
             # own `ArchiveWriteController` only serializes ITS OWN process;
-            # this read-path GET has no controller to queue behind) must
-            # never turn an honest 404 into a 500 (task-63 §3.4,
-            # live-confirmed: `database is locked` surfaced as a bare 500
-            # with none of this module's own CSP/CORS headers attached).
+            # this background task has no controller to queue behind)
+            # must never raise past this best-effort log line (task-63
+            # §3.4, live-confirmed: `database is locked` surfaced as a bare
+            # 500 with none of this module's own CSP/CORS headers attached,
+            # back when this write still sat on the request path itself).
             session.rollback()
             logger.warning("archive_replay_miss_unlogged url=%s", key)
-        return _MISS
+
+
+def _looks_like_top_level_navigation(request: Request) -> bool:
+    """`Sec-Fetch-Dest: document` means the WHOLE browser tab is navigating
+    HERE directly — a pasted/typed address, or (live-reported 2026-09-05,
+    the actual case) an operator opening a rewritten in-page link in a new
+    tab, which bypasses the SPA viewer entirely and lands on this raw
+    backend route with no chrome at all. The viewer's OWN `<iframe>` sends
+    `Sec-Fetch-Dest: iframe` for the identical URL and must NEVER redirect
+    here — that would silently escape the sandbox and navigate the WHOLE
+    app inside a replay meant to be inert. A missing header (an older
+    browser, a script, `curl`) is treated leniently as "assume top-level" —
+    the conservative default a human clicking a link would actually get.
+    """
+    dest = request.headers.get("sec-fetch-dest")
+    return dest is None or dest == "document"
 
 
 _PREFLIGHT_HEADERS = {
@@ -403,7 +492,9 @@ async def replay_preflight(ts: str, url: str) -> Response:
 
 
 @router.get("/archive/r/{ts}/{url:path}")
-async def replay(ts: str, url: str, request: Request) -> Response:
+async def replay(
+    ts: str, url: str, request: Request, background_tasks: BackgroundTasks
+) -> Response:
     settings = get_settings()
     live_iframes = settings.archive_live_iframes
     analytics_hosts = frozenset(settings.archive_iframe_analytics_hosts)
@@ -414,10 +505,43 @@ async def replay(ts: str, url: str, request: Request) -> Response:
     content_type, base_url = target.content_type, target.base_url
 
     if kind == "miss" or raw is None:
+        background_tasks.add_task(
+            _record_replay_miss, original_url, normalize_url(original_url)
+        )
+        # A direct top-level hit on a PAGE-shaped miss (task-63 follow-up,
+        # live-reported 2026-09-05: opening a rewritten in-page link in a
+        # new tab, landing on a bare "Not archived" with nothing to do
+        # about it) sends the operator to the hub's own lookup instead —
+        # same "Not archived (yet)" / "tracked but no version yet" panels,
+        # same "Archive this page now" button and live progress, this task
+        # already built there. An asset-shaped miss (an image/css/js the
+        # rewriter genuinely lost) stays a plain 404 — "archive this page"
+        # makes no sense for a sub-resource, and this route is what the
+        # viewer's OWN iframe fetches thousands of times per page, where a
+        # redirect would silently escape the replay sandbox.
+        asset_like = is_asset_like_url(original_url)
+        if _looks_like_top_level_navigation(request) and not asset_like:
+            return RedirectResponse(
+                url=f"/#/archive?url={quote(original_url, safe='')}", status_code=302
+            )
+        # A PAGE-shaped miss hit from INSIDE the iframe (task-70) gets the
+        # actionable styled response (`_miss_page_html`) — an asset-shaped
+        # miss (an image/css/js the rewriter genuinely lost) stays plain
+        # `text/plain`: "archive this page" makes no sense for a
+        # sub-resource, and this route is what the viewer's OWN iframe
+        # fetches thousands of times per page, where anything heavier is
+        # pure waste.
+        if asset_like:
+            return Response(
+                content="Not archived at this point in time.",
+                status_code=404,
+                media_type="text/plain",
+                headers=_miss_headers(live_iframes=live_iframes),
+            )
         return Response(
-            content="Not archived at this point in time.",
+            content=_miss_page_html(original_url=original_url, ts=ts),
             status_code=404,
-            media_type="text/plain",
+            media_type="text/html; charset=utf-8",
             headers=_miss_headers(live_iframes=live_iframes),
         )
 

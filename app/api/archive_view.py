@@ -34,7 +34,8 @@ from app.api import register_router
 from app.core.config import get_settings
 from app.db.repositories.web_archive import WebArchiveRepository
 from app.db.session import worker_session_scope
-from app.webarchive.replay import format_ts
+from app.webarchive.replay import format_ts, parse_ts
+from app.webarchive.urls import normalize_url
 
 router = APIRouter(tags=["web-archive-view"])
 
@@ -50,18 +51,46 @@ def _full_requested_url(url_path: str, raw_query: str) -> str:
     return f"{url_path}?{raw_query}" if raw_query else url_path
 
 
+def _urls_loosely_match(a: str, b: str) -> bool:
+    """Same tolerance as `archive-viewer.js`'s own `urlsLooselyMatch` — a
+    cheap check to skip the extra resolution below in the common case
+    where the address's `url` segment already names the snapshot's real
+    page. `normalize_url` is the actual authority on identity; this is
+    just "close enough to not bother re-resolving".
+    """
+    return a == b or a.rstrip("/") == b.rstrip("/")
+
+
 def _snapshot_title_and_canonical(
     snapshot_id: str, ts: str, url: str
 ) -> tuple[str | None, str | None, int]:
     with worker_session_scope() as session:
         repo = WebArchiveRepository(session)
         snapshot = repo.get_snapshot(snapshot_id)
-        if snapshot is None:
-            return None, None, 404
-        archive_url = repo.get_url(snapshot.archive_url_id)
-        page_url = archive_url.url if archive_url is not None else url
-        title = f"{page_url} — {format_ts(snapshot.observed_at)} — Web Archive"
-        canonical = f"/archive/view/snapshot/{snapshot_id}/{ts}/{page_url}"
+        archive_url = repo.get_url(snapshot.archive_url_id) if snapshot is not None else None
+        matches = archive_url is not None and _urls_loosely_match(archive_url.url, url)
+        if snapshot is not None and archive_url is not None and matches:
+            title = f"{archive_url.url} — {format_ts(snapshot.observed_at)} — Web Archive"
+            canonical = f"/archive/view/snapshot/{snapshot_id}/{ts}/{archive_url.url}"
+            return title, canonical, 200
+        # task-70: `snapshot_id` either doesn't exist any more, or belongs
+        # to a DIFFERENT page than the address's own `url` claims — the
+        # url wins (never a different page's snapshot standing in for one
+        # that was never captured, task-63 §1.1's old rule, reversed).
+        # Re-resolved exactly like `archive_replay.py`'s own replay route:
+        # same `find_url_any_client` + `resolve_snapshot` pair.
+        resolved_url = repo.find_url_any_client(normalize_url(url))
+        parsed_ts = parse_ts(ts)
+        resolved_snapshot = None
+        if resolved_url is not None and parsed_ts is not None:
+            resolved_snapshot, _is_exact = repo.resolve_snapshot(resolved_url.id, parsed_ts)
+        if resolved_url is None or resolved_snapshot is None:
+            return f"Not archived — {url} — Web Archive", None, 404
+        title = f"{resolved_url.url} — {format_ts(resolved_snapshot.observed_at)} — Web Archive"
+        canonical = (
+            f"/archive/view/snapshot/{resolved_snapshot.id}/"
+            f"{format_ts(resolved_snapshot.observed_at)}/{resolved_url.url}"
+        )
         return title, canonical, 200
 
 

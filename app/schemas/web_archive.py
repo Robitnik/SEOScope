@@ -246,6 +246,14 @@ class ArchiveUrlSearchResponseDTO(BaseModel):
 class ArchiveLookupDTO(BaseModel):
     found: bool
     url: ArchiveUrlDTO | None = None
+    # task-70: filled even when `found` is false, whenever the URL's own
+    # host resolves to one of OUR clients (`resolve_client_for_url`) — lets
+    # the hub/viewer decide whether "Archive this page now" makes sense
+    # BEFORE the operator clicks it, instead of only learning from a 404
+    # after the fact. `None`/`False` for a URL that isn't ours at all.
+    client_id: str | None = None
+    client_name: str | None = None
+    capturable: bool = False
 
 
 class ArchiveSettingsDTO(BaseModel):

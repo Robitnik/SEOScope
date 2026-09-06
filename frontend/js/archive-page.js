@@ -21,6 +21,7 @@ import { sectionSkeleton, panelSkeleton } from "./skeleton.js?v=20260821-spin3";
 import {
   calendarMarkup, bindCalendarActions, groupSnapshotsByDay, reasonLabel,
 } from "./archive-calendar.js?v=20260905-t63";
+import { notArchivedMarkup, bindNotArchivedActions } from "./archive-not-archived.js?v=20260906-t70";
 
 const root = document.querySelector("#archive-page-root");
 
@@ -49,6 +50,8 @@ export async function initArchivePage(query) {
     lookupError: null,
     lookupUrl: null, // the ArchiveUrlDTO found
     timeline: null, // { url, snapshots } once a lookup resolves to a tracked URL
+    lookupCapturable: false, // ArchiveLookupDTO.capturable — host resolves to one of OUR clients
+    lookupClientName: null,
     overview: null,
     overviewLoading: true,
     overviewError: null,
@@ -56,7 +59,11 @@ export async function initArchivePage(query) {
     captureStarting: null, // client_id currently being triggered
     urlCaptureStarting: false, // "Refresh now" on the currently looked-up URL
     allCapturesStarting: false,
-    adhocCaptureStarting: false, // "Archive this page now" on a NEVER-seen URL
+    // Shared by BOTH the hero "Archive now" button and the not-archived
+    // panel's own button (task-70) — they act on the SAME `state.urlInput`,
+    // so one in-flight request is the correct model, not two independent
+    // ones that could race each other.
+    adhocCaptureStarting: false,
     adhocCaptureError: null,
   };
   stopLivePolling();
@@ -81,6 +88,8 @@ function shell() {
           <input type="url" id="archive-url-input" placeholder="https://client-site.com/some/page" inputmode="url" autocomplete="off" value="${escapeHtml(state.urlInput)}" required>
         </label>
         <button type="submit" class="button button--primary">${icon("search")}Look up</button>
+        <button type="button" id="archive-force-capture-btn" class="button button--quiet">${icon("camera")}Archive now</button>
+        <p class="archive-lookup-form__error" id="archive-force-capture-error" hidden></p>
       </form>
       <a class="archive-hero__changes-link" href="${buildArchiveChangesHash()}">${icon("timeline")}What changed, and when</a>
     </header>
@@ -96,6 +105,29 @@ function bindStaticActions() {
     const value = root.querySelector("#archive-url-input").value.trim();
     if (value) runLookup(value);
   });
+  root.querySelector("#archive-force-capture-btn").addEventListener("click", () => {
+    const value = root.querySelector("#archive-url-input").value.trim();
+    triggerAdhocCapture(value);
+  });
+}
+
+// Reflects `adhocCaptureStarting`/`adhocCaptureError` on the hero's OWN
+// button — kept separate from `renderLookup()` (which only touches
+// `#archive-lookup-result`) since this button exists whether or not a
+// lookup has ever run: pasting a brand-new URL and hitting "Archive now"
+// straight away, with no "Look up" in between, is the whole point.
+function renderHeroForceButton() {
+  const button = root.querySelector("#archive-force-capture-btn");
+  const errorEl = root.querySelector("#archive-force-capture-error");
+  if (!button || !errorEl) return;
+  button.disabled = state.adhocCaptureStarting;
+  button.innerHTML = `${icon(state.adhocCaptureStarting ? "loader-2" : "camera", state.adhocCaptureStarting ? "icon icon--spin" : "icon")}${state.adhocCaptureStarting ? "Starting…" : "Archive now"}`;
+  if (state.adhocCaptureError) {
+    errorEl.textContent = state.adhocCaptureError;
+    errorEl.hidden = false;
+  } else {
+    errorEl.hidden = true;
+  }
 }
 
 // --- lookup --------------------------------------------------------------
@@ -108,9 +140,13 @@ async function runLookup(url) {
   state.lookupUrl = null;
   state.timeline = null;
   state.adhocCaptureError = null;
+  state.lookupCapturable = false;
+  state.lookupClientName = null;
   renderLookup();
   try {
     const result = await lookupArchiveUrl(url);
+    state.lookupCapturable = result.capturable;
+    state.lookupClientName = result.client_name;
     if (!result.found) {
       state.lookupUrl = null;
     } else {
@@ -152,19 +188,16 @@ function renderLookup() {
   }
   if (!state.lookupAttempted) { container.innerHTML = ""; return; }
   if (state.timeline === null) {
-    container.innerHTML = `
-      <div class="state-panel state-not_configured archive-not-archived">
-        ${icon("history-off")}
-        <p><strong>Not archived yet.</strong><br>
-        This URL hasn't been captured. If its client has the archive enabled, it will be picked up
-        on the next discovery pass — or capture it right now instead of waiting.</p>
-        <button type="button" class="button button--primary" id="archive-adhoc-capture" ${state.adhocCaptureStarting ? "disabled" : ""}>
-          ${icon(state.adhocCaptureStarting ? "loader-2" : "camera", state.adhocCaptureStarting ? "icon icon--spin" : "icon")}
-          ${state.adhocCaptureStarting ? "Starting…" : "Archive this page now"}
-        </button>
-        ${state.adhocCaptureError ? `<p class="archive-not-archived__error">${icon("alert-triangle")}${escapeHtml(state.adhocCaptureError)}</p>` : ""}
-      </div>`;
-    container.querySelector("#archive-adhoc-capture").addEventListener("click", () => triggerAdhocCapture(state.urlInput));
+    // task-70: `capturable`/`clientName` are known BEFORE the click now
+    // (`ArchiveLookupDTO`), not only from a 404 after the fact — a
+    // non-client domain gets a flat explanation instead of a button that
+    // would just fail. Shared markup with the viewer's own "not in the
+    // archive" panel (`archive-not-archived.js`) — same wording either way.
+    container.innerHTML = notArchivedMarkup({
+      url: state.urlInput, clientName: state.lookupClientName, capturable: state.lookupCapturable,
+      starting: state.adhocCaptureStarting, error: state.adhocCaptureError,
+    });
+    bindNotArchivedActions(container, { onCapture: () => triggerAdhocCapture(state.urlInput) });
     return;
   }
 
@@ -179,7 +212,7 @@ function renderLookup() {
           ${state.urlCaptureStarting ? "Starting…" : "Archive this page now"}
         </button>
       </div>`;
-    container.querySelector("#archive-refresh-url").addEventListener("click", () => triggerUrlCapture(url.id));
+    container.querySelector("#archive-refresh-url").addEventListener("click", () => triggerUrlCapture(url.id, { redirectToProgress: true }));
     return;
   }
 
@@ -214,12 +247,22 @@ function renderLookup() {
 // One URL, seconds — not the whole client's list (task-62 §1.1/§2.7). The
 // operator is already looking at a stale page; the answer is "go fetch
 // THIS one", not "re-run everything this client owns".
-async function triggerUrlCapture(urlId) {
+// `redirectToProgress`: true for a URL with NOTHING captured yet (the
+// operator has an empty panel to stare at either way, so watching it
+// happen live is strictly better — task-63 follow-up, matching
+// `triggerAdhocCapture` below); false (default) for "Refresh now" on a URL
+// that already has real content on screen, where staying put and toasting
+// is the less disruptive choice.
+async function triggerUrlCapture(urlId, { redirectToProgress = false } = {}) {
   if (state.urlCaptureStarting) return;
   state.urlCaptureStarting = true;
   renderLookup();
   try {
-    await startArchiveUrlCapture(urlId);
+    const result = await startArchiveUrlCapture(urlId);
+    if (redirectToProgress) {
+      location.hash = buildArchiveCaptureHash({ id: result.capture_id });
+      return;
+    }
     toast("Refresh queued — check back in a few seconds.");
   } catch (error) {
     if (!isAbortError(error)) toast(`Could not refresh this URL: ${error.message}`);
@@ -236,11 +279,24 @@ async function triggerUrlCapture(urlId) {
 // straight to the capture's own live-progress page (task-62) instead of
 // leaving the operator staring at the same empty lookup panel with nothing
 // to watch.
+function renderAdhocCaptureUi() {
+  renderLookup();
+  renderHeroForceButton();
+}
+
+// Called from BOTH the not-archived panel's own button and the hero's
+// "Archive now" (task-70) — one shared path, one set of messages, so the
+// two never drift into saying different things for the identical error.
 async function triggerAdhocCapture(url) {
   if (state.adhocCaptureStarting) return;
+  if (!isLikelyHttpUrl(url)) {
+    state.adhocCaptureError = "Enter a full http(s) URL to archive.";
+    renderAdhocCaptureUi();
+    return;
+  }
   state.adhocCaptureStarting = true;
   state.adhocCaptureError = null;
-  renderLookup();
+  renderAdhocCaptureUi();
   try {
     const result = await startArchiveAdhocUrlCapture(url);
     location.hash = buildArchiveCaptureHash({ id: result.capture_id });
@@ -248,12 +304,21 @@ async function triggerAdhocCapture(url) {
     if (isAbortError(error)) return;
     state.adhocCaptureError =
       error.code === "client_not_found"
-        ? "Couldn't match this URL to a known client — check the domain, or ask an operator to add it."
+        ? "This domain isn't one of our clients — the archive only captures client sites."
         : error.code === "already_running"
-          ? "A capture is already running for this client — try again in a moment."
+          ? "A capture of this exact URL is already queued — try again in a moment."
           : `Could not start the capture: ${error.message}`;
     state.adhocCaptureStarting = false;
-    renderLookup();
+    renderAdhocCaptureUi();
+  }
+}
+
+function isLikelyHttpUrl(value) {
+  if (!value) return false;
+  try {
+    return /^https?:$/.test(new URL(value).protocol);
+  } catch {
+    return false;
   }
 }
 

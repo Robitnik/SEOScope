@@ -252,9 +252,23 @@ def _lookup(url: str) -> ArchiveLookupDTO:
         repo = WebArchiveRepository(session)
         archive_url = repo.find_url_any_client(key)
         if archive_url is None:
-            return ArchiveLookupDTO(found=False)
+            # task-70: even an UNTRACKED URL may belong to one of our
+            # clients (its host just hasn't been captured yet, or ever
+            # linked-to) — resolve that now so the caller can offer/deny
+            # "Archive this page now" without a round trip that fails.
+            clients_repo = ClientRepository(session)
+            resolved = resolve_client_for_url(url, clients_repo.list_active())
+            if resolved.client is None:
+                return ArchiveLookupDTO(found=False)
+            return ArchiveLookupDTO(
+                found=False, client_id=resolved.client.id, client_name=resolved.client.name,
+                capturable=True,
+            )
         client_name = repo.client_name(archive_url.client_id) or "?"
-        return ArchiveLookupDTO(found=True, url=_url_dto(archive_url, client_name))
+        return ArchiveLookupDTO(
+            found=True, url=_url_dto(archive_url, client_name),
+            client_id=archive_url.client_id, client_name=client_name, capturable=True,
+        )
 
 
 @router.get("/lookup")
@@ -577,13 +591,20 @@ async def start_archive_capture(client_id: str) -> ArchiveCaptureAcceptedDTO:
 def _start_url_capture(url_id: str) -> str:
     """"Refresh now" on one URL (task-62 §1.1/§2.7) — `urls_total=1`,
     seconds, not the whole client's list.
+
+    Guards only a duplicate capture of THIS SAME URL (task-70), not any
+    OTHER capture on the same client (a scheduled portfolio pass can run
+    for hours) — `has_active_url_capture`'s own docstring covers why this
+    is still safe: `claim_capture` is the actual admission gate into
+    `running`, and it still refuses one per client regardless of how many
+    `queued` rows exist.
     """
     with worker_session_scope() as session:
         repo = WebArchiveRepository(session)
         archive_url = repo.get_url(url_id)
         if archive_url is None:
             return "url_not_found"
-        if repo.has_active_capture(archive_url.client_id):
+        if repo.has_active_url_capture(archive_url.client_id, url_id):
             return "already_running"
         slot_key = f"manual:{uuid.uuid4()}"
 
@@ -631,7 +652,13 @@ def _start_adhoc_url_capture(url: str) -> tuple[str, str, str, str] | str:
             return "client_not_found"
         client = resolved.client
         repo = WebArchiveRepository(session)
-        if repo.has_active_capture(client.id):
+        # Scoped to THIS URL, not the whole client (task-70) — a scheduled
+        # portfolio-wide capture can run for hours, and it must not block
+        # archiving one page of the same client meanwhile. A genuinely new
+        # URL (no row yet) can have no `scope="url"` capture against it, so
+        # the check only matters once `existing` is found.
+        existing = repo.find_url(client.id, normalize_url(url))
+        if existing is not None and repo.has_active_url_capture(client.id, existing.id):
             return "already_running"
         def _create() -> tuple[ArchiveUrl, ArchiveCapture]:
             url_row = repo.get_or_create_url(client.id, url, normalize_url(url), source="manual")

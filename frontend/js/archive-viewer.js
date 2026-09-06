@@ -12,15 +12,17 @@
 // hides it on entry (a full reload on any other route restores it).
 import {
   getArchiveSnapshot, getArchiveSnapshotDiff, getArchiveUrlTimeline, isAbortError, lookupArchiveUrl,
+  startArchiveAdhocUrlCapture,
 } from "./api.js?v=20260821-spin3";
 import {
-  buildArchiveHash, pushArchiveViewPath, replaceArchiveViewPath,
+  buildArchiveCaptureHash, buildArchiveHash, pushArchiveViewPath, replaceArchiveViewPath,
 } from "./router.js?v=20260905-t63";
 import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260821-spin3";
 import { panelSkeleton } from "./skeleton.js?v=20260821-spin3";
 import {
   calendarMarkup, bindCalendarActions, groupSnapshotsByDay, reasonLabel,
 } from "./archive-calendar.js?v=20260905-t63";
+import { notArchivedMarkup, bindNotArchivedActions } from "./archive-not-archived.js?v=20260906-t70";
 
 const root = document.querySelector("#archive-view-page-root");
 
@@ -61,6 +63,15 @@ export async function initArchiveViewPage(query) {
     calendarYear: null,
     calendarMonth: null,
     selectedDay: null,
+    // task-70: set instead of `snapshot` when the address's OWN `url`
+    // segment (present only on the new path form — the legacy hash form
+    // never carries one) has no captured version at all. While this is
+    // set, `render()` shows the shared "not in the archive" panel INSTEAD
+    // of the iframe — never a different page silently standing in for the
+    // one that was actually requested.
+    notArchived: null, // { url, clientName, capturable } | null
+    notArchivedStarting: false,
+    notArchivedError: null,
   };
   root.innerHTML = "";
   document.querySelector(".masthead")?.setAttribute("hidden", "");
@@ -76,28 +87,32 @@ export async function initArchiveViewPage(query) {
   // `hashchange` (wired globally in this module to a full reload) still
   // covers leaving THIS route for another one entirely.
   window.addEventListener("popstate", onPopState);
-  await loadSnapshot(snapshotId, { historyMode: "replace" });
+  await loadSnapshot(snapshotId, {
+    historyMode: "replace", requestedUrl: query.get("url"), requestedTs: query.get("ts"),
+  });
 }
 
-// Reads whichever address form is CURRENTLY live — the new path or the
-// legacy hash — without touching `state`. Used both to react to Back/
-// Forward and, on a legacy-hash entry, to canonicalize once data loads.
-function currentSnapshotIdFromLocation() {
-  const pathMatch = location.pathname.match(/^\/archive\/view\/snapshot\/([^/]+)\//);
+// Same shape `router.js`'s own `ARCHIVE_VIEW_PATH_RE` matches. Reads
+// whichever address form is CURRENTLY live — the new path (which also
+// carries its own `url`/`ts`) or the legacy hash (neither) — without
+// touching `state`. Used both to react to Back/Forward and, on a
+// legacy-hash entry, to canonicalize once data loads.
+const VIEW_PATH_RE = /^\/archive\/view\/snapshot\/([^/]+)\/(\d{14})\/(.+)$/;
+
+function currentRequestFromLocation() {
+  const pathMatch = location.pathname.match(VIEW_PATH_RE);
   if (pathMatch) {
-    try {
-      return decodeURIComponent(pathMatch[1]);
-    } catch {
-      return pathMatch[1];
-    }
+    const [, rawId, ts, rawUrl] = pathMatch;
+    const decode = (value) => { try { return decodeURIComponent(value); } catch { return value; } };
+    return { snapshotId: decode(rawId), ts, url: decode(rawUrl) };
   }
   const hash = location.hash || "";
   const query = new URLSearchParams(hash.split("?")[1] || "");
-  return query.get("snapshot");
+  return { snapshotId: query.get("snapshot"), ts: null, url: null };
 }
 
 function onPopState() {
-  const snapshotId = currentSnapshotIdFromLocation();
+  const { snapshotId, url, ts } = currentRequestFromLocation();
   if (!snapshotId) {
     // Back past the first version this session opened — the address bar
     // now points somewhere this module doesn't own (the hub, another
@@ -106,14 +121,14 @@ function onPopState() {
     location.reload();
     return;
   }
-  if (snapshotId === state.snapshotId) return;
+  if (snapshotId === state.snapshotId && !state.notArchived) return;
   state.snapshotId = snapshotId;
   state.liveUrl = null;
   state.metaOpen = false;
   state.diffOpen = false;
   state.diff = null;
   state.calendarOpen = false;
-  loadSnapshot(snapshotId, { historyMode: "none" });
+  loadSnapshot(snapshotId, { historyMode: "none", requestedUrl: url, requestedTs: ts });
 }
 
 // Full-bleed loading state (task-63 follow-up: "зроби прелоадер гарний
@@ -172,10 +187,35 @@ function onKeydown(event) {
 // AND the snapshot id the server resolved for it (on load, and on every
 // pushState/replaceState). That is the ONLY way this chrome learns that a
 // click inside the archived page moved it to a different archived page.
+// `app/api/archive_replay.py`'s page-shaped-miss response posts this from
+// its OWN inline button (task-70) — a click on an in-page link that leads
+// to an uncaptured page. Unlike `__archiveNav`, the sandbox never actually
+// navigated anywhere (a page-shaped miss stays a 404 IN the iframe, never
+// escaping the sandbox) — this just tells the chrome around it what to
+// show instead. Resolved through `/lookup` here (not trusted from the
+// frame) since the frame only knows the raw url/ts, not whether it's ours.
+async function onArchiveMissMessage(url, ts) {
+  let lookup;
+  try {
+    lookup = await lookupArchiveUrl(url);
+  } catch (error) {
+    if (isAbortError(error)) return;
+    lookup = { found: false, client_id: null, client_name: null, capturable: false };
+  }
+  state.notArchived = { url, clientName: lookup.client_name, capturable: lookup.capturable };
+  state.notArchivedStarting = false;
+  state.notArchivedError = null;
+  render();
+}
+
 function onFrameMessage(event) {
   const iframe = root.querySelector(".archive-iframe");
   if (!iframe || event.source !== iframe.contentWindow) return;
   const data = event.data;
+  if (data && data.__archiveMiss) {
+    onArchiveMissMessage(data.url, data.ts);
+    return;
+  }
   if (!data || !data.__archiveNav) return;
   const previousUrl = state.liveUrl;
   state.liveUrl = data.url;
@@ -229,6 +269,30 @@ async function adoptFrameSnapshot(snapshotId) {
 // Previous/Next and the calendar's own version pick — a real navigation,
 // re-rendering the iframe from scratch (unlike `adoptFrameSnapshot`, which
 // reacts to a frame that already navigated itself).
+// "Archive this page now" on the shared not-archived panel (task-70) —
+// same endpoint/flow as the hub's own button; navigates to the live
+// progress page rather than trying to stay on this now-defunct address.
+async function triggerViewerAdhocCapture(url) {
+  if (state.notArchivedStarting) return;
+  state.notArchivedStarting = true;
+  state.notArchivedError = null;
+  render();
+  try {
+    const result = await startArchiveAdhocUrlCapture(url);
+    location.hash = buildArchiveCaptureHash({ id: result.capture_id });
+  } catch (error) {
+    if (isAbortError(error)) return;
+    state.notArchivedError =
+      error.code === "client_not_found"
+        ? "This domain isn't one of our clients — the archive only captures client sites."
+        : error.code === "already_running"
+          ? "A capture of this exact URL is already queued — try again in a moment."
+          : `Could not start the capture: ${error.message}`;
+    state.notArchivedStarting = false;
+    render();
+  }
+}
+
 async function navigateTo(snapshotId) {
   state.snapshotId = snapshotId;
   state.liveUrl = null;
@@ -282,15 +346,58 @@ function pickNearestSnapshot(snapshots, targetTs) {
 // navigation to a different version), or "none" (already reacting to a
 // browser Back/Forward that moved the address itself — touching history
 // again here would fight the browser's own stack).
-async function loadSnapshot(snapshotId, { historyMode = "replace" } = {}) {
+// Loose enough for "is this the same page" (trailing slash only) —
+// `find_url_any_client`'s own `normalize_url` is the authority on real
+// identity; this is just a cheap check to skip a network round trip in
+// the common case where the address's own `url` already matches.
+function urlsLooselyMatch(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.replace(/\/$/, "") === b.replace(/\/$/, "");
+}
+
+// The requested `url` doesn't loosely match the snapshot fetched by id —
+// resolve it independently via the SAME `/lookup` + timeline endpoints the
+// hub itself uses (never trust `snapshotId` alone to be the right answer:
+// task-63 §1.1's old rule was exactly that, and it let an unrelated page
+// silently stand in for one that was never captured). Returns the resolved
+// `ArchiveSnapshotDetailDTO`, or `null` after setting `state.notArchived`
+// for the caller to render instead.
+async function resolveRequestedUrl(url, ts) {
+  const lookup = await lookupArchiveUrl(url);
+  if (!lookup.found) {
+    state.notArchived = { url, clientName: lookup.client_name, capturable: lookup.capturable };
+    return null;
+  }
+  const timeline = await getArchiveUrlTimeline(lookup.url.id);
+  const nearest = pickNearestSnapshot(timeline.snapshots, ts);
+  if (nearest === null) {
+    state.notArchived = { url: lookup.url.url, clientName: lookup.client_name, capturable: true };
+    return null;
+  }
+  return await getArchiveSnapshot(nearest.id);
+}
+
+async function loadSnapshot(
+  snapshotId, { historyMode = "replace", requestedUrl = null, requestedTs = null } = {}
+) {
   state.loading = true;
   state.error = null;
+  state.notArchived = null;
   render();
   try {
-    state.snapshot = await getArchiveSnapshot(snapshotId);
-    if (historyMode === "push") pushArchiveViewPath(snapshotId, state.snapshot.ts, state.snapshot.url);
-    else if (historyMode === "replace") {
-      replaceArchiveViewPath(snapshotId, state.snapshot.ts, state.snapshot.url);
+    let snapshot = await getArchiveSnapshot(snapshotId);
+    let canonicalize = historyMode === "replace";
+    if (requestedUrl && !urlsLooselyMatch(requestedUrl, snapshot.url)) {
+      const resolved = await resolveRequestedUrl(requestedUrl, requestedTs);
+      snapshot = resolved; // `null` if genuinely not archived — `state.notArchived` is set
+      if (resolved) { snapshotId = resolved.id; canonicalize = true; }
+    }
+    state.snapshot = snapshot;
+    state.snapshotId = snapshotId;
+    if (snapshot) {
+      if (historyMode === "push") pushArchiveViewPath(snapshotId, snapshot.ts, snapshot.url);
+      else if (canonicalize) replaceArchiveViewPath(snapshotId, snapshot.ts, snapshot.url);
     }
   } catch (error) {
     if (isAbortError(error)) return;
@@ -316,6 +423,21 @@ function render() {
     root.querySelector("#archive-view-retry").addEventListener("click", () => loadSnapshot(state.snapshotId));
     return;
   }
+  if (state.notArchived) {
+    root.innerHTML = `
+      <div class="archive-viewer-not-archived">
+        ${notArchivedMarkup({
+          url: state.notArchived.url, clientName: state.notArchived.clientName,
+          capturable: state.notArchived.capturable, starting: state.notArchivedStarting,
+          error: state.notArchivedError, idPrefix: "archive-view-not-archived",
+        })}
+        <a class="button button--quiet" href="${buildArchiveHash()}">${icon("arrow-left")}Back to the archive hub</a>
+      </div>`;
+    bindNotArchivedActions(root, {
+      idPrefix: "archive-view-not-archived", onCapture: () => triggerViewerAdhocCapture(state.notArchived.url),
+    });
+    return;
+  }
   if (!state.snapshot) { root.innerHTML = ""; return; }
 
   const s = state.snapshot;
@@ -323,12 +445,64 @@ function render() {
     <div class="archive-viewer">
       ${chromeMarkup(s)}
       <div class="archive-iframe-wrap">
+        ${iframeLoadingMarkup()}
         <iframe class="archive-iframe" src="${escapeHtml(s.view_url)}"
           sandbox="allow-forms allow-popups${state.scriptsEnabled ? " allow-scripts" : ""}"
           title="Archived copy of ${escapeHtml(s.url)} (${escapeHtml(s.ts)})"></iframe>
       </div>
     </div>`;
   bindActions();
+  bindIframeLoading();
+}
+
+// The metadata call (`getArchiveSnapshot`) that `loadingMarkup()` covers is
+// small and fast — the REAL wait an operator sees is the iframe itself
+// fetching the archived page's full HTML/CSS/JS/images from `/archive/r/
+// ...` afterward, which for a heavy page can run into several seconds with
+// nothing on screen to say so (live-reported 2026-09-05: "15 сек я цього не
+// розумію"). An `<iframe>` fires a normal `load` event on navigation
+// completion regardless of sandboxing/cross-origin content, so this can be
+// tracked without reading anything inside the frame.
+function iframeLoadingMarkup() {
+  return `
+    <div class="archive-iframe-loading" aria-hidden="true">
+      <span class="archive-iframe-loading__icon">${icon("history", "icon icon--spin")}</span>
+      <p class="archive-iframe-loading__label">Loading the archived page…</p>
+      <div class="bar archive-iframe-loading__bar is-indeterminate" data-p="0" role="progressbar"
+        aria-valuemin="0" aria-valuemax="100" aria-label="Loading the archived page">
+        <span class="bar__fill"></span>
+      </div>
+    </div>`;
+}
+
+// A hard cap, not just a `load`-event listener (live-reported 2026-09-05:
+// "вічне завантаження" — the overlay never went away). Root cause: a real
+// captured page's own LIVE embed (task-60 §2 — a map/video iframe
+// deliberately left pointing at its real, external host instead of being
+// archived) can keep the outer iframe's native `load` event from ever
+// firing at all, since `load` waits on every subresource including nested
+// frames. This was directly observed during this task's own e2e work: even
+// a plain `page.goto(..., { waitUntil: "load" })` hung indefinitely on a
+// real page for the exact same reason. The snapshot's existence is already
+// confirmed by the time this runs (this whole branch only renders once
+// `state.snapshot` is set from a successful API response), so a fixed
+// ceiling is the honest choice — whichever signal (the real `load` event,
+// or the timeout) comes first hides the overlay; nothing here can leave it
+// stuck forever.
+const IFRAME_LOADING_MAX_MS = 3000;
+
+function bindIframeLoading() {
+  const iframe = root.querySelector(".archive-iframe");
+  const overlay = root.querySelector(".archive-iframe-loading");
+  if (!iframe || !overlay) return;
+  let hidden = false;
+  const hide = () => {
+    if (hidden) return;
+    hidden = true;
+    overlay.classList.add("archive-iframe-loading--done");
+  };
+  iframe.addEventListener("load", hide, { once: true });
+  setTimeout(hide, IFRAME_LOADING_MAX_MS);
 }
 
 // Banner + panels only — everything ABOVE the iframe. Rendered separately

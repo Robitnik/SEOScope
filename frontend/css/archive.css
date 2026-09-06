@@ -16,9 +16,16 @@
 }
 .archive-hero h1 { font-size: clamp(26px, 4vw, 40px); margin: 0; }
 .archive-hero__subtitle { margin: 0; color: var(--ink-muted); max-width: 640px; }
-.archive-lookup-form { display: flex; gap: 10px; flex-wrap: wrap; max-width: 720px; }
+/* No `max-width` (task-70): this is the one action the whole hub exists
+ * for, and it used to sit at a third of the hero's width on a wide
+ * viewport while the rest of the row went unused. */
+.archive-lookup-form { display: flex; gap: 10px; flex-wrap: wrap; }
 .archive-lookup-field { flex: 1; min-width: 260px; }
 .archive-lookup-field input { min-height: 46px; font-size: 15px; }
+.archive-lookup-form .button { flex: 0 0 auto; }
+.archive-lookup-form__error {
+  flex-basis: 100%; margin: -4px 0 0; color: var(--danger); font-size: 13px;
+}
 .archive-hero__changes-link {
   display: inline-flex; align-items: center; gap: 6px; width: fit-content;
   color: var(--ink-muted); font-size: 13px; font-weight: 700; text-decoration: none;
@@ -159,6 +166,18 @@
  * tool instead of a strip squeezed under the masthead.
  */
 .archive-viewer { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; background: var(--canvas); }
+
+/* Shown instead of `.archive-viewer` (task-70) when the address's own
+ * `url` segment has no captured version — never the fixed, full-bleed
+ * iframe chrome, since there is no page to show inside it. */
+.archive-viewer-not-archived {
+  max-width: 640px; margin: 15vh auto 0; padding: 0 20px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+/* `.button` itself doesn't reset `text-decoration` (same convention as
+ * `.blogs-export-actions a.button`/`.tool-table__actions .button` etc.) —
+ * this is the one place in this file that renders it on an `<a>`. */
+.archive-viewer-not-archived a.button { text-decoration: none; align-self: flex-start; }
 .archive-banner {
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
   padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--canvas-raised);
@@ -219,7 +238,25 @@
 .archive-loader__label { margin: 0; color: var(--ink-muted); font-size: 14px; }
 .archive-loader__bar { width: 220px; height: 4px; border-radius: 2px; }
 
-.archive-iframe-wrap { flex: 1; min-height: 0; overscroll-behavior: contain; contain: paint; }
+.archive-iframe-wrap { position: relative; flex: 1; min-height: 0; overscroll-behavior: contain; contain: paint; }
+
+/* Progress overlay while the IFRAME itself fetches the archived page's
+ * full HTML/CSS/JS/images (task-63 follow-up, live-reported 2026-09-05:
+ * "15 сек я цього не розумію" — a heavy page can take that long with
+ * nothing on screen saying so). `iframe`'s own `load` event toggles
+ * `--done`; `opacity`/`visibility` only (frontend/AGENTS.md §10 — no
+ * layout properties), and `pointer-events: none` throughout since it must
+ * never intercept a click meant for the iframe underneath. */
+.archive-iframe-loading {
+  position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; background: var(--canvas);
+  pointer-events: none; opacity: 1; transition: opacity 200ms ease;
+}
+.archive-iframe-loading--done { opacity: 0; visibility: hidden; }
+.archive-iframe-loading__icon { color: var(--accent); }
+.archive-iframe-loading__icon .icon { width: 32px; height: 32px; }
+.archive-iframe-loading__label { margin: 0; color: var(--ink-muted); font-size: 13px; }
+.archive-iframe-loading__bar { width: 200px; height: 4px; border-radius: 2px; }
 .archive-iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
 
 /* --- Changes feed ---------------------------------------------------------- */

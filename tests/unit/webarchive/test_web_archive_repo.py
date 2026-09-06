@@ -147,6 +147,68 @@ def test_has_active_capture_true_for_both_queued_and_running(session):
     assert repo.has_running_capture(client.id) is True
 
 
+def test_has_active_url_capture_ignores_a_client_wide_capture_of_another_url(session):
+    """task-70: "Archive this page now"/"Refresh now" must not be blocked
+    by an UNRELATED scheduled portfolio pass for the same client — a
+    scheduled pass can run for hours. Only a `scope="url"` capture of THIS
+    SAME `archive_url_id` counts.
+    """
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    url_a = repo.get_or_create_url(client.id, "https://acme.com/a", "acme.com/a", source="manual")
+    url_b = repo.get_or_create_url(client.id, "https://acme.com/b", "acme.com/b", source="manual")
+    repo.flush()
+    assert repo.has_active_url_capture(client.id, url_a.id) is False
+
+    # A client-wide (`scope="client"`) capture running for the SAME client —
+    # must not affect either URL's own admission check.
+    client_wide = repo.create_capture(
+        client.id, slot_key="portfolio", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+        trigger="scheduled",
+    )
+    repo.claim_capture(client_wide.id, owner="worker")
+    session.commit()
+    assert repo.has_active_url_capture(client.id, url_a.id) is False
+    assert repo.has_active_url_capture(client.id, url_b.id) is False
+
+    # A `scope="url"` capture of `url_a` specifically — blocks only `url_a`.
+    repo.create_capture(
+        client.id, slot_key="url-a", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+        trigger="manual", scope="url", archive_url_id=url_a.id,
+    )
+    session.commit()
+    assert repo.has_active_url_capture(client.id, url_a.id) is True
+    assert repo.has_active_url_capture(client.id, url_b.id) is False
+
+
+def test_claim_capture_still_refuses_a_url_scoped_row_while_client_wide_is_running(session):
+    """The actual safety net behind task-70's looser API-level admission
+    check (`has_active_url_capture` above, scoped to one URL): even though
+    the API now lets a `scope="url"` request through alongside a running
+    `scope="client"` capture, `claim_capture` itself still refuses to move
+    it to `running` until the client-wide one finishes — "one capture per
+    client" is enforced HERE, not at the admission check.
+    """
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+    url = repo.get_or_create_url(client.id, "https://acme.com/a", "acme.com/a", source="manual")
+    repo.flush()
+    client_wide = repo.create_capture(
+        client.id, slot_key="portfolio", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+        trigger="scheduled",
+    )
+    url_scoped = repo.create_capture(
+        client.id, slot_key="url-a", scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+        trigger="manual", scope="url", archive_url_id=url.id,
+    )
+    session.commit()
+
+    assert repo.claim_capture(client_wide.id, owner="worker") is not None
+    session.commit()
+    assert repo.claim_capture(url_scoped.id, owner="worker") is None
+    assert repo.get_capture(url_scoped.id).status == "queued"
+
+
 def test_claim_capture_refuses_a_second_queued_row_for_the_same_client(session):
     """The admission check now lives INSIDE `claim_capture` itself (task-62
     §2.3) rather than only at `POST /captures` time — two queued rows for

@@ -406,14 +406,14 @@ async function activate() {
     allRoots.filter((el) => el !== archiveRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     archiveRoot?.removeAttribute("hidden");
-    const { initArchivePage } = await import("./archive-page.js?v=20260905-t63");
+    const { initArchivePage } = await import("./archive-page.js?v=20260906-t70");
     await initArchivePage(route.query);
   } else if (route.name === "archive-view") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== archiveViewRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     archiveViewRoot?.removeAttribute("hidden");
-    const { initArchiveViewPage } = await import("./archive-viewer.js?v=20260905-t63");
+    const { initArchiveViewPage } = await import("./archive-viewer.js?v=20260906-t70");
     await initArchiveViewPage(route.query);
   } else if (route.name === "archive-changes") {
     dashboardView?.setAttribute("hidden", "");

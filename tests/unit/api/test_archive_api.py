@@ -66,7 +66,25 @@ def test_lookup_not_found(client, db):
     _create_client(db)
     response = client.get("/api/v1/archive/lookup", params={"url": "https://acme.com/nope"})
     assert response.status_code == 200
-    assert response.json() == {"found": False, "url": None}
+    # task-70: even an untracked URL resolves `client_id`/`client_name`/
+    # `capturable` when its own host matches one of our clients — the UI
+    # needs to know "Archive this page now" makes sense BEFORE the click.
+    body = response.json()
+    assert body["found"] is False
+    assert body["url"] is None
+    assert body["capturable"] is True
+    assert body["client_name"] == "Acme"
+
+
+def test_lookup_not_found_non_client_domain(client, db):
+    _create_client(db)
+    response = client.get("/api/v1/archive/lookup", params={"url": "https://not-a-client.example/"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["found"] is False
+    assert body["capturable"] is False
+    assert body["client_id"] is None
+    assert body["client_name"] is None
 
 
 def test_lookup_and_timeline_after_seeding(client, db):
@@ -273,6 +291,39 @@ def test_start_url_capture_unknown_url_is_404(client):
     assert response.json()["detail"]["error_code"] == "url_not_found"
 
 
+def test_start_url_capture_ignores_an_unrelated_client_wide_capture(client, db):
+    """Same task-70 fix as the adhoc endpoint's own test above — "Refresh
+    now" on one URL must not wait behind an unrelated scheduled portfolio
+    pass for the same client.
+    """
+    client_id = _create_client(db)
+    archive_url, _snapshot = _seed_snapshot(db, client_id)
+    repo = WebArchiveRepository(db)
+    running = repo.create_capture(
+        client_id, slot_key="already", scheduled_for=datetime.now(UTC), trigger="scheduled",
+    )
+    repo.claim_capture(running.id, owner="test")
+    db.commit()
+
+    response = client.post("/api/v1/archive/captures/url", params={"url_id": archive_url.id})
+    assert response.status_code == 202
+
+
+def test_start_url_capture_refuses_a_duplicate_of_the_same_url(client, db):
+    client_id = _create_client(db)
+    archive_url, _snapshot = _seed_snapshot(db, client_id)
+    repo = WebArchiveRepository(db)
+    repo.create_capture(
+        client_id, slot_key="dup", scheduled_for=datetime.now(UTC), trigger="manual",
+        scope="url", archive_url_id=archive_url.id,
+    )
+    db.commit()
+
+    response = client.post("/api/v1/archive/captures/url", params={"url_id": archive_url.id})
+    assert response.status_code == 409
+    assert response.json()["detail"]["error_code"] == "already_running"
+
+
 def test_start_all_captures_skips_clients_already_active(client, db):
     client_a = _create_client(db, slug="acme")
     client_b = _create_client(db, slug="beta")
@@ -441,7 +492,14 @@ def test_start_adhoc_url_capture_unknown_domain_is_404(client, db):
     assert response.json()["detail"]["error_code"] == "client_not_found"
 
 
-def test_start_adhoc_url_capture_refuses_while_one_is_already_running(client, db):
+def test_start_adhoc_url_capture_ignores_an_unrelated_client_wide_capture(client, db):
+    """task-70: a scheduled, `scope="client"` portfolio pass already
+    `running` for this client must NOT block archiving one page of it —
+    that used to be a client-WIDE lock (`has_active_capture`), and a
+    portfolio pass can run for hours. `claim_capture` is the actual
+    admission gate into `running` and still enforces "one running capture
+    per client" regardless of how many `queued` rows exist for it.
+    """
     client_id = _create_client(db)
     repo = WebArchiveRepository(db)
     running = repo.create_capture(
@@ -452,6 +510,22 @@ def test_start_adhoc_url_capture_refuses_while_one_is_already_running(client, db
 
     response = client.post(
         "/api/v1/archive/captures/url-adhoc", params={"url": "https://acme.com/new-page/"}
+    )
+    assert response.status_code == 202
+
+
+def test_start_adhoc_url_capture_refuses_a_duplicate_of_the_same_url(client, db):
+    client_id = _create_client(db)
+    archive_url, _snapshot = _seed_snapshot(db, client_id)
+    repo = WebArchiveRepository(db)
+    repo.create_capture(
+        client_id, slot_key="dup", scheduled_for=datetime.now(UTC), trigger="manual",
+        scope="url", archive_url_id=archive_url.id,
+    )
+    db.commit()
+
+    response = client.post(
+        "/api/v1/archive/captures/url-adhoc", params={"url": archive_url.url}
     )
     assert response.status_code == 409
     assert response.json()["detail"]["error_code"] == "already_running"

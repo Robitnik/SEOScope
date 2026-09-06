@@ -42,6 +42,10 @@ def _seed_page(
         content_type=content_type, path=blob.path,
     )
     archive_url = repo.get_or_create_url(client.id, url, normalize_url(url), source="manual")
+    # `get_or_create_url` no longer flushes itself (task-65) — required
+    # before another row's FK can reference this brand-new one in the same
+    # transaction (task-63 follow-up, live-confirmed 2026-09-05).
+    repo.flush()
     observed_at = datetime(2026, 9, 4, 13, 30, tzinfo=UTC)
     repo.create_snapshot(
         archive_url_id=archive_url.id,
@@ -101,13 +105,26 @@ def test_replay_injects_shim_script(client, db):
 
 
 def test_replay_miss_returns_404_and_records_it(client, db):
-    response = client.get("/archive/r/20260904133000/https://never-captured.example.com/")
+    # `sec-fetch-dest: iframe` — the request shape the replay VIEWER's own
+    # sandboxed iframe actually sends (task-63 follow-up): a plain 404 with
+    # this module's own CSP is exactly right there, unlike a bare top-level
+    # hit (covered separately below), which redirects to a friendlier page.
+    headers = {"sec-fetch-dest": "iframe"}
+    response = client.get(
+        "/archive/r/20260904133000/https://never-captured.example.com/", headers=headers
+    )
     assert response.status_code == 404
     assert response.headers["content-security-policy"]  # still carries the replay CSP
 
     # A second miss on the SAME url increments the same row rather than
     # creating a duplicate (task-59 §1.6: our own honest list of gaps).
-    client.get("/archive/r/20260904133000/https://never-captured.example.com/")
+    # The write itself now runs as a `BackgroundTask` (task-63 follow-up —
+    # a busy writer previously made this same request hang for the FULL
+    # SQLite `busy_timeout`, ~30s, live-measured), which the in-process
+    # TestClient transport still runs before `client.get` returns here.
+    client.get(
+        "/archive/r/20260904133000/https://never-captured.example.com/", headers=headers
+    )
 
     from sqlalchemy import select
 
@@ -116,6 +133,57 @@ def test_replay_miss_returns_404_and_records_it(client, db):
     rows = list(db.scalars(select(ArchiveReplayMiss)))
     assert len(rows) == 1
     assert rows[0].hit_count == 2
+
+
+def test_replay_miss_on_a_top_level_navigation_redirects_to_the_hub(client, db):
+    """Live-reported 2026-09-05: opening a rewritten in-page link in a new
+    tab bypasses the SPA viewer entirely and lands on this raw backend
+    route directly — a bare 404 with nothing to do about it. Redirects to
+    the hub's own lookup instead, which already has the "Not archived
+    (yet)" / "Archive this page now" UX this task built.
+    """
+    response = client.get(
+        "/archive/r/20260904133000/https://never-captured.example.com/",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["location"] == (
+        "/#/archive?url=https%3A%2F%2Fnever-captured.example.com%2F"
+    )
+
+
+def test_replay_page_miss_inside_iframe_is_a_styled_404_with_a_capture_button(client, db):
+    """task-70: a page-shaped miss hit FROM the replay iframe itself (an
+    in-page link to an uncaptured page) used to be a bare `text/plain`
+    body with nothing to act on. It's still a plain 404 (never a redirect
+    — that would escape the sandbox), but now a self-contained HTML page
+    whose own button posts `__archiveMiss` to the parent for the viewer's
+    chrome to react to.
+    """
+    headers = {"sec-fetch-dest": "iframe"}
+    response = client.get(
+        "/archive/r/20260904133000/https://never-captured.example.com/", headers=headers
+    )
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.headers["content-security-policy"]
+    assert "__archiveMiss" in response.text
+    assert "archive-miss-capture" in response.text
+
+
+def test_replay_miss_on_an_asset_like_url_never_redirects(client, db):
+    """An image/css/js the rewriter genuinely lost stays a plain 404 even
+    on a top-level hit — "archive this page" makes no sense for a
+    sub-resource, and this exact route is what the viewer's OWN iframe
+    fetches for every subresource, where a redirect would silently escape
+    the replay sandbox.
+    """
+    response = client.get(
+        "/archive/r/20260904133000/https://never-captured.example.com/style.css",
+        follow_redirects=False,
+    )
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/plain")
 
 
 def test_replay_resolves_nearest_snapshot_before_requested_time(client, db):
@@ -301,7 +369,10 @@ def test_replay_miss_survives_a_locked_database(client, db, monkeypatch):
 
     monkeypatch.setattr(WebArchiveRepository, "record_replay_miss", _boom)
 
-    response = client.get("/archive/r/20260904133000/https://never-captured.example.com/")
+    response = client.get(
+        "/archive/r/20260904133000/https://never-captured.example.com/",
+        headers={"sec-fetch-dest": "iframe"},
+    )
 
     assert response.status_code == 404
     assert response.headers["content-security-policy"]

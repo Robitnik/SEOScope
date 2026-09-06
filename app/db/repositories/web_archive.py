@@ -167,6 +167,25 @@ class WebArchiveRepository:
         )
         return self._session.scalars(stmt).first() is not None
 
+    def has_active_url_capture(self, client_id: str, archive_url_id: str) -> bool:
+        """Same shape as `has_active_capture` above, but scoped to ONE
+        `scope="url"` capture of ONE `ArchiveUrl` (task-70) — the admission
+        check for "Archive this page now", which must NOT be blocked by an
+        unrelated client-wide `scope="client"` capture already in flight
+        (a scheduled portfolio pass can run for hours). Safe to admit
+        alongside one: `claim_capture` below still refuses to move a
+        `queued` row to `running` while the client has any OTHER `running`
+        capture, so the extra `queued` row here just waits its turn — it
+        never creates a second concurrent capture for the same client.
+        """
+        stmt = select(ArchiveCapture.id).where(
+            ArchiveCapture.client_id == client_id,
+            ArchiveCapture.archive_url_id == archive_url_id,
+            ArchiveCapture.scope == "url",
+            ArchiveCapture.status.in_(("running", "queued")),
+        )
+        return self._session.scalars(stmt).first() is not None
+
     def claim_capture(
         self, capture_id: str, *, owner: str, now: datetime | None = None
     ) -> ArchiveCapture | None:

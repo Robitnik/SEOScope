@@ -690,6 +690,13 @@ SQLite перестала витримувати бойове навантаже
 
 > **Порядок робіт свідомо з паузою:** після фази A і після фази B результат **переміряється** тим самим харнесом (`scripts/db_bench.py`, baseline знято 2026-09-05). Якщо DoD #1–#3 виконані вже на A+B — фази C і D стають опційними, і це чесний результат, зафіксований числами, а не привід робити решту «бо в плані».
 
+## Хвиля post-63 — UX архіву (lookup, примусовий капчур, чесна 404)
+
+| # | Файл | Пакет | Depends on | Головні owned paths |
+|---|---|---|---|---|
+| 70 | ✅ [task-70-archive-lookup-force-capture-and-replay-404.md](../done/task-70-archive-lookup-force-capture-and-replay-404.md) | **Повноширинний lookup, кнопка «Archive now» поруч із пошуком, чесна 404 у реплеї.** Три виміряні дефекти. (1) `.archive-lookup-form` штучно обрізана `max-width: 720px` — головна дія сторінки займає третину ширини. (2) Примусово заархівувати сторінку можна **лише** з панелі промаху lookup'у, і навіть тоді ад-хок капчур падає в 409, якщо по клієнту вже йде плановий обхід (`has_active_capture` перевіряє `running`/`queued` по **всьому клієнту**) — хоча черга це витримує: `claim_capture` сама несе інваріант «один `running` на клієнта», зайвий `queued` просто чекає тика; фікс — дедуп за `(client_id, archive_url_id)` замість клієнт-рівневого блока, кнопка в hero, перехід на вже наявну сторінку живого прогресу (task-62). (3) `/archive/view/snapshot/<id>/<ts>/<url>` **ігнорує URL-сегмент**: в'ювер бере з адреси лише `snapshot_id` і потім `replaceArchiveViewPath` переписує адресу на URL снапшота — запит неархівованої `…/uhjbedhb` тихо показує **головну** під запитаною адресою (найгірший клас багу для архіву; це свідоме рішення task-63 §1.1, і воно скасовується). Віднині роут — адреса СТОРІНКИ: URL головніший за `snapshot_id`, невідомий URL → **404** від шелу + панель «Not in the archive» з кнопкою архівації; промах усередині iframe перестає бути `text/plain` і стає стилізованою 404 з `postMessage` у хром в'ювера (без виходу з пісочниці). Архівування лишається **тільки для наших клієнтів** (`resolve_client_for_url` над `list_active()`), і UI дізнається про це **до** кліку — адитивні поля `client_id`/`client_name`/`capturable` у `ArchiveLookupDTO`. Міграція **не потрібна** | **59** ✅, **60** ✅, **62** ✅, **63** ⏳ (той самий WIP у робочому дереві) | `frontend/js/{archive-page,archive-viewer,archive-not-archived(новий),api}.js`, `frontend/css/archive.css`, `app/api/{archive,archive_view,archive_replay}.py`, `app/schemas/web_archive.py` (адитивно), `tests/unit/api/test_archive_{api,view_api,replay_api}.py` |
+
+
 ## Спільні контракти (read-only для всіх, крім task-02)
 
 Повні визначення — у [task-02-shared-contracts.md](../done/task-02-shared-contracts.md). Стисло:
