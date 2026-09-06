@@ -72,18 +72,10 @@
 }
 
 .url-search .search-field input {
-  border-radius: var(--radius-md);
-  background: var(--canvas-raised);
-  border-color: var(--line);
-  transition: border-color .14s ease, background-color .14s ease;
-}
-
-.url-search .search-field input:hover { border-color: var(--ink-muted); }
-
-.url-search .search-field input:focus-visible {
-  border-color: var(--accent);
+  min-height: 44px;
   background: var(--surface);
-  outline: none;
+  border: 1px solid var(--line);
+  padding: 9px 12px 9px 42px;
 }
 
 .url-search__error {
