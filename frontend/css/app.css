@@ -15,10 +15,15 @@ body {
 }
 
 /* Masthead: шапка + заголовок як один суцільний блок на всю ширину.
-   Він обрізає фірмову стрічку жорстко — знизу її завершує помаранчева лінія. */
+   БЕЗ `overflow: hidden` навмисно: стрічка (.brand-field нижче) — це
+   background-image, а фон CSS завжди сам обрізається до власного боксу
+   елемента незалежно від overflow будь-якого предка (перевірено пікселем
+   на 1440/900/390 — з `overflow: hidden` і без нього рендер ідентичний).
+   `overflow: hidden` тут раніше різав будь-який popover, заякорений у шапці
+   (меню користувача, підказки пошуку), щойно той опускався нижче межі
+   masthead — «Sign out» обрізало по нижньому краю замість показу повністю. */
 .masthead {
   position: relative;
-  overflow: hidden;
   border-bottom: 3px solid var(--accent);
 }
 .masthead-inner { max-width: var(--content-max); margin: 0 auto; padding: 34px clamp(18px, 3vw, 52px) 32px; }
@@ -808,6 +813,6 @@ dialog::backdrop { background: rgb(0 0 0 / 75%); }
 
 @media print {
   .app-header, .filter-bar, .card-actions, .job-dock, .brand-field { display: none !important; }
-  .masthead { border-bottom: 0; overflow: visible; }
+  .masthead { border-bottom: 0; }
   body { background: white; color: black; }
 }

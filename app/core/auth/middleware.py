@@ -20,7 +20,12 @@ from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.types import ASGIApp
 
 from app.core.auth.policy import is_public_path, is_safe_method, required_role, role_satisfies
-from app.core.auth.sessions import AuthenticatedSession, resolve_session
+from app.core.auth.sessions import (
+    AuthenticatedSession,
+    resolve_agent_token,
+    resolve_localhost_bypass,
+    resolve_session,
+)
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 
@@ -69,14 +74,27 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
 
+        # Два способи довести, хто робить запит, БЕЗ БД (task-73) —
+        # обидва статичні, дешевші за cookie, і обидва мертві поза
+        # `environment != "production"` незалежно від власного прапорця.
+        # Перевіряються навіть на публічних шляхах: `GET /api/v1/auth/session`
+        # публічний саме тому, що анонім теж має право спитати «чи я
+        # залогінений», і відповідь на нього мусить бачити той-таки байпас,
+        # яким живуть усі інші ендпоінти — інакше людина на localhost
+        # проходить крізь гейт скрізь, а фронт на старті все одно веде її
+        # на форму входу, бо сам питає `/auth/session` про cookie, якого нема.
+        auth: AuthenticatedSession | None = resolve_agent_token(request, settings)
+        if auth is None:
+            auth = resolve_localhost_bypass(request, settings)
+
         if is_public_path(path):
-            request.state.auth_session = None
+            request.state.auth_session = auth
             return await call_next(request)
 
-        token = request.cookies.get(settings.auth_cookie_name)
-        auth: AuthenticatedSession | None = None
-        if token:
-            auth = await resolve_session(token, settings=settings)
+        if auth is None:
+            token = request.cookies.get(settings.auth_cookie_name)
+            if token:
+                auth = await resolve_session(token, settings=settings)
 
         if auth is None:
             return self._unauthenticated(request)
@@ -97,7 +115,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 "Your role does not allow this action. Ask an administrator for access.",
             )
 
-        if not is_safe_method(request.method):
+        # CSRF стосується лише cookie: браузер ніколи не додає сам ні
+        # `Authorization`, ні (за визначенням) з'єднання, зроблене НЕ його
+        # власним запитом — тому й dev-токен, і localhost-байпас (task-73,
+        # `origin != "cookie"`, `session_id is None`) структурно не можуть
+        # бути підроблені чужим сайтом, і другий шар захисту тут зайвий.
+        if not is_safe_method(request.method) and auth.session_id is not None:
             csrf_error = self._check_csrf(request, auth, settings)
             if csrf_error is not None:
                 return csrf_error

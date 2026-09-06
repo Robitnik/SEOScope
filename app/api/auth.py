@@ -217,6 +217,27 @@ async def current_session(
             "admin_only_tools": admin_only_tool_slugs(settings),
         }
 
+    # task-73: `AuthMiddleware` уже резолвнув dev bearer-токен чи
+    # localhost-байпас (обидва без БД) навіть для цього публічного шляху —
+    # без цієї гілки фронт побачив би, що кожен ІНШИЙ запит працює без
+    # входу, а сам старт (`GET /auth/session`) усе одно казав би
+    # `authenticated: false` і вів на форму логіну.
+    bypass = getattr(request.state, "auth_session", None)
+    if bypass is not None and bypass.origin != "cookie":
+        return {
+            "authenticated": True,
+            "user": UserDTO(
+                id=bypass.user_id,
+                email=bypass.email or f"{bypass.user_id}@localhost",
+                name=bypass.name,
+                role=bypass.role,
+                is_active=True,
+                created_at=datetime.now(UTC),
+            ).model_dump(mode="json"),
+            "csrf_token": None,
+            "admin_only_tools": admin_only_tool_slugs(settings),
+        }
+
     token = request.cookies.get(settings.auth_cookie_name)
     if not token:
         return SessionDTO(authenticated=False).model_dump(mode="json")

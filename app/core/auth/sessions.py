@@ -10,8 +10,10 @@
 
 from __future__ import annotations
 
+import hmac
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -23,18 +25,27 @@ from app.db.repositories.users import UserRepository
 from app.db.session import get_async_sessionmaker
 from app.schemas.enums import UserRole
 
+if TYPE_CHECKING:
+    from starlette.requests import Request
+
 logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
 class AuthenticatedSession:
     user_id: str
-    email: str
+    email: str | None
     name: str
     role: UserRole
     is_active: bool
-    session_id: str
+    session_id: str | None
     csrf_token: str
+    # "cookie" (звичайний людський логін) | "agent" (dev bearer-токен, task-73)
+    # | "local" (довірений localhost без входу, task-73). Визначає, чи
+    # взагалі є що звіряти в CSRF (`session_id is None` — немає, бо жоден
+    # браузер не міг би підробити ці два способи автентифікації) і як
+    # рядок виглядає в журналі дій (`Actor.kind`).
+    origin: str = "cookie"
 
 
 def resolve_session_sync(
@@ -92,3 +103,88 @@ async def resolve_session(
     settings = settings or get_settings()
     async with get_async_sessionmaker()() as db:
         return await db.run_sync(lambda s: resolve_session_sync(s, token, settings=settings))
+
+
+# ── task-73: два dev-only способи автентифікації без cookie-логіну ─────────
+#
+# Обидва мертві поза `environment != "production"` — не «вимкнено за
+# замовчуванням», а структурно неможливі: навіть якщо секрет чи прапорець
+# випадково потраплять у продовий `.env`, ця перевірка все одно відмовляє.
+
+
+def resolve_agent_token(request: Request, settings: Settings) -> AuthenticatedSession | None:
+    """Спільний bearer-токен для паралельних агентів-розробників (task-73 §2.2).
+
+    Жодного звернення до БД: constant-time звірка статичного секрету з
+    `.env` — дешевше й простіше за cookie-шлях, і саме тому не годиться для
+    людей (токен один на всіх, без відклику, без сесій).
+    """
+    if settings.environment == "production" or not settings.agent_dev_token:
+        return None
+    header = request.headers.get("authorization", "")
+    if not header.startswith("Bearer "):
+        return None
+    token = header.removeprefix("Bearer ").strip()
+    if not token or not hmac.compare_digest(token, settings.agent_dev_token):
+        return None
+    return AuthenticatedSession(
+        user_id="agent",
+        email=None,
+        name=settings.agent_dev_token_label,
+        role=settings.agent_dev_token_role,
+        is_active=True,
+        session_id=None,
+        csrf_token="",
+        origin="agent",
+    )
+
+
+# Заголовки, які ставить лише проксі-шлях (Cloudflare Tunnel/Access) — і які
+# ФІЗИЧНО не можуть з'явитися на з'єднанні, що прийшло прямим TCP-хендшейком
+# від браузера на localhost, бо між ними немає нічого, що їх додало б.
+# `network_mode: host` (compose.yaml) означає, що `cloudflared`, форвардячи
+# публічний тунель на `127.0.0.1:6524`, дає РІВНО ТУ САМУ адресу джерела, що
+# й людина, яка відкрила `http://localhost:6524` у своєму браузері — тому
+# сама по собі адреса localhost нічого не доводить, і рішення тримається на
+# ВІДСУТНОСТІ цих заголовків, а не на адресі окремо.
+_PROXY_MARKER_HEADERS = (
+    "cf-connecting-ip",
+    "cf-ray",
+    "cf-visitor",
+    "cf-ipcountry",
+    "x-forwarded-for",
+    "x-forwarded-proto",
+    "x-forwarded-host",
+    "forwarded",
+)
+
+
+def is_trusted_loopback(request: Request) -> bool:
+    host = request.client.host if request.client else None
+    if host not in {"127.0.0.1", "::1"}:
+        return False
+    return not any(header in request.headers for header in _PROXY_MARKER_HEADERS)
+
+
+def resolve_localhost_bypass(request: Request, settings: Settings) -> AuthenticatedSession | None:
+    """Вхід без пароля для оператора на його власній машині (task-73 §8).
+
+    Спрацьовує ЛИШЕ на прямому TCP-з'єднанні з loopback без жодного сліду
+    проксі (`is_trusted_loopback`) — інакше публічний Cloudflare-тунель, що
+    форвардить рівно на цю саму адресу, отримав би доступ без входу разом
+    із оператором, і вся робота task-71 знецінилась би.
+    """
+    if settings.environment == "production" or not settings.auth_localhost_bypass:
+        return None
+    if not is_trusted_loopback(request):
+        return None
+    return AuthenticatedSession(
+        user_id="local",
+        email=None,
+        name="Local operator",
+        role=UserRole.admin,
+        is_active=True,
+        session_id=None,
+        csrf_token="",
+        origin="local",
+    )

@@ -178,9 +178,16 @@ class AuditMiddleware(BaseHTTPMiddleware):
         if request.url.query:
             details["query"] = request.url.query[:500]
 
+        # `origin` (task-73): "cookie" → людина ("user"); "agent"/"local" —
+        # dev bearer-токен і localhost-байпас переносяться як є, щоб журнал
+        # одразу відрізняв їх від реального входу формою.
+        auth_kind = "anonymous"
+        if auth is not None:
+            auth_kind = "user" if getattr(auth, "origin", "cookie") == "cookie" else auth.origin
+
         record = AuditRecord(
             action=action,
-            actor_kind="user" if auth else "anonymous",
+            actor_kind=auth_kind,
             actor_id=getattr(auth, "user_id", None),
             actor_email=getattr(auth, "email", None),
             actor_name=getattr(auth, "name", None),

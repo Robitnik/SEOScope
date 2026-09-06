@@ -111,9 +111,14 @@ def current_actor(request: Request) -> Actor:
         # `auth_enabled=False` (локальна розробка) або публічний шлях.
         return Actor.system()
     client_host = request.client.host if request.client else None
+    # `origin` (task-73): "cookie" — звичайний людський логін ("user");
+    # "agent"/"local" переносяться як є — журнал дій (task-72) одразу
+    # показує, що це dev bearer-токен чи localhost-байпас, а не хтось, хто
+    # заходив формою входу.
+    kind = "user" if auth.origin == "cookie" else auth.origin
     return Actor(
         id=auth.user_id,
-        kind="user",
+        kind=kind,
         email=auth.email,
         name=auth.name,
         role=auth.role,

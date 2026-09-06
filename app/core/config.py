@@ -10,6 +10,8 @@ from typing import Self
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.schemas.enums import UserRole
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -85,6 +87,24 @@ class Settings(BaseSettings):
     audit_retention_days: int = 365
     # Скільки рядків максимум віддає CSV-експорт за один раз.
     audit_export_max_rows: int = 50000
+
+    # ── Dev-доступ без входу (task-73) ───────────────────────────────────
+    # Обидва прапорці нижче мертві, коли `environment == "production"` —
+    # незалежно від значення, не лише «дефолт вимкнено» (див.
+    # `app/core/auth/sessions.py`, `resolve_agent_token`/`resolve_localhost_bypass`).
+    #
+    # Спільний bearer-токен для паралельних агентів-розробників: `.env`
+    # (git-ignored) тримає секрет, який жоден CI/прод-конфіг не отримує.
+    # `None` = вимкнено.
+    agent_dev_token: str | None = None
+    agent_dev_token_role: UserRole = UserRole.admin
+    agent_dev_token_label: str = "dev-agent"
+    # Вхід без пароля для оператора на localhost. За замовчуванням `False` —
+    # `network_mode: host` (compose.yaml) означає, що Cloudflare-тунель
+    # форвардить на ту саму адресу `127.0.0.1`, що й людина в браузері;
+    # безпечним це робить лише перевірка на відсутність проксі-заголовків
+    # у `is_trusted_loopback`, а не сам прапорець.
+    auth_localhost_bypass: bool = False
 
     event_retention_days: int = 30
     job_lease_seconds: int = 300
