@@ -50,8 +50,11 @@ const ARCHIVE_ROUTE = /^#\/archive/;
 // Trends/Monitor/Archive above. The URL being inspected lives in `u=`.
 const URL_INSPECTOR_ROUTE = /^#\/url(?:$|[/?])/;
 // Адмінка користувачів (task-71) — верхньорівнева сторінка, доступна лише
-// адміну. Сам маршрут не «захищає» нічого: сервер однаково віддасть 403 на
-// `/api/v1/admin/*`, а тут ми просто не малюємо порожній екран не тій людині.
+// адміну. Справжня межа безпеки лишається на сервері (403 на
+// `/api/v1/admin/*` для будь-кого, хто не адмін, незалежно від фронта) —
+// але `activate()` тепер і сама відсилає non-admin назад на `#/` ДО
+// рендеру сторінки (не після невдалого виклику API), щоб пряме введення
+// хеша в адресний рядок не показувало чужу адмінку навіть на мить.
 const ADMIN_USERS_ROUTE = /^#\/admin\/users/;
 // Журнал дій (task-72). Приймає `resource_type`/`resource_id` у query — так
 // сюди веде посилання «History» з конкретного клієнта.
@@ -309,6 +312,23 @@ export function replaceBlogsHash(clientId, params) {
 
 async function activate() {
   const route = parseRoute();
+  // task-71/72: `#/admin/users` and `#/admin/audit` are admin-only (see the
+  // ADMIN_USERS_ROUTE comment above) — the user-menu links to them are
+  // already hidden for non-admins (session.js applyRoleVisibility()), but
+  // that only stops discovery, not someone typing/bookmarking the hash
+  // directly. Without this, the branches below rendered the full page
+  // shell (title, "Add person" button, table container) before the first
+  // API call 403'd — not the "don't draw an empty screen" the comment
+  // above promises. Checked here, before any DOM work, so a non-admin
+  // never sees the shell and the client never even attempts the call the
+  // server would refuse anyway.
+  if (route.name === "admin-users" || route.name === "admin-audit") {
+    const { isAdmin } = await import("./session.js?v=20260906-t72");
+    if (!isAdmin()) {
+      location.replace("#/");
+      return;
+    }
+  }
   const dashboardView = document.querySelector("#dashboard-view");
   const clientRoot = document.querySelector("#client-page-root");
   const ahrefsRoot = document.querySelector("#ahrefs-page-root");

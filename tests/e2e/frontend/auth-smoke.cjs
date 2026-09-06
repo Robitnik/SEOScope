@@ -4,6 +4,16 @@
  * Requires a RUNNING api with `auth_enabled=true` and two accounts, whose
  * credentials come from the environment — this file must never carry them.
  *
+ * If `.env`'s `AUTH_LOCALHOST_BYPASS=true` (task-73, live-caught while
+ * verifying the admin-only-route fix below), `BASE_URL=127.0.0.1` resolves
+ * EVERY request — including the viewer's own login — to the bypass's
+ * hardcoded admin identity, before the real cookie is ever checked
+ * (`app/core/auth/middleware.py`): the anonymous-visitor and viewer
+ * assertions below would then pass for the wrong reason or not run true to
+ * the role at all. Either flip that flag off for the run, or point
+ * `BASE_URL` at the public tunnel (`https://seo.theyovth.space`), which
+ * carries `Cf-Connecting-Ip` and so is never eligible for the bypass.
+ *
  *   BASE_URL=http://127.0.0.1:6524 \
  *   ADMIN_EMAIL=… ADMIN_PASSWORD=… VIEWER_EMAIL=… VIEWER_PASSWORD=… \
  *   NODE_PATH=/tmp/yovth-e2e/node_modules node tests/e2e/frontend/auth-smoke.cjs
@@ -82,6 +92,16 @@ async function main() {
     assert.match(await page.locator("#user-menu-role").innerText(), /Read-only/i);
     await page.keyboard.press("Escape");
     assert.equal(await page.locator("#sync-all-button").isDisabled(), true, "viewer cannot start collection");
+    // Ховання пункту меню (вище) зупиняє лише відкриття з UI — пряме
+    // введення хеша в адресний рядок довго це обходило (router.js
+    // рендерив повний шел адмінки ще до того, як API 403-ив перший
+    // запит). Regression-перевірка на фікс: типізований перехід одразу
+    // ж відсилає non-admin назад на дашборд, ДО будь-якого рендеру.
+    await page.goto(`${baseUrl}/#/admin/users`, { waitUntil: "networkidle" });
+    await page.waitForURL((url) => !url.hash.startsWith("#/admin"), { timeout: 10000 });
+    assert.equal(await page.locator(".admin-table").count(), 0, "viewer never sees the admin table, even via a direct hash");
+    await page.goto(`${baseUrl}/#/admin/audit`, { waitUntil: "networkidle" });
+    await page.waitForURL((url) => !url.hash.startsWith("#/admin"), { timeout: 10000 });
     // Даємо дашборду домалюватись, щоб знімок був сторінкою з даними, а не
     // скелетоном.
     await page.locator(".client-card").first().waitFor({ timeout: 30000 });
