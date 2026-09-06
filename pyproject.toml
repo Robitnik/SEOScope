@@ -9,12 +9,22 @@ packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<4.0"
-fastapi = "^0.115.0"
+fastapi = "^0.141.1"
 uvicorn = { extras = ["standard"], version = "^0.32.0" }
 pydantic-settings = "^2.6.0"
 sqlalchemy = "^2.0.0"
 alembic = "^1.13.0"
 aiosqlite = "^0.20.0"
+# Added by task-75 (Postgres migration): driver for both the sync engine
+# (worker/CLI/migrations) and the async engine (FastAPI) — SQLAlchemy 2.0's
+# default async dialect for Postgres. `binary` extra bundles prebuilt wheels
+# so the image needs no libpq-dev/gcc at build time; verified live against
+# PostgreSQL 16 (task-75 §0: schema + all 1.24M rows migrated with zero
+# code changes). `aiosqlite` stays until cutover (task-75 §10 step 7), then
+# both this comment and that dependency go (task-01 owns pyproject.toml;
+# requested directly by the user, flagged per CLAUDE.md's "нова залежність"
+# escape hatch, same as openpyxl/b2sdk below).
+psycopg = { extras = ["binary"], version = "^3.2" }
 # Added by task-07 (importer): reads the AISeoTools `client_report_*.xlsx`
 # "Historical Data" sheet. Was previously present only transitively via the
 # optional `local` group, which the production Dockerfile never installs —
@@ -30,6 +40,7 @@ openpyxl = "^3.1"
 # (task-01 owns pyproject.toml; requested directly by the user, flagged per
 # CLAUDE.md's "нова залежність" escape hatch).
 b2sdk = "^2.8"
+mcp = "^2.1.1"
 
 [tool.poetry.scripts]
 # Added by task-07 (importer), as flagged in the task plan itself
