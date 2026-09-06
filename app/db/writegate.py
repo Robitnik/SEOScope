@@ -29,10 +29,13 @@ comparatively little payoff, and is left as a follow-up if it ever shows up
 in an incident.
 
 task-75: this whole class exists to serialize SQLite's single writer lock
-— a problem Postgres does not have (real MVCC concurrency control). On a
-non-SQLite `DATABASE_URL`, `submit()` bypasses the queue, the background
-thread, and the cross-process `flock` entirely and just runs `fn()` then
-`session.commit()` inline; `start()`/`stop()` become no-ops. This is not a
+— a problem Postgres does not have (real MVCC concurrency control). When
+the `session` handed to `submit()` is bound to a non-SQLite engine, it
+bypasses the queue, the background thread, and the cross-process `flock`
+entirely and just runs `fn()` then `session.commit()` inline — checked
+against that session's own bind on every call, not a construction-time
+guess from global settings (a process may legitimately hand this one
+shared gate sessions on different engines, e.g. in tests). This is not a
 degraded fallback — it is the exact same "run inline" branch `submit()`
 already took for its SQLite re-entrancy case, just correct for every
 caller here instead of only the nested one. The alternative (leaving the
@@ -59,7 +62,7 @@ from typing import Any, Generic, TypeVar
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.session import default_write_lock_path, sqlite_db_path, sqlite_sync_url
+from app.db.session import default_write_lock_path, sqlite_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -122,13 +125,6 @@ class DbWriteGate:
         checkpoint_min_wal_mb: float | None = None,
     ) -> None:
         settings = get_settings()
-        # task-75: every mechanism below (queue, thread, flock, idle
-        # checkpointer) exists solely to serialize SQLite's single writer
-        # lock. On Postgres, `submit()` skips straight to `fn()` + `commit()`
-        # — see the module docstring — so `start()`/`stop()` also no-op and
-        # this stays `False`-and-unused rather than pointed at a path
-        # derived from a URL that was never a SQLite file to begin with.
-        self._is_sqlite = sqlite_sync_url(settings.database_url).startswith("sqlite://")
         self._lock_path = lock_path if lock_path is not None else default_write_lock_path(settings)
         self._slow_ms = settings.db_write_gate_slow_ms if slow_ms is None else slow_ms
         self._strict = settings.db_write_gate_strict if strict is None else strict
@@ -148,8 +144,11 @@ class DbWriteGate:
         self._start_lock = threading.Lock()
 
     def start(self) -> None:
-        if not self._is_sqlite:
-            return
+        # Harmless even when nothing ever turns out to be SQLite (task-75):
+        # the idle checkpointer's own `_checkpoint()` already no-ops (an
+        # `OSError` on `.stat()`) when `self._db_path` doesn't resolve to a
+        # real file, so an always-on background thread costs one wakeup per
+        # idle window doing nothing, never a wrong action.
         with self._start_lock:
             if self._thread is not None:
                 return
@@ -159,8 +158,6 @@ class DbWriteGate:
             self._thread.start()
 
     def stop(self) -> None:
-        if not self._is_sqlite:
-            return
         with self._start_lock:
             if self._thread is None:
                 return
@@ -177,11 +174,19 @@ class DbWriteGate:
         request handlers and CLI commands with no lifecycle hook to use.
 
         Non-SQLite target: no queue, no thread, no flock — see the module
-        and `__init__` docstrings. Postgres's own MVCC already gives every
-        caller real concurrent commits; nothing here would add safety, and
-        the idle checkpointer below would actively break.
+        docstring. Postgres's own MVCC already gives every caller real
+        concurrent commits; nothing here would add safety, and the idle
+        checkpointer would actively break against a non-SQLite path.
+
+        Checked per call against `session`'s own bind, not a construction-
+        time global-settings snapshot (task-75, found live by a test
+        failure): a process can legitimately hand this ONE shared gate
+        sessions bound to different engines — e.g. a test building its own
+        local SQLite engine directly while the process's own default
+        `DATABASE_URL` is Postgres — and a construction-time guess would
+        silently pick the wrong branch for that session.
         """
-        if not self._is_sqlite:
+        if session.get_bind().dialect.name != "sqlite":
             result = fn()
             session.commit()
             return result
