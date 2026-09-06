@@ -35,3 +35,9 @@ graphify-out/
 # Local Claude Code tooling/config — never tracked in this repo
 .claude/
 .verify_tmp/
+
+# Slide deck (presentation/): build-скрипти і вихідні скріншоти трекаються,
+# згенеровані .pptx та по-слайдові прев'ю — ні (перезбираються скриптом, ~10 МБ).
+presentation/*.pptx
+presentation/*-preview.png
+presentation/.~lock.*

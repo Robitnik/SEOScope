@@ -94,6 +94,9 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Разові скрипти збірки слайдів: суцільні перекладні таблиці рядок-у-рядок,
+# де перенесення за 100 символів робить діф нечитним. Не код застосунку.
+extend-exclude = ["presentation"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
