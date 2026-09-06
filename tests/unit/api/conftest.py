@@ -13,10 +13,17 @@ from app.integrations import registry
 
 
 def _reset_engines() -> None:
+    from app.db import writegate as db_writegate
+
     db_session._async_engine = None
     db_session._async_sessionmaker = None
     db_session._sync_engine = None
     db_session._sync_sessionmaker = None
+    # task-66: the write gate is ALSO a process-global singleton, resolved
+    # from whatever `Settings` was cached at first use — reset it alongside
+    # the engine/sessionmaker above so it derives its lock path from THIS
+    # test's own tmp DB, not a stale previous one.
+    db_writegate.reset_write_gate_for_tests()
     get_settings.cache_clear()
 
 
@@ -66,17 +73,50 @@ def auth_client(tmp_path, monkeypatch) -> Iterator[TestClient]:
     # Тест-клієнт ходить по http://testserver — cookie з `Secure` браузерна
     # реалізація в httpx не віддала б назад.
     monkeypatch.setenv("AUTH_COOKIE_SECURE", "false")
+    monkeypatch.setenv("AUDIT_FALLBACK_PATH", str(tmp_path / "audit_fallback.jsonl"))
     _reset_engines()
+    from app.audit.sink import reset_audit_sink_for_tests
+
+    reset_audit_sink_for_tests()
 
     Base.metadata.create_all(db_session.get_sync_engine())
     monkeypatch.setattr(registry, "_registry", {})
 
     from app.main import app
 
-    with TestClient(app) as test_client:
-        yield test_client
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        # `finally`, не код після `yield`: якщо сам тест впав, фоновий
+        # `AuditSink` лишається живим і має ОБОВ'ЯЗКОВО дописати свій батч
+        # (і зупинитись) ДО того, як `_reset_engines()` нижче звільнить
+        # `DATABASE_URL` — інакше цей самий потік прокидається пізніше,
+        # вже після відкату monkeypatch, і його запис летить у бойову БД
+        # цього контейнера (LIVE 2026-09-06, звідси й `finally`).
+        from app.audit.sink import get_audit_sink, reset_audit_sink_for_tests
 
-    _reset_engines()
+        get_audit_sink().flush()
+        reset_audit_sink_for_tests()
+        _reset_engines()
+
+
+@pytest.fixture
+def audit_events(auth_client: TestClient):
+    """Флашить чергу журналу і читає рядки напряму через репозиторій —
+    для тестів, що перевіряють САМЕ що і як журналюється."""
+    from sqlalchemy.orm import sessionmaker
+
+    from app.audit.sink import get_audit_sink
+    from app.db.repositories.audit import AuditRepository
+
+    def _read(**filters):
+        get_audit_sink().flush()
+        maker = sessionmaker(bind=db_session.get_sync_engine(), expire_on_commit=False)
+        with maker() as session:
+            return AuditRepository(session).query(limit=filters.pop("limit", 50), **filters)
+
+    return _read
 
 
 @pytest.fixture

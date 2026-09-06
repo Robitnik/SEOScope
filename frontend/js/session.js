@@ -4,7 +4,7 @@
 // переходом; зайвий запит на кожен рендер був би податком на найгарячіший
 // шлях (`AuthMiddleware` уже робить SELECT на кожен запит).
 
-import { getAuthSession, logout } from "./api.js?v=20260906-t71";
+import { getAuthSession, logout } from "./api.js?v=20260906-t72";
 
 let cached = null;
 
@@ -50,8 +50,10 @@ export function renderUserMenu(session) {
   root.querySelector("#user-menu-role").textContent = roleLabel(user.role);
   root.querySelector("#user-menu-email").textContent = user.email;
 
-  const adminLink = root.querySelector("#user-menu-admin");
-  if (adminLink) adminLink.hidden = user.role !== "admin";
+  const isAdminUser = user.role === "admin";
+  root.querySelectorAll("#user-menu-admin, #user-menu-audit").forEach((link) => {
+    link.hidden = !isAdminUser;
+  });
 
   const toggle = root.querySelector("#user-menu-toggle");
   const panel = root.querySelector("#user-menu-panel");

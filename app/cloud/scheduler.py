@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.audit import record_audit
 from app.cloud.backup import prune_backups, run_daily_backup
 from app.cloud.client import CloudStore
 from app.cloud.sweeper import prune_monitor_bodies, sweep_monitor_blobs, sweep_report_files
@@ -95,6 +96,17 @@ class CloudScheduler:
                 outcome.size_bytes,
                 outcome.promoted_tiers,
             )
+            # task-72: нічний бекап — дія системи, і в журналі вона має бути
+            # видима поруч із людськими: інакше «журнал за минулу ніч
+            # порожній» неможливо відрізнити від «нічого не запускалось».
+            record_audit(
+                "system.cloud.backup",
+                resource_type="backup",
+                details={
+                    "size_bytes": outcome.size_bytes,
+                    "promoted_tiers": list(outcome.promoted_tiers),
+                },
+            )
             prune_backups(session, self._store, self._settings)
 
     def _run_local_retention_if_due(self) -> None:
@@ -141,4 +153,12 @@ class CloudScheduler:
                 result.candidates,
                 result.removed,
                 result.deferred_not_uploaded,
+            )
+            record_audit(
+                "system.monitor.local_retention",
+                details={
+                    "candidates": result.candidates,
+                    "removed": result.removed,
+                    "deferred_not_uploaded": result.deferred_not_uploaded,
+                },
             )

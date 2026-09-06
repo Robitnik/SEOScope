@@ -71,6 +71,21 @@ class Settings(BaseSettings):
     bootstrap_admin_email: str | None = None
     bootstrap_admin_name: str = "Administrator"
 
+    # ── Журнал дій (task-72) ─────────────────────────────────────────────
+    audit_enabled: bool = True
+    # Черга й батч. Запит НІКОЛИ не чекає на журнал: він кладе рядок у чергу,
+    # а один потік пише їх пачками — після task-66/67 (writer-лок 97%
+    # зайнятості) запис на кожну дію повернув би лок-шторм.
+    audit_queue_max: int = 10000
+    audit_batch_size: int = 200
+    audit_flush_interval_s: float = 1.0
+    # Куди дописуємо, якщо БД недоступна: інцидент, під час якого база
+    # лежить, не має бути єдиним нежурнальованим.
+    audit_fallback_path: Path = Path("./app_data/audit_fallback.jsonl")
+    audit_retention_days: int = 365
+    # Скільки рядків максимум віддає CSV-експорт за один раз.
+    audit_export_max_rows: int = 50000
+
     event_retention_days: int = 30
     job_lease_seconds: int = 300
 

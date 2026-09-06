@@ -3085,3 +3085,28 @@ export async function revokeUserSessions(userId) {
     `admin-user-revoke-${userId}`,
   );
 }
+
+
+// ── Журнал дій (task-72) ──────────────────────────────────────────────────
+
+export async function listAuditEvents(filters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") params.set(key, value);
+  });
+  return request(`/admin/audit?${params.toString()}`, {}, "admin-audit-list");
+}
+
+export async function getAuditFacets() {
+  return request("/admin/audit/facets", {}, "admin-audit-facets");
+}
+
+// Не через `request()`: це CSV-потік, а не JSON, і його треба віддати
+// браузеру як файл, а не розпарсити.
+export function auditExportUrl(filters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") params.set(key, value);
+  });
+  return `${API_ROOT}/admin/audit/export.csv?${params.toString()}`;
+}

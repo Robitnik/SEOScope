@@ -11,8 +11,8 @@ import {
   resetUserPassword,
   revokeUserSessions,
   updateUser,
-} from "./api.js?v=20260906-t71";
-import { currentUser } from "./session.js?v=20260906-t71";
+} from "./api.js?v=20260906-t72";
+import { currentUser } from "./session.js?v=20260906-t72";
 
 const ROLES = [
   ["admin", "Administrator", "Everything, plus accounts, batch reports, imports and cloud"],
@@ -62,10 +62,17 @@ function buildShell() {
   );
   head.append(copy);
 
+  const headActions = el("div", "admin-head-actions");
+  // Журнал не кладемо сьомим табом у шапку: вона вже на межі ширини, і
+  // зайвий пункт виштовхує весь ряд навігації. Дві адмінські сторінки
+  // натомість посилаються одна на одну.
+  const auditLink = el("a", "button button--quiet", "Activity log");
+  auditLink.href = "#/admin/audit";
   const addButton = el("button", "button button--primary", "Add person");
   addButton.type = "button";
   addButton.id = "admin-add-user";
-  head.append(addButton);
+  headActions.append(auditLink, addButton);
+  head.append(headActions);
   wrap.append(head);
 
   const createPanel = el("section", "admin-create");

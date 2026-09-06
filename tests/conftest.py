@@ -72,6 +72,53 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 @pytest.fixture(autouse=True)
+def _isolated_write_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """task-66: `app.db.writegate.DbWriteGate` is a process-wide singleton,
+    lazily bound (on first use) to whatever `Settings` happens to be cached
+    at that moment — which, absent a test-specific override, is the SAME
+    `app_data/app.db` this container's own live api/worker processes use
+    (tests run inside the same container/volume as production, per
+    CLAUDE.md's Docker-only rule). Autouse, at the ROOT conftest, so EVERY
+    test in the suite gets its own gate bound to a lock file under its own
+    `tmp_path` — not just the directories whose own conftest already
+    happens to override `DATABASE_URL` before touching the DB — and can
+    never contend with production traffic for that OS-level flock.
+    """
+    from app.db import writegate as db_writegate
+
+    gate = db_writegate.DbWriteGate(lock_path=tmp_path / "test.write.lock")
+    monkeypatch.setattr(db_writegate, "_gate", gate)
+    yield
+    gate.stop()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_audit_sink(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """task-72: `AuditSink` (`app/audit/sink.py`) is the SAME class of
+    process-wide singleton as `DbWriteGate` above, with the same failure
+    mode: its background thread resolves `get_sync_sessionmaker()` at WRITE
+    time, roughly `audit_flush_interval_s` after `submit()` — long enough
+    for a test's own `monkeypatch.setenv("DATABASE_URL", ...)` to have
+    already unwound. Not hypothetical: this is exactly how a test run wrote
+    ~50 rows into this container's own PRODUCTION `audit_events` table
+    (LIVE 2026-09-06, cleaned up by hand — see task-72's completion report).
+    Autouse and unconditional, mirroring `_isolated_write_gate`: no test,
+    present or future, gets to rely on remembering this itself.
+
+    The `monkeypatch` parameter is otherwise unused here — its only job is
+    to make this fixture a declared dependent of the test's `monkeypatch`
+    instance, so pytest tears THIS down first and reverts `DATABASE_URL`
+    only afterwards. Without it, ordering relative to some other fixture's
+    own `monkeypatch` use is unspecified, and the race this fixture exists
+    to close would simply move here instead.
+    """
+    yield
+    from app.audit.sink import reset_audit_sink_for_tests
+
+    reset_audit_sink_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _auth_disabled_unless_asked(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[None]:
@@ -90,6 +137,13 @@ def _auth_disabled_unless_asked(
         yield
         return
     monkeypatch.setenv("AUTH_ENABLED", "false")
+    # task-72: той самий привід, що auth. Без цього AuditMiddleware пише
+    # через ГЛОБАЛЬНИЙ фоновий `AuditSink` на кожному з ~2500 наявних тестів
+    # — а той потік лягає спати на `flush_interval_s` і будить лише ПІСЛЯ
+    # того, як `monkeypatch` цього тесту вже відкотив `DATABASE_URL`. Це не
+    # гіпотеза: саме так тестовий прогін дописав рядки в БОЙОВУ БД цього ж
+    # контейнера (LIVE 2026-09-06, прибрано вручну — див. completion report).
+    monkeypatch.setenv("AUDIT_ENABLED", "false")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

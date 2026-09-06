@@ -381,6 +381,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     user_deactivate_cmd.add_argument("--email", required=True)
 
+    # ── Журнал дій (task-72) ─────────────────────────────────────────────
+    audit_tail_cmd = subparsers.add_parser(
+        "audit-tail", help="Print the most recent audit events (who did what, when)"
+    )
+    audit_tail_cmd.add_argument("--limit", type=int, default=30)
+    audit_tail_cmd.add_argument("--action", default=None, help="Filter by exact action name")
+    audit_tail_cmd.add_argument("--actor", default=None, help="Filter by actor email")
+
+    subparsers.add_parser(  # noqa: F841 - no extra arguments
+        "audit-retention",
+        help=(
+            "Export audit rows older than AUDIT_RETENTION_DAYS to JSONL, delete them, "
+            "and drop expired sessions. Runs daily on its own; this is the manual door"
+        ),
+    )
+
     subparsers.add_parser(  # noqa: F841 - no extra arguments
         "ensure-admin",
         help=(
@@ -417,6 +433,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(render_report(report, dry_run=args.dry_run))
         return 0
+
+    if args.command in {"audit-tail", "audit-retention"}:
+        return _run_audit_command(args)
 
     if args.command in {
         "user-create",
@@ -1615,4 +1634,32 @@ def _run_user_command(args: argparse.Namespace) -> int:
             return 0
 
     return 2
+def _run_audit_command(args: argparse.Namespace) -> int:
+    """Журнал дій із командного рядка (task-72) — щоб подивитись «хто що зробив»
+    не піднімаючи UI, і щоб запустити прибирання руками."""
+    from app.audit.retention import run_retention
+    from app.db.repositories.audit import AuditRepository
 
+    session_factory = get_sync_sessionmaker()
+    with session_factory() as session:
+        if args.command == "audit-retention":
+            result = run_retention(session)
+            print(
+                f"exported={result['exported']} purged={result['purged']} "
+                f"expired_sessions={result['expired_sessions']}"
+            )
+            return 0
+
+        events = AuditRepository(session).query(
+            limit=args.limit, action=args.action, search=args.actor
+        )
+        if not events:
+            print("no audit events match")
+            return 0
+        for event in events:
+            who = event.actor_email or event.actor_kind
+            print(
+                f"{event.ts.isoformat(timespec='seconds')}  {who:32} {event.action:26} "
+                f"{event.outcome:8} {event.status_code or '-':>4}  {event.path or ''}"
+            )
+        return 0

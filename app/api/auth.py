@@ -16,6 +16,7 @@ from app.api import register_router
 from app.api.deps import ActorDep, SessionDep, SettingsDep
 from app.core.auth.passwords import needs_rehash, verify_password, waste_time_like_verify
 from app.core.auth.policy import admin_only_tool_slugs
+from app.core.auth.sessions import AuthenticatedSession
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.db.models import User
@@ -87,7 +88,7 @@ async def login(
     ip = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
 
-    def _authenticate(db: Session) -> tuple[User, str, str] | None:
+    def _authenticate(db: Session) -> tuple[User, str, str, str] | None:
         repo = UserRepository(db)
         user = repo.get_by_email(payload.email)
         if user is None:
@@ -117,7 +118,7 @@ async def login(
             user_agent=user_agent,
         )
         db.commit()
-        return user, token, session_row.csrf_token
+        return user, token, session_row.csrf_token, session_row.id
 
     result = await session.run_sync(_authenticate)
     if result is None:
@@ -125,7 +126,20 @@ async def login(
         response.status_code = 401
         return {"detail": _INVALID}
 
-    user, token, csrf_token = result
+    user, token, csrf_token, session_id = result
+    # Журнал (task-72) читає актора зі `request.state` ПІСЛЯ відповіді. На
+    # самому логіні сесії ще не було, коли запит заходив, — але до моменту
+    # виходу вона вже є, і подія `auth.login` має бути підписана людиною, а
+    # не «anonymous».
+    request.state.auth_session = AuthenticatedSession(
+        user_id=user.id,
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        is_active=user.is_active,
+        session_id=session_id,
+        csrf_token=csrf_token,
+    )
     set_session_cookies(
         response,
         settings,

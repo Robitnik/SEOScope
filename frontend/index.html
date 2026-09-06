@@ -23,9 +23,9 @@
     <link rel="stylesheet" href="/css/reports.css?v=20260821-spin3">
     <link rel="stylesheet" href="/css/archive.css?v=20260906-t70">
     <link rel="stylesheet" href="/css/url-inspector.css?v=20260906-t61">
-    <link rel="stylesheet" href="/css/admin.css?v=20260906-t71">
+    <link rel="stylesheet" href="/css/admin.css?v=20260906-t72">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260906-t71"></script>
+    <script type="module" src="/js/router.js?v=20260906-t72"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -111,6 +111,7 @@
               <p class="user-menu__role" id="user-menu-role">—</p>
               <p class="user-menu__email" id="user-menu-email">—</p>
               <a href="#/admin/users" id="user-menu-admin" hidden>Manage people</a>
+            <a href="#/admin/audit" id="user-menu-audit" hidden>Activity log</a>
               <button type="button" id="user-menu-signout">Sign out</button>
             </div>
           </div>
@@ -228,6 +229,7 @@
 
     <main class="app-main" id="url-inspector-page-root" hidden></main>
     <main class="app-main" id="admin-users-page-root" hidden></main>
+    <main class="app-main" id="admin-audit-page-root" hidden></main>
     </div>
 
     <div class="job-dock" id="job-dock" hidden>

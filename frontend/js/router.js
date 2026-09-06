@@ -53,6 +53,9 @@ const URL_INSPECTOR_ROUTE = /^#\/url(?:$|[/?])/;
 // адміну. Сам маршрут не «захищає» нічого: сервер однаково віддасть 403 на
 // `/api/v1/admin/*`, а тут ми просто не малюємо порожній екран не тій людині.
 const ADMIN_USERS_ROUTE = /^#\/admin\/users/;
+// Журнал дій (task-72). Приймає `resource_type`/`resource_id` у query — так
+// сюди веде посилання «History» з конкретного клієнта.
+const ADMIN_AUDIT_ROUTE = /^#\/admin\/audit/;
 
 export function parseRoute() {
   const pathMatch = location.pathname.match(ARCHIVE_VIEW_PATH_RE);
@@ -71,6 +74,7 @@ export function parseRoute() {
   const hash = location.hash || "";
   const query = new URLSearchParams(hash.split("?")[1] || "");
   if (ADMIN_USERS_ROUTE.test(hash)) return { name: "admin-users", query };
+  if (ADMIN_AUDIT_ROUTE.test(hash)) return { name: "admin-audit", query };
   const toolsMatch = hash.match(TOOLS_ROUTE);
   if (toolsMatch) {
     return {
@@ -307,6 +311,7 @@ async function activate() {
   const archiveCaptureRoot = document.querySelector("#archive-capture-page-root");
   const urlInspectorRoot = document.querySelector("#url-inspector-page-root");
   const adminUsersRoot = document.querySelector("#admin-users-page-root");
+  const adminAuditRoot = document.querySelector("#admin-audit-page-root");
   const dashboardChrome = [
     document.querySelector("#dashboard-header-actions"),
     document.querySelector("#dashboard-command-bar"),
@@ -314,7 +319,7 @@ async function activate() {
   const allRoots = [
     clientRoot, ahrefsRoot, blogsRoot, monthlyRoot, toolsRoot, trendsRoot, monitorRoot, monitorClientRoot,
     reportsRoot, reportsRunRoot, reportsBatchRoot, pagesRoot, archiveRoot, archiveViewRoot, archiveChangesRoot,
-    archiveCaptureRoot, urlInspectorRoot, adminUsersRoot,
+    archiveCaptureRoot, urlInspectorRoot, adminUsersRoot, adminAuditRoot,
   ];
   // Global nav marks the active destination for assistive tech and for the eye
   // (`aria-current`), since a cross-route move is a full reload here.
@@ -324,7 +329,7 @@ async function activate() {
   document.querySelectorAll("[data-nav]").forEach((link) => {
     const navName = (route.name === "reports-run" || route.name === "reports-batch")
       ? "reports"
-      : route.name === "admin-users"
+      : (route.name === "admin-users" || route.name === "admin-audit")
       ? "admin"
       : (route.name === "archive-view" || route.name === "archive-changes" || route.name === "archive-capture")
         ? "archive" : route.name;
@@ -332,7 +337,14 @@ async function activate() {
     if (isActive) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  if (route.name === "admin-users") {
+  if (route.name === "admin-audit") {
+    dashboardView?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== adminAuditRoot).forEach((el) => el?.setAttribute("hidden", ""));
+    dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
+    adminAuditRoot?.removeAttribute("hidden");
+    const { initAdminAuditPage } = await import("./admin-audit-page.js?v=20260906-t72");
+    await initAdminAuditPage(route.query);
+  } else if (route.name === "admin-users") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== adminUsersRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
@@ -718,7 +730,7 @@ if (!window.__yovthRouterBooted) {
   // сторінки. Один запит на завантаження вкладки, не на кожен маршрут.
   (async () => {
     try {
-      const { loadSession, renderUserMenu, applyRoleVisibility } = await import("./session.js?v=20260906-t71");
+      const { loadSession, renderUserMenu, applyRoleVisibility } = await import("./session.js?v=20260906-t72");
       const session = await loadSession();
       if (!session?.authenticated) {
         const next = encodeURIComponent(`${location.pathname}${location.search}${location.hash}`);

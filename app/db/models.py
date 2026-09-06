@@ -2002,6 +2002,60 @@ class UserSession(Base):
     user_agent: Mapped[str | None] = mapped_column(String(256), default=None)
 
 
+
+class AuditEvent(Base):
+    """Один рядок журналу «хто що коли зробив» (task-72).
+
+    Append-only: жодного `UPDATE`/`DELETE` по окремому рядку немає ні в API,
+    ні в репозиторії — єдиний легальний спосіб зникнути це ретенція.
+
+    Актор денормалізований НАВМИСНО (`actor_email`/`actor_name`/`actor_role`
+    — копії на момент дії). Через рік людина може бути перейменована,
+    деактивована або мати іншу роль, а журнал має читатись так, як він
+    виглядав тоді; JOIN на `users` перетворив би історію на «unknown».
+    """
+
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        Index("ix_audit_events_ts", "ts"),
+        Index("ix_audit_events_actor_id_ts", "actor_id", "ts"),
+        Index("ix_audit_events_action_ts", "action", "ts"),
+        Index("ix_audit_events_resource", "resource_type", "resource_id", "ts"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    ts: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # `user` | `system` | `cli` | `job` — рядок, а не enum: воркер і CLI
+    # додають свої види дій без міграції.
+    actor_kind: Mapped[str] = mapped_column(String(16), default="system")
+    actor_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    actor_email: Mapped[str | None] = mapped_column(String(320), default=None)
+    actor_name: Mapped[str | None] = mapped_column(String(200), default=None)
+    actor_role: Mapped[str | None] = mapped_column(String(16), default=None)
+    session_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    ip: Mapped[str | None] = mapped_column(String(64), default=None)
+    user_agent: Mapped[str | None] = mapped_column(String(256), default=None)
+    # Крапкова нотація з явної мапи (`app/audit/actions.py`): `client.create`,
+    # `job.start`, `auth.login.failed`. Це те, що читає людина у фільтрі, тому
+    # назва приходить із мапи, а не генерується зі шляху.
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    resource_type: Mapped[str | None] = mapped_column(String(40), default=None)
+    resource_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    # Людська назва ресурсу на момент дії — з тієї ж причини, що й актор:
+    # клієнта могли перейменувати або видалити.
+    resource_label: Mapped[str | None] = mapped_column(String(200), default=None)
+    method: Mapped[str | None] = mapped_column(String(10), default=None)
+    path: Mapped[str | None] = mapped_column(String(500), default=None)
+    status_code: Mapped[int | None] = mapped_column(Integer, default=None)
+    # `success` | `failure` | `denied`
+    outcome: Mapped[str] = mapped_column(String(16), default="success")
+    duration_ms: Mapped[int | None] = mapped_column(Integer, default=None)
+    # Редагований зріз запиту (ключі з денилиста замінені на `***`), обрізаний
+    # за розміром. Секрети сюди не потрапляють — інваріант PLAN §13 сильніший
+    # за повноту журналу.
+    details_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 def _reject_mutation_except(allowed: set[str]) -> Any:
     """Same intent as `_reject_update`, relaxed for a small allow-list of
     fields (task-59's `ArchiveSnapshot`/`ArchiveAssetVersion`, which stay
@@ -2040,3 +2094,6 @@ event.listen(
 event.listen(
     ArchiveAssetVersion, "before_update", _reject_mutation_except({"last_confirmed_at"})
 )
+# Журнал — append-only (task-72): рядок не редагують ніколи. Той самий
+# запобіжник, що стоїть на снапшотах і метриках вище.
+event.listen(AuditEvent, "before_update", _reject_update)

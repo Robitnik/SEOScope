@@ -53,6 +53,7 @@ def configure_security(app: FastAPI, settings: Settings) -> None:
     першим (виконується найглибше): його 401/403 усе одно проходять крізь
     security-заголовки та CORS-шар вище.
     """
+    from app.audit.middleware import AuditMiddleware
     from app.core.auth.middleware import AuthMiddleware
 
     if not settings.auth_enabled:
@@ -60,7 +61,13 @@ def configure_security(app: FastAPI, settings: Settings) -> None:
             "auth_disabled — every endpoint, the frontend and the archive replay are OPEN. "
             "This is only for local development; never for a deployment reachable from outside."
         )
+    # Порядок: auth додається ПЕРШИМ (виконується найглибше), audit —
+    # наступним, тобто ОБГОРТАЄ його. Інакше 401/403, які `AuthMiddleware`
+    # віддає сам, не доходили б до журналу — а «хто намагався й не зміг» це
+    # половина його цінності. Актора audit читає зі `scope["state"]`, який
+    # спільний для всього стека, вже ПІСЛЯ `call_next`.
     app.add_middleware(AuthMiddleware, settings=settings)
+    app.add_middleware(AuditMiddleware, settings=settings)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
