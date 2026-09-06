@@ -33,7 +33,7 @@ from app.integrations.browser_session import BROWSER_PROVIDERS, SessionState
 from app.integrations.progress import PhaseTracker
 from app.integrations.registry import get_adapter
 from app.jobs.events import append_cell_status_event, make_emitter
-from app.metrics import CATALOG, normalize_result, resolve_periods
+from app.metrics import CATALOG, metrics_for, normalize_result, resolve_periods
 from app.schemas.adapter import CollectionContext, CollectionResult
 from app.schemas.enums import CellStatus, PeriodRole, Provider, Quality, SourceMode
 
@@ -120,6 +120,15 @@ def _map_cell_status(quality: Quality) -> CellStatus:
 def _is_fresh_enough(snapshot: Any, current_end: date) -> bool:
     reference: date = snapshot.data_through or snapshot.observed_at.date()
     return reference >= current_end
+
+
+def _skip_reason(snapshot: Any, *, period_start: date, period_end: date) -> str:
+    reference = snapshot.data_through or snapshot.observed_at.date()
+    return (
+        f"skipped: snapshot observed {snapshot.observed_at.date().isoformat()} "
+        f"(data_through {reference.isoformat()}) already covers period "
+        f"{period_start.isoformat()}..{period_end.isoformat()}"
+    )
 
 
 def _includes_gsc_dimensions(snapshot: Any) -> bool:
@@ -396,11 +405,27 @@ def _run_cell_unguarded(
         )
 
     if not context.force_refresh:
+        # A snapshot is only "the same data as this cell would collect" if its
+        # own period matches the requested one (PLAN §12: range metrics compare
+        # period vs. period, they are not "whatever is newest"). Scoping the
+        # lookup to `periods.current` for range providers is what makes this
+        # gate agree with the dashboard's own `_latest_gsc_aware_success`
+        # period-exact match (`app/api/dashboard.py`) — before this, a 14-day
+        # custom-window refresh (fresher `data_through` than any closed week)
+        # permanently skipped every later weekly `collect_missing` for that
+        # cell, and the week was never collected (task-76 incident, 2026-09).
+        # Snapshot providers (Ahrefs/Semrush) keep the unscoped lookup: their
+        # "current" is the latest known reading, not a reading for a period.
+        has_range_metrics = any(
+            spec.comparison_kind == "range" for spec in metrics_for(handle.provider)
+        )
         with session_scope() as session:
             latest = SnapshotRepository(session).latest_success(
                 handle.client_id,
                 handle.provider,
                 source_mode=SourceMode.api if handle.provider == Provider.gsc else None,
+                period_start=periods.current.start if has_range_metrics else None,
+                period_end=periods.current.end if has_range_metrics else None,
             )
         needs_dimension_backfill = (
             handle.provider == Provider.gsc
@@ -419,7 +444,15 @@ def _run_cell_unguarded(
             and not needs_dimension_backfill
             and not needs_dataset_backfill
         ):
-            return _terminate(session_scope, handle, CellStatus.skipped, error_code=None)
+            return _terminate(
+                session_scope,
+                handle,
+                CellStatus.skipped,
+                error_code=None,
+                error_message=_skip_reason(
+                    latest, period_start=periods.current.start, period_end=periods.current.end
+                ),
+            )
 
     emit = make_emitter(
         session_scope,
