@@ -28,10 +28,17 @@ aiosqlite = "^0.20.0"
 # default async dialect for Postgres. `binary` extra bundles prebuilt wheels
 # so the image needs no libpq-dev/gcc at build time; verified live against
 # PostgreSQL 16 (task-75 §0: schema + all 1.24M rows migrated with zero
-# code changes). `aiosqlite` stays until cutover (task-75 §10 step 7), then
-# both this comment and that dependency go (task-01 owns pyproject.toml;
-# requested directly by the user, flagged per CLAUDE.md's "нова залежність"
-# escape hatch, same as openpyxl/b2sdk below).
+# code changes; task-75 §7.5: production cut over 2026-09-06, DATABASE_URL
+# is Postgres). `aiosqlite` deliberately stays, revised from the original
+# plan (task-75 §12 DoD #1 assumed it would go) — it turned out to still be
+# a live dependency of ~10 OTHER tasks' unit-test fixtures across
+# tests/unit/{api,reports,auth,audit,core}/ that build a private, isolated
+# `sqlite+aiosqlite` file per test on purpose, unrelated to which engine
+# production runs on; removing it would break every one of those files for
+# no production benefit and would reach outside this task's owned paths to
+# "fix" (task-01 owns pyproject.toml; requested directly by the user,
+# flagged per CLAUDE.md's "нова залежність" escape hatch, same as
+# openpyxl/b2sdk below).
 psycopg = { extras = ["binary"], version = "^3.2" }
 # Added by task-07 (importer): reads the AISeoTools `client_report_*.xlsx`
 # "Historical Data" sheet. Was previously present only transitively via the

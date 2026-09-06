@@ -14,6 +14,10 @@ from __future__ import annotations
 import re
 import sqlite3
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - типи лише для mypy
+    from sqlalchemy import Engine
 
 # Значення, які тести підсовують застосунку як «секрети». Кожне унікальне і
 # не трапляється у легітимних даних, тому будь-який збіг — це витік.
@@ -65,4 +69,33 @@ def scan_sqlite_for_secrets(db_path: Path, *, extra: tuple[str, ...] = ()) -> di
                         findings.setdefault(f"{table}.{column}", []).extend(hits)
     finally:
         connection.close()
+    return findings
+
+
+def scan_engine_for_secrets(
+    engine: Engine, *, extra: tuple[str, ...] = ()
+) -> dict[str, list[str]]:
+    """`scan_sqlite_for_secrets`, but against any bound SQLAlchemy `Engine`
+    (task-75 §9) — same `SELECT *` per table, same text/heuristic scan,
+    dialect-agnostic so this works against the shared test harness whether
+    it is pointed at SQLite or Postgres.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    findings: dict[str, list[str]] = {}
+    inspector = sa_inspect(engine)
+    with engine.connect() as connection:
+        for table in inspector.get_table_names():
+            if table == "alembic_version":
+                continue
+            result = connection.exec_driver_sql(f'SELECT * FROM "{table}"')  # noqa: S608
+            columns = result.keys()
+            for row in result:
+                for column, value in zip(columns, row, strict=True):
+                    if not isinstance(value, str | bytes):
+                        continue
+                    text = value.decode("utf-8", "replace") if isinstance(value, bytes) else value
+                    hits = scan_text(text, extra=extra)
+                    if hits:
+                        findings.setdefault(f"{table}.{column}", []).extend(hits)
     return findings

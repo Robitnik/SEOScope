@@ -1,14 +1,37 @@
 """`run_maintenance` (task-68 §1): the extracted core of the pre-existing
 `db-maintenance` CLI command, now shared with `DbMaintenanceScheduler` so
-the two never diverge. Real SQLite file (WAL), same fixtures as the rest
-of `tests/unit/db`.
+the two never diverge. Real SQLite file (WAL) — deliberately not the
+shared Postgres test database (task-75 §9): `sqlite_master`/`sqlite_stat1`
+are SQLite-only, and this specifically tests the SQLite branch of
+`run_maintenance`'s own dialect gate (task-75 §1) — the Postgres branch
+(`ANALYZE`-only, no WAL-checkpoint) is covered live, not by a unit test,
+per that task's plan.
 """
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
+from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import Settings
 from app.db.maintenance import MaintenanceResult, run_maintenance
+from app.db.session import build_sync_engine
+
+
+@pytest.fixture
+def engine(tmp_path):
+    settings = Settings(_env_file=None, database_url=f"sqlite:///{tmp_path / 'test.db'}")
+    eng = build_sync_engine(settings)
+    yield eng
+    eng.dispose()
+
+
+@pytest.fixture
+def session(engine) -> Session:
+    maker = sessionmaker(bind=engine, expire_on_commit=False)
+    with maker() as s:
+        yield s
 
 
 def test_analyze_populates_sqlite_stat1(session):

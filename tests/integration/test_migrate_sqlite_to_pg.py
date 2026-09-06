@@ -22,9 +22,11 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from harness import use_temp_sqlite_database
 from sqlalchemy import create_engine, delete, update
 
-from app.db.models import Client
+from app.db.models import Client, ClientIntegration
+from app.schemas.enums import Provider
 
 pytestmark = pytest.mark.integration
 
@@ -52,6 +54,36 @@ def migrate_module() -> ModuleType:
     return _load("migrate_sqlite_to_pg")
 
 
+@pytest.fixture
+def temp_db(tmp_path, monkeypatch):
+    """Локально перевизначає кореневий (тепер Postgres-бекований, task-75
+    §9) `temp_db` — цей файл перевіряє саме sqlite-джерело міграційного
+    скрипта, тож і фікстур має лишатись sqlite незалежно від бекенду
+    решти застосунку (той самий підхід, що `test_ops_scripts.py`).
+    """
+    with use_temp_sqlite_database(tmp_path, monkeypatch) as database:
+        yield database
+
+
+@pytest.fixture
+def seed_client(temp_db):
+    """Мінімальний локальний еквівалент кореневого `seed_client` — цим
+    тестам потрібен лише клієнт (+опційна інтеграція), не повний
+    FakeAdapter/worker запуск.
+    """
+
+    def _seed(*, name: str = "Acme", slug: str = "acme", with_integration: bool = True) -> str:
+        with temp_db.session_scope() as session:
+            client = Client(name=name, slug=slug, domain=f"{slug}.example.com")
+            session.add(client)
+            session.flush()
+            if with_integration:
+                session.add(ClientIntegration(client_id=client.id, provider=Provider.ahrefs))
+            return client.id
+
+    return _seed
+
+
 def test_integer_primary_key_columns_finds_exactly_job_events_seq(migrate_module):
     """The regression this guards against: the first version of
     `align_sequences` called `col.type.python_type`, which raises
@@ -73,11 +105,7 @@ def test_copy_and_verify_round_trip(migrate_module, temp_db, seed_client, tmp_pa
     alignment is a safe no-op on a non-Postgres target, and both
     verification passes come back clean.
     """
-    from harness import FakeScenario
-
-    from app.schemas.enums import Provider
-
-    seed_client(scenarios={Provider.ahrefs: FakeScenario()})
+    seed_client()
 
     source = create_engine(f"sqlite:///{temp_db.path}")
     target = create_engine(f"sqlite:///{tmp_path / 'target.db'}")

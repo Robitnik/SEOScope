@@ -1,14 +1,18 @@
-"""task-75 §5.1 — the staged Postgres baseline migration
-(`migrations/pg_baseline/9701790bda11_postgres_baseline.py`).
+"""task-75 §5.1 — the Postgres baseline migration
+(`migrations/versions/9701790bda11_postgres_baseline.py`).
 
-That file is deliberately NOT inside `migrations/versions/` yet — see
-its own module docstring for why (a second `down_revision = None` root
-next to the 31 SQLite-era migrations would give `alembic upgrade head`
-two disconnected heads, breaking every `docker/entrypoint.sh` run
-against the still-live SQLite database before this task has even cut
-over). It is loaded here by path (`importlib`, same precedent as
-`test_ops_scripts.py`/`test_migrate_sqlite_to_pg.py` — scripts and
-staged migrations outside `versions/` are not importable packages).
+Was staged in `migrations/pg_baseline/`, deliberately outside
+`migrations/versions/`, until cutover (task-75 §10 step 7) — see its own
+module docstring for why (a second `down_revision = None` root next to
+the 31 SQLite-era migrations would have given `alembic upgrade head` two
+disconnected heads, breaking every `docker/entrypoint.sh` run against the
+still-live SQLite database before cutover). Cutover moved it into
+`migrations/versions/` and the 31 old ones into
+`migrations/versions_sqlite_archive/`, in the same commit — this is now
+the sole active revision. Still loaded here by path (`importlib`, same
+precedent as `test_ops_scripts.py`/`test_migrate_sqlite_to_pg.py`), not
+by import, since `migrations/versions/` is not itself an importable
+package.
 
 `upgrade()`/`downgrade()` are exercised via `MigrationContext`/
 `Operations.context` — Alembic's own documented pattern for driving a
@@ -45,7 +49,7 @@ pytestmark = pytest.mark.integration
 MIGRATION_FILE = (
     Path(__file__).resolve().parents[2]
     / "migrations"
-    / "pg_baseline"
+    / "versions"
     / "9701790bda11_postgres_baseline.py"
 )
 

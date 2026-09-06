@@ -19,7 +19,7 @@ from harness import (
     register_fakes,
     reset_registry,
     running_worker,
-    scan_sqlite_for_secrets,
+    scan_engine_for_secrets,
     scan_text,
     wait_for,
 )
@@ -99,7 +99,7 @@ def _cell_status(temp_db, job_id):
 def test_leaked_secrets_never_reach_the_database(temp_db, monkeypatch, seed_client):
     _run_leaky_cell(temp_db, monkeypatch, seed_client)
 
-    findings = scan_sqlite_for_secrets(temp_db.path)
+    findings = scan_engine_for_secrets(temp_db.engine)
     assert findings == {}, f"секрети осіли в БД: {findings}"
 
 

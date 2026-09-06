@@ -2,6 +2,12 @@
 daily backup runs exactly once no matter how many ticks land after the
 configured time, and one tick sweeps both kinds — all against a real temp
 SQLite file (the same one `engine` already points at) and `FakeCloudStore`.
+
+task-75 §9: `engine` needs to genuinely be SQLite here — the backup path
+under test (`app.cloud.backup`) does `sqlite3.Connection.backup()` on the
+file `engine.url.database` resolves to — so a local fixture shadows the
+shared Postgres-backed one from `tests/unit/cloud/conftest.py` for this
+file only.
 """
 
 from __future__ import annotations
@@ -15,11 +21,22 @@ from sqlalchemy.orm import sessionmaker
 
 from app.cloud.scheduler import CloudScheduler
 from app.core.config import Settings
+from app.db.base import Base
 from app.db.models import MonitorBlob
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.cloud import CloudLedgerRepository
+from app.db.session import build_sync_engine
 
 from .fakes import FakeCloudStore
+
+
+@pytest.fixture
+def engine(tmp_path):
+    settings = Settings(_env_file=None, database_url=f"sqlite:///{tmp_path / 'test.db'}")
+    eng = build_sync_engine(settings)
+    Base.metadata.create_all(eng)
+    yield eng
+    eng.dispose()
 
 
 def _scope(engine):

@@ -34,11 +34,16 @@ def _run(args: list[str], **env_overrides: str) -> subprocess.CompletedProcess[s
     )
 
 
-def test_script_refuses_to_spend_units_without_explicit_consent(temp_db):
-    """Без `--yes-spend-units` скрипт не має права нічого зібрати."""
+def test_script_refuses_to_spend_units_without_explicit_consent(tmp_path):
+    """Без `--yes-spend-units` скрипт не має права нічого зібрати.
+
+    task-75 §9: власний ізольований sqlite-шлях, а не спільний `temp_db`
+    (тепер Postgres) — скрипт відмовляє на етапі перевірки згоди, раніше
+    ніж торкається бази взагалі, тож підійде будь-який неіснуючий шлях.
+    """
     result = _run(
         ["--provider", "semrush", "--client", "acme.example.com", "--collect"],
-        DATABASE_URL=f"sqlite+aiosqlite:///{temp_db.path}",
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'smoke.db'}",
     )
     assert result.returncode == 2
     assert "yes-spend-units" in result.stderr

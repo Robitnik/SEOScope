@@ -5,25 +5,19 @@ from contextlib import contextmanager
 from datetime import date
 
 import pytest
+from harness import build_test_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import Settings
-from app.db import models  # noqa: F401 - registers tables on Base.metadata
-from app.db.base import Base
 from app.db.repositories.cells import CellRepository
 from app.db.repositories.jobs import JobRepository
-from app.db.session import build_sync_engine
 from app.integrations import registry
 from app.jobs.fake_adapter import FakeAdapter
 from app.schemas.enums import ComparisonMode, PeriodKind, Provider
 
 
 @pytest.fixture
-def engine(tmp_path):
-    db_path = tmp_path / "test.db"
-    settings = Settings(_env_file=None, database_url=f"sqlite:///{db_path}")
-    eng = build_sync_engine(settings)
-    Base.metadata.create_all(eng)
+def engine():
+    eng = build_test_engine()
     yield eng
     eng.dispose()
 

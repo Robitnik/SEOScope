@@ -17,10 +17,17 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from harness import FakeScenario, running_worker, wait_for
+from harness import (
+    FakeScenario,
+    register_fakes,
+    reset_registry,
+    running_worker,
+    use_temp_sqlite_database,
+    wait_for,
+)
 from sqlalchemy import func, select
 
-from app.db.models import Client, JobEvent, MetricValue, ProviderSnapshot
+from app.db.models import Client, ClientIntegration, JobEvent, MetricValue, ProviderSnapshot
 from app.db.repositories.jobs import JobRepository
 from app.schemas.enums import ComparisonMode, PeriodKind, Provider
 
@@ -38,9 +45,46 @@ def _load(script_name: str):
 
 
 @pytest.fixture
-def populated_db(temp_db, fake_adapters, seed_client):
-    """БД із реальним завершеним запуском: клієнт, події, snapshot, метрики."""
-    client_id = seed_client(scenarios={Provider.ahrefs: FakeScenario()})
+def temp_db(tmp_path, monkeypatch):
+    """Локально перевизначає кореневий (тепер Postgres-бекований, task-75
+    §9) `temp_db` — рівно тим самим ім'ям, для тестів у цьому файлі. Ops-
+    скрипти (`scripts/backup_sqlite.py`/`restore_sqlite.py`) працюють
+    напряму з sqlite3-файлом і лишаються sqlite-специфічними інструментами
+    (task-75 §8 — `pg_dump`-бекап ще не зроблено), тож саме sqlite тут і
+    треба перевіряти, незалежно від бекенду решти застосунку.
+    """
+    with use_temp_sqlite_database(tmp_path, monkeypatch) as database:
+        yield database
+
+
+@pytest.fixture
+def fake_adapters_local(monkeypatch):
+    reset_registry(monkeypatch)
+    return register_fakes()
+
+
+@pytest.fixture
+def populated_db(temp_db, fake_adapters_local):
+    """БД із реальним завершеним запуском: клієнт, події, snapshot, метрики.
+
+    Власний, локальний `seed_client`-еквівалент (не кореневий фікстур,
+    який тепер сидить на Postgres-бекованому `temp_db`) — цей файл сам
+    перевизначив `temp_db` вище на sqlite, тож і клієнта заводить сам,
+    проти того самого sqlite `temp_db`.
+    """
+    with temp_db.session_scope() as session:
+        client = Client(name="Acme", slug="acme", domain="acme.com")
+        session.add(client)
+        session.flush()
+        session.add(
+            ClientIntegration(
+                client_id=client.id,
+                provider=Provider.ahrefs,
+                enabled=True,
+                config_json=FakeScenario().as_config(),
+            )
+        )
+        client_id = client.id
     with temp_db.session_scope() as session:
         job = JobRepository(session).create_run(
             client_ids=[client_id],

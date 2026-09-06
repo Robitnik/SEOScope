@@ -24,6 +24,13 @@ def db_settings(tmp_path) -> Settings:
     2026-09-06: exactly that happened once, before this fixture had its
     own name, and inserted a real 'Acme' test row into the production
     database (see task-69 completion report).
+
+    task-75 §9: deliberately SQLite, not the shared Postgres test database
+    — `test_write_controller.py`/`test_heartbeat.py` need a REAL, private
+    file-backed engine (cross-process `flock`, raw `sqlite3.connect()`),
+    which a shared multi-worker Postgres database cannot stand in for.
+    Every other test in this package is dialect-agnostic ORM/business
+    logic and runs the same either way.
     """
     db_path = tmp_path / "test.db"
     return Settings(_env_file=None, database_url=f"sqlite:///{db_path}")

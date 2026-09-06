@@ -1,20 +1,13 @@
 from __future__ import annotations
 
 import pytest
+from harness import build_test_engine, test_database_url
 from sqlalchemy.orm import Session, sessionmaker
-
-from app.core.config import Settings
-from app.db import models  # noqa: F401 - registers tables on Base.metadata
-from app.db.base import Base
-from app.db.session import build_sync_engine
 
 
 @pytest.fixture
-def engine(tmp_path):
-    db_path = tmp_path / "test.db"
-    settings = Settings(_env_file=None, database_url=f"sqlite:///{db_path}")
-    eng = build_sync_engine(settings)
-    Base.metadata.create_all(eng)
+def engine():
+    eng = build_test_engine()
     yield eng
     eng.dispose()
 
@@ -26,15 +19,15 @@ def session_factory(engine) -> sessionmaker[Session]:
 
 @pytest.fixture
 def cli_env(tmp_path, monkeypatch):
-    """Points `app.cli`'s process-global sync engine at an isolated,
-    schema-migrated temp DB for the duration of one test.
+    """Points `app.cli`'s process-global sync engine at the shared
+    isolated test database (task-75 §9: `yovth_test` on Postgres, not a
+    per-test SQLite file) for the duration of one test.
     """
     from app.core.config import get_settings
     from app.db import session as db_session
     from app.db import writegate as db_writegate
 
-    db_path = tmp_path / "cli_test.db"
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    monkeypatch.setenv("DATABASE_URL", test_database_url())
     get_settings.cache_clear()
     db_session._sync_engine = None
     db_session._sync_sessionmaker = None
@@ -44,7 +37,7 @@ def cli_env(tmp_path, monkeypatch):
     # test's own tmp DB, not a stale previous one.
     db_writegate.reset_write_gate_for_tests()
 
-    Base.metadata.create_all(db_session.get_sync_engine())
+    build_test_engine(get_settings())  # ensures schema exists, truncates for isolation
     yield tmp_path
 
     db_session._sync_engine = None
