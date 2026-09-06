@@ -74,6 +74,11 @@ class McpCatalogDTO(BaseModel):
     api_base_url: str
     groups: list[str]
     tools: list[McpToolSpec]
+    # One copyable briefing mentioning EVERY tool by name (task-77 follow-up:
+    # "a prompt that covers all tools") — for pasting into an assistant that
+    # already has the server connected but hasn't been told what's on it,
+    # distinct from the two scenario-specific MCP `prompts` below.
+    all_tools_prompt: str
     prompts: list[McpPromptSpec]
     resources: list[McpResourceSpec]
     starter_prompts: list[McpStarterPrompt]

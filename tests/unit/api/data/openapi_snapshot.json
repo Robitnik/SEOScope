@@ -5310,6 +5310,10 @@
       },
       "McpCatalogDTO": {
         "properties": {
+          "all_tools_prompt": {
+            "title": "All Tools Prompt",
+            "type": "string"
+          },
           "api_base_url": {
             "title": "Api Base Url",
             "type": "string"
@@ -5376,6 +5380,7 @@
           "api_base_url",
           "groups",
           "tools",
+          "all_tools_prompt",
           "prompts",
           "resources",
           "starter_prompts"

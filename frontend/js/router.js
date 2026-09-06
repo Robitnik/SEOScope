@@ -57,7 +57,11 @@ const ADMIN_USERS_ROUTE = /^#\/admin\/users/;
 // сюди веде посилання «History» з конкретного клієнта.
 const ADMIN_AUDIT_ROUTE = /^#\/admin\/audit/;
 // MCP catalog page (task-77) — top-level, no client-id segment, read-only
-// for every role, same shape as Trends/Monitor above.
+// for every role, same shape as Trends/Monitor above. "How to connect" is
+// its own sub-page, matched BEFORE the generic MCP_ROUTE below, same
+// reasoning ARCHIVE_VIEW_ROUTE/ARCHIVE_CHANGES_ROUTE give for matching
+// before the generic ARCHIVE_ROUTE.
+const MCP_CONNECT_ROUTE = /^#\/mcp\/connect/;
 const MCP_ROUTE = /^#\/mcp/;
 
 export function parseRoute() {
@@ -78,6 +82,7 @@ export function parseRoute() {
   const query = new URLSearchParams(hash.split("?")[1] || "");
   if (ADMIN_USERS_ROUTE.test(hash)) return { name: "admin-users", query };
   if (ADMIN_AUDIT_ROUTE.test(hash)) return { name: "admin-audit", query };
+  if (MCP_CONNECT_ROUTE.test(hash)) return { name: "mcp-connect", query };
   if (MCP_ROUTE.test(hash)) return { name: "mcp", query };
   const toolsMatch = hash.match(TOOLS_ROUTE);
   if (toolsMatch) {
@@ -270,6 +275,10 @@ export function buildMcpHash(params = {}) {
   return buildHash("#/mcp", params);
 }
 
+export function buildMcpConnectHash(params = {}) {
+  return buildHash("#/mcp/connect", params);
+}
+
 export function buildToolsHash(toolKey = null, reportId = null, params = {}) {
   const segments = ["#/tools"];
   if (toolKey) segments.push(encodeURIComponent(toolKey));
@@ -321,6 +330,7 @@ async function activate() {
   const adminUsersRoot = document.querySelector("#admin-users-page-root");
   const adminAuditRoot = document.querySelector("#admin-audit-page-root");
   const mcpRoot = document.querySelector("#mcp-page-root");
+  const mcpConnectRoot = document.querySelector("#mcp-connect-page-root");
   const dashboardChrome = [
     document.querySelector("#dashboard-header-actions"),
     document.querySelector("#dashboard-command-bar"),
@@ -328,7 +338,7 @@ async function activate() {
   const allRoots = [
     clientRoot, ahrefsRoot, blogsRoot, monthlyRoot, toolsRoot, trendsRoot, monitorRoot, monitorClientRoot,
     reportsRoot, reportsRunRoot, reportsBatchRoot, pagesRoot, archiveRoot, archiveViewRoot, archiveChangesRoot,
-    archiveCaptureRoot, urlInspectorRoot, adminUsersRoot, adminAuditRoot, mcpRoot,
+    archiveCaptureRoot, urlInspectorRoot, adminUsersRoot, adminAuditRoot, mcpRoot, mcpConnectRoot,
   ];
   // Global nav marks the active destination for assistive tech and for the eye
   // (`aria-current`), since a cross-route move is a full reload here.
@@ -353,6 +363,13 @@ async function activate() {
     adminAuditRoot?.removeAttribute("hidden");
     const { initAdminAuditPage } = await import("./admin-audit-page.js?v=20260906-t72");
     await initAdminAuditPage(route.query);
+  } else if (route.name === "mcp-connect") {
+    dashboardView?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== mcpConnectRoot).forEach((el) => el?.setAttribute("hidden", ""));
+    dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
+    mcpConnectRoot?.removeAttribute("hidden");
+    const { initMcpConnectPage } = await import("./mcp-page.js?v=20260906-t77");
+    await initMcpConnectPage();
   } else if (route.name === "mcp") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== mcpRoot).forEach((el) => el?.setAttribute("hidden", ""));

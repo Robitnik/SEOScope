@@ -101,7 +101,12 @@ def _split_summary_and_args(docstring: str) -> tuple[str, str, dict[str, str]]:
     """
     text = re.sub(r"\n[ \t]+", "\n", docstring.strip())
     if "\nArgs:\n" not in f"\n{text}":
-        return text.strip(), text.strip(), {}
+        # No `Args:` block at all (e.g. `list_clients`, which takes none) —
+        # still take only the first paragraph as `summary`, same as the
+        # branch below, so a card's blurb length doesn't depend on whether
+        # its tool happens to have arguments.
+        first_paragraph = text.strip().split("\n\n")[0].strip()
+        return first_paragraph, text.strip(), {}
     before, _, after = text.partition("Args:")
     summary = before.strip().split("\n\n")[0].strip()
     args: dict[str, str] = {}
@@ -214,6 +219,37 @@ async def _build_resources() -> list[McpResourceSpec]:
     ]
 
 
+def _build_all_tools_prompt(tools: list[McpToolSpec], groups: list[str]) -> str:
+    """One copyable briefing that names every registered tool — generated,
+    not hand-maintained, for the same reason the rest of this module is:
+    a wave-2 tool must show up here without anyone remembering to update a
+    hardcoded paragraph. Grouped in the same order as the Tools section so
+    the two read the same way."""
+    lines = [
+        "You have access to the yovth-clients-report MCP server. Here is "
+        "every tool on it — use the one that answers the question, and "
+        "don't guess at data you could just call a tool for:",
+        "",
+    ]
+    for group in groups:
+        group_tools = [t for t in tools if t.group == group]
+        if not group_tools:
+            continue
+        lines.append(f"{group}:")
+        for tool in group_tools:
+            write_note = (
+                " (writes — starts a real job, ask before calling)" if not tool.read_only else ""
+            )
+            lines.append(f"- {tool.name}{write_note}: {tool.summary}")
+        lines.append("")
+    lines.append(
+        "Client tools take a NAME or DOMAIN, not an internal id — call "
+        "list_clients first if you don't know the exact spelling. "
+        "Long-running tools return a job id; poll it with get_job_status."
+    )
+    return "\n".join(lines).strip()
+
+
 _STARTER_PROMPTS: list[McpStarterPrompt] = [
     McpStarterPrompt(
         text="What changed on Alpha Corp's site this week?",
@@ -284,6 +320,7 @@ async def get_mcp_catalog() -> McpCatalogDTO:
         api_base_url=settings.mcp_api_base_url,
         groups=_GROUP_ORDER,
         tools=tools,
+        all_tools_prompt=_build_all_tools_prompt(tools, _GROUP_ORDER),
         prompts=prompts,
         resources=resources,
         starter_prompts=_STARTER_PROMPTS,

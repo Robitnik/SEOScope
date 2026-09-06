@@ -106,7 +106,15 @@ class Settings(BaseSettings):
     # `mcp_token` не задано → фолбек на `agent_dev_token`
     # (`app/mcp/apiclient.py::_resolve_token`) — той самий bearer-шлях, що
     # й у task-73, структурно мертвий на `environment == "production"`.
-    mcp_api_base_url: str = "http://127.0.0.1:6524"
+    #
+    # Публічний домен (task-77), не `127.0.0.1` — навіть для хвилі 1
+    # (stdio через `docker compose exec`, тобто виклик усередині того самого
+    # контейнера) справжня публічна адреса лишається коректною, оскільки
+    # контейнер має вихід в інтернет; а для будь-кого, хто піднімає stdio-
+    # процес НЕ на docker-хості (майбутнє: власний ноутбук з тим самим
+    # образом), localhost за визначенням недосяжний. Override через `.env`
+    # лишається, якщо комусь потрібен саме внутрішній адрес.
+    mcp_api_base_url: str = "https://seo.theyovth.space"
     mcp_token: str | None = None
 
     # Вхід без пароля для оператора на localhost. За замовчуванням `False` —

@@ -48,6 +48,19 @@ def test_tool_metadata_is_complete(client):
             assert arg["description"], f"{tool['name']}.{arg['name']} has no description"
 
 
+def test_summary_is_first_paragraph_even_for_a_tool_with_no_args(client):
+    # `list_clients` takes no arguments, so its docstring has no `Args:`
+    # block at all — a distinct code path from every other tool, and one
+    # that used to skip the "first paragraph only" trim entirely.
+    body = client.get("/api/v1/mcp/catalog").json()
+    list_clients = next(t for t in body["tools"] if t["name"] == "list_clients")
+
+    assert list_clients["summary"] == (
+        "List every client in the system: id, name, domain, and status."
+    )
+    assert "\n" not in list_clients["summary"]
+
+
 def test_prompts_render_with_placeholders_matching_their_declared_args(client):
     body = client.get("/api/v1/mcp/catalog").json()
 
@@ -60,6 +73,17 @@ def test_prompts_render_with_placeholders_matching_their_declared_args(client):
             assert f"{{{{{arg['name']}}}}}" in prompt["rendered_text"], (
                 f"{prompt['name']} doesn't mention its own {arg['name']} placeholder"
             )
+
+
+def test_all_tools_prompt_mentions_every_tool_by_name(client):
+    body = client.get("/api/v1/mcp/catalog").json()
+
+    prompt = body["all_tools_prompt"]
+    assert prompt
+    for tool in body["tools"]:
+        assert tool["name"] in prompt, f"{tool['name']} missing from the all-tools briefing"
+    # The one write tool is called out, not just listed identically to the rest.
+    assert "writes" in prompt.lower()
 
 
 def test_resources_include_the_metrics_catalog(client):

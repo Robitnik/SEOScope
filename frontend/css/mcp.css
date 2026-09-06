@@ -6,9 +6,10 @@
  * — and it needs to look different from the other eleven at a glance).
  */
 
-.mcp-intro { display: grid; gap: 10px; margin-bottom: 28px; }
+.mcp-intro { display: grid; gap: 10px; margin-bottom: 28px; align-items: start; }
 .mcp-intro h1 { font-size: clamp(30px, 5vw, 52px); }
 .mcp-lead { margin: 0; max-width: 68ch; color: var(--ink-muted); }
+.mcp-connect-cta { width: fit-content; margin-top: 6px; }
 
 .mcp-status {
   display: flex; flex-wrap: wrap; gap: 28px; margin: 14px 0 0; padding: 0;
@@ -61,9 +62,14 @@
  * mostly-empty box just to match its row neighbor. */
 .mcp-tool-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-items: start; }
 
+/* Every card is the SAME height regardless of how many arguments its tool
+ * takes (0 for `list_clients`, 7 for `run_client_report`) — the arg table
+ * scrolls inside `.mcp-tool-card__body` instead of stretching the card,
+ * so a glance down a row compares tools, not paragraph lengths. */
 .mcp-tool-card {
   border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface);
-  padding: 16px; display: grid; gap: 8px; align-content: start;
+  padding: 16px; display: flex; flex-direction: column; gap: 8px;
+  height: 300px;
   /* A grid ITEM's default `min-width: auto` sizes it to its own min-content
    * (here: the widest unbroken string in `.mcp-arg-table`'s description
    * column) even though `minmax(320px, 1fr)` above sets an explicit track
@@ -74,7 +80,8 @@
    * one level up the ancestor chain from where it usually bites. */
   min-width: 0;
 }
-.mcp-tool-card > * { min-width: 0; }
+.mcp-tool-card > * { min-width: 0; flex: 0 0 auto; }
+.mcp-tool-card__body { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
 .mcp-arg-table-wrap { overflow-x: auto; contain: paint; }
 .mcp-tool-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .mcp-tool-card__head strong { font-size: 15px; }
@@ -104,20 +111,30 @@
 .mcp-empty { color: var(--ink-dim); margin-top: 18px; }
 
 /* Prompts */
-.mcp-prompt-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); align-items: start; }
+.mcp-prompt-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); align-items: start; }
 .mcp-prompt-card {
-  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); padding: 16px;
-  display: grid; gap: 10px; align-content: start;
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); padding: 18px;
+  display: grid; gap: 12px; align-content: start;
   min-width: 0; /* same grid-item pitfall as `.mcp-tool-card` above */
 }
 .mcp-prompt-card > * { min-width: 0; }
 .mcp-prompt-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .mcp-prompt-card p { margin: 0; color: var(--ink-muted); font-size: 14px; }
 .mcp-prompt-card pre {
-  margin: 0; padding: 12px; background: var(--canvas-raised); border-radius: var(--radius-sm);
-  font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-x: auto;
+  margin: 0; padding: 14px; background: var(--canvas-raised); border-radius: var(--radius-sm);
+  font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-x: auto; max-height: 320px; overflow-y: auto;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
+
+/* The all-tools briefing (task-77 follow-up) leads the Prompts section:
+ * full width, not a grid tile, and visibly bigger than the two
+ * scenario-specific prompt cards below it — it's the one prompt meant to
+ * be copied FIRST, covering every tool at once. */
+.mcp-prompt-card--all { margin: 0 0 28px; padding: 20px 22px; border-color: var(--line-accent); }
+.mcp-prompt-card--all .mcp-prompt-card__head { align-items: flex-start; }
+.mcp-prompt-card--all strong { font-size: 18px; }
+.mcp-prompt-card__sub { margin: 4px 0 0; font-size: 13px; max-width: 60ch; color: var(--ink-muted); }
+.mcp-prompt-card--all pre { font-size: 13.5px; line-height: 1.7; max-height: 420px; }
 
 .mcp-starter-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .mcp-starter {

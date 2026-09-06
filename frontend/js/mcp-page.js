@@ -1,5 +1,8 @@
-/* MCP catalog page (task-77): "what tools exist, what they do, how to
- * connect, and ready-to-copy prompts" for the MCP server built in task-74.
+/* MCP catalog page (task-77): "what tools exist, what they do, and
+ * ready-to-copy prompts" for the MCP server built in task-74. "How to
+ * connect" lives on its own page (`#/mcp/connect`) — it's read once, not
+ * referred back to, and doesn't deserve the scroll distance it was costing
+ * the Tools/Prompts sections below it.
  *
  * The catalog itself is never hand-written here — every card, arg, prompt
  * and resource on this page comes straight from `GET /api/v1/mcp/catalog`,
@@ -9,8 +12,10 @@
  */
 import { getMcpCatalog } from "./api.js?v=20260906-t77";
 import { escapeHtml, icon } from "./formatters.js?v=20260906-t77";
+import { buildMcpHash, buildMcpConnectHash } from "./router.js?v=20260906-t77";
 
 const root = document.querySelector("#mcp-page-root");
+const connectRoot = document.querySelector("#mcp-connect-page-root");
 
 export async function initMcpPage() {
   root.innerHTML = loadingShell();
@@ -22,9 +27,22 @@ export async function initMcpPage() {
     return;
   }
   root.innerHTML = pageShell(catalog);
-  wireConnectTabs();
-  wireCopyButtons();
+  wireCopyButtons(root);
   wireToolSearch(catalog);
+}
+
+export async function initMcpConnectPage() {
+  connectRoot.innerHTML = loadingShell();
+  let catalog;
+  try {
+    catalog = await getMcpCatalog();
+  } catch (error) {
+    connectRoot.innerHTML = errorShell(error);
+    return;
+  }
+  connectRoot.innerHTML = connectPageShell(catalog);
+  wireConnectTabs();
+  wireCopyButtons(connectRoot);
 }
 
 function loadingShell() {
@@ -54,9 +72,8 @@ function errorShell(error) {
 function pageShell(catalog) {
   return `
     ${hero(catalog)}
-    ${connectSection(catalog.connect)}
-    ${toolsSection(catalog)}
     ${promptsSection(catalog)}
+    ${toolsSection(catalog)}
     ${resourcesSection(catalog.resources)}
     ${limitsSection()}
   `;
@@ -70,7 +87,7 @@ function hero(catalog) {
       <p class="mcp-lead">
         Every question below already has an answer somewhere in this dashboard — the MCP
         server just lets an AI assistant ask for it directly, instead of you clicking
-        through pages to find it. Connect once (below), then just ask.
+        through pages to find it.
       </p>
       <dl class="mcp-status">
         <div><dt>Status</dt><dd class="mcp-status__value mcp-status__value--${catalog.enabled ? "on" : "off"}">
@@ -79,17 +96,20 @@ function hero(catalog) {
         <div><dt>Prompts</dt><dd>${catalog.prompts.length}</dd></div>
         <div><dt>Server</dt><dd>${escapeHtml(catalog.server_name)} v${escapeHtml(catalog.server_version)}</dd></div>
       </dl>
+      <a class="button button--primary mcp-connect-cta" href="${buildMcpConnectHash()}">
+        ${icon("plug", "icon icon--tiny")}<span>How to connect</span>
+      </a>
     </section>`;
 }
 
-function connectSection(connect) {
-  const tabs = connect
+function connectPageShell(catalog) {
+  const tabs = catalog.connect
     .map((snippet, index) => `
       <button type="button" class="mcp-tab" data-tab="${index}" ${index === 0 ? 'aria-selected="true"' : ""}>
         ${escapeHtml(snippet.host)}
       </button>`)
     .join("");
-  const panels = connect
+  const panels = catalog.connect
     .map((snippet, index) => `
       <div class="mcp-tab-panel" data-panel="${index}" ${index === 0 ? "" : "hidden"}>
         <div class="mcp-code-block">
@@ -105,8 +125,14 @@ function connectSection(connect) {
       </div>`)
     .join("");
   return `
+    <a class="back-link" href="${buildMcpHash()}">${icon("arrow-left")}<span>MCP server</span></a>
+    <section class="mcp-intro">
+      <p class="eyebrow">Operations / AI assistant</p>
+      <h1>How to connect</h1>
+      <p class="mcp-lead">Pick your host, copy the config, ask an admin for a token.</p>
+    </section>
     <section class="mcp-section" aria-labelledby="mcp-connect-title">
-      <h2 id="mcp-connect-title">Connect</h2>
+      <h2 id="mcp-connect-title" class="visually-hidden">Connect</h2>
       <div class="mcp-tabs" role="tablist">${tabs}</div>
       ${panels}
     </section>`;
@@ -141,6 +167,10 @@ function toolsSection(catalog) {
 }
 
 function toolCard(tool) {
+  // All 12 cards share ONE fixed height (mcp.css) regardless of how many
+  // arguments a tool has — `run_client_report`'s 7-row table scrolls
+  // inside `.mcp-tool-card__body` instead of stretching its card (and
+  // dragging every sibling in its grid row along with it).
   const args = tool.args.length
     ? `<div class="mcp-arg-table-wrap"><table class="mcp-arg-table">
         <thead><tr><th>Arg</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
@@ -169,7 +199,7 @@ function toolCard(tool) {
       </header>
       <code class="mcp-tool-card__name">${escapeHtml(tool.name)}</code>
       <p>${escapeHtml(tool.summary)}</p>
-      ${args}
+      <div class="mcp-tool-card__body">${args}</div>
     </article>`;
 }
 
@@ -205,6 +235,21 @@ function promptsSection(catalog) {
   return `
     <section class="mcp-section" aria-labelledby="mcp-prompts-title">
       <h2 id="mcp-prompts-title">Prompts</h2>
+
+      <article class="mcp-prompt-card mcp-prompt-card--all">
+        <header class="mcp-prompt-card__head">
+          <div>
+            <strong>Brief an assistant on every tool</strong>
+            <p class="mcp-prompt-card__sub">One paste covers all ${catalog.tools.length} tools — for an
+              assistant that's already connected but hasn't been told what's here.</p>
+          </div>
+          <button type="button" class="button button--primary mcp-copy" data-copy-target="prompt-all-tools">
+            ${icon("copy", "icon icon--tiny")}<span>Copy</span>
+          </button>
+        </header>
+        <pre id="prompt-all-tools"><code>${escapeHtml(catalog.all_tools_prompt)}</code></pre>
+      </article>
+
       <h3 class="mcp-subhead">Ready-made prompts (once connected)</h3>
       <div class="mcp-prompt-grid">${mcpPrompts}</div>
       <h3 class="mcp-subhead">Starter questions (works even before you connect)</h3>
@@ -245,24 +290,24 @@ function limitsSection() {
 }
 
 function wireConnectTabs() {
-  const tabs = root.querySelectorAll(".mcp-tab");
+  const tabs = connectRoot.querySelectorAll(".mcp-tab");
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
       tabs.forEach((t) => t.removeAttribute("aria-selected"));
       tab.setAttribute("aria-selected", "true");
-      root.querySelectorAll(".mcp-tab-panel").forEach((panel) => {
+      connectRoot.querySelectorAll(".mcp-tab-panel").forEach((panel) => {
         panel.hidden = panel.dataset.panel !== tab.dataset.tab;
       });
     });
   });
 }
 
-function wireCopyButtons() {
-  root.querySelectorAll(".mcp-copy").forEach((button) => {
+function wireCopyButtons(scopeEl) {
+  scopeEl.querySelectorAll(".mcp-copy").forEach((button) => {
     button.addEventListener("click", async () => {
       const explicitText = button.dataset.copyText;
       const targetId = button.dataset.copyTarget;
-      const text = explicitText || root.querySelector(`#${CSS.escape(targetId)}`)?.textContent || "";
+      const text = explicitText || scopeEl.querySelector(`#${CSS.escape(targetId)}`)?.textContent || "";
       const label = button.querySelector("span");
       const originalLabel = label.textContent;
       try {
