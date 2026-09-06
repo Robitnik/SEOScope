@@ -82,23 +82,22 @@ async function main() {
 
   await page.screenshot({ path: path.join(screenshots, "mcp-page-1440.png"), fullPage: true });
 
-  // 7. "How to connect" is its own page, reached via the hero CTA, and now
-  // carries TWO steps: configure, then brief the assistant on every tool.
+  // 7. "How to connect" is its own page, reached via the hero CTA. It carries
+  // ONLY the main prompt — the docker/stdio config block was removed on the
+  // user's call: nobody outside this machine has docker, so a config snippet
+  // they cannot run is noise in front of the one thing they can use.
   await page.click(".mcp-connect-cta");
   await page.waitForURL(/#\/mcp\/connect/);
-  await page.locator(".mcp-tab").first().waitFor({ timeout: 20000 });
+  await page.locator(".mcp-prompt-card--all").waitFor({ timeout: 20000 });
   assert.equal(await page.locator(".mcp-tool-card").count(), 0, "the connect page has no tool cards");
+  assert.equal(await page.locator(".mcp-tab").count(), 0, "no host tabs left on the connect page");
+  assert.equal(
+    await page.locator(".mcp-code-block").count(),
+    0,
+    "no config snippet block left on the connect page",
+  );
 
-  await page.click('.mcp-tab[data-tab="0"]');
-  await page.click('.mcp-copy[data-copy-target="connect-0"]');
-  await page.waitForTimeout(100);
-  const connectClipboard = await page.evaluate(() => navigator.clipboard.readText());
-  assert.match(connectClipboard, /mcpServers/, "the connect snippet copies real config JSON");
-  assert.ok(connectClipboard.includes("<your-token>"), "snippet carries a token PLACEHOLDER, never a real secret");
-  assert.match(connectClipboard, /seo\.theyovth\.space/, "the connect snippet points at the real domain, not localhost");
-  assert.ok(!connectClipboard.includes("127.0.0.1"), "no localhost address leaks into the connect snippet");
-
-  // 8. Step 2 — the all-tools briefing now lives HERE, mentions every tool.
+  // 8. The all-tools briefing is the whole page, and mentions every tool.
   await page.locator(".mcp-prompt-card--all").waitFor();
   const briefing = await page.locator(".mcp-prompt-card--all pre").innerText();
   for (const name of toolNames) {

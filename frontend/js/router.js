@@ -405,14 +405,14 @@ async function activate() {
     allRoots.filter((el) => el !== mcpConnectRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     mcpConnectRoot?.removeAttribute("hidden");
-    const { initMcpConnectPage } = await import("./mcp-page.js?v=20260906-t77");
+    const { initMcpConnectPage } = await import("./mcp-page.js?v=20260906-t79b");
     await initMcpConnectPage();
   } else if (route.name === "mcp") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== mcpRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     mcpRoot?.removeAttribute("hidden");
-    const { initMcpPage } = await import("./mcp-page.js?v=20260906-t77");
+    const { initMcpPage } = await import("./mcp-page.js?v=20260906-t79b");
     await initMcpPage();
   } else if (route.name === "admin-users") {
     dashboardView?.setAttribute("hidden", "");

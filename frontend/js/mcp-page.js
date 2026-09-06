@@ -41,7 +41,6 @@ export async function initMcpConnectPage() {
     return;
   }
   connectRoot.innerHTML = connectPageShell(catalog);
-  wireConnectTabs();
   wireCopyButtons(connectRoot);
   wireDownloadButtons(connectRoot);
 }
@@ -104,42 +103,16 @@ function hero(catalog) {
 }
 
 function connectPageShell(catalog) {
-  const tabs = catalog.connect
-    .map((snippet, index) => `
-      <button type="button" class="mcp-tab" data-tab="${index}" ${index === 0 ? 'aria-selected="true"' : ""}>
-        ${escapeHtml(snippet.host)}
-      </button>`)
-    .join("");
-  const panels = catalog.connect
-    .map((snippet, index) => `
-      <div class="mcp-tab-panel" data-panel="${index}" ${index === 0 ? "" : "hidden"}>
-        <div class="mcp-code-block">
-          <div class="mcp-code-block__head">
-            <span>${escapeHtml(snippet.title)}</span>
-            <button type="button" class="button button--quiet mcp-copy" data-copy-target="connect-${index}">
-              ${icon("copy", "icon icon--tiny")}<span>Copy</span>
-            </button>
-          </div>
-          <pre id="connect-${index}"><code>${escapeHtml(snippet.config)}</code></pre>
-        </div>
-        <p class="mcp-note">${escapeHtml(snippet.note)}</p>
-      </div>`)
-    .join("");
   return `
     <a class="back-link" href="${buildMcpHash()}">${icon("arrow-left")}<span>MCP server</span></a>
     <section class="mcp-intro">
       <p class="eyebrow">Operations / AI assistant</p>
       <h1>How to connect</h1>
       <p class="mcp-lead">
-        Pick your host, copy the config, and
-        <a href="${buildAccountHash()}">create your own token</a> — every account can
-        issue its own, no admin needed.
+        Paste the prompt below into a fresh chat, then just ask your question.
+        Need access first? <a href="${buildAccountHash()}">Create your own token</a> —
+        every account can issue its own, no admin needed.
       </p>
-    </section>
-    <section class="mcp-section" aria-labelledby="mcp-connect-title">
-      <h2 id="mcp-connect-title">1. Configure</h2>
-      <div class="mcp-tabs" role="tablist">${tabs}</div>
-      ${panels}
     </section>
     ${allToolsBriefingSection(catalog)}`;
 }
@@ -152,7 +125,7 @@ function connectPageShell(catalog) {
 function allToolsBriefingSection(catalog) {
   return `
     <section class="mcp-section" aria-labelledby="mcp-brief-title">
-      <h2 id="mcp-brief-title">2. Brief it, then ask</h2>
+      <h2 id="mcp-brief-title">Brief it, then ask</h2>
       <p class="mcp-lead">
         Paste this once per conversation so the assistant knows every tool it has —
         then just type your actual question underneath it.
@@ -317,19 +290,6 @@ function limitsSection() {
         <li>Write access depends on the token's role, exactly like a logged-in person's role.</li>
       </ul>
     </section>`;
-}
-
-function wireConnectTabs() {
-  const tabs = connectRoot.querySelectorAll(".mcp-tab");
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      tabs.forEach((t) => t.removeAttribute("aria-selected"));
-      tab.setAttribute("aria-selected", "true");
-      connectRoot.querySelectorAll(".mcp-tab-panel").forEach((panel) => {
-        panel.hidden = panel.dataset.panel !== tab.dataset.tab;
-      });
-    });
-  });
 }
 
 function wireCopyButtons(scopeEl) {
