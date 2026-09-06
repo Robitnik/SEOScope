@@ -136,13 +136,6 @@
   .login-spinner { animation: none; }
 }
 
-.login-footnote {
-  margin: 18px 0 0;
-  color: var(--ink-dim);
-  font-size: 12px;
-  max-width: 46ch;
-  line-height: 1.5;
-}
 
 @media (max-width: 860px) {
   .login-shell { grid-template-columns: minmax(0, 1fr); }
