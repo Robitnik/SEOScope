@@ -10,9 +10,8 @@
 from __future__ import annotations
 
 import pytest
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from starlette.routing import Route
+from harness.routes import method_path_pairs
 
 pytestmark = pytest.mark.auth
 
@@ -27,18 +26,10 @@ _PUBLIC = {
 
 
 def _routes(app) -> list[tuple[str, str]]:
-    seen: list[tuple[str, str]] = []
-    for route in app.routes:
-        if not isinstance(route, APIRoute | Route):
-            continue
-        path = route.path
-        if not path.startswith("/api/") and path not in {"/healthz"}:
-            continue
-        for method in sorted(route.methods or set()):
-            if method in {"HEAD", "OPTIONS"}:
-                continue
-            seen.append((method, path))
-    return sorted(set(seen))
+    # Обхід — у `harness.routes`: з FastAPI 0.141 `include_router()` кладе в
+    # `app.routes` обгортку `_IncludedRouter`, а не самі `APIRoute`, тож
+    # плоский прохід тихо дає нуль маршрутів.
+    return method_path_pairs(app, extra_paths=frozenset({"/healthz"}))
 
 
 def _concrete(path: str) -> str:
