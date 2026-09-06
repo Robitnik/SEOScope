@@ -41,6 +41,8 @@ export async function initMcpConnectPage() {
     return;
   }
   connectRoot.innerHTML = connectPageShell(catalog);
+  wireConnectTabs();
+  wireStepChecks();
   wireCopyButtons(connectRoot);
   wireDownloadButtons(connectRoot);
 }
@@ -102,54 +104,143 @@ function hero(catalog) {
     </section>`;
 }
 
+// Конект — це чекліст, а не довідка: людина проходить його рівно один
+// раз, з чужого пристрою, і найчастіше губиться саме на тому, "а що я
+// вже зробив". Тому кожен крок має власний чекбокс, а стан живе в
+// localStorage — щоб перезавантаження сторінки (або похід у Your
+// account по токен і назад) не скидав прогрес.
 function connectPageShell(catalog) {
+  const steps = [
+    connectStep(1, "Create your own token", tokenStepBody()),
+    connectStep(2, "Add the server to your AI app", hostStepBody(catalog)),
+    connectStep(3, "Restart the app", restartStepBody()),
+    connectStep(4, "Brief the assistant", briefStepBody(catalog)),
+    connectStep(5, "Ask your first question", askStepBody(catalog)),
+  ].join("");
   return `
     <a class="back-link" href="${buildMcpHash()}">${icon("arrow-left")}<span>MCP server</span></a>
     <section class="mcp-intro">
       <p class="eyebrow">Operations / AI assistant</p>
       <h1>How to connect</h1>
       <p class="mcp-lead">
-        Paste the prompt below into a fresh chat, then just ask your question.
-        Need access first? <a href="${buildAccountHash()}">Create your own token</a> —
-        every account can issue its own, no admin needed.
+        Five steps, about two minutes. Tick each one off as you go — this page
+        remembers where you stopped.
       </p>
     </section>
-    ${allToolsBriefingSection(catalog)}`;
+    <ol class="mcp-steps">${steps}</ol>`;
 }
 
-// The "main prompt" (task-77 follow-up): paste it into the conversation
-// ONCE right after connecting, then just ask your real question — the
-// assistant already knows every tool by name from that one paste. Lives
-// on the connect page, not the tool catalog, because it's step 2 of
-// getting set up, not a reference card you come back to.
-function allToolsBriefingSection(catalog) {
+function connectStep(number, title, body) {
   return `
-    <section class="mcp-section" aria-labelledby="mcp-brief-title">
-      <h2 id="mcp-brief-title">Brief it, then ask</h2>
-      <p class="mcp-lead">
-        Paste this once per conversation so the assistant knows every tool it has —
-        then just type your actual question underneath it.
-      </p>
-      <article class="mcp-prompt-card mcp-prompt-card--all">
-        <header class="mcp-prompt-card__head">
-          <div>
-            <strong>Brief an assistant on every tool</strong>
-            <p class="mcp-prompt-card__sub">One paste covers all ${catalog.tools.length} tools — for an
-              assistant that's already connected but hasn't been told what's here.</p>
-          </div>
-          <div class="mcp-prompt-card__actions">
-            <button type="button" class="button button--primary mcp-copy" data-copy-target="prompt-all-tools">
+    <li class="mcp-step" data-step="${number}">
+      <label class="mcp-step__head">
+        <input type="checkbox" class="mcp-step__check" data-step-key="${number}">
+        <span class="mcp-step__num">${number}</span>
+        <span class="mcp-step__title">${escapeHtml(title)}</span>
+      </label>
+      <div class="mcp-step__body">${body}</div>
+    </li>`;
+}
+
+function tokenStepBody() {
+  return `
+    <p>
+      The server only answers requests that carry your token, so it sees exactly
+      what you're allowed to see — nothing more.
+    </p>
+    <a class="button button--primary" href="${buildAccountHash()}">
+      ${icon("key", "icon icon--tiny")}<span>Create a token</span>
+    </a>
+    <p class="mcp-note">
+      Shown once, right after you create it. Copy it somewhere safe before you
+      leave that page — nobody, including an admin, can read it back to you.
+    </p>`;
+}
+
+function hostStepBody(catalog) {
+  const tabs = catalog.connect
+    .map((snippet, index) => `
+      <button type="button" class="mcp-tab" data-tab="${index}" ${index === 0 ? 'aria-selected="true"' : ""}>
+        ${escapeHtml(snippet.host)}
+      </button>`)
+    .join("");
+  const panels = catalog.connect
+    .map((snippet, index) => `
+      <div class="mcp-tab-panel" data-panel="${index}" ${index === 0 ? "" : "hidden"}>
+        <div class="mcp-code-block">
+          <div class="mcp-code-block__head">
+            <span>${escapeHtml(snippet.title)}</span>
+            <button type="button" class="button button--quiet mcp-copy" data-copy-target="connect-${index}">
               ${icon("copy", "icon icon--tiny")}<span>Copy</span>
             </button>
-            <button type="button" class="button button--quiet mcp-download"
-                    data-download-target="prompt-all-tools" data-download-name="yovth-mcp-tools-briefing.md">
-              ${icon("download", "icon icon--tiny")}<span>Download .md</span>
-            </button>
           </div>
-        </header>
-        <pre id="prompt-all-tools"><code>${escapeHtml(catalog.all_tools_prompt)}</code></pre>
-      </article>
-    </section>`;
+          <pre id="connect-${index}"><code>${escapeHtml(snippet.config)}</code></pre>
+        </div>
+        <p class="mcp-note">${escapeHtml(snippet.note)}</p>
+      </div>`)
+    .join("");
+  return `
+    <p>Pick your app, copy the config, and replace <code>&lt;your-token&gt;</code> with the token from step 1.</p>
+    <div class="mcp-tabs" role="tablist">${tabs}</div>
+    ${panels}`;
+}
+
+function restartStepBody() {
+  return `
+    <p>
+      Config is read at startup — quit the app completely and open it again.
+      When it comes back, the tools show up under the connector menu.
+    </p>
+    <p class="mcp-note">
+      Nothing there? The config file is in the wrong place or has a stray comma —
+      the app reports neither, it just starts with no tools.
+    </p>`;
+}
+
+function briefStepBody(catalog) {
+  return `
+    <p>
+      Paste this once per conversation so the assistant knows every tool it has.
+      Without it, it has the tools but no idea when to reach for them.
+    </p>
+    <article class="mcp-prompt-card mcp-prompt-card--all">
+      <header class="mcp-prompt-card__head">
+        <div>
+          <strong>Brief an assistant on every tool</strong>
+          <p class="mcp-prompt-card__sub">One paste covers all ${catalog.tools.length} tools.</p>
+        </div>
+        <div class="mcp-prompt-card__actions">
+          <button type="button" class="button button--primary mcp-copy" data-copy-target="prompt-all-tools">
+            ${icon("copy", "icon icon--tiny")}<span>Copy</span>
+          </button>
+          <button type="button" class="button button--quiet mcp-download"
+                  data-download-target="prompt-all-tools" data-download-name="yovth-mcp-tools-briefing.md">
+            ${icon("download", "icon icon--tiny")}<span>Download .md</span>
+          </button>
+        </div>
+      </header>
+      <pre id="prompt-all-tools"><code>${escapeHtml(catalog.all_tools_prompt)}</code></pre>
+    </article>`;
+}
+
+function askStepBody(catalog) {
+  const example = catalog.starter_prompts?.[0]?.text
+    || "List every client and flag anyone whose health looks off right now.";
+  return `
+    <p>Type your real question straight under the briefing. Something like:</p>
+    <div class="mcp-code-block">
+      <div class="mcp-code-block__head">
+        <span>Example</span>
+        <button type="button" class="button button--quiet mcp-copy" data-copy-text="${escapeHtml(example)}">
+          ${icon("copy", "icon icon--tiny")}<span>Copy</span>
+        </button>
+      </div>
+      <pre id="connect-example"><code>${escapeHtml(example)}</code></pre>
+    </div>
+    <p class="mcp-note">
+      Stuck? The <a href="${buildMcpHash()}">tool catalog</a> lists every question
+      the server can answer, with the exact arguments each tool takes.
+    </p>`;
 }
 
 function toolsSection(catalog) {
@@ -290,6 +381,50 @@ function limitsSection() {
         <li>Write access depends on the token's role, exactly like a logged-in person's role.</li>
       </ul>
     </section>`;
+}
+
+function wireConnectTabs() {
+  const tabs = connectRoot.querySelectorAll(".mcp-tab");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => t.removeAttribute("aria-selected"));
+      tab.setAttribute("aria-selected", "true");
+      connectRoot.querySelectorAll(".mcp-tab-panel").forEach((panel) => {
+        panel.hidden = panel.dataset.panel !== tab.dataset.tab;
+      });
+    });
+  });
+}
+
+const STEPS_STORAGE_KEY = "yovth.mcp.connect.steps";
+
+// Прогрес чекліста — суто клієнтський: це нотатка "де я зупинився" для
+// цього браузера, а не стан акаунта. Тому localStorage, а не API: інакше
+// довелося б заводити ендпоінт і рядок у БД заради галочки, яку людина
+// ставить один раз у житті.
+function wireStepChecks() {
+  let done = [];
+  try {
+    done = JSON.parse(window.localStorage.getItem(STEPS_STORAGE_KEY) || "[]");
+  } catch {
+    done = [];
+  }
+  const boxes = connectRoot.querySelectorAll(".mcp-step__check");
+  boxes.forEach((box) => {
+    box.checked = done.includes(box.dataset.stepKey);
+    box.closest(".mcp-step").classList.toggle("is-done", box.checked);
+    box.addEventListener("change", () => {
+      box.closest(".mcp-step").classList.toggle("is-done", box.checked);
+      const checked = [...connectRoot.querySelectorAll(".mcp-step__check")]
+        .filter((b) => b.checked)
+        .map((b) => b.dataset.stepKey);
+      try {
+        window.localStorage.setItem(STEPS_STORAGE_KEY, JSON.stringify(checked));
+      } catch {
+        /* приватний режим — галочки просто не переживуть перезавантаження */
+      }
+    });
+  });
 }
 
 function wireCopyButtons(scopeEl) {

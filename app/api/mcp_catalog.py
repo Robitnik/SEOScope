@@ -288,8 +288,8 @@ def _connect_snippets(base_url: str) -> list[McpConnectSnippet]:
             host="Claude Desktop",
             title="claude_desktop_config.json",
             config=stdio_config,
-            note="Create your own token in Your account, then restart Claude Desktop"
-            " to pick up the change.",
+            note="On macOS: ~/Library/Application Support/Claude/. "
+            "On Windows: %APPDATA%\\Claude\\.",
         ),
         McpConnectSnippet(
             host="Claude Code",
@@ -302,8 +302,8 @@ def _connect_snippets(base_url: str) -> list[McpConnectSnippet]:
             host="ChatGPT",
             title="Not available yet",
             config="# Streamable HTTP transport ships in task-74 wave 2.",
-            note="ChatGPT needs an HTTP endpoint, not stdio — this arrives "
-            "with the agent_tokens follow-up.",
+            note="ChatGPT needs an HTTP endpoint, not stdio — that transport "
+            "is still being built.",
         ),
     ]
 

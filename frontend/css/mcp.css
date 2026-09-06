@@ -165,3 +165,36 @@
   .mcp-tool-grid, .mcp-prompt-grid { grid-template-columns: 1fr; }
   .mcp-status { gap: 18px; }
 }
+
+/* Чекліст підключення (#/mcp/connect) — крок = картка з власним чекбоксом. */
+.mcp-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.mcp-step {
+  border: 1px solid var(--line); border-radius: 10px; padding: 20px 24px;
+  background: var(--surface); min-width: 0;
+}
+.mcp-step.is-done { opacity: 0.62; }
+.mcp-step__head {
+  display: flex; align-items: center; gap: 12px; cursor: pointer;
+  margin: 0 0 12px; min-width: 0;
+}
+.mcp-step__check { width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--accent); cursor: pointer; }
+.mcp-step__num {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #fff; font-size: 13px; font-weight: 700;
+}
+.mcp-step.is-done .mcp-step__num { background: var(--muted); }
+.mcp-step__title { font-size: 18px; font-weight: 700; min-width: 0; }
+.mcp-step.is-done .mcp-step__title { text-decoration: line-through; }
+.mcp-step__body { padding-left: 58px; min-width: 0; }
+.mcp-step__body > p { margin: 0 0 12px; max-width: 70ch; }
+.mcp-step__body .mcp-note { margin-top: 10px; }
+.mcp-step__body code { font-size: 13px; }
+
+@media (max-width: 640px) {
+  .mcp-step { padding: 16px; }
+  .mcp-step__body { padding-left: 0; }
+}
+/* .button — flex-контейнер, тож у блоковому body кроку розтягується на всю
+   ширину; тут вона має бути рівно по тексту. */
+.mcp-step__body > .button { display: inline-flex; width: auto; }

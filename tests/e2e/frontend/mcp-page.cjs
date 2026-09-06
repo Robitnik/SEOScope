@@ -82,22 +82,39 @@ async function main() {
 
   await page.screenshot({ path: path.join(screenshots, "mcp-page-1440.png"), fullPage: true });
 
-  // 7. "How to connect" is its own page, reached via the hero CTA. It carries
-  // ONLY the main prompt — the docker/stdio config block was removed on the
-  // user's call: nobody outside this machine has docker, so a config snippet
-  // they cannot run is noise in front of the one thing they can use.
+  // 7. "How to connect" is its own page, reached via the hero CTA, and is
+  // now a five-step checklist: the config block that used to dominate it
+  // is one step among five, behind the token step that has to come first.
   await page.click(".mcp-connect-cta");
   await page.waitForURL(/#\/mcp\/connect/);
-  await page.locator(".mcp-prompt-card--all").waitFor({ timeout: 20000 });
+  await page.locator(".mcp-step").first().waitFor({ timeout: 20000 });
   assert.equal(await page.locator(".mcp-tool-card").count(), 0, "the connect page has no tool cards");
-  assert.equal(await page.locator(".mcp-tab").count(), 0, "no host tabs left on the connect page");
-  assert.equal(
-    await page.locator(".mcp-code-block").count(),
-    0,
-    "no config snippet block left on the connect page",
-  );
+  assert.equal(await page.locator(".mcp-step").count(), 5, "five connect steps");
+  assert.equal(await page.locator(".mcp-step__check").count(), 5, "every step has its own checkbox");
 
-  // 8. The all-tools briefing is the whole page, and mentions every tool.
+  // The checklist remembers where you stopped — the whole reason it has
+  // checkboxes instead of plain numbers.
+  const secondBox = page.locator('.mcp-step__check[data-step-key="2"]');
+  await secondBox.check();
+  assert.ok(
+    await page.locator('.mcp-step[data-step="2"]').evaluate((el) => el.classList.contains("is-done")),
+    "checking a step marks it done",
+  );
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator(".mcp-step").first().waitFor({ timeout: 20000 });
+  assert.ok(await secondBox.isChecked(), "the tick survives a reload");
+  await secondBox.uncheck();
+
+  await page.click('.mcp-tab[data-tab="0"]');
+  await page.click('.mcp-copy[data-copy-target="connect-0"]');
+  await page.waitForTimeout(100);
+  const connectClipboard = await page.evaluate(() => navigator.clipboard.readText());
+  assert.match(connectClipboard, /mcpServers/, "the connect snippet copies real config JSON");
+  assert.ok(connectClipboard.includes("<your-token>"), "snippet carries a token PLACEHOLDER, never a real secret");
+  assert.match(connectClipboard, /seo\.theyovth\.space/, "the connect snippet points at the real domain, not localhost");
+  assert.ok(!connectClipboard.includes("127.0.0.1"), "no localhost address leaks into the connect snippet");
+
+  // 8. Step 4 — the all-tools briefing, mentioning every tool.
   await page.locator(".mcp-prompt-card--all").waitFor();
   const briefing = await page.locator(".mcp-prompt-card--all pre").innerText();
   for (const name of toolNames) {
