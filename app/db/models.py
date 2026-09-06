@@ -24,6 +24,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     event,
 )
@@ -50,8 +51,22 @@ from app.schemas.enums import (
 
 
 def _str_enum(enum_cls: type[enum.Enum], length: int = 32) -> SAEnum:
-    """SQLite has no native enum type: store `.value` in a CHECK-constrained VARCHAR."""
-    return SAEnum(enum_cls, values_callable=lambda obj: [e.value for e in obj], length=length)
+    """SQLite has no native enum type: store `.value` in a CHECK-constrained VARCHAR.
+
+    `native_enum=False` (task-75 §3.2) keeps this the same VARCHAR+CHECK shape
+    on Postgres too. Without it, `create_all` on Postgres emits a native
+    `CREATE TYPE ... AS ENUM`, and adding one value later becomes an
+    `ALTER TYPE ... ADD VALUE` — non-transactional and cannot be used in the
+    same transaction that also uses the new value. `Provider` alone has
+    grown with nearly every integration task; a plain `CHECK` constraint
+    keeps that a normal, revertible migration.
+    """
+    return SAEnum(
+        enum_cls,
+        values_callable=lambda obj: [e.value for e in obj],
+        length=length,
+        native_enum=False,
+    )
 
 
 class Client(Base):
@@ -922,7 +937,12 @@ class MonitorPage(Base):
     x_robots_tag: Mapped[str | None] = mapped_column(String(200), default=None)
     canonical: Mapped[str | None] = mapped_column(String(2048), default=None)
     title: Mapped[str | None] = mapped_column(String(500), default=None)
-    description: Mapped[str | None] = mapped_column(String(1000), default=None)
+    # task-75 §3.1: was `String(1000)`. Live production data has meta
+    # descriptions up to 8385 chars (SQLite never enforced the declared
+    # VARCHAR length, so this went unnoticed until a Postgres migration
+    # dry-run rejected them with `StringDataRightTruncation`). `Text` has
+    # no natural cap and costs nothing extra on Postgres over `varchar`.
+    description: Mapped[str | None] = mapped_column(Text, default=None)
     h1: Mapped[str | None] = mapped_column(String(500), default=None)
     word_count: Mapped[int | None] = mapped_column(Integer, default=None)
     analytics_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -1517,7 +1537,12 @@ class PageInventoryItem(Base):
     # tag absent from the fetched HTML — a real defect, not a missing source
     # (task-57 §1.6, the deliberate inversion of `app.contentqa`'s own rule).
     title: Mapped[str | None] = mapped_column(String(500), default=None)
-    description: Mapped[str | None] = mapped_column(String(1000), default=None)
+    # task-75 §3.1: was `String(1000)`. Live production data has meta
+    # descriptions up to 8385 chars (SQLite never enforced the declared
+    # VARCHAR length, so this went unnoticed until a Postgres migration
+    # dry-run rejected them with `StringDataRightTruncation`). `Text` has
+    # no natural cap and costs nothing extra on Postgres over `varchar`.
+    description: Mapped[str | None] = mapped_column(Text, default=None)
     keywords_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     keywords_source: Mapped[str] = mapped_column(String(8), default="none")
     h1: Mapped[str | None] = mapped_column(String(500), default=None)
@@ -1715,7 +1740,12 @@ class ArchiveSnapshot(Base):
         String(64), ForeignKey("archive_blobs.sha256", ondelete="SET NULL"), default=None
     )
     title: Mapped[str | None] = mapped_column(String(500), default=None)
-    description: Mapped[str | None] = mapped_column(String(1000), default=None)
+    # task-75 §3.1: was `String(1000)`. Live production data has meta
+    # descriptions up to 8385 chars (SQLite never enforced the declared
+    # VARCHAR length, so this went unnoticed until a Postgres migration
+    # dry-run rejected them with `StringDataRightTruncation`). `Text` has
+    # no natural cap and costs nothing extra on Postgres over `varchar`.
+    description: Mapped[str | None] = mapped_column(Text, default=None)
     canonical: Mapped[str | None] = mapped_column(String(2048), default=None)
     meta_robots: Mapped[str | None] = mapped_column(String(200), default=None)
     word_count: Mapped[int | None] = mapped_column(Integer, default=None)
