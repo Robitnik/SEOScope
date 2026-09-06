@@ -400,3 +400,56 @@ def test_count_replay_misses_for_host(session):
     assert repo.count_replay_misses_for_host("acme.com") == 1
     assert repo.count_replay_misses_for_host("other.com") == 1
     assert repo.count_replay_misses_for_host("nowhere.com") == 0
+
+
+def test_get_or_create_url_dedupes_trailing_slash_variant(session):
+    """Task-69 §2: the second call must find the FIRST row, not create a
+    second one — live-measured on ALPHA (312 of 1565 tracked URLs were
+    exactly this pattern before this fix).
+    """
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+
+    first = repo.get_or_create_url(
+        client.id, "https://acme.com/products/x", "acme.com/products/x", source="sitemap"
+    )
+    repo.flush()
+    session.commit()
+
+    second = repo.get_or_create_url(
+        client.id, "https://acme.com/products/x/", "acme.com/products/x/", source="sitemap"
+    )
+
+    assert second.id == first.id
+    assert repo.count_urls_for_client(client.id) == 1
+
+
+def test_get_or_create_url_still_distinguishes_different_pages(session):
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+
+    a = repo.get_or_create_url(
+        client.id, "https://acme.com/products/x", "acme.com/products/x", source="sitemap"
+    )
+    repo.flush()
+    b = repo.get_or_create_url(
+        client.id, "https://acme.com/products/y", "acme.com/products/y", source="sitemap"
+    )
+    repo.flush()
+    session.commit()
+
+    assert a.id != b.id
+    assert repo.count_urls_for_client(client.id) == 2
+
+
+def test_get_or_create_url_homepage_has_no_variant_collision(session):
+    repo = WebArchiveRepository(session)
+    client = _client(session)
+
+    homepage = repo.get_or_create_url(client.id, "https://acme.com/", "acme.com/", source="sitemap")
+    repo.flush()
+    session.commit()
+
+    again = repo.get_or_create_url(client.id, "https://acme.com/", "acme.com/", source="sitemap")
+    assert again.id == homepage.id
+    assert repo.count_urls_for_client(client.id) == 1

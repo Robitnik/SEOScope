@@ -48,6 +48,7 @@ from app.db.models import (
     Client,
     MonitorPage,
 )
+from app.webarchive.urls import trailing_slash_variant
 
 CaptureStatus = Literal["queued", "running", "ok", "partial", "failed", "blocked", "cancelled"]
 
@@ -324,6 +325,14 @@ class WebArchiveRepository:
         self, client_id: str, url: str, url_key: str, *, source: str = "sitemap"
     ) -> ArchiveUrl:
         existing = self.find_url(client_id, url_key)
+        if existing is None:
+            # Same page, other trailing-slash spelling (task-69 §2) — checked
+            # BEFORE creating, never after: this is what stops a duplicate
+            # frontier row from being born, not a cleanup of ones that
+            # already exist. `normalize_url` itself is untouched.
+            alt_key = trailing_slash_variant(url_key)
+            if alt_key is not None:
+                existing = self.find_url(client_id, alt_key)
         if existing is not None:
             return existing
         archive_url = ArchiveUrl(

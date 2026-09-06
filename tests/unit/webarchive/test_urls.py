@@ -6,6 +6,7 @@ from app.webarchive.urls import (
     looks_like_binary_content_type,
     normalize_url,
     resolve,
+    trailing_slash_variant,
 )
 
 
@@ -148,6 +149,29 @@ def test_is_analytics_iframe_src_allows_real_embeds() -> None:
     assert not is_analytics_iframe_src("https://open.spotify.com/embed/track/abc")
     assert not is_analytics_iframe_src("https://www.youtube.com/embed/abc")
     assert not is_analytics_iframe_src("https://player.vimeo.com/video/abc")
+
+
+def test_trailing_slash_variant_adds_slash() -> None:
+    key = normalize_url("https://example.com/products/akane-shirt")
+    assert trailing_slash_variant(key) == normalize_url("https://example.com/products/akane-shirt/")
+
+
+def test_trailing_slash_variant_removes_slash() -> None:
+    key = normalize_url("https://example.com/products/akane-shirt/")
+    assert trailing_slash_variant(key) == normalize_url("https://example.com/products/akane-shirt")
+
+
+def test_trailing_slash_variant_is_none_for_homepage() -> None:
+    assert trailing_slash_variant(normalize_url("https://example.com/")) is None
+    assert trailing_slash_variant(normalize_url("https://example.com")) is None
+
+
+def test_trailing_slash_variant_preserves_query() -> None:
+    # LAXTON's own `?taxonomy=...` pages stay real, distinct pages — folding
+    # the path must not touch the query string at all.
+    key = normalize_url("https://example.com/shop/?taxonomy=product_shipping_class")
+    variant = trailing_slash_variant(key)
+    assert variant == normalize_url("https://example.com/shop?taxonomy=product_shipping_class")
 
 
 def test_is_analytics_iframe_src_honors_custom_host_set() -> None:

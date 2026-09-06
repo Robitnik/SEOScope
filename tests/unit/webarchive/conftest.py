@@ -11,10 +11,27 @@ from app.webarchive.writequeue import ArchiveWriteController
 
 
 @pytest.fixture
-def engine(tmp_path):
+def db_settings(tmp_path) -> Settings:
+    """The `Settings` object that actually determines which SQLite FILE
+    `engine`/`session` talk to. Named `db_settings`, not `settings` —
+    several test files in this package (`test_capture.py`) already define
+    their OWN `settings` fixture for a different purpose (feature toggles,
+    `artifacts_dir`) with no `database_url` override at all. A fixture
+    named plain `settings` here would be SILENTLY SHADOWED by those files'
+    own definition for every test in them, which would point `engine` at
+    `Settings`'s default `database_url` — the real, bind-mounted
+    `app_data/app.db` — instead of an isolated tmp file. Live-caught
+    2026-09-06: exactly that happened once, before this fixture had its
+    own name, and inserted a real 'Acme' test row into the production
+    database (see task-69 completion report).
+    """
     db_path = tmp_path / "test.db"
-    settings = Settings(_env_file=None, database_url=f"sqlite:///{db_path}")
-    eng = build_sync_engine(settings)
+    return Settings(_env_file=None, database_url=f"sqlite:///{db_path}")
+
+
+@pytest.fixture
+def engine(db_settings):
+    eng = build_sync_engine(db_settings)
     Base.metadata.create_all(eng)
     yield eng
     eng.dispose()

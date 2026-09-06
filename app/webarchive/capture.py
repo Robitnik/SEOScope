@@ -45,6 +45,7 @@ from app.webarchive import changes as changesmod
 from app.webarchive import storage
 from app.webarchive.db_retry import commit_with_retry
 from app.webarchive.fingerprint import content_fingerprint
+from app.webarchive.heartbeat import refresh_heartbeat_best_effort
 from app.webarchive.urls import is_asset_like_url, looks_like_binary_content_type, normalize_url
 from app.webarchive.writequeue import ArchiveWriteController
 
@@ -386,6 +387,15 @@ def _capture_assets_for_page(
             # `write_controller` (task-62 §2.2) so it never even contends with
             # another capture's own commit.
             #
+            # Best-effort, gate-independent touch FIRST (task-69 §1): this
+            # commit's own `heartbeat_at` below still goes through
+            # `write_controller` like everything else here, but it queues
+            # behind whatever else the gate is doing — under real
+            # contention that is precisely the delay `_reclaim_dead_captures`
+            # measures against. This direct write either lands in
+            # microseconds or skips instantly; either way it costs nothing.
+            refresh_heartbeat_best_effort(settings, capture_id)
+
             # Piggybacks a `heartbeat_at` touch on this SAME commit (task-62
             # §2.3): a page with a p90 of 476 subresources (task-59 §0.4) can
             # spend minutes inside THIS loop between two outer per-URL flushes
@@ -874,6 +884,10 @@ def run_client_capture(
         due_by_time = time.monotonic() - last_counter_flush >= _COUNTER_FLUSH_SECONDS
         if due_by_count or due_by_time:
             last_counter_flush = time.monotonic()
+            # Same reasoning as the per-asset touch above: land the
+            # liveness signal even if the gate write right below is
+            # queued behind other captures' commits.
+            refresh_heartbeat_best_effort(settings, capture_id)
             try:
                 write_controller.submit(
                     session,

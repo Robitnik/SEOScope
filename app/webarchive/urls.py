@@ -62,6 +62,40 @@ def normalize_url(url: str, *, keep_query: bool = True) -> str:
     return key
 
 
+def trailing_slash_variant(url_key: str) -> str | None:
+    """The other spelling of `url_key`'s path — with a trailing slash added
+    or removed — or `None` when there is nothing to fold (the path is
+    exactly `/`, or `url_key` carries no path separator at all).
+
+    `normalize_url` deliberately does NOT fold this itself (see the module
+    docstring above, and `app.urlinspector.urlkey`'s own note on the same
+    gap for cross-source matching) — its output is what three tables'
+    `url_key` UNIQUE constraints are already built on for a live portfolio;
+    changing what it emits would silently rewrite the identity of every
+    already-stored row. This is instead a second, narrower question a
+    caller can ask before creating a NEW row under a key that never
+    existed: "does the other spelling already exist?" — see
+    `WebArchiveRepository.get_or_create_url`, the only caller today.
+
+    Measured live 2026-09-06: 312 of ALPHA's 1565 tracked URLs (20%) were
+    exactly `/products/x` and `/products/x/` as two separate frontier
+    rows — the same page crawled, fingerprinted and diffed twice on every
+    pass. Existing duplicate rows are NOT touched here (that is a data
+    cleanup on a live table, not a bugfix); this only stops the count from
+    growing on future discovery.
+    """
+    host, sep, rest = url_key.partition("/")
+    if not sep:
+        return None  # `normalize_url` always emits a path; defensive only
+    path, has_query, query = rest.partition("?")
+    path = f"/{path}"
+    if path == "/":
+        return None  # the homepage has no slash-or-not variant
+    alt_path = path[:-1] if path.endswith("/") else f"{path}/"
+    alt = f"{host}{alt_path}"
+    return f"{alt}?{query}" if has_query else alt
+
+
 def resolve(base_url: str, maybe_relative: str) -> str | None:
     """Absolute http(s) URL for a possibly-relative reference, or `None` for
     anything the archive never follows (`data:`, `blob:`, `javascript:`,
