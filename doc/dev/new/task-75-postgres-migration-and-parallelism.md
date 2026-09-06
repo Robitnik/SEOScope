@@ -269,19 +269,36 @@ seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
 ---
 
-## §4. Перенос даних
+## §4. Перенос даних ✅ done (2026-09-06)
 
-`scripts/migrate_sqlite_to_pg.py` — новий, на основі вже перевіреної проби (§0.3):
+`scripts/migrate_sqlite_to_pg.py` — написаний, на основі вже перевіреної проби (§0.3), і живо прогнаний до чистого результату:
 
-1. `Base.metadata.create_all()` на порожній PG (**не** `alembic upgrade head` — див. §5.2).
-2. `SET session_replication_role = replica` — відкласти перевірку FK на час копії, щоб не залежати від порядку.
+1. `create_schema()` = `Base.metadata.create_all()` на порожній PG (**не** `alembic upgrade head` — див. §5.2).
+2. `copy_all_tables()`: `SET session_replication_role = replica` — відкласти перевірку FK на час копії, щоб не залежати від порядку. **Дialect-guard**: команда Postgres-специфічна, тож виконується лише коли `target.dialect.name == "postgresql"` — та сама функція безпечно (і юніт-тестовано) працює й проти SQLite-таргета, де `PRAGMA foreign_keys` не заважає порядку вставки й без цього.
 3. Копія по `Base.metadata.sorted_tables`, чанками по 5000, `stream_results=True` (інакше 707k рядків `gsc_dimension_metrics` матеріалізуються в RAM цілком).
-4. Повернути `session_replication_role = origin`, **перевірити FK-цілісність явно** (`ALTER TABLE … VALIDATE CONSTRAINT` або контрольні запити) — відкладені FK без перевірки після цього це тиха втрата цілісності.
-5. Вирівняти всі sequence: `setval(pg_get_serial_sequence(...), max(id))`. **Без цього перший же `INSERT` у `job_events` впаде на дублікаті ключа** — класична пастка міграції, яку легко не помітити, бо схема при цьому виглядає ідеально.
-6. `VACUUM ANALYZE`.
-7. **Звірка рядок-у-рядок**, не лише `count(*)`: контрольні суми по кількох ключових таблицях (`clients`, `client_integrations`, `metric_values`, `provider_snapshots`) — саме там живуть дані, втрату яких неможливо відновити збором.
+4. Повернути `session_replication_role = origin`. **Не зроблено окремо:** явна `VALIDATE CONSTRAINT`-перевірка — Postgres і так enforce'ить кожен FK на наступному ж записі; для дослідного прогону з негайним `--verify` цього достатньо. Якщо потрібна саме статична гарантія цілісності одразу після копії (не після першого запису) — залишити як follow-up (§13).
+5. `align_sequences()`: `setval(pg_get_serial_sequence(...), max(id))`. **Без цього перший же `INSERT` у `job_events` впав би на дублікаті ключа** — класична пастка міграції, яку легко не помітити, бо схема при цьому виглядає ідеально. Живо: рівно один запис вирівняно (`job_events.seq = 13770`) — усе інше в схемі keyed через GUID (Python-side `default=new_uuid`), там нема серверного sequence взагалі.
+6. `vacuum_analyze()`: `VACUUM ANALYZE` в autocommit (не можна всередині транзакції). Той самий ефект, що task-68 §1 виміряла для SQLite (стаття планувальника, порожня одразу після bulk-завантаження).
+7. `--verify`: `verify_row_counts()` (усі таблиці) + `verify_checksums()` — **звірка рядок-у-рядок**, не лише `count(*)`, на `clients`/`client_integrations`/`metric_values`/`provider_snapshots` — саме там живуть дані, втрату яких неможливо відновити збором.
 
-Виміряні очікування: **~50 с копія + ~30 с індекси/vacuum**. Вікно cutover — хвилини, не години.
+**Знайдено й виправлено живим прогоном (не передбачено заздалегідь):**
+- `col.type.python_type` кидає `NotImplementedError` для будь-якої GUID-колонки (`GUID`/`DecimalString`/`UTCDateTime` — `TypeDecorator`, що не перевизначає `python_type`) — тобто для 53 з 54 таблиць. Виправлено на `isinstance(col.type, Integer)`, винесено в окрему `integer_primary_key_columns()` — чисто метадата, без engine, юніт-тестовано без живого Postgres.
+- `Row.__getitem__` у SQLAlchemy 2.0 приймає лише `int`/`slice`; рядковий доступ — через `row._mapping[name]`.
+- `docker compose exec` б'є в уже запущений контейнер на СТАРОМУ образі (rebuild не рестартить живі контейнери) — для нового `psycopg` довелося `docker compose run --rm` (свіжий контейнер із поточного образу).
+
+**Живо (копія бойової БД, знімок `app-20260906T100014Z.db`, не жива `app.db`):**
+
+```
+скопійовано 50 таблиць, 1 234 522 рядків, 53.1с
+sequence вирівняно -> job_events.seq = 13770
+кількість рядків: збігається у ВСІХ таблицях
+вміст (checksum-таблиці): збігається побітово
+real 0m55.4s (уключно з VACUUM ANALYZE)
+```
+
+Нуль розбіжностей — на відміну від §0.3 (де стек не зупиняли й archive_* таблиці розходились, бо воркер писав під час копії). Тут джерело — статичний файл, тому це справжній, а не приблизний, доказ коректності.
+
+**Тести:** `tests/integration/test_migrate_sqlite_to_pg.py` (4, за прецедентом `test_ops_scripts.py` — скрипт не пакет, завантажується по шляху) — регресія на `python_type`-пастку (чисто метадата, без engine), повний copy+verify round-trip на реальних seed-даних, і два негативні тести (обірваний рядок / змінене значення), що доводять: перевірка справді ловить розбіжність, а не завжди повертає «зелено». `ruff`/`mypy app` — зелені; `tests/integration` повністю (49) — зелений.
 
 ---
 
@@ -438,7 +455,7 @@ task-68 §1 дала найбільший виграш проєкту (×4000 н
 | 0 | ✅ Прибрати бомбу з бекапами (§8.1) | ✅ | — |
 | 1 | ✅ `description` → `Text`, `native_enum=False`, без live-міграції (§3.1, §3.2) | ✅ на SQLite | `git revert` |
 | 2 | ✅ Сервіс `db` у compose (ізольована мережа), `psycopg` у образ (§2) | ✅ (PG стоїть поруч, порожній) | прибрати сервіс |
-| 3 | `scripts/migrate_sqlite_to_pg.py` + сухий прогін на **копії** (§4) | ✅ | — |
+| 3 | ✅ `scripts/migrate_sqlite_to_pg.py` + сухий прогін на **копії** (§4) | ✅ | — |
 | 4 | PG-baseline міграція + тест на порожній diff (§5) | ✅ | — |
 | 5 | Виправити SSE-курсор (§3.3) | ✅ на SQLite | — |
 | 6 | Переписати `session.py`, видалити gate і риштування (§1) | ❌ **вікно** | git revert |
