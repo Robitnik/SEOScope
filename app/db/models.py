@@ -2032,6 +2032,46 @@ class UserSession(Base):
     user_agent: Mapped[str | None] = mapped_column(String(256), default=None)
 
 
+class AgentToken(Base):
+    """Особистий bearer-токен для API (task-79) — «кожен видає собі сам».
+
+    На відміну від `UserSession` (браузерна cookie-сесія), цей рядок живе
+    довго й навмисно не прив'язаний до жодного `Request`: створюється в
+    кабінеті, використовується скриптами/MCP-хостами/CI. Той самий принцип
+    зберігання, що й сесії — у БД лежить лише `token_sha256`, сире значення
+    існує рівно в одній HTTP-відповіді (`POST /api/v1/me/tokens`) і ніде
+    більше.
+
+    `role` — стеля цього КОНКРЕТНОГО токена, не користувача: адмін може
+    видати собі `viewer`-токен для read-only скриптів (навмисно дозволено,
+    §3.3 плану). Фактичні права на кожен запит — `min(role, поточна роль
+    власника)` (`app/core/auth/sessions.py::resolve_personal_token_sync`),
+    тому пониження людини чи `is_active=False` вбиває токен негайно, без
+    окремого механізму відкликання.
+
+    Рядки НЕ видаляються (`revoked_at`) — та сама причина, що й у `User`:
+    журнал дій (task-72) не має лишитись без автора.
+    """
+
+    __tablename__ = "agent_tokens"
+    __table_args__ = (UniqueConstraint("token_sha256", name="uq_agent_tokens_token_sha256"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    label: Mapped[str] = mapped_column(String(200))
+    token_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Перші 8 символів сирого значення (після префіксу `yvth_`) — НЕ секрет,
+    # достатньо короткий, щоб не дати нічого перебору, але достатній, щоб
+    # людина впізнала СВІЙ токен у списку без другого показу повного значення.
+    prefix: Mapped[str] = mapped_column(String(8))
+    role: Mapped[UserRole] = mapped_column(_str_enum(UserRole, 16))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
 
 class AuditEvent(Base):
     """Один рядок журналу «хто що коли зробив» (task-72).

@@ -3054,6 +3054,23 @@ export async function logoutEverywhere() {
   return request("/auth/logout-all", { method: "POST" }, "auth-logout-all");
 }
 
+// Особисті токени (task-79) — «кожен видає собі сам» у `#/account`.
+export async function listMyTokens() {
+  return request("/me/tokens", {}, "me-tokens-list");
+}
+
+export async function createMyToken({ label, role, expires_in_days: expiresInDays }) {
+  return request(
+    "/me/tokens",
+    { method: "POST", body: JSON.stringify({ label, role, expires_in_days: expiresInDays }) },
+    "me-tokens-create"
+  );
+}
+
+export async function revokeMyToken(tokenId) {
+  return request(`/me/tokens/${encodeURIComponent(tokenId)}`, { method: "DELETE" }, "me-tokens-revoke");
+}
+
 export async function listUsers() {
   return request("/admin/users", {}, "admin-users-list");
 }

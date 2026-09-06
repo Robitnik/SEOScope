@@ -66,6 +66,10 @@ const ADMIN_AUDIT_ROUTE = /^#\/admin\/audit/;
 // before the generic ARCHIVE_ROUTE.
 const MCP_CONNECT_ROUTE = /^#\/mcp\/connect/;
 const MCP_ROUTE = /^#\/mcp/;
+// Особистий кабінет (task-79) — перша ОСОБИСТА сторінка в тулі, доступна
+// будь-якій ролі (на відміну від ADMIN_USERS_ROUTE вище): токени тут
+// завжди свої власні.
+const ACCOUNT_ROUTE = /^#\/account/;
 
 export function parseRoute() {
   const pathMatch = location.pathname.match(ARCHIVE_VIEW_PATH_RE);
@@ -87,6 +91,7 @@ export function parseRoute() {
   if (ADMIN_AUDIT_ROUTE.test(hash)) return { name: "admin-audit", query };
   if (MCP_CONNECT_ROUTE.test(hash)) return { name: "mcp-connect", query };
   if (MCP_ROUTE.test(hash)) return { name: "mcp", query };
+  if (ACCOUNT_ROUTE.test(hash)) return { name: "account", query };
   const toolsMatch = hash.match(TOOLS_ROUTE);
   if (toolsMatch) {
     return {
@@ -282,6 +287,10 @@ export function buildMcpConnectHash(params = {}) {
   return buildHash("#/mcp/connect", params);
 }
 
+export function buildAccountHash(params = {}) {
+  return buildHash("#/account", params);
+}
+
 export function buildToolsHash(toolKey = null, reportId = null, params = {}) {
   const segments = ["#/tools"];
   if (toolKey) segments.push(encodeURIComponent(toolKey));
@@ -351,6 +360,7 @@ async function activate() {
   const adminAuditRoot = document.querySelector("#admin-audit-page-root");
   const mcpRoot = document.querySelector("#mcp-page-root");
   const mcpConnectRoot = document.querySelector("#mcp-connect-page-root");
+  const accountRoot = document.querySelector("#account-page-root");
   const dashboardChrome = [
     document.querySelector("#dashboard-header-actions"),
     document.querySelector("#dashboard-command-bar"),
@@ -358,7 +368,7 @@ async function activate() {
   const allRoots = [
     clientRoot, ahrefsRoot, blogsRoot, monthlyRoot, toolsRoot, trendsRoot, monitorRoot, monitorClientRoot,
     reportsRoot, reportsRunRoot, reportsBatchRoot, pagesRoot, archiveRoot, archiveViewRoot, archiveChangesRoot,
-    archiveCaptureRoot, urlInspectorRoot, adminUsersRoot, adminAuditRoot, mcpRoot, mcpConnectRoot,
+    archiveCaptureRoot, urlInspectorRoot, adminUsersRoot, adminAuditRoot, mcpRoot, mcpConnectRoot, accountRoot,
   ];
   // Global nav marks the active destination for assistive tech and for the eye
   // (`aria-current`), since a cross-route move is a full reload here.
@@ -376,7 +386,14 @@ async function activate() {
     if (isActive) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  if (route.name === "admin-audit") {
+  if (route.name === "account") {
+    dashboardView?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== accountRoot).forEach((el) => el?.setAttribute("hidden", ""));
+    dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
+    accountRoot?.removeAttribute("hidden");
+    const { initAccountPage } = await import("./account-page.js?v=20260906-t79");
+    await initAccountPage();
+  } else if (route.name === "admin-audit") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== adminAuditRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));

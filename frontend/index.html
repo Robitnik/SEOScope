@@ -25,8 +25,9 @@
     <link rel="stylesheet" href="/css/url-inspector.css?v=20260906-t61">
     <link rel="stylesheet" href="/css/admin.css?v=20260906-t72">
     <link rel="stylesheet" href="/css/mcp.css?v=20260906-t77">
+    <link rel="stylesheet" href="/css/account.css?v=20260906-t79">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260906-adminguard"></script>
+    <script type="module" src="/js/router.js?v=20260906-t79"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -111,6 +112,7 @@
             <div class="user-menu__panel" id="user-menu-panel" hidden>
               <p class="user-menu__role" id="user-menu-role">—</p>
               <p class="user-menu__email" id="user-menu-email">—</p>
+              <a href="#/account" id="user-menu-account">Your account</a>
               <a href="#/admin/users" id="user-menu-admin" hidden>Manage people</a>
             <a href="#/admin/audit" id="user-menu-audit" hidden>Activity log</a>
               <a href="#/mcp" id="user-menu-mcp">AI assistant (MCP)</a>
@@ -234,6 +236,7 @@
     <main class="app-main" id="admin-audit-page-root" hidden></main>
     <main class="app-main" id="mcp-page-root" hidden></main>
     <main class="app-main" id="mcp-connect-page-root" hidden></main>
+    <main class="app-main" id="account-page-root" hidden></main>
     </div>
 
     <div class="job-dock" id="job-dock" hidden>

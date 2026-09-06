@@ -12,7 +12,7 @@
  */
 import { getMcpCatalog } from "./api.js?v=20260906-t77";
 import { escapeHtml, icon } from "./formatters.js?v=20260906-t77";
-import { buildMcpHash, buildMcpConnectHash } from "./router.js?v=20260906-t77";
+import { buildAccountHash, buildMcpHash, buildMcpConnectHash } from "./router.js?v=20260906-t77";
 
 const root = document.querySelector("#mcp-page-root");
 const connectRoot = document.querySelector("#mcp-connect-page-root");
@@ -130,7 +130,11 @@ function connectPageShell(catalog) {
     <section class="mcp-intro">
       <p class="eyebrow">Operations / AI assistant</p>
       <h1>How to connect</h1>
-      <p class="mcp-lead">Pick your host, copy the config, ask an admin for a token.</p>
+      <p class="mcp-lead">
+        Pick your host, copy the config, and
+        <a href="${buildAccountHash()}">create your own token</a> — every account can
+        issue its own, no admin needed.
+      </p>
     </section>
     <section class="mcp-section" aria-labelledby="mcp-connect-title">
       <h2 id="mcp-connect-title">1. Configure</h2>

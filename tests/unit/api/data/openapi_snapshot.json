@@ -4332,6 +4332,106 @@
         "title": "ContentQaReportsPageDTO",
         "type": "object"
       },
+      "CreateMyTokenRequest": {
+        "properties": {
+          "expires_in_days": {
+            "default": 90,
+            "enum": [
+              30,
+              90,
+              365
+            ],
+            "title": "Expires In Days",
+            "type": "integer"
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole",
+            "default": "member"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "CreateMyTokenRequest",
+        "type": "object"
+      },
+      "CreateMyTokenResponse": {
+        "description": "\u0404\u0434\u0438\u043d\u0430 \u0432\u0456\u0434\u043f\u043e\u0432\u0456\u0434\u044c, \u0434\u0435 \u0454 \u043f\u043e\u0432\u043d\u0435 \u0437\u043d\u0430\u0447\u0435\u043d\u043d\u044f \u2014 \u0456\u0441\u043d\u0443\u0454 \u0440\u0456\u0432\u043d\u043e \u0442\u0443\u0442 \u0456 \u043d\u0456\u0434\u0435 \u0431\u0456\u043b\u044c\u0448\u0435.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "prefix",
+          "role",
+          "created_at",
+          "expires_at",
+          "last_used_at",
+          "revoked_at",
+          "token"
+        ],
+        "title": "CreateMyTokenResponse",
+        "type": "object"
+      },
       "DashboardResponse": {
         "properties": {
           "clients": {
@@ -8089,6 +8189,72 @@
           }
         },
         "title": "MonthlyTableSettingsUpdateRequest",
+        "type": "object"
+      },
+      "MyTokenDTO": {
+        "description": "\u041e\u0434\u0438\u043d \u0440\u044f\u0434\u043e\u043a \u0441\u043f\u0438\u0441\u043a\u0443 \u2014 \u041d\u0406\u041a\u041e\u041b\u0418 \u043d\u0435 \u043d\u0435\u0441\u0435 \u043f\u043e\u0432\u043d\u043e\u0433\u043e \u0437\u043d\u0430\u0447\u0435\u043d\u043d\u044f, \u043b\u0438\u0448\u0435 `prefix`.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "prefix",
+          "role",
+          "created_at",
+          "expires_at",
+          "last_used_at",
+          "revoked_at"
+        ],
+        "title": "MyTokenDTO",
         "type": "object"
       },
       "NinjaBindingRowDTO": {
@@ -21330,6 +21496,106 @@
         "summary": "Get Mcp Catalog",
         "tags": [
           "mcp"
+        ]
+      }
+    },
+    "/api/v1/me/tokens": {
+      "get": {
+        "operationId": "list_my_tokens_api_v1_me_tokens_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MyTokenDTO"
+                  },
+                  "title": "Response List My Tokens Api V1 Me Tokens Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List My Tokens",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "description": "\u0404\u0434\u0438\u043d\u0430 \u0432\u0456\u0434\u043f\u043e\u0432\u0456\u0434\u044c \u0456\u0437 \u043f\u043e\u0432\u043d\u0438\u043c \u0437\u043d\u0430\u0447\u0435\u043d\u043d\u044f\u043c \u0442\u043e\u043a\u0435\u043d\u0430 \u2014 \u0456\u0441\u043d\u0443\u0454 \u0440\u0456\u0432\u043d\u043e \u0442\u0443\u0442.\n\n\u0420\u043e\u043b\u044c \u043e\u0431\u0440\u0456\u0437\u0430\u0454\u0442\u044c\u0441\u044f \u0434\u043e `min(\u0437\u0430\u043f\u0438\u0442\u0430\u043d\u0430, \u0440\u043e\u043b\u044c \u0432\u043b\u0430\u0441\u043d\u0438\u043a\u0430)` (\u043f\u043b\u0430\u043d \u00a73.3): \u043d\u0435\n\u043c\u043e\u0436\u043d\u0430 \u0432\u0438\u0434\u0430\u0442\u0438 \u0441\u043e\u0431\u0456 \u0431\u0456\u043b\u044c\u0448\u0435, \u043d\u0456\u0436 \u043c\u0430\u0454\u0448, \u0430\u043b\u0435 \u0432\u0438\u0434\u0430\u0442\u0438 \u0441\u043e\u0431\u0456 \u041c\u0415\u041d\u0428\u0415 \u2014 \u0437\u0430\u043e\u0445\u043e\u0447\u0435\u043d\u043e.",
+        "operationId": "create_my_token_api_v1_me_tokens_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMyTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateMyTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create My Token",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/tokens/{token_id}": {
+      "delete": {
+        "operationId": "revoke_my_token_api_v1_me_tokens__token_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "title": "Token Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke My Token",
+        "tags": [
+          "me"
         ]
       }
     },

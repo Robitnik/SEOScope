@@ -48,6 +48,14 @@ DEFAULT_ADMIN_ONLY_PATHS: tuple[str, ...] = (
     "/api/v1/cloud",
 )
 
+# Самообслуговування (task-79): мутація тут дозволена НАВІТЬ viewer'у, бо
+# вона завжди діє лише на власний ресурс виклика (перевіряється в самому
+# хендлері за `Actor`, не за параметром запиту) — рівень ролі тут про сам
+# факт автентифікації, а не про право писати чужі дані. Без цього винятку
+# viewer не міг би видати собі навіть read-only токен: загальне правило
+# нижче вимагає `member` для будь-якого не-safe методу.
+SELF_SERVICE_PATHS: tuple[str, ...] = ("/api/v1/me",)
+
 
 def is_public_path(path: str) -> bool:
     if path in _PUBLIC_EXACT:
@@ -64,12 +72,18 @@ def admin_only_paths(settings: Settings | None = None) -> tuple[str, ...]:
     return tuple(DEFAULT_ADMIN_ONLY_PATHS) + tuple(settings.auth_admin_only_paths)
 
 
+def _matches_prefix(path: str, prefix: str) -> bool:
+    return path == prefix or path.startswith(prefix.rstrip("/") + "/")
+
+
 def required_role(method: str, path: str, settings: Settings | None = None) -> UserRole:
     """Мінімальна роль для пари (метод, шлях)."""
     settings = settings or get_settings()
     for prefix in admin_only_paths(settings):
-        if path == prefix or path.startswith(prefix.rstrip("/") + "/"):
+        if _matches_prefix(path, prefix):
             return UserRole.admin
+    if any(_matches_prefix(path, prefix) for prefix in SELF_SERVICE_PATHS):
+        return UserRole.viewer
     if is_safe_method(method):
         return UserRole.viewer
     return UserRole.member
@@ -77,6 +91,13 @@ def required_role(method: str, path: str, settings: Settings | None = None) -> U
 
 def role_satisfies(actual: UserRole, needed: UserRole) -> bool:
     return ROLE_ORDER.index(actual) >= ROLE_ORDER.index(needed)
+
+
+def min_role(a: UserRole, b: UserRole) -> UserRole:
+    """Менш привілейована з двох ролей — використовується там, де фактичне
+    право = перетин двох стель (task-79: роль токена й поточна роль
+    власника, `resolve_personal_token_sync`)."""
+    return a if ROLE_ORDER.index(a) <= ROLE_ORDER.index(b) else b
 
 
 def admin_only_tool_slugs(settings: Settings | None = None) -> list[str]:

@@ -24,6 +24,7 @@ from app.core.auth.sessions import (
     AuthenticatedSession,
     resolve_agent_token,
     resolve_localhost_bypass,
+    resolve_personal_token,
     resolve_session,
 )
 from app.core.config import Settings, get_settings
@@ -86,6 +87,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         auth: AuthenticatedSession | None = resolve_agent_token(request, settings)
         if auth is None:
             auth = resolve_localhost_bypass(request, settings)
+        # Особистий токен (task-79) — на відміну від двох вище, б'є в БД,
+        # тому третій за порядком: перевіряється лише коли жоден дешевий
+        # sync-шлях не спрацював, і сам одразу виходить без запиту, якщо
+        # заголовка `Bearer` взагалі нема (звичайний браузерний запит).
+        if auth is None:
+            auth = await resolve_personal_token(request, settings=settings)
 
         if is_public_path(path):
             request.state.auth_session = auth

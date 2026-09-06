@@ -38,6 +38,11 @@ ROUTE_ACTIONS: dict[tuple[str, str], ActionSpec] = {
     ("POST", "/api/v1/admin/users/{user_id}/revoke-sessions"): ActionSpec(
         "admin.user.revoke_sessions", "user", "user_id"
     ),
+    # task-79: особисті токени — «кожен видає собі сам».
+    ("POST", "/api/v1/me/tokens"): ActionSpec("me.token.create", "agent_token"),
+    ("DELETE", "/api/v1/me/tokens/{token_id}"): ActionSpec(
+        "me.token.revoke", "agent_token", "token_id"
+    ),
     # ── клієнти й інтеграції ─────────────────────────────────────────────
     ("POST", "/api/v1/clients"): ActionSpec("client.create", "client"),
     ("PATCH", "/api/v1/clients/{client_id}"): ActionSpec("client.update", "client", _C),

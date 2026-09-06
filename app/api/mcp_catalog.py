@@ -288,7 +288,8 @@ def _connect_snippets(base_url: str) -> list[McpConnectSnippet]:
             host="Claude Desktop",
             title="claude_desktop_config.json",
             config=stdio_config,
-            note="Ask an admin for a token, then restart Claude Desktop to pick up the change.",
+            note="Create your own token in Your account, then restart Claude Desktop"
+            " to pick up the change.",
         ),
         McpConnectSnippet(
             host="Claude Code",

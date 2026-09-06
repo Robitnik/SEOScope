@@ -177,6 +177,12 @@ class AuditMiddleware(BaseHTTPMiddleware):
             details["request"] = body
         if request.url.query:
             details["query"] = request.url.query[:500]
+        # task-79: особистий токен несе РЕАЛЬНУ особу власника (actor_id/
+        # actor_email вже саме її), а мітка токена тут — щоб рядок читався
+        # як «Іван — via token "claude-code"», а не просто «Іван».
+        token_label = getattr(auth, "token_label", None)
+        if token_label:
+            details["token_label"] = token_label
 
         # `origin` (task-73): "cookie" → людина ("user"); "agent"/"local" —
         # dev bearer-токен і localhost-байпас переносяться як є, щоб журнал
