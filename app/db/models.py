@@ -45,6 +45,7 @@ from app.schemas.enums import (
     Quality,
     SourceMode,
     StageStatus,
+    UserRole,
 )
 
 
@@ -1930,6 +1931,75 @@ class UrlScreenshot(Base):
 
 def _reject_update(mapper: Any, connection: Any, target: Base) -> None:
     raise ValueError(f"{type(target).__name__} rows are immutable after commit")
+
+
+class User(Base):
+    """Співробітник агенції (task-71).
+
+    Рядки НЕ видаляються: `is_active=False` + відкликання сесій. Видалення
+    зробило б історію дій (task-72) безавторською, а `created_by_id` нижче —
+    висячим посиланням.
+    """
+
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("email", name="uq_users_email"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    # Завжди у нижньому регістрі (`schemas.auth.normalize_email`) — унікальність
+    # у SQLite чутлива до регістру, тож канонізація робиться на вході, а не
+    # `COLLATE NOCASE` (той ще й ламає використання індексу для LIKE).
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    role: Mapped[UserRole] = mapped_column(_str_enum(UserRole, 16), default=UserRole.member)
+    # `scrypt$<n>$<r>$<p>$<b64 salt>$<b64 hash>` — див. app/core/auth/passwords.py.
+    # Пароль генерує сервер і користувач його не змінює (рішення оператора:
+    # так працюють інші тули компанії), тому поля `must_change_password` тут
+    # свідомо немає — перевидати може лише адмін.
+    password_hash: Mapped[str] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    password_set_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+    # NULL у bootstrap-адміна: його створює entrypoint, а не людина.
+    created_by_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+
+
+class UserSession(Base):
+    """Одна активна сесія браузера (task-71).
+
+    У БД лежить лише `sha256` від токена: витік дампа таблиці не дає нікому
+    можливості представитись користувачем — той самий принцип, що PLAN §13
+    вимагає для будь-яких секретів.
+    """
+
+    __tablename__ = "user_sessions"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_user_sessions_token_hash"),
+        Index("ix_user_sessions_user_id_expires_at", "user_id", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Другий, незалежний секрет — double-submit CSRF (task-71 §5). Не HttpOnly
+    # на боці браузера, тому НІКОЛИ не використовується для автентифікації.
+    csrf_token: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # Оновлюється не частіше, ніж раз на `session_touch_interval_seconds`:
+    # після task-66/67 (writer-лок був зайнятий 97% часу) запис на кожен
+    # запит — це податок на всю систему, а не на одну сесію.
+    last_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    ip: Mapped[str | None] = mapped_column(String(64), default=None)
+    user_agent: Mapped[str | None] = mapped_column(String(256), default=None)
 
 
 def _reject_mutation_except(allowed: set[str]) -> Any:

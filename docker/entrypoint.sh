@@ -39,6 +39,13 @@ else
   echo "alembic.ini not found yet (task-03 pending) — skipping migrations."
 fi
 
+# task-71: перший адміністратор. Спрацьовує ЛИШЕ коли таблиця `users` порожня
+# і задано BOOTSTRAP_ADMIN_EMAIL — рестарт не має воскрешати обліковий запис,
+# який хтось свідомо деактивував. Пароль друкується рівно один раз.
+if [ -f "alembic.ini" ]; then
+  yovth-report ensure-admin || echo "ensure-admin skipped (non-fatal)"
+fi
+
 case "${1:-api}" in
   api)
     exec uvicorn app.main:app --host 0.0.0.0 --port "${API_PORT:-6524}"

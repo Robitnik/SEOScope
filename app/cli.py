@@ -355,6 +355,50 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="Report what's missing without fetching anything"
     )
 
+    # ── Користувачі (task-71) ────────────────────────────────────────────
+    user_create_cmd = subparsers.add_parser(
+        "user-create",
+        help="Create a user account and print its generated password ONCE",
+    )
+    user_create_cmd.add_argument("--email", required=True)
+    user_create_cmd.add_argument("--name", required=True)
+    user_create_cmd.add_argument(
+        "--role", default="member", choices=["admin", "member", "viewer"]
+    )
+
+    subparsers.add_parser(  # noqa: F841 - no extra arguments
+        "user-list", help="List accounts: email, name, role, active, last login"
+    )
+
+    user_reset_cmd = subparsers.add_parser(
+        "user-reset-password",
+        help="Issue a new generated password (revokes that user's sessions)",
+    )
+    user_reset_cmd.add_argument("--email", required=True)
+
+    user_deactivate_cmd = subparsers.add_parser(
+        "user-deactivate", help="Deactivate an account and revoke its sessions"
+    )
+    user_deactivate_cmd.add_argument("--email", required=True)
+
+    subparsers.add_parser(  # noqa: F841 - no extra arguments
+        "ensure-admin",
+        help=(
+            "Create the bootstrap administrator from BOOTSTRAP_ADMIN_EMAIL if, and only "
+            "if, the users table is empty. No-op otherwise — a restart must never "
+            "resurrect an account someone deliberately deactivated"
+        ),
+    )
+
+    subparsers.add_parser(  # noqa: F841 - no extra arguments
+        "db-maintenance",
+        help=(
+            "ANALYZE + wal_checkpoint(TRUNCATE) + PRAGMA optimize (task-66 §1.4) — "
+            "sqlite_stat1 was empty in production, meaning the query planner had "
+            "never seen table/index statistics for a 761MB database"
+        ),
+    )
+
     return parser
 
 
@@ -373,6 +417,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(render_report(report, dry_run=args.dry_run))
         return 0
+
+    if args.command in {
+        "user-create",
+        "user-list",
+        "user-reset-password",
+        "user-deactivate",
+        "ensure-admin",
+    }:
+        return _run_user_command(args)
 
     if args.command == "backfill-health-history":
         # Imported here, not at module scope: this pulls in the API layer,
@@ -1454,3 +1507,112 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+def _run_user_command(args: argparse.Namespace) -> int:
+    """Операторські дії з обліковими записами (task-71).
+
+    Локальні імпорти: решта CLI-команд не має причини тягнути auth-шар, а
+    `import-ai-seo-history` взагалі працює без нього.
+    """
+    from app.core.auth.passwords import generate_password
+    from app.core.config import get_settings
+    from app.db.repositories.users import UserRepository
+    from app.schemas.auth import normalize_email
+    from app.schemas.enums import UserRole
+
+    session_factory = get_sync_sessionmaker()
+
+    with session_factory() as session:
+        repo = UserRepository(session)
+
+        if args.command == "user-list":
+            users = repo.list_all()
+            if not users:
+                print("no accounts yet — run `yovth-report user-create` or `ensure-admin`")
+                return 0
+            counts = repo.active_session_counts()
+            for user in users:
+                state = "active" if user.is_active else "disabled"
+                last = (
+                    user.last_login_at.isoformat(timespec="seconds")
+                    if user.last_login_at
+                    else "never"
+                )
+                print(
+                    f"{user.email:40} {user.role.value:7} {state:8} "
+                    f"sessions={counts.get(user.id, 0):<3} last_login={last}"
+                )
+            return 0
+
+        if args.command == "ensure-admin":
+            settings = get_settings()
+            if repo.count() > 0:
+                print("users already exist — nothing to bootstrap")
+                return 0
+            if not settings.bootstrap_admin_email:
+                print(
+                    "no accounts and BOOTSTRAP_ADMIN_EMAIL is not set — "
+                    "run `yovth-report user-create --role admin ...` manually",
+                    file=sys.stderr,
+                )
+                return 0
+            password = os.environ.get("BOOTSTRAP_ADMIN_PASSWORD") or generate_password()
+            user = repo.create(
+                email=settings.bootstrap_admin_email,
+                name=settings.bootstrap_admin_name,
+                role=UserRole.admin,
+                password=password,
+            )
+            session.commit()
+            print("=" * 72)
+            print(f"bootstrap administrator created: {user.email}")
+            if not os.environ.get("BOOTSTRAP_ADMIN_PASSWORD"):
+                print(f"password (shown once, store it now): {password}")
+            print("=" * 72)
+            return 0
+
+        if args.command == "user-create":
+            try:
+                email = normalize_email(args.email)
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+            if repo.get_by_email(email) is not None:
+                print(f"error: {email} already has an account", file=sys.stderr)
+                return 2
+            password = generate_password()
+            user = repo.create(
+                email=email, name=args.name, role=UserRole(args.role), password=password
+            )
+            session.commit()
+            print(f"created {user.email} ({user.role.value})")
+            print(f"password (shown once, store it now): {password}")
+            return 0
+
+        existing = repo.get_by_email(args.email)
+        if existing is None:
+            print(f"error: no account for {args.email}", file=sys.stderr)
+            return 2
+        user = existing
+
+        if args.command == "user-reset-password":
+            password = generate_password()
+            repo.set_password(user, password)
+            revoked = repo.revoke_all_sessions(user.id)
+            session.commit()
+            print(f"new password for {user.email} (shown once): {password}")
+            print(f"revoked {revoked} active session(s)")
+            return 0
+
+        if args.command == "user-deactivate":
+            if user.role == UserRole.admin and repo.count_active_admins(excluding=user.id) == 0:
+                print("error: this is the last active administrator", file=sys.stderr)
+                return 2
+            repo.update_profile(user, is_active=False)
+            revoked = repo.revoke_all_sessions(user.id)
+            session.commit()
+            print(f"deactivated {user.email}, revoked {revoked} session(s)")
+            return 0
+
+    return 2
+

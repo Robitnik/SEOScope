@@ -12,6 +12,9 @@ from starlette.responses import Response
 from starlette.types import ASGIApp
 
 from app.core.config import Settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -43,7 +46,21 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 def configure_security(app: FastAPI, settings: Settings) -> None:
-    """Attach restrictive, same-origin-by-default CORS and security headers."""
+    """Attach the auth gate, restrictive same-origin CORS and security headers.
+
+    Порядок додавання — навпаки до порядку виконання: Starlette робить
+    ОСТАННІЙ доданий middleware зовнішнім. Тому `AuthMiddleware` додається
+    першим (виконується найглибше): його 401/403 усе одно проходять крізь
+    security-заголовки та CORS-шар вище.
+    """
+    from app.core.auth.middleware import AuthMiddleware
+
+    if not settings.auth_enabled:
+        logger.warning(
+            "auth_disabled — every endpoint, the frontend and the archive replay are OPEN. "
+            "This is only for local development; never for a deployment reachable from outside."
+        )
+    app.add_middleware(AuthMiddleware, settings=settings)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,

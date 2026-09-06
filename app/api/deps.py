@@ -13,19 +13,22 @@ style FastAPI itself recommends since 0.95.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Query
+from fastapi import Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth.policy import role_satisfies
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
+from app.schemas.enums import UserRole
 
 __all__ = [
     "Actor",
     "ActorDep",
+    "AdminActorDep",
     "Pagination",
     "PaginationDep",
     "SessionDep",
@@ -33,6 +36,7 @@ __all__ = [
     "current_actor",
     "get_session",
     "pagination",
+    "require_role",
 ]
 
 
@@ -69,19 +73,81 @@ PaginationDep = Annotated[Pagination, Depends(pagination)]
 
 @dataclass(frozen=True)
 class Actor:
-    """Placeholder for the authenticated caller (PLAN §13).
+    """Хто виконує дію (task-71).
 
-    MVP deployment is behind an auth reverse proxy on a private network, so
-    there is no app-level login yet; this stub keeps a single seam routers
-    can depend on (`current_actor`) so wiring real auth later touches this
-    function, not every call site.
+    Той самий seam, що стояв тут заглушкою з MVP, — тепер із реальним
+    користувачем із сесії. Фонові процеси (worker, CLI, планувальники) HTTP
+    не ходять і користуються `Actor.system()` / `Actor.cli()`; на цю ж
+    структуру спиратиметься журнал дій (task-72).
     """
 
     id: str = "system"
+    kind: str = "system"
+    email: str | None = None
+    name: str | None = None
+    role: UserRole | None = None
+    session_id: str | None = None
+    ip: str | None = None
+
+    @property
+    def is_authenticated(self) -> bool:
+        return self.kind == "user"
+
+    @classmethod
+    def system(cls) -> Actor:
+        return cls()
+
+    @classmethod
+    def cli(cls) -> Actor:
+        return cls(id="cli", kind="cli")
 
 
-def current_actor() -> Actor:
-    return Actor()
+def current_actor(request: Request) -> Actor:
+    """Читає те, що вже поклав `AuthMiddleware` — повторного запиту в БД тут
+    немає навмисно: резолв сесії коштує SELECT, і робити його двічі на запит
+    (у middleware і в залежності) було б чистим податком."""
+    auth = getattr(request.state, "auth_session", None)
+    if auth is None:
+        # `auth_enabled=False` (локальна розробка) або публічний шлях.
+        return Actor.system()
+    client_host = request.client.host if request.client else None
+    return Actor(
+        id=auth.user_id,
+        kind="user",
+        email=auth.email,
+        name=auth.name,
+        role=auth.role,
+        session_id=auth.session_id,
+        ip=client_host,
+    )
 
 
 ActorDep = Annotated[Actor, Depends(current_actor)]
+
+
+def require_role(minimum: UserRole) -> Callable[[Actor], Actor]:
+    """Точкова перевірка ролі для роутера.
+
+    Дублює те, що вже робить `AuthMiddleware` за шляхом, — і це свідомо:
+    middleware ловить усе за префіксом, а ця залежність робить вимогу
+    видимою в сигнатурі ендпоінта й у згенерованій OpenAPI-схемі. При
+    `auth_enabled=False` (тести/локальна розробка) пропускає.
+    """
+
+    def _dependency(actor: ActorDep) -> Actor:
+        if not get_settings().auth_enabled:
+            return actor
+        if actor.role is None or not role_satisfies(actor.role, minimum):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error_code": "forbidden",
+                    "message": "Your role does not allow this action.",
+                },
+            )
+        return actor
+
+    return _dependency
+
+
+AdminActorDep = Annotated[Actor, Depends(require_role(UserRole.admin))]

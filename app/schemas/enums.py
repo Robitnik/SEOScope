@@ -179,3 +179,26 @@ STAGE_ORDER: tuple[str, ...] = (
     "persist",
     "complete",
 )
+
+
+class UserRole(StrEnum):
+    """Роль співробітника в тулі (task-71).
+
+    Три рівні, свідомо без per-client ACL: всі авторизовані бачать усіх
+    клієнтів, різниця лише в тому, що вони можуть **робити**.
+
+    - `admin`  — усе, плюс керування користувачами й батч-операції
+                 (batch reports, імпорти, cloud): вони або дорогі за
+                 зовнішніми квотами, або незворотні.
+    - `member` — щоденна робота: збір, інструменти, звіти по одному клієнту.
+    - `viewer` — лише читання: будь-який мутуючий метод → 403.
+    """
+
+    admin = "admin"
+    member = "member"
+    viewer = "viewer"
+
+
+# Порядок за спаданням прав — використовується `role_satisfies()` у
+# `app/core/auth/policy.py`; не сортувати за алфавітом.
+ROLE_ORDER: tuple[UserRole, ...] = (UserRole.viewer, UserRole.member, UserRole.admin)

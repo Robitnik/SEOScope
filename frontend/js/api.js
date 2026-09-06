@@ -32,16 +32,46 @@ export function normalizeErrorDetail(detail, status) {
   return `HTTP ${status}`;
 }
 
+// task-71: double-submit CSRF. Токен лежить у НЕ-HttpOnly cookie саме для
+// того, щоб фронт міг покласти його в заголовок; сервер звіряє заголовок із
+// тим, що зберігає сесія. Читаємо на кожен виклик, а не кешуємо: після
+// повторного логіну в іншій вкладці кешоване значення було б застарілим і
+// давало б 403 на кожну дію.
+function csrfToken() {
+  const match = document.cookie.match(/(?:^|;\s*)yovth_csrf=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+// Один шлях виходу для всього додатка: якщо сесія протухла або її відкликали,
+// будь-який із ~100 викликів нижче отримає 401 — і замість того, щоб кожна
+// панель малювала власну помилку «Failed to load», ведемо людину на форму
+// входу і повертаємо її туди, де вона була.
+function redirectToLogin() {
+  if (location.pathname === "/login.html") return;
+  const next = encodeURIComponent(`${location.pathname}${location.search}${location.hash}`);
+  location.replace(`/login.html?next=${next}`);
+}
+
 async function request(path, options = {}, key = path) {
   controllers.get(key)?.abort();
   const controller = new AbortController();
   controllers.set(key, controller);
+  const method = (options.method || "GET").toUpperCase();
+  const authHeaders = method === "GET" || method === "HEAD" ? {} : { "X-CSRF-Token": csrfToken() };
   try {
     const response = await fetch(`${API_ROOT}${path}`, {
       ...options,
+      credentials: "same-origin",
       signal: options.signal || controller.signal,
-      headers: { "Content-Type": "application/json", Accept: "application/json", ...options.headers },
+      headers: { "Content-Type": "application/json", Accept: "application/json", ...authHeaders, ...options.headers },
     });
+    if (response.status === 401) {
+      redirectToLogin();
+      const error = new Error("Your session has expired. Sign in again.");
+      error.status = 401;
+      error.code = "auth_required";
+      throw error;
+    }
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       const error = new Error(normalizeErrorDetail(payload.detail, response.status));
@@ -2993,5 +3023,65 @@ export async function captureUrlScreenshots(url, { presets, force = false } = {}
     "/url-screenshots",
     { method: "POST", body: JSON.stringify(body) },
     "url-screenshots-capture",
+  );
+}
+
+
+// ── Авторизація та адмінка користувачів (task-71) ─────────────────────────
+// `requestKey` у цих викликах — явні іменовані призначення, а не похідні від
+// параметрів: спільний ключ скасовував би паралельні виклики один одному.
+
+export async function getAuthSession() {
+  // Через `fetch` напряму, повз `request()`: цей ендпоінт публічний і його
+  // 401-обробка (редірект на логін) тут була б рекурсією.
+  const response = await fetch(`${API_ROOT}/auth/session`, {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) return { authenticated: false, user: null };
+  return response.json();
+}
+
+export async function logout() {
+  return request("/auth/logout", { method: "POST" }, "auth-logout");
+}
+
+export async function logoutEverywhere() {
+  return request("/auth/logout-all", { method: "POST" }, "auth-logout-all");
+}
+
+export async function listUsers() {
+  return request("/admin/users", {}, "admin-users-list");
+}
+
+export async function createUser({ email, name, role }) {
+  return request(
+    "/admin/users",
+    { method: "POST", body: JSON.stringify({ email, name, role }) },
+    "admin-user-create",
+  );
+}
+
+export async function updateUser(userId, patch) {
+  return request(
+    `/admin/users/${encodeURIComponent(userId)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+    `admin-user-update-${userId}`,
+  );
+}
+
+export async function resetUserPassword(userId) {
+  return request(
+    `/admin/users/${encodeURIComponent(userId)}/reset-password`,
+    { method: "POST" },
+    `admin-user-reset-${userId}`,
+  );
+}
+
+export async function revokeUserSessions(userId) {
+  return request(
+    `/admin/users/${encodeURIComponent(userId)}/revoke-sessions`,
+    { method: "POST" },
+    `admin-user-revoke-${userId}`,
   );
 }

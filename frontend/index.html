@@ -23,8 +23,9 @@
     <link rel="stylesheet" href="/css/reports.css?v=20260821-spin3">
     <link rel="stylesheet" href="/css/archive.css?v=20260906-t70">
     <link rel="stylesheet" href="/css/url-inspector.css?v=20260906-t61">
+    <link rel="stylesheet" href="/css/admin.css?v=20260906-t71">
     <script src="/vendor/chart.js-4.5.1/chart.umd.min.js" defer></script>
-    <script type="module" src="/js/router.js?v=20260905-t64"></script>
+    <script type="module" src="/js/router.js?v=20260906-t71"></script>
   </head>
   <body>
     <a class="skip-link" href="#page-content">Skip to content</a>
@@ -72,24 +73,48 @@
             <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-radar-2"></use></svg>
             <span>Monitor</span>
           </a>
+          <a href="#/admin/users" data-nav="admin" data-requires-role="admin" hidden>
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-users"></use></svg>
+            <span>People</span>
+          </a>
           <a href="#/archive" data-nav="archive">
             <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-history"></use></svg>
             <span>Archive</span>
           </a>
         </nav>
-        <div class="header-actions" id="dashboard-header-actions" hidden>
-          <div class="connection-status" id="connection-status" role="status">
-            <span class="status-signal" aria-hidden="true"></span>
-            <span>API online</span>
+        <!-- task-71: правий кластер шапки. `#dashboard-header-actions`
+             ховається на кожному не-дашбордному маршруті, а меню користувача
+             має бути доступним скрізь — тож вони лежать в одному флекс-елементі,
+             інакше четвертий прямий нащадок `.app-header` ламає рядок. -->
+        <div class="header-end">
+          <div class="header-actions" id="dashboard-header-actions" hidden>
+            <div class="connection-status" id="connection-status" role="status">
+              <span class="status-signal" aria-hidden="true"></span>
+              <span>API online</span>
+            </div>
+            <button class="button button--audit" id="audit-all-button" type="button">
+              <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-bug"></use></svg>
+              Run audits
+            </button>
+            <button class="button button--primary" id="sync-all-button" type="button">
+              <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-refresh"></use></svg>
+              Refresh data
+            </button>
           </div>
-          <button class="button button--audit" id="audit-all-button" type="button">
-            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-bug"></use></svg>
-            Run audits
-          </button>
-          <button class="button button--primary" id="sync-all-button" type="button">
-            <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-refresh"></use></svg>
-            Refresh data
-          </button>
+          <div class="user-menu" id="user-menu" hidden>
+            <button class="user-menu__toggle" id="user-menu-toggle" type="button"
+                    aria-expanded="false" aria-controls="user-menu-panel">
+              <svg class="icon" aria-hidden="true"><use href="/assets/icons/tabler-sprite.svg#tabler-user"></use></svg>
+              <span id="user-menu-name">—</span>
+            </button>
+            <div class="user-menu__panel" id="user-menu-panel" hidden>
+              <p class="user-menu__role" id="user-menu-role">—</p>
+              <p class="user-menu__email" id="user-menu-email">—</p>
+              <a href="#/admin/users" id="user-menu-admin" hidden>Manage people</a>
+              <button type="button" id="user-menu-signout">Sign out</button>
+            </div>
+          </div>
+
         </div>
       </header>
 
@@ -202,6 +227,7 @@
     <main class="app-main" id="archive-capture-page-root" hidden></main>
 
     <main class="app-main" id="url-inspector-page-root" hidden></main>
+    <main class="app-main" id="admin-users-page-root" hidden></main>
     </div>
 
     <div class="job-dock" id="job-dock" hidden>

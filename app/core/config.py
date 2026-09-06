@@ -42,6 +42,35 @@ class Settings(BaseSettings):
     chrome_cdp_host: str = "127.0.0.1"
     browser_login_timeout_seconds: float = 120.0
 
+    # ── Авторизація (task-71) ────────────────────────────────────────────
+    # Вимкнення лишається лише для локальної розробки й тестів: при `False`
+    # кожен старт пише WARNING, бо це відкриває всі дані всім, хто має URL.
+    auth_enabled: bool = True
+    auth_cookie_name: str = "yovth_session"
+    auth_csrf_cookie_name: str = "yovth_csrf"
+    # `False` для http://localhost. За Cloudflare-тунелем (https) — `True`,
+    # інакше cookie поїде і по відкритому каналу.
+    auth_cookie_secure: bool = True
+    # Абсолютний строк життя сесії і строк простою. Перевіряються обидва:
+    # вкрадений cookie з ноутбука, яким не користуються, помирає сам.
+    session_absolute_ttl_days: int = 14
+    session_idle_ttl_hours: int = 72
+    # Як часто дозволено оновлювати `last_seen_at`. НЕ косметика: після
+    # task-66/67 (writer-лок був зайнятий 97% часу) запис на кожен запит —
+    # це податок на всю систему; 5 хв дає рівно ту точність, яка потрібна
+    # idle-таймауту, і один запис замість сотень на рендер дашборда.
+    session_touch_interval_seconds: int = 300
+    login_max_failures: int = 10
+    login_lockout_minutes: int = 15
+    # Додаткові admin-only префікси поверх `DEFAULT_ADMIN_ONLY_PATHS`
+    # (`app/core/auth/policy.py`) — щоб обмежити ще один інструмент, не
+    # чіпаючи код: наприклад `["/api/v1/tools/redirects"]`.
+    auth_admin_only_paths: list[str] = []
+    # Bootstrap першого адміна (`yovth-report ensure-admin` з entrypoint).
+    # Спрацьовує ЛИШЕ коли таблиця `users` порожня.
+    bootstrap_admin_email: str | None = None
+    bootstrap_admin_name: str = "Administrator"
+
     event_retention_days: int = 30
     job_lease_seconds: int = 300
 

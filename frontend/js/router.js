@@ -49,6 +49,10 @@ const ARCHIVE_ROUTE = /^#\/archive/;
 // route, not a nav tab — top-level, no client-id segment, same shape as
 // Trends/Monitor/Archive above. The URL being inspected lives in `u=`.
 const URL_INSPECTOR_ROUTE = /^#\/url(?:$|[/?])/;
+// Адмінка користувачів (task-71) — верхньорівнева сторінка, доступна лише
+// адміну. Сам маршрут не «захищає» нічого: сервер однаково віддасть 403 на
+// `/api/v1/admin/*`, а тут ми просто не малюємо порожній екран не тій людині.
+const ADMIN_USERS_ROUTE = /^#\/admin\/users/;
 
 export function parseRoute() {
   const pathMatch = location.pathname.match(ARCHIVE_VIEW_PATH_RE);
@@ -66,6 +70,7 @@ export function parseRoute() {
   }
   const hash = location.hash || "";
   const query = new URLSearchParams(hash.split("?")[1] || "");
+  if (ADMIN_USERS_ROUTE.test(hash)) return { name: "admin-users", query };
   const toolsMatch = hash.match(TOOLS_ROUTE);
   if (toolsMatch) {
     return {
@@ -301,6 +306,7 @@ async function activate() {
   const archiveChangesRoot = document.querySelector("#archive-changes-page-root");
   const archiveCaptureRoot = document.querySelector("#archive-capture-page-root");
   const urlInspectorRoot = document.querySelector("#url-inspector-page-root");
+  const adminUsersRoot = document.querySelector("#admin-users-page-root");
   const dashboardChrome = [
     document.querySelector("#dashboard-header-actions"),
     document.querySelector("#dashboard-command-bar"),
@@ -308,23 +314,32 @@ async function activate() {
   const allRoots = [
     clientRoot, ahrefsRoot, blogsRoot, monthlyRoot, toolsRoot, trendsRoot, monitorRoot, monitorClientRoot,
     reportsRoot, reportsRunRoot, reportsBatchRoot, pagesRoot, archiveRoot, archiveViewRoot, archiveChangesRoot,
-    archiveCaptureRoot, urlInspectorRoot,
+    archiveCaptureRoot, urlInspectorRoot, adminUsersRoot,
   ];
   // Global nav marks the active destination for assistive tech and for the eye
   // (`aria-current`), since a cross-route move is a full reload here.
   const NAV_ROUTES = new Set([
-    "tools", "trends", "monitor", "reports", "reports-run", "reports-batch", "archive",
+    "tools", "trends", "monitor", "reports", "reports-run", "reports-batch", "archive", "admin",
   ]);
   document.querySelectorAll("[data-nav]").forEach((link) => {
     const navName = (route.name === "reports-run" || route.name === "reports-batch")
       ? "reports"
+      : route.name === "admin-users"
+      ? "admin"
       : (route.name === "archive-view" || route.name === "archive-changes" || route.name === "archive-capture")
         ? "archive" : route.name;
     const isActive = link.dataset.nav === (NAV_ROUTES.has(navName) ? navName : "dashboard");
     if (isActive) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  if (route.name === "tools") {
+  if (route.name === "admin-users") {
+    dashboardView?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== adminUsersRoot).forEach((el) => el?.setAttribute("hidden", ""));
+    dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
+    adminUsersRoot?.removeAttribute("hidden");
+    const { initAdminUsersPage } = await import("./admin-users-page.js?v=20260906-t71");
+    await initAdminUsersPage();
+  } else if (route.name === "tools") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== toolsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
@@ -698,6 +713,25 @@ function initUrlSearch() {
 // `true` and skips both calls entirely.
 if (!window.__yovthRouterBooted) {
   window.__yovthRouterBooted = true;
-  initUrlSearch();
-  activate();
+  // task-71: сесія резолвиться ПЕРЕД першим рендером — інакше меню
+  // користувача і пункт «People» блимали б на місці вже намальованої
+  // сторінки. Один запит на завантаження вкладки, не на кожен маршрут.
+  (async () => {
+    try {
+      const { loadSession, renderUserMenu, applyRoleVisibility } = await import("./session.js?v=20260906-t71");
+      const session = await loadSession();
+      if (!session?.authenticated) {
+        const next = encodeURIComponent(`${location.pathname}${location.search}${location.hash}`);
+        location.replace(`/login.html?next=${next}`);
+        return;
+      }
+      renderUserMenu(session);
+      applyRoleVisibility();
+    } catch {
+      // Сесію не вдалось прочитати (мережа) — додаток усе одно вантажимо:
+      // перший же API-виклик отримає 401 і сам поведе на форму входу.
+    }
+    initUrlSearch();
+    activate();
+  })();
 }

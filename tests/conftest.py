@@ -36,6 +36,7 @@ _MARKERS = {
     "contract": "контракт/регресія AISeoTools: сигнатури й стара test suite (PLAN §15)",
     "e2e": "браузерний прогін фронту; потребує node+chromium, поза pytest",
     "live": "metered live smoke по справжньому провайдеру; НІКОЛИ у звичайній CI",
+    "auth": "тест сам керує авторизацією (task-71): гейт НЕ вимикається автоматично",
 }
 
 
@@ -68,6 +69,30 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         # би незалежно від маркера.
         if item.get_closest_marker("live") is not None:
             item.add_marker(skip_live)
+
+
+@pytest.fixture(autouse=True)
+def _auth_disabled_unless_asked(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """task-71: увесь наявний набір тестів писався до появи авторизації.
+
+    Вмикати гейт для нього означало б переписати сотні тестів під логін заради
+    нуля додаткової впевненості — вони перевіряють поведінку ендпоінтів, а не
+    доступ до них. Тому за замовчуванням авторизація в тестах вимкнена, а
+    тести, які перевіряють САМЕ її, ставлять маркер `auth` і вмикають гейт
+    самі. Покриття «жоден ендпоінт не лишився відкритим» дає окремий
+    `tests/unit/api/test_auth_coverage.py`, а не кожен тест окремо.
+    """
+    from app.core.config import get_settings
+
+    if request.node.get_closest_marker("auth"):
+        yield
+        return
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture
