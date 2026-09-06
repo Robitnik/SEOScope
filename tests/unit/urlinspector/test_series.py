@@ -17,15 +17,22 @@ MONTH_END = date(2026, 7, 30)  # 30 days -> "month" bucket
 
 
 def _row(start, end, created_at, quality, value):
-    return PeriodRow(period_start=start, period_end=end, created_at=created_at, quality=quality, value=value)
+    return PeriodRow(
+        period_start=start, period_end=end, created_at=created_at,
+        quality=quality, value=value,
+    )
 
 
 class TestLastSnapshotWins:
     def test_latest_created_at_wins_when_period_recollected(self):
         # Real measured case (task-61 §0.3): same week, clicks went 396 -> 470
         # across two re-collections two days apart.
-        older = _row(WEEK_START, WEEK_END, datetime(2026, 7, 27, 10, 12), Quality.complete, Decimal(396))
-        newer = _row(WEEK_START, WEEK_END, datetime(2026, 7, 29, 9, 3), Quality.complete, Decimal(470))
+        older = _row(
+            WEEK_START, WEEK_END, datetime(2026, 7, 27, 10, 12), Quality.complete, Decimal(396)
+        )
+        newer = _row(
+            WEEK_START, WEEK_END, datetime(2026, 7, 29, 9, 3), Quality.complete, Decimal(470)
+        )
         series = build_series(
             metric="clicks", unit="count", url_rows=[older, newer],
             period_existence=[older, newer], granularity="week",
@@ -49,8 +56,12 @@ class TestLastSnapshotWins:
 
 class TestGranularityBuckets:
     def test_only_matching_length_periods_are_returned(self):
-        week_row = _row(WEEK_START, WEEK_END, datetime(2026, 7, 27), Quality.complete, Decimal(10))
-        month_row = _row(MONTH_START, MONTH_END, datetime(2026, 7, 31), Quality.complete, Decimal(500))
+        week_row = _row(
+            WEEK_START, WEEK_END, datetime(2026, 7, 27), Quality.complete, Decimal(10)
+        )
+        month_row = _row(
+            MONTH_START, MONTH_END, datetime(2026, 7, 31), Quality.complete, Decimal(500)
+        )
         series = build_series(
             metric="clicks", unit="count", url_rows=[week_row, month_row],
             period_existence=[week_row, month_row], granularity="week",
@@ -63,8 +74,12 @@ class TestGranularityBuckets:
         # A week (10) and a month (500) covering overlapping dates must never
         # be blended into one series — this was the exact failure mode that
         # would draw a fake spike (task-61 §0.4).
-        week_row = _row(WEEK_START, WEEK_END, datetime(2026, 7, 27), Quality.complete, Decimal(10))
-        month_row = _row(MONTH_START, MONTH_END, datetime(2026, 7, 31), Quality.complete, Decimal(500))
+        week_row = _row(
+            WEEK_START, WEEK_END, datetime(2026, 7, 27), Quality.complete, Decimal(10)
+        )
+        month_row = _row(
+            MONTH_START, MONTH_END, datetime(2026, 7, 31), Quality.complete, Decimal(500)
+        )
         month_series = build_series(
             metric="clicks", unit="count", url_rows=[week_row, month_row],
             period_existence=[week_row, month_row], granularity="month",
@@ -111,10 +126,15 @@ class TestHonestAbsence:
 
 class TestOrdering:
     def test_points_are_sorted_by_period_start(self):
-        later = _row(WEEK_START + timedelta(days=7), WEEK_END + timedelta(days=7), datetime(2026, 8, 3), Quality.complete, Decimal(1))
+        later = _row(
+            WEEK_START + timedelta(days=7), WEEK_END + timedelta(days=7),
+            datetime(2026, 8, 3), Quality.complete, Decimal(1),
+        )
         earlier = _row(WEEK_START, WEEK_END, datetime(2026, 7, 27), Quality.complete, Decimal(2))
         series = build_series(
             metric="clicks", unit="count", url_rows=[later, earlier],
             period_existence=[later, earlier], granularity="week",
         )
-        assert [p.period_start for p in series.points] == sorted(p.period_start for p in series.points)
+        assert [p.period_start for p in series.points] == sorted(
+            p.period_start for p in series.points
+        )

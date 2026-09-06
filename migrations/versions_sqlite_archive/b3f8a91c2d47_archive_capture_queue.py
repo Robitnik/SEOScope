@@ -55,7 +55,9 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column("archive_captures", sa.Column("queued_at", app.db.base.UTCDateTime(), nullable=True))
+    op.add_column(
+        "archive_captures", sa.Column("queued_at", app.db.base.UTCDateTime(), nullable=True)
+    )
     op.add_column("archive_captures", sa.Column("owner", sa.String(length=64), nullable=True))
     op.add_column(
         "archive_captures", sa.Column("heartbeat_at", app.db.base.UTCDateTime(), nullable=True)

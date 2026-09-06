@@ -148,7 +148,9 @@ def test_last_used_is_throttled(db: Session) -> None:
     db.refresh(row)
     assert row.last_used_at == first_moment
 
-    resolve_personal_token_sync(db, token, settings=settings, now=first_moment + timedelta(seconds=30))
+    resolve_personal_token_sync(
+        db, token, settings=settings, now=first_moment + timedelta(seconds=30)
+    )
     db.refresh(row)
     assert row.last_used_at == first_moment, "запис у межах вікна троттлінгу не робиться"
 
