@@ -13,7 +13,7 @@ snapshot from a transaction opened before another connection's commit.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -352,18 +352,44 @@ async def retry_sync_job(id: str) -> JobDTO | BatchProgressDTO:
     return result[1]
 
 
+def _job_ids_for(kind: str, resolved: str, session: Session) -> list[str]:
+    if kind == "job":
+        return [resolved]
+    return [j.id for j in JobRepository(session).list_for_batch(resolved)]
+
+
 def _fetch_events(kind: str, resolved: str, last_seq: int) -> list[JobEvent]:
+    # task-75 §3.3: only events older than this window are safe to hand to
+    # the client — see `Settings.job_event_cursor_safety_window_ms`'s own
+    # docstring for why a plain `seq > last_seq` cursor silently drops
+    # events under more than one writer.
+    window_ms = get_settings().job_event_cursor_safety_window_ms
+    safe_before = datetime.now(UTC) - timedelta(milliseconds=window_ms)
     with worker_session_scope() as session:
-        if kind == "job":
-            job_ids = [resolved]
-        else:
-            job_ids = [j.id for j in JobRepository(session).list_for_batch(resolved)]
+        job_ids = _job_ids_for(kind, resolved, session)
         repo = EventRepository(session)
         events: list[JobEvent] = []
         for job_id in job_ids:
-            events.extend(repo.since(job_id, last_seq))
+            events.extend(repo.since(job_id, last_seq, safe_before=safe_before))
         events.sort(key=lambda e: e.seq)
         return events
+
+
+def _has_pending_events(kind: str, resolved: str, last_seq: int) -> bool:
+    """Is there anything past `last_seq` at all, safety window aside?
+
+    Task-75 §3.3: without this, `stream_sync_job_events` could see an
+    empty `_fetch_events` (nothing has aged past the safety window YET)
+    at the exact moment the job also happens to look terminal, and close
+    the SSE stream before its own last event(s) ever got a chance to age
+    past the window and be delivered.
+    """
+    with worker_session_scope() as session:
+        repo = EventRepository(session)
+        return any(
+            repo.has_pending(job_id, last_seq)
+            for job_id in _job_ids_for(kind, resolved, session)
+        )
 
 
 def _job_is_done(kind: str, resolved: str) -> bool:
@@ -390,10 +416,22 @@ async def stream_sync_job_events(id: str, request: Request) -> StreamingResponse
     except ValueError:
         last_event_id = 0
 
+    # task-75 §3.3: `is_done` needs to know the cursor `fetch_since` was
+    # last called with, to check whether anything is still waiting to age
+    # past the safety window before agreeing the stream is finished. The
+    # two closures share this one variable rather than widening
+    # `event_stream`'s own signature, which `app/api/reports.py` also uses
+    # for a wholly separate events table (out of this task's owned paths).
+    last_seen_seq = last_event_id
+
     async def fetch_since(last_seq: int) -> list[JobEvent]:
+        nonlocal last_seen_seq
+        last_seen_seq = last_seq
         return await run_in_threadpool(_fetch_events, kind, resolved, last_seq)
 
     async def is_done() -> bool:
+        if await run_in_threadpool(_has_pending_events, kind, resolved, last_seen_seq):
+            return False
         return await run_in_threadpool(_job_is_done, kind, resolved)
 
     return StreamingResponse(

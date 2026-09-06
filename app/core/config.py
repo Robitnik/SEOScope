@@ -109,6 +109,28 @@ class Settings(BaseSettings):
     event_retention_days: int = 30
     job_lease_seconds: int = 300
 
+    # task-75 §3.3: `job_events.seq` is a global autoincrement PK doubling as
+    # the SSE `Last-Event-ID` cursor (`EventRepository.since`). Under exactly
+    # one writer (today's SQLite worker) that's safe — transactions commit in
+    # the same order they took `seq`. Under more than one writer (Postgres,
+    # once task-75 lands), a sequence hands out numbers at INSERT time but
+    # rows become visible at COMMIT time, and those two orders can differ:
+    # writer A takes seq=100, writer B takes seq=101 and commits FIRST, a
+    # poll sees only 101 and advances `last_seq` past it, then A commits —
+    # event 100 is now permanently unreachable (`seq > last_seq` never
+    # matches it again). Silent: the event just never appears in the live
+    # sync-modal, and a single-writer test can't reproduce it.
+    #
+    # Fix: only serve an event once it is older than this window — long
+    # enough that any OTHER transaction which grabbed a lower `seq` earlier
+    # is guaranteed to have already committed (ordinary commit latency is
+    # single-digit milliseconds; 200ms is a generous margin, not a tight
+    # one). This trades permanent, guaranteed data loss under any
+    # concurrency for an extra ~200ms of live-progress latency — imperceptible
+    # in a UI that already polls every second (`app/jobs/events.py`'s
+    # `poll_interval_seconds`).
+    job_event_cursor_safety_window_ms: int = 200
+
     # How many cells of ONE provider may collect at the same time (task-31).
     # For ahrefs/semrush this is literally how many windows of the warm host
     # Chrome are driven in parallel on the single logged-in profile.
