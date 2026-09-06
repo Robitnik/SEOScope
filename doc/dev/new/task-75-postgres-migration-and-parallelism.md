@@ -129,39 +129,55 @@ task-67 виміряла стелю **одного** писача (23 766 txn/s)
 
 ## §2. Postgres у Docker
 
-### §2.1 Сервіс
+### §2.1 Сервіс ✅ done (2026-09-06)
 
-Новий сервіс `db` у `compose.yaml`. Три нетипові для стандартного рецепта речі, кожна вимушена цим проєктом:
+Новий сервіс `db` у `compose.yaml`. **Свідомо НЕ `network_mode: host`**, на відміну від початкового чернетки цього розділу — рішення користувача, застосоване й перевірене живо.
 
-1. **`network_mode: host`.** `api` і `worker` уже сидять на хостовій мережі (CDP-міст до браузера на хості — див. довгий коментар у `compose.yaml`). Контейнер на хостовій мережі **не бачить** compose-DNS, тож `db:5432` для нього не резолвиться. Або `db` теж іде в host-мережу і слухає `127.0.0.1:5432`, або лишається в bridge і публікує порт. **Обираємо host-мережу** з портом `${POSTGRES_PORT:-6532}` — публікація порту на bridge теж працює, але тоді у `db` буде інша мережева семантика, ніж у двох сусідів, і healthcheck/`depends_on` поводитимуться неочевидно. Порт нестандартний (не 5432), бо на хості вже крутяться чотири чужі Postgres-контейнери (`moonanime-db`, `umdb_postgres`, `cengine_backend_db`, `aniua_backend_db`) — колізія гарантована.
+1. **Ізольована bridge-мережа, порт лише на `127.0.0.1`.** `api`/`worker` сидять на host-мережі виключно заради CDP-мосту до Chrome на хості (див. їхні власні коментарі в `compose.yaml`) — Postgres такої причини не має. Даючи йому `network_mode: host`, він отримав би те саме, що й вони: повна відсутність docker-мережевої ізоляції, спільний мережевий простір із хостом. Замість цього `db` лишається на власній bridge-мережі (`theyovthclientsreport_default`, створює сама compose) і публікує **один** порт, **тільки на loopback**: `"127.0.0.1:${POSTGRES_PORT:-6532}:5432"`. `api`/`worker` (вони на host-мережі, тобто поділяють мережевий простір хоста) бачать це як звичайний `127.0.0.1:6532` — так само, як бачили б будь-який інший localhost-сервіс. Ззовні хоста (LAN, інтернет) сокет, прив'язаний до `127.0.0.1`, недосяжний у принципі — це властивість самого біндингу, не фаєрвола. Порт нестандартний (не 5432), бо на хості вже крутяться чотири чужі Postgres-контейнери (`moonanime-db`, `umdb_postgres`, `cengine_backend_db`, `aniua_backend_db`) — колізія гарантована.
 2. **Іменований том, не bind-mount.** `pgdata` як docker volume. Bind-mount у репо дав би root-owned каталог у робочому дереві — точно та сама грабля, на яку проєкт наступав тричі (див. коментарі в `compose.yaml`).
 3. **`user`/uid не перевизначаємо.** На відміну від `api`/`worker`, офіційний образ Postgres керує власним uid сам і в спільні хостові каталоги (`state/locks`, `downloads`) не пише — причини, що змусили `user: 1000:1000` для api/worker, тут відсутні.
 
 ```yaml
 db:
   image: postgres:16-alpine
-  network_mode: host
   environment:
     POSTGRES_USER: yovth
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     POSTGRES_DB: yovth
-    PGPORT: ${POSTGRES_PORT:-6532}
+  ports:
+    - "127.0.0.1:${POSTGRES_PORT:-6532}:5432"
   volumes:
     - pgdata:/var/lib/postgresql/data
+  shm_size: "512mb"
   healthcheck:
-    test: ["CMD-SHELL", "pg_isready -U yovth -p ${POSTGRES_PORT:-6532}"]
+    test: ["CMD-SHELL", "pg_isready -U yovth -d yovth"]
     interval: 5s
     timeout: 3s
     retries: 10
     start_period: 20s
     start_interval: 1s
-  shm_size: "512mb"     # інакше паралельні плани впираються в 64 МБ /dev/shm
   restart: unless-stopped
 ```
 
-`api` і `worker` отримують `depends_on: db: {condition: service_healthy}`.
+`api` отримує новий `depends_on: db: {condition: service_healthy}`; `worker` — той самий блок додано до наявного `depends_on: api: ...`.
 
-**`POSTGRES_PASSWORD` без дефолта і з `:?`** — навмисно. Пароль до БД, що має дефолтне значення, рано чи пізно стає паролем на проді.
+**`POSTGRES_PASSWORD` без дефолта і з `:?`** — навмисно. Пароль до БД, що має дефолтне значення, рано чи пізно стає паролем на проді. Значення (32 символи, `openssl rand`) і `POSTGRES_PORT=6532` — у `.env` (gitignored), не в git.
+
+**Живо перевірено (без зупинки живих `api`/`worker` — вони й далі на SQLite, `db` піднято окремо):**
+
+```
+db     Up (healthy)             — health-check зелений
+NetworkMode: theyovthclientsreport_default   (НЕ host)
+Ports: 127.0.0.1:6532 -> 5432/tcp             (НЕ 0.0.0.0)
+ss -ltn: LISTEN 127.0.0.1:6532                (НЕ видно ззовні loopback)
+
+контейнер на host-мережі (як `api`) -> psycopg -> 127.0.0.1:6532 -> УСПІХ
+"PostgreSQL 16.12 on x86_64-pc-linux-musl ..."
+```
+
+Три рівні підтверджують ізоляцію: власна мережа (не `host`), сокет прив'язаний рівно до `127.0.0.1` (не до всіх інтерфейсів), і водночас реальна досяжність із контейнера на host-мережі — саме той шлях, яким `api`/`worker` ходитимуть після cutover.
+
+**Побічно:** `psycopg[binary]` додано в `pyproject.toml` (task-01 escape hatch, як `openpyxl`/`b2sdk`), `poetry.lock` перегенеровано **в контейнері**, образ перебудовано (`docker compose build api` — той самий образ і для `worker`). При перегенерації лок-файлу виявилось, що `mcp` (додано іншою паралельною сесією, task-74) там **не мав власного запису взагалі** — `pyproject.toml` вимагав `mcp`, а `poetry.lock` про це не знав. Це не колізія з моєю правкою, а вже наявна неузгодженість, яку перегенерація попутно усунула.
 
 ### §2.2 Тюнінг
 
@@ -421,7 +437,7 @@ task-68 §1 дала найбільший виграш проєкту (×4000 н
 |---|---|---|---|
 | 0 | ✅ Прибрати бомбу з бекапами (§8.1) | ✅ | — |
 | 1 | ✅ `description` → `Text`, `native_enum=False`, без live-міграції (§3.1, §3.2) | ✅ на SQLite | `git revert` |
-| 2 | Сервіс `db` у compose, `psycopg` у образ (§2) | ✅ (PG стоїть поруч, порожній) | прибрати сервіс |
+| 2 | ✅ Сервіс `db` у compose (ізольована мережа), `psycopg` у образ (§2) | ✅ (PG стоїть поруч, порожній) | прибрати сервіс |
 | 3 | `scripts/migrate_sqlite_to_pg.py` + сухий прогін на **копії** (§4) | ✅ | — |
 | 4 | PG-baseline міграція + тест на порожній diff (§5) | ✅ | — |
 | 5 | Виправити SSE-курсор (§3.3) | ✅ на SQLite | — |
