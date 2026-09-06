@@ -9,6 +9,14 @@ packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<4.0"
+# Bumped from ^0.115.0 by task-74 (MCP server): the `mcp` SDK below requires
+# starlette>=0.48 on python>=3.14, and pyproject targets python>=3.11,<4.0 —
+# the resolver has to satisfy 3.14 too, so fastapi^0.115 (which caps
+# starlette<0.47) can't coexist with it. On our actual runtime (3.12)
+# starlette stayed at 0.46.2 — no major-version jump in the running image,
+# only in what the dependency graph has to prove is resolvable. Fixed a
+# latent bug this bump exposed: FastAPI 0.141's `include_router()` no
+# longer flattens routes into `app.routes` (see `tests/harness/routes.py`).
 fastapi = "^0.141.1"
 uvicorn = { extras = ["standard"], version = "^0.32.0" }
 pydantic-settings = "^2.6.0"
@@ -40,6 +48,12 @@ openpyxl = "^3.1"
 # (task-01 owns pyproject.toml; requested directly by the user, flagged per
 # CLAUDE.md's "нова залежність" escape hatch).
 b2sdk = "^2.8"
+# Added by task-74 (MCP server): the official Python MCP SDK
+# (`from mcp.server import MCPServer`, `@mcp.tool()`) — the earlier plan
+# draft wrongly assumed `poetry lock` didn't work in this environment and
+# proposed hand-rolling the protocol; it does work, so we don't (task-01
+# owns pyproject.toml; requested directly by the user, flagged per
+# CLAUDE.md's "нова залежність" escape hatch, same as openpyxl/b2sdk above).
 mcp = "^2.1.1"
 
 [tool.poetry.scripts]

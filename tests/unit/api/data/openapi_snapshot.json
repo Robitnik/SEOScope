@@ -5631,6 +5631,77 @@
         "title": "MetricHistorySeriesDTO",
         "type": "object"
       },
+      "MetricSpec": {
+        "additionalProperties": false,
+        "description": "One catalog row: how a metric is measured, compared and displayed.",
+        "properties": {
+          "allow_derived": {
+            "default": false,
+            "title": "Allow Derived",
+            "type": "boolean"
+          },
+          "better_direction": {
+            "$ref": "#/components/schemas/BetterDirection"
+          },
+          "comparison_kind": {
+            "enum": [
+              "range",
+              "snapshot"
+            ],
+            "title": "Comparison Kind",
+            "type": "string"
+          },
+          "freshness_sla_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness Sla Hours"
+          },
+          "health_weight": {
+            "default": 1.0,
+            "title": "Health Weight",
+            "type": "number"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "min_quality_to_show": {
+            "$ref": "#/components/schemas/Quality",
+            "default": "partial"
+          },
+          "precision": {
+            "default": 0,
+            "title": "Precision",
+            "type": "integer"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/MetricUnit"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "provider",
+          "unit",
+          "comparison_kind",
+          "better_direction"
+        ],
+        "title": "MetricSpec",
+        "type": "object"
+      },
       "MetricTrendDTO": {
         "description": "Week-over-week trend + daily sparkline for a single derived metric.\n\nMirrors `ClientHealthDTO`'s trend fields (same \"no basis yet is `None`,\nnever a fabricated 0%\" rule) without the composite-specific coverage\nbookkeeping, so other card widgets \u2014 e.g. GBP website clicks \u2014 can reuse\nthe same delta-arrow/sparkline UI the health block already draws.",
         "properties": {
@@ -20950,6 +21021,31 @@
         "summary": "Import Ai Seo Tools",
         "tags": [
           "imports"
+        ]
+      }
+    },
+    "/api/v1/metrics/catalog": {
+      "get": {
+        "operationId": "get_metrics_catalog_api_v1_metrics_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MetricSpec"
+                  },
+                  "title": "Response Get Metrics Catalog Api V1 Metrics Catalog Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Metrics Catalog",
+        "tags": [
+          "metrics"
         ]
       }
     },

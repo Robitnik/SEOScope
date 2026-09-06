@@ -99,6 +99,16 @@ class Settings(BaseSettings):
     agent_dev_token: str | None = None
     agent_dev_token_role: UserRole = UserRole.admin
     agent_dev_token_label: str = "dev-agent"
+
+    # ── MCP-сервер (task-74, хвиля 1) ────────────────────────────────────
+    # `app/mcp/**` ходить у наше ж API як звичайний клієнт (план §2), тому
+    # йому потрібні лише адреса й токен — жодних налаштувань БД тут немає.
+    # `mcp_token` не задано → фолбек на `agent_dev_token`
+    # (`app/mcp/apiclient.py::_resolve_token`) — той самий bearer-шлях, що
+    # й у task-73, структурно мертвий на `environment == "production"`.
+    mcp_api_base_url: str = "http://127.0.0.1:6524"
+    mcp_token: str | None = None
+
     # Вхід без пароля для оператора на localhost. За замовчуванням `False` —
     # `network_mode: host` (compose.yaml) означає, що Cloudflare-тунель
     # форвардить на ту саму адресу `127.0.0.1`, що й людина в браузері;
