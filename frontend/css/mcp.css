@@ -9,6 +9,8 @@
 .mcp-intro { display: grid; gap: 10px; margin-bottom: 28px; align-items: start; }
 .mcp-intro h1 { font-size: clamp(30px, 5vw, 52px); }
 .mcp-lead { margin: 0; max-width: 68ch; color: var(--ink-muted); }
+.mcp-lead a { color: var(--accent); text-decoration: underline; }
+.mcp-lead a:hover { color: var(--accent-hover); }
 .mcp-connect-cta { width: fit-content; margin-top: 6px; }
 
 .mcp-status {
@@ -130,11 +132,12 @@
  * full width, not a grid tile, and visibly bigger than the two
  * scenario-specific prompt cards below it — it's the one prompt meant to
  * be copied FIRST, covering every tool at once. */
-.mcp-prompt-card--all { margin: 0 0 28px; padding: 20px 22px; border-color: var(--line-accent); }
+.mcp-prompt-card--all { margin: 0; padding: 20px 22px; border-color: var(--line-accent); }
 .mcp-prompt-card--all .mcp-prompt-card__head { align-items: flex-start; }
 .mcp-prompt-card--all strong { font-size: 18px; }
 .mcp-prompt-card__sub { margin: 4px 0 0; font-size: 13px; max-width: 60ch; color: var(--ink-muted); }
 .mcp-prompt-card--all pre { font-size: 13.5px; line-height: 1.7; max-height: 420px; }
+.mcp-prompt-card__actions { display: flex; gap: 8px; flex: 0 0 auto; }
 
 .mcp-starter-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .mcp-starter {

@@ -43,6 +43,7 @@ export async function initMcpConnectPage() {
   connectRoot.innerHTML = connectPageShell(catalog);
   wireConnectTabs();
   wireCopyButtons(connectRoot);
+  wireDownloadButtons(connectRoot);
 }
 
 function loadingShell() {
@@ -132,9 +133,45 @@ function connectPageShell(catalog) {
       <p class="mcp-lead">Pick your host, copy the config, ask an admin for a token.</p>
     </section>
     <section class="mcp-section" aria-labelledby="mcp-connect-title">
-      <h2 id="mcp-connect-title" class="visually-hidden">Connect</h2>
+      <h2 id="mcp-connect-title">1. Configure</h2>
       <div class="mcp-tabs" role="tablist">${tabs}</div>
       ${panels}
+    </section>
+    ${allToolsBriefingSection(catalog)}`;
+}
+
+// The "main prompt" (task-77 follow-up): paste it into the conversation
+// ONCE right after connecting, then just ask your real question — the
+// assistant already knows every tool by name from that one paste. Lives
+// on the connect page, not the tool catalog, because it's step 2 of
+// getting set up, not a reference card you come back to.
+function allToolsBriefingSection(catalog) {
+  return `
+    <section class="mcp-section" aria-labelledby="mcp-brief-title">
+      <h2 id="mcp-brief-title">2. Brief it, then ask</h2>
+      <p class="mcp-lead">
+        Paste this once per conversation so the assistant knows every tool it has —
+        then just type your actual question underneath it.
+      </p>
+      <article class="mcp-prompt-card mcp-prompt-card--all">
+        <header class="mcp-prompt-card__head">
+          <div>
+            <strong>Brief an assistant on every tool</strong>
+            <p class="mcp-prompt-card__sub">One paste covers all ${catalog.tools.length} tools — for an
+              assistant that's already connected but hasn't been told what's here.</p>
+          </div>
+          <div class="mcp-prompt-card__actions">
+            <button type="button" class="button button--primary mcp-copy" data-copy-target="prompt-all-tools">
+              ${icon("copy", "icon icon--tiny")}<span>Copy</span>
+            </button>
+            <button type="button" class="button button--quiet mcp-download"
+                    data-download-target="prompt-all-tools" data-download-name="yovth-mcp-tools-briefing.md">
+              ${icon("download", "icon icon--tiny")}<span>Download .md</span>
+            </button>
+          </div>
+        </header>
+        <pre id="prompt-all-tools"><code>${escapeHtml(catalog.all_tools_prompt)}</code></pre>
+      </article>
     </section>`;
 }
 
@@ -235,21 +272,10 @@ function promptsSection(catalog) {
   return `
     <section class="mcp-section" aria-labelledby="mcp-prompts-title">
       <h2 id="mcp-prompts-title">Prompts</h2>
-
-      <article class="mcp-prompt-card mcp-prompt-card--all">
-        <header class="mcp-prompt-card__head">
-          <div>
-            <strong>Brief an assistant on every tool</strong>
-            <p class="mcp-prompt-card__sub">One paste covers all ${catalog.tools.length} tools — for an
-              assistant that's already connected but hasn't been told what's here.</p>
-          </div>
-          <button type="button" class="button button--primary mcp-copy" data-copy-target="prompt-all-tools">
-            ${icon("copy", "icon icon--tiny")}<span>Copy</span>
-          </button>
-        </header>
-        <pre id="prompt-all-tools"><code>${escapeHtml(catalog.all_tools_prompt)}</code></pre>
-      </article>
-
+      <p class="mcp-lead">
+        New here? The <a href="${buildMcpConnectHash()}">connect page</a> has a one-paste briefing
+        that covers every tool below in a single prompt.
+      </p>
       <h3 class="mcp-subhead">Ready-made prompts (once connected)</h3>
       <div class="mcp-prompt-grid">${mcpPrompts}</div>
       <h3 class="mcp-subhead">Starter questions (works even before you connect)</h3>
@@ -319,6 +345,31 @@ function wireCopyButtons(scopeEl) {
       setTimeout(() => {
         label.textContent = originalLabel;
       }, 1500);
+    });
+  });
+}
+
+function wireDownloadButtons(scopeEl) {
+  scopeEl.querySelectorAll(".mcp-download").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetId = button.dataset.downloadTarget;
+      const filename = button.dataset.downloadName || "download.md";
+      const text = scopeEl.querySelector(`#${CSS.escape(targetId)}`)?.textContent || "";
+      const heading = filename.replace(/\.md$/, "").replace(/[-_]+/g, " ");
+      const markdown = `# ${heading}\n\n\`\`\`\n${text}\n\`\`\`\n`;
+      const blobUrl = URL.createObjectURL(new Blob([markdown], { type: "text/markdown" }));
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.append(link);
+      link.click();
+      // Both deferred, never synchronous: tearing the anchor out of the DOM
+      // (or revoking the blob) in the same tick as `.click()` aborts the
+      // download in Chromium before it has read a byte.
+      setTimeout(() => {
+        link.remove();
+        URL.revokeObjectURL(blobUrl);
+      }, 1000);
     });
   });
 }
