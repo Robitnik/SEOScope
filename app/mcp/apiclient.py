@@ -15,11 +15,32 @@ from __future__ import annotations
 from typing import Any
 
 import httpx2
+from mcp.server.auth.middleware.auth_context import get_access_token
 
 from app.core.config import Settings, get_settings
 from app.mcp.errors import api_error
 
 _DEFAULT_TIMEOUT = 30.0
+
+
+def _caller_headers() -> dict[str, str]:
+    """Токен ТОГО, ХТО ПИТАЄ, коли сервер працює по HTTP (task-78).
+
+    У stdio-режимі (хвиля 1) сервер — це особистий підпроцес однієї
+    людини, тож єдиний токен із `.env` і є її токеном. По HTTP усе
+    навпаки: один процес обслуговує всіх, і брати токен із конфігурації
+    означало б, що будь-хто підключений ходить в API правами того, хто
+    налаштував сервер. `AuthContextMiddleware` (`app/mcp/asgi.py`) кладе
+    сюди перевірений токен поточного запиту — і саме він, а не конфіг,
+    визначає, що цей виклик побачить.
+
+    Порожній словник у stdio-режимі означає «лишити заголовок клієнта як
+    є» — там він уже правильний.
+    """
+    access = get_access_token()
+    if access is None:
+        return {}
+    return {"Authorization": f"Bearer {access.token}"}
 
 
 class ApiClient:
@@ -70,7 +91,9 @@ class ApiClient:
             {k: v for k, v in params.items() if v is not None} if params is not None else None
         )
         try:
-            response = await self._http.request(method, path, params=clean_params, json=json)
+            response = await self._http.request(
+                method, path, params=clean_params, json=json, headers=_caller_headers()
+            )
         except httpx2.HTTPError as exc:
             raise api_error(0, None, method=method, path=path) from exc
 

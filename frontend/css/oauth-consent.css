@@ -1,0 +1,30 @@
+/* Екран згоди OAuth (task-78). Одна картка по центру: тут нема чого
+   переглядати чи фільтрувати — лише прочитати й вирішити. */
+.consent-card {
+  max-width: 620px;
+  margin: 48px auto;
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.consent-card h1 { margin: 6px 0 12px; }
+.consent-lead { margin: 0 0 24px; max-width: 60ch; }
+.consent-facts { display: flex; flex-direction: column; gap: 14px; margin: 0 0 24px; }
+.consent-facts > div { display: flex; flex-direction: column; gap: 3px; }
+.consent-facts dt {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+}
+.consent-facts dd { margin: 0; font-size: 15px; word-break: break-word; }
+.consent-role {
+  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.06)); font-size: 12px; color: var(--muted);
+}
+.consent-note { margin: 0 0 24px; font-size: 13px; color: var(--muted); max-width: 60ch; }
+.consent-actions { display: flex; gap: 12px; align-items: center; }
+.consent-error { margin: 16px 0 0; color: var(--danger, #ff6b5e); font-size: 14px; }
+
+@media (max-width: 640px) {
+  .consent-card { margin: 16px; padding: 20px; }
+  .consent-actions { flex-direction: column; align-items: stretch; }
+}

@@ -16,6 +16,13 @@ const submitLabel = document.querySelector("#login-submit-label");
 function safeNext() {
   const raw = new URLSearchParams(location.search).get("next") || "/";
   if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
+  // Фрагмент серверний редірект не бачить узагалі (він не їде на сервер),
+  // але браузер переносить його на сторінку логіну сам. Без цього рядка
+  // вхід із глибокого посилання завжди висаджував би людину на дашборді:
+  // саме так губився `#/oauth/consent?request=…` (task-78), і людина
+  // поверталась у Claude ні з чим, не зрозумівши, що пішло не так.
+  const fragment = location.hash;
+  if (fragment && !raw.includes("#")) return `${raw}${fragment}`;
   return raw;
 }
 

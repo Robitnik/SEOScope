@@ -21,6 +21,7 @@ from app.api import registered_routers
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.security import configure_security
+from app.mcp.asgi import attach_mcp
 
 logger = get_logger(__name__)
 
@@ -65,6 +66,10 @@ def create_app() -> FastAPI:
     _discover_routers()
     for router in registered_routers():
         app.include_router(router)
+
+    # ДО статики: `mount("/")` нижче ковтає будь-який шлях, тож маршрути
+    # MCP і OAuth мають бути зареєстровані раніше.
+    attach_mcp(app, settings)
 
     frontend_dir = settings.frontend_dir
     if frontend_dir.is_dir():

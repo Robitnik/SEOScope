@@ -43,6 +43,9 @@ ROUTE_ACTIONS: dict[tuple[str, str], ActionSpec] = {
     ("DELETE", "/api/v1/me/tokens/{token_id}"): ActionSpec(
         "me.token.revoke", "agent_token", "token_id"
     ),
+    # task-78: людина дозволила конектору ходити в тул від її імені —
+    # подія рівно того ж класу, що й видача токена вручну.
+    ("POST", "/api/v1/oauth/consent"): ActionSpec("oauth.consent.grant", "oauth_client"),
     # ── клієнти й інтеграції ─────────────────────────────────────────────
     ("POST", "/api/v1/clients"): ActionSpec("client.create", "client"),
     ("PATCH", "/api/v1/clients/{client_id}"): ActionSpec("client.update", "client", _C),

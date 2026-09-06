@@ -19,15 +19,35 @@ Python уже поклав частково виконаний модуль `app
 from __future__ import annotations
 
 from mcp.server import MCPServer
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 
 from app.core.config import get_settings
+from app.mcp.oauth import SCOPE, YovthOAuthProvider
 
 _settings = get_settings()
+_base_url = _settings.mcp_api_base_url.rstrip("/")
+
+# Ми самі собі authorization server І resource server (task-78): окремого
+# IdP у тула немає, а логін і ролі вже є. `resource_server_url` мусить
+# збігатися З ТИМ, ЩО ЛЮДИНА ВВОДИТЬ у Claude, символ у символ — Claude
+# порівнює рядки, і зайвий слеш ламає весь потік.
+_oauth_provider = YovthOAuthProvider()
+_auth_settings = AuthSettings(
+    issuer_url=_base_url,  # type: ignore[arg-type]
+    resource_server_url=f"{_base_url}/mcp",  # type: ignore[arg-type]
+    required_scopes=[SCOPE],
+    client_registration_options=ClientRegistrationOptions(
+        enabled=True, valid_scopes=[SCOPE], default_scopes=[SCOPE]
+    ),
+    revocation_options=RevocationOptions(enabled=True),
+)
 
 mcp = MCPServer(
     name="yovth-clients-report",
     title=_settings.app_name,
     version="0.1.0",
+    auth=_auth_settings,
+    auth_server_provider=_oauth_provider,
     instructions=(
         "SEO/marketing dashboard for an agency's client portfolio: metrics, "
         "web archive history, site-change monitoring, and reports. Client "

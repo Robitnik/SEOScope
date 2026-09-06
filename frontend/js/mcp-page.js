@@ -41,7 +41,6 @@ export async function initMcpConnectPage() {
     return;
   }
   connectRoot.innerHTML = connectPageShell(catalog);
-  wireConnectTabs();
   wireStepChecks();
   wireCopyButtons(connectRoot);
   wireDownloadButtons(connectRoot);
@@ -111,9 +110,9 @@ function hero(catalog) {
 // account по токен і назад) не скидав прогрес.
 function connectPageShell(catalog) {
   const steps = [
-    connectStep(1, "Create your own token", tokenStepBody()),
-    connectStep(2, "Add the server to your AI app", hostStepBody(catalog)),
-    connectStep(3, "Restart the app", restartStepBody()),
+    connectStep(1, "Open Connectors on claude.ai", openSettingsStepBody()),
+    connectStep(2, "Add this URL as a custom connector", urlStepBody(catalog)),
+    connectStep(3, "Sign in here and approve", approveStepBody()),
     connectStep(4, "Brief the assistant", briefStepBody(catalog)),
     connectStep(5, "Ask your first question", askStepBody(catalog)),
   ].join("");
@@ -123,8 +122,9 @@ function connectPageShell(catalog) {
       <p class="eyebrow">Operations / AI assistant</p>
       <h1>How to connect</h1>
       <p class="mcp-lead">
-        Five steps, about two minutes. Tick each one off as you go — this page
-        remembers where you stopped.
+        Five steps, about two minutes, done once. Nothing to install — the tools
+        appear in your normal chats on claude.ai. Tick each step off as you go;
+        this page remembers where you stopped.
       </p>
     </section>
     <ol class="mcp-steps">${steps}</ol>`;
@@ -142,66 +142,52 @@ function connectStep(number, title, body) {
     </li>`;
 }
 
-function tokenStepBody() {
+function openSettingsStepBody() {
   return `
     <p>
-      The server only answers requests that carry your token, so it sees exactly
-      what you're allowed to see — nothing more.
-    </p>
-    <a class="button button--primary" href="${buildAccountHash()}">
-      ${icon("key", "icon icon--tiny")}<span>Create a token</span>
-    </a>
-    <p class="mcp-note">
-      Shown once, right after you create it. Copy it somewhere safe before you
-      leave that page — nobody, including an admin, can read it back to you.
+      On <strong>claude.ai</strong>, open <strong>Settings → Connectors</strong>, then
+      <strong>Add custom connector</strong>. Same place in the desktop app and on mobile —
+      it's one account, so connecting once covers all of them.
     </p>`;
 }
 
-function hostStepBody(catalog) {
-  const tabs = catalog.connect
-    .map((snippet, index) => `
-      <button type="button" class="mcp-tab" data-tab="${index}" ${index === 0 ? 'aria-selected="true"' : ""}>
-        ${escapeHtml(snippet.host)}
-      </button>`)
-    .join("");
-  const panels = catalog.connect
-    .map((snippet, index) => `
-      <div class="mcp-tab-panel" data-panel="${index}" ${index === 0 ? "" : "hidden"}>
-        <div class="mcp-code-block">
-          <div class="mcp-code-block__head">
-            <span>${escapeHtml(snippet.title)}</span>
-            <button type="button" class="button button--quiet mcp-copy" data-copy-target="connect-${index}">
-              ${icon("copy", "icon icon--tiny")}<span>Copy</span>
-            </button>
-          </div>
-          <pre id="connect-${index}"><code>${escapeHtml(snippet.config)}</code></pre>
-        </div>
-        <p class="mcp-note">${escapeHtml(snippet.note)}</p>
-      </div>`)
-    .join("");
+function urlStepBody(catalog) {
   return `
-    <p>Pick your app, copy the config, and replace <code>&lt;your-token&gt;</code> with the token from step 1.</p>
-    <div class="mcp-tabs" role="tablist">${tabs}</div>
-    ${panels}`;
+    <p>Paste this as the connector URL. That's the whole configuration — there is no file to edit.</p>
+    <div class="mcp-code-block">
+      <div class="mcp-code-block__head">
+        <span>Connector URL</span>
+        <button type="button" class="button button--quiet mcp-copy" data-copy-target="connect-url">
+          ${icon("copy", "icon icon--tiny")}<span>Copy</span>
+        </button>
+      </div>
+      <pre id="connect-url"><code>${escapeHtml(catalog.mcp_url)}</code></pre>
+    </div>
+    <p class="mcp-note">
+      Leave the OAuth Client ID and Secret fields empty — this server registers Claude
+      by itself.
+    </p>`;
 }
 
-function restartStepBody() {
+function approveStepBody() {
   return `
     <p>
-      Config is read at startup — quit the app completely and open it again.
-      When it comes back, the tools show up under the connector menu.
+      Claude opens this dashboard and asks you to sign in — your normal email and
+      password. Then you get one screen naming what's connecting; press
+      <strong>Approve</strong> and Claude takes it from there.
     </p>
     <p class="mcp-note">
-      Nothing there? The config file is in the wrong place or has a stray comma —
-      the app reports neither, it just starts with no tools.
+      The connector acts <strong>as you</strong>: it sees exactly what your role lets you
+      see, every action lands in the journal under your name, and it appears in
+      <a href="${buildAccountHash()}">Your account</a> where you can revoke it any time.
     </p>`;
 }
 
 function briefStepBody(catalog) {
   return `
     <p>
-      Paste this once per conversation so the assistant knows every tool it has.
-      Without it, it has the tools but no idea when to reach for them.
+      Open a new chat and paste this first, so the assistant knows every tool it now
+      has. Without it, it has the tools but no idea when to reach for them.
     </p>
     <article class="mcp-prompt-card mcp-prompt-card--all">
       <header class="mcp-prompt-card__head">
@@ -381,19 +367,6 @@ function limitsSection() {
         <li>Write access depends on the token's role, exactly like a logged-in person's role.</li>
       </ul>
     </section>`;
-}
-
-function wireConnectTabs() {
-  const tabs = connectRoot.querySelectorAll(".mcp-tab");
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      tabs.forEach((t) => t.removeAttribute("aria-selected"));
-      tab.setAttribute("aria-selected", "true");
-      connectRoot.querySelectorAll(".mcp-tab-panel").forEach((panel) => {
-        panel.hidden = panel.dataset.panel !== tab.dataset.tab;
-      });
-    });
-  });
 }
 
 const STEPS_STORAGE_KEY = "yovth.mcp.connect.steps";

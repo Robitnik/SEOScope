@@ -70,6 +70,8 @@ const MCP_ROUTE = /^#\/mcp/;
 // будь-якій ролі (на відміну від ADMIN_USERS_ROUTE вище): токени тут
 // завжди свої власні.
 const ACCOUNT_ROUTE = /^#\/account/;
+// Екран згоди OAuth (task-78): сюди Claude приводить браузер із /authorize.
+const OAUTH_CONSENT_ROUTE = /^#\/oauth\/consent/;
 
 export function parseRoute() {
   const pathMatch = location.pathname.match(ARCHIVE_VIEW_PATH_RE);
@@ -91,6 +93,7 @@ export function parseRoute() {
   if (ADMIN_AUDIT_ROUTE.test(hash)) return { name: "admin-audit", query };
   if (MCP_CONNECT_ROUTE.test(hash)) return { name: "mcp-connect", query };
   if (MCP_ROUTE.test(hash)) return { name: "mcp", query };
+  if (OAUTH_CONSENT_ROUTE.test(hash)) return { name: "oauth-consent", query };
   if (ACCOUNT_ROUTE.test(hash)) return { name: "account", query };
   const toolsMatch = hash.match(TOOLS_ROUTE);
   if (toolsMatch) {
@@ -361,6 +364,7 @@ async function activate() {
   const mcpRoot = document.querySelector("#mcp-page-root");
   const mcpConnectRoot = document.querySelector("#mcp-connect-page-root");
   const accountRoot = document.querySelector("#account-page-root");
+  const oauthConsentRoot = document.querySelector("#oauth-consent-page-root");
   const dashboardChrome = [
     document.querySelector("#dashboard-header-actions"),
     document.querySelector("#dashboard-command-bar"),
@@ -368,7 +372,7 @@ async function activate() {
   const allRoots = [
     clientRoot, ahrefsRoot, blogsRoot, monthlyRoot, toolsRoot, trendsRoot, monitorRoot, monitorClientRoot,
     reportsRoot, reportsRunRoot, reportsBatchRoot, pagesRoot, archiveRoot, archiveViewRoot, archiveChangesRoot,
-    archiveCaptureRoot, urlInspectorRoot, adminUsersRoot, adminAuditRoot, mcpRoot, mcpConnectRoot, accountRoot,
+    archiveCaptureRoot, urlInspectorRoot, adminUsersRoot, adminAuditRoot, mcpRoot, mcpConnectRoot, accountRoot, oauthConsentRoot,
   ];
   // Global nav marks the active destination for assistive tech and for the eye
   // (`aria-current`), since a cross-route move is a full reload here.
@@ -386,6 +390,16 @@ async function activate() {
     if (isActive) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
+  if (route.name === "oauth-consent") {
+    dashboardView?.setAttribute("hidden", "");
+    allRoots.filter((el) => el !== oauthConsentRoot).forEach((el) => el?.setAttribute("hidden", ""));
+    dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
+    oauthConsentRoot?.removeAttribute("hidden");
+    const { initOauthConsentPage } = await import("./oauth-consent-page.js?v=20260906-t78");
+    await initOauthConsentPage(route.query.get("request") || "");
+    return;
+  }
+
   if (route.name === "account") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== accountRoot).forEach((el) => el?.setAttribute("hidden", ""));
@@ -405,14 +419,14 @@ async function activate() {
     allRoots.filter((el) => el !== mcpConnectRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     mcpConnectRoot?.removeAttribute("hidden");
-    const { initMcpConnectPage } = await import("./mcp-page.js?v=20260906-t79c");
+    const { initMcpConnectPage } = await import("./mcp-page.js?v=20260906-t78x");
     await initMcpConnectPage();
   } else if (route.name === "mcp") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== mcpRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     mcpRoot?.removeAttribute("hidden");
-    const { initMcpPage } = await import("./mcp-page.js?v=20260906-t79c");
+    const { initMcpPage } = await import("./mcp-page.js?v=20260906-t78x");
     await initMcpPage();
   } else if (route.name === "admin-users") {
     dashboardView?.setAttribute("hidden", "");

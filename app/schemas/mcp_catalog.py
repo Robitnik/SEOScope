@@ -79,6 +79,8 @@ class McpCatalogDTO(BaseModel):
     # already has the server connected but hasn't been told what's on it,
     # distinct from the two scenario-specific MCP `prompts` below.
     all_tools_prompt: str
+    # URL, який людина вставляє в claude.ai як custom connector (task-78).
+    mcp_url: str
     prompts: list[McpPromptSpec]
     resources: list[McpResourceSpec]
     starter_prompts: list[McpStarterPrompt]

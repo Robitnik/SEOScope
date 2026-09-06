@@ -3055,6 +3055,20 @@ export async function logoutEverywhere() {
 }
 
 // Особисті токени (task-79) — «кожен видає собі сам» у `#/account`.
+// task-78: екран згоди OAuth. `no-store` тут не потрібен окремо —
+// сервер сам віддає його для всього `/api/v1/oauth`.
+export async function getPendingAuthorization(requestId) {
+  return request(`/oauth/pending/${encodeURIComponent(requestId)}`, {}, "oauth-pending");
+}
+
+export async function approveAuthorization(requestId) {
+  return request(
+    "/oauth/consent",
+    { method: "POST", body: JSON.stringify({ request_id: requestId }) },
+    "oauth-consent",
+  );
+}
+
 export async function listMyTokens() {
   return request("/me/tokens", {}, "me-tokens-list");
 }

@@ -271,40 +271,21 @@ _STARTER_PROMPTS: list[McpStarterPrompt] = [
 
 
 def _connect_snippets(base_url: str) -> list[McpConnectSnippet]:
-    stdio_config = (
-        "{\n"
-        '  "mcpServers": {\n'
-        '    "yovth-clients-report": {\n'
-        '      "command": "docker",\n'
-        '      "args": ["compose", "exec", "-T", "api", "poetry", "run",\n'
-        '                "python", "-m", "app.mcp.stdio"],\n'
-        '      "env": { "MCP_API_BASE_URL": "' + base_url + '", "MCP_TOKEN": "<your-token>" }\n'
-        "    }\n"
-        "  }\n"
-        "}"
-    )
+    """Лишився один «снипет» — сам URL конектора (task-78).
+
+    До хвилі 2 тут жив stdio-конфіг із `docker compose exec`, окремий для
+    кожного хоста. Він помер разом із транспортом: remote-конектор
+    підключається однаково скрізь, де людина залогінена в Claude, і
+    від застосунку не залежить взагалі.
+    """
     return [
         McpConnectSnippet(
-            host="Claude Desktop",
-            title="claude_desktop_config.json",
-            config=stdio_config,
-            note="On macOS: ~/Library/Application Support/Claude/. "
-            "On Windows: %APPDATA%\\Claude\\.",
-        ),
-        McpConnectSnippet(
-            host="Claude Code",
-            title=".mcp.json",
-            config=stdio_config,
-            note="Drop this in the project root, or run `claude mcp add` "
-            "and paste the same command.",
-        ),
-        McpConnectSnippet(
-            host="ChatGPT",
-            title="Not available yet",
-            config="# Streamable HTTP transport ships in task-74 wave 2.",
-            note="ChatGPT needs an HTTP endpoint, not stdio — that transport "
-            "is still being built.",
-        ),
+            host="claude.ai",
+            title="Connector URL",
+            config=f"{base_url.rstrip('/')}/mcp",
+            note="Settings -> Connectors -> Add custom connector. Leave the OAuth "
+            "client fields empty.",
+        )
     ]
 
 
@@ -322,6 +303,7 @@ async def get_mcp_catalog() -> McpCatalogDTO:
         groups=_GROUP_ORDER,
         tools=tools,
         all_tools_prompt=_build_all_tools_prompt(tools, _GROUP_ORDER),
+        mcp_url=f"{settings.mcp_api_base_url.rstrip('/')}/mcp",
         prompts=prompts,
         resources=resources,
         starter_prompts=_STARTER_PROMPTS,

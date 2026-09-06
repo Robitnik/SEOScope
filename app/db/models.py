@@ -2071,6 +2071,118 @@ class AgentToken(Base):
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
     last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # Заповнене лише для токенів, виданих OAuth-потоком (task-78): який
+    # саме конектор його отримав. Для токенів, створених людиною в
+    # кабінеті, лишається `None` — вони не належать жодному клієнту.
+    oauth_client_id: Mapped[str | None] = mapped_column(String(64), default=None)
+
+
+class OAuthClient(Base):
+    """Клієнт, який зареєструвався через DCR (RFC 7591) — task-78.
+
+    Claude реєструє новий client_id на КОЖНЕ свіже підключення (це прямо
+    описано в документації конекторів як властивість DCR), тож таблиця
+    росте від підключень, а не від користувачів; вона навмисно дешева.
+
+    Секрет тут не зберігається взагалі, і це рішення, а не пропуск: ми
+    видаємо виключно public-клієнтів (`token_endpoint_auth_method="none"`)
+    і покладаємось на PKCE S256, якого Claude вимагає на кожному запиті.
+    Так інваріант проєкту «секрети не потрапляють у БД» лишається цілим
+    без окремого хешування й порівняння.
+    """
+
+    __tablename__ = "oauth_clients"
+
+    client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # Повний JSON реєстрації (RFC 7591) — SDK віддає й приймає цю модель
+    # цілком, і зберігати її розібраною по колонках означало б ловити
+    # кожне нове необов'язкове поле специфікації міграцією.
+    client_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class OAuthAuthorizationCode(Base):
+    """Одноразовий код авторизації між нашим екраном згоди й `/token`.
+
+    Живе хвилини й гине після першого обміну (`used_at`) — повторне
+    пред'явлення коду має провалитись, інакше перехоплений код можна
+    обміняти вдруге.
+    """
+
+    __tablename__ = "oauth_auth_codes"
+    __table_args__ = (
+        UniqueConstraint("code_sha256", name="uq_oauth_auth_codes_code_sha256"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    code_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    scopes: Mapped[str] = mapped_column(Text, default="")
+    code_challenge: Mapped[str] = mapped_column(String(200))
+    redirect_uri: Mapped[str] = mapped_column(Text)
+    redirect_uri_provided_explicitly: Mapped[bool] = mapped_column(Boolean, default=True)
+    resource: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
+
+class OAuthPendingAuthorization(Base):
+    """Запит на авторизацію, що чекає на людину (task-78).
+
+    Між `/authorize` і натисканням Approve стоїть логін і екран згоди —
+    тобто довільно довга пауза з переходами по сторінках. Параметри
+    запиту (PKCE-виклик, redirect_uri, state) мусять пережити цю паузу,
+    але не мусять їхати в URL: те, що лежить у рядку адреси, потрапляє в
+    історію браузера й у логи проксі. Тому в URL іде лише непрозорий id
+    цього рядка.
+    """
+
+    __tablename__ = "oauth_pending_authorizations"
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    scopes: Mapped[str] = mapped_column(Text, default="")
+    code_challenge: Mapped[str] = mapped_column(String(200))
+    redirect_uri: Mapped[str] = mapped_column(Text)
+    redirect_uri_provided_explicitly: Mapped[bool] = mapped_column(Boolean, default=True)
+    state: Mapped[str | None] = mapped_column(Text, default=None)
+    resource: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
+
+class OAuthRefreshToken(Base):
+    """Refresh-токен конектора (task-78).
+
+    Окрема таблиця, а не рядок в `agent_tokens`, бо це різні сутності:
+    `agent_tokens` — те, чим ходять в API, і що людина бачить і відкликає
+    в кабінеті; refresh — суто протокольний артефакт, яким не можна
+    зробити жодного запиту до даних.
+
+    Ротується при кожному використанні (`replaced_at`), як того вимагає
+    MCP-специфікація для public-клієнтів.
+    """
+
+    __tablename__ = "oauth_refresh_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_sha256", name="uq_oauth_refresh_tokens_token_sha256"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    token_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    scopes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
 
 class AuditEvent(Base):

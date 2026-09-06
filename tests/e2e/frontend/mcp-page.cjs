@@ -82,15 +82,19 @@ async function main() {
 
   await page.screenshot({ path: path.join(screenshots, "mcp-page-1440.png"), fullPage: true });
 
-  // 7. "How to connect" is its own page, reached via the hero CTA, and is
-  // now a five-step checklist: the config block that used to dominate it
-  // is one step among five, behind the token step that has to come first.
+  // 7. "How to connect" is a five-step checklist for the claude.ai custom
+  // connector — no config file, no install: the OAuth flow (task-78)
+  // replaced the stdio snippet, so the only thing to copy is a URL.
   await page.click(".mcp-connect-cta");
   await page.waitForURL(/#\/mcp\/connect/);
   await page.locator(".mcp-step").first().waitFor({ timeout: 20000 });
   assert.equal(await page.locator(".mcp-tool-card").count(), 0, "the connect page has no tool cards");
   assert.equal(await page.locator(".mcp-step").count(), 5, "five connect steps");
   assert.equal(await page.locator(".mcp-step__check").count(), 5, "every step has its own checkbox");
+
+  const connectText = await page.locator(".mcp-steps").innerText();
+  assert.ok(!/docker/i.test(connectText), "no docker command survives on the connect page");
+  assert.ok(!/claude_desktop_config/i.test(connectText), "no config file is mentioned any more");
 
   // The checklist remembers where you stopped — the whole reason it has
   // checkboxes instead of plain numbers.
@@ -105,14 +109,11 @@ async function main() {
   assert.ok(await secondBox.isChecked(), "the tick survives a reload");
   await secondBox.uncheck();
 
-  await page.click('.mcp-tab[data-tab="0"]');
-  await page.click('.mcp-copy[data-copy-target="connect-0"]');
+  // Step 2 hands over the connector URL and nothing else.
+  await page.click('.mcp-copy[data-copy-target="connect-url"]');
   await page.waitForTimeout(100);
-  const connectClipboard = await page.evaluate(() => navigator.clipboard.readText());
-  assert.match(connectClipboard, /mcpServers/, "the connect snippet copies real config JSON");
-  assert.ok(connectClipboard.includes("<your-token>"), "snippet carries a token PLACEHOLDER, never a real secret");
-  assert.match(connectClipboard, /seo\.theyovth\.space/, "the connect snippet points at the real domain, not localhost");
-  assert.ok(!connectClipboard.includes("127.0.0.1"), "no localhost address leaks into the connect snippet");
+  const connectorUrl = (await page.evaluate(() => navigator.clipboard.readText())).trim();
+  assert.match(connectorUrl, /^https:\/\/seo\.theyovth\.space\/mcp$/, "copies the real connector URL");
 
   // 8. Step 4 — the all-tools briefing, mentioning every tool.
   await page.locator(".mcp-prompt-card--all").waitFor();
