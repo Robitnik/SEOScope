@@ -10,6 +10,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from mcp.types import ToolAnnotations
+
 from app.mcp.apiclient import ApiClient, get_api_client
 from app.mcp.errors import ApiError
 from app.mcp.models import PageDiff, SiteChangeItem, SiteChangesFeed
@@ -32,7 +34,10 @@ async def _client_names(api: Any) -> dict[str, str]:
     return {row["id"]: row["name"] for row in rows}
 
 
-@mcp.tool()
+@mcp.tool(
+    title="List site changes",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def list_site_changes(
     client: str | None = None,
     days: int = 7,
@@ -60,9 +65,7 @@ async def list_site_changes(
 
     if client:
         resolved = await resolve_client(api, client)
-        rows = await api.get(
-            f"/api/v1/clients/{resolved.client_id}/monitor/changes", params=params
-        )
+        rows = await api.get(f"/api/v1/clients/{resolved.client_id}/monitor/changes", params=params)
         names = {resolved.client_id: resolved.name}
     else:
         params["limit"] = 200
@@ -109,7 +112,10 @@ async def _resolve_page_id(api: ApiClient, client_id: str, page: str) -> str:
     raise ApiError(f'"{page}" matches multiple monitored pages: {urls}. Be more specific.')
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Diff a monitored page",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def diff_monitored_page(
     client: str,
     page: str,
@@ -125,9 +131,7 @@ async def diff_monitored_page(
     api = get_api_client()
     resolved = await resolve_client(api, client)
     page_id = await _resolve_page_id(api, resolved.client_id, page)
-    diff = await api.get(
-        f"/api/v1/clients/{resolved.client_id}/monitor/pages/{page_id}/diff"
-    )
+    diff = await api.get(f"/api/v1/clients/{resolved.client_id}/monitor/pages/{page_id}/diff")
     return PageDiff(
         page_url=page,
         from_version_id=diff["from_version_id"],

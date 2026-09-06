@@ -10,6 +10,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+from mcp.types import ToolAnnotations
+
 from app.mcp.apiclient import get_api_client
 from app.mcp.errors import ApiError
 from app.mcp.models import (
@@ -25,7 +27,10 @@ from app.mcp.resolve import resolve_client
 from app.mcp.server import mcp
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Find an archived URL",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def find_archived_url(
     query: str,
     client: str | None = None,
@@ -61,7 +66,10 @@ async def find_archived_url(
     return ArchivedUrlSearchResult(query=query, matches=matches)
 
 
-@mcp.tool()
+@mcp.tool(
+    title="URL snapshot timeline",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def get_url_snapshot_timeline(url_id: str) -> UrlSnapshotTimeline:
     """Get every archived snapshot of one URL, newest first: dates,
     HTTP status, and whether each snapshot changed from the one before it.
@@ -108,7 +116,10 @@ def _pick_target(snapshots: list[dict[str, Any]], target_date: str | None) -> di
     )
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Compare URL versions",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def compare_url_versions(
     url_id: str,
     target_date: str | None = None,
@@ -154,7 +165,10 @@ async def compare_url_versions(
     )
 
 
-@mcp.tool()
+@mcp.tool(
+    title="List archive changes",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def list_archive_changes(
     client: str | None = None,
     days: int = 30,

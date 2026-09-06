@@ -823,6 +823,10 @@ function altTextFixtureCounts(rows) {
   return counts;
 }
 
+export async function getMcpCatalog() {
+  return request("/mcp/catalog", {}, "mcp-catalog");
+}
+
 export async function getToolsCatalog() {
   if (FIXTURE_MODE) {
     if (FIXTURE_MODE === "error") { await wait(300); throw new Error("Fixture connection error"); }

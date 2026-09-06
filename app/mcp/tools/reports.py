@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from mcp.types import ToolAnnotations
+
 from app.mcp.apiclient import get_api_client
 from app.mcp.models import (
     MonthlyPerformance,
@@ -26,7 +28,10 @@ from app.mcp.server import mcp
 from app.schemas.reports import ReportKind, ReportSource, YearlySpan
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Monthly performance",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def get_client_monthly_performance(
     client: str,
     months: int = 6,
@@ -65,7 +70,10 @@ async def get_client_monthly_performance(
     )
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Get report data",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def get_report_data(run_id: str) -> ReportData:
     """Get the finished data table for a report run — the actual numbers,
     not a PDF. Use `run_client_report` to create a run if you don't already
@@ -95,7 +103,10 @@ async def get_report_data(run_id: str) -> ReportData:
     )
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Run a client report",
+    annotations=ToolAnnotations(read_only_hint=False, open_world_hint=True),
+)
 async def run_client_report(
     client: str,
     kind: ReportKind,

@@ -5280,6 +5280,289 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "McpArgSpec": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "required",
+          "description"
+        ],
+        "title": "McpArgSpec",
+        "type": "object"
+      },
+      "McpCatalogDTO": {
+        "properties": {
+          "api_base_url": {
+            "title": "Api Base Url",
+            "type": "string"
+          },
+          "connect": {
+            "items": {
+              "$ref": "#/components/schemas/McpConnectSnippet"
+            },
+            "title": "Connect",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "prompts": {
+            "items": {
+              "$ref": "#/components/schemas/McpPromptSpec"
+            },
+            "title": "Prompts",
+            "type": "array"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/McpResourceSpec"
+            },
+            "title": "Resources",
+            "type": "array"
+          },
+          "server_name": {
+            "title": "Server Name",
+            "type": "string"
+          },
+          "server_version": {
+            "title": "Server Version",
+            "type": "string"
+          },
+          "starter_prompts": {
+            "items": {
+              "$ref": "#/components/schemas/McpStarterPrompt"
+            },
+            "title": "Starter Prompts",
+            "type": "array"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/McpToolSpec"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "server_name",
+          "server_version",
+          "api_base_url",
+          "groups",
+          "tools",
+          "prompts",
+          "resources",
+          "starter_prompts"
+        ],
+        "title": "McpCatalogDTO",
+        "type": "object"
+      },
+      "McpConnectSnippet": {
+        "properties": {
+          "config": {
+            "title": "Config",
+            "type": "string"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "title",
+          "config",
+          "note"
+        ],
+        "title": "McpConnectSnippet",
+        "type": "object"
+      },
+      "McpPromptArgSpec": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "required",
+          "description"
+        ],
+        "title": "McpPromptArgSpec",
+        "type": "object"
+      },
+      "McpPromptSpec": {
+        "properties": {
+          "args": {
+            "items": {
+              "$ref": "#/components/schemas/McpPromptArgSpec"
+            },
+            "title": "Args",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rendered_text": {
+            "title": "Rendered Text",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "description",
+          "args",
+          "rendered_text"
+        ],
+        "title": "McpPromptSpec",
+        "type": "object"
+      },
+      "McpResourceSpec": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "uri": {
+            "title": "Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri",
+          "name",
+          "description",
+          "mime_type"
+        ],
+        "title": "McpResourceSpec",
+        "type": "object"
+      },
+      "McpStarterPrompt": {
+        "description": "\u0417\u0432\u0438\u0447\u0430\u0439\u043d\u0438\u0439 \u043a\u043e\u043f\u0456\u0439\u043e\u0432\u0430\u043d\u0438\u0439 \u0437\u0430\u043f\u0438\u0442 \u0434\u043b\u044f \u0447\u0430\u0442\u0443 \u2014 \u043f\u0440\u0430\u0446\u044e\u0454 \u0439 \u0431\u0435\u0437 \u0436\u043e\u0434\u043d\u043e\u0433\u043e\n\u043f\u0456\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u043e\u0433\u043e MCP-prompt-\u0430, \u043f\u043e\u043a\u0430\u0437\u0443\u0454 \u0446\u0456\u043d\u043d\u0456\u0441\u0442\u044c \u0434\u043e \u0442\u043e\u0433\u043e, \u044f\u043a \u043b\u044e\u0434\u0438\u043d\u0430\n\u0449\u043e\u0441\u044c \u043d\u0430\u043b\u0430\u0448\u0442\u0443\u0432\u0430\u043b\u0430 (\u043f\u043b\u0430\u043d task-77 \u00a74 \u043f.4).",
+        "properties": {
+          "scenario": {
+            "title": "Scenario",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "scenario"
+        ],
+        "title": "McpStarterPrompt",
+        "type": "object"
+      },
+      "McpToolSpec": {
+        "properties": {
+          "args": {
+            "items": {
+              "$ref": "#/components/schemas/McpArgSpec"
+            },
+            "title": "Args",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "read_only": {
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "group",
+          "summary",
+          "description",
+          "read_only",
+          "args"
+        ],
+        "title": "McpToolSpec",
+        "type": "object"
+      },
       "MediaCandidateDTO": {
         "description": "\u041e\u0434\u0438\u043d \u043a\u0430\u043d\u0434\u0438\u0434\u0430\u0442 \u043f\u0440\u0438 `ambiguous` \u2014 \u0432\u0438\u0431\u0456\u0440 \u043b\u0438\u0448\u0430\u0454\u0442\u044c\u0441\u044f \u0437\u0430 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u043e\u043c.",
         "properties": {
@@ -21021,6 +21304,27 @@
         "summary": "Import Ai Seo Tools",
         "tags": [
           "imports"
+        ]
+      }
+    },
+    "/api/v1/mcp/catalog": {
+      "get": {
+        "operationId": "get_mcp_catalog_api_v1_mcp_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpCatalogDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Mcp Catalog",
+        "tags": [
+          "mcp"
         ]
       }
     },

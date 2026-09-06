@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from mcp.types import ToolAnnotations
+
 from app.mcp.apiclient import get_api_client
 from app.mcp.errors import ApiError
 from app.mcp.models import JobStatusReport
@@ -99,7 +101,10 @@ def _is_done(kind: str, status: str) -> bool:
     return status in _TERMINAL[kind]
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Check job status",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def get_job_status(
     job_id: str,
     kind: JobKind,

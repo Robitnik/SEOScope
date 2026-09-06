@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from mcp.types import ToolAnnotations
+
 from app.mcp.apiclient import ApiClient, get_api_client
 from app.mcp.errors import ApiError
 from app.mcp.models import ClientOverview, ClientSummary, ProviderStatusSummary
@@ -20,7 +22,10 @@ from app.mcp.resolve import resolve_client
 from app.mcp.server import mcp
 
 
-@mcp.tool()
+@mcp.tool(
+    title="List clients",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def list_clients() -> list[ClientSummary]:
     """List every client in the system: id, name, domain, and status.
 
@@ -91,7 +96,10 @@ async def _find_client_card(api: ApiClient, client_id: str, name: str) -> dict[s
     raise ApiError(f'Resolved client "{name}" but the dashboard has no matching card for it.')
 
 
-@mcp.tool()
+@mcp.tool(
+    title="Client overview",
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+)
 async def get_client_overview(client: str) -> ClientOverview:
     """Get a one-call summary of a client: status, health, and every
     configured provider's key metrics with deltas.

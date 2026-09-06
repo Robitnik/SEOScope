@@ -1,0 +1,147 @@
+/* MCP catalog page (task-77) — `#/mcp`.
+ *
+ * Same shape as tools.css's hub (intro + search + card grid), plus two
+ * things nothing else in the app needed yet: a copyable code block, and a
+ * read/write badge (exactly one tool in wave 1 is `write` — `run_client_report`
+ * — and it needs to look different from the other eleven at a glance).
+ */
+
+.mcp-intro { display: grid; gap: 10px; margin-bottom: 28px; }
+.mcp-intro h1 { font-size: clamp(30px, 5vw, 52px); }
+.mcp-lead { margin: 0; max-width: 68ch; color: var(--ink-muted); }
+
+.mcp-status {
+  display: flex; flex-wrap: wrap; gap: 28px; margin: 14px 0 0; padding: 0;
+}
+.mcp-status > div { display: grid; gap: 2px; }
+.mcp-status dt {
+  margin: 0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim);
+}
+.mcp-status dd { margin: 0; font-weight: 700; font-size: 18px; }
+.mcp-status__value--on { color: var(--success); }
+.mcp-status__value--off { color: var(--danger); }
+
+.mcp-section { margin-top: 44px; }
+.mcp-section h2 { font-size: clamp(22px, 3vw, 30px); margin: 0 0 14px; }
+.mcp-subhead {
+  margin: 24px 0 10px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-dim);
+}
+.mcp-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
+
+/* Connect tabs */
+.mcp-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.mcp-tab {
+  appearance: none; border: none; background: none; color: var(--ink-muted); font: inherit; font-weight: 700;
+  padding: 10px 4px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.mcp-tab:hover { color: var(--ink); }
+.mcp-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+
+.mcp-code-block { border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--canvas-raised); }
+.mcp-code-block__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--surface);
+  font-size: 13px; color: var(--ink-muted);
+}
+.mcp-code-block pre {
+  margin: 0; padding: 16px; overflow-x: auto; max-width: 100%; min-width: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px; line-height: 1.6; color: var(--ink);
+}
+.mcp-note { margin: 10px 0 0; color: var(--ink-muted); font-size: 13px; max-width: 68ch; }
+
+.mcp-copy { padding: 5px 10px; font-size: 12px; gap: 6px; }
+
+/* Tool groups + cards */
+.mcp-tool-group { margin-top: 24px; }
+.mcp-tool-group h3 { margin: 0 0 12px; font-size: 15px; color: var(--ink-muted); }
+/* `align-items: start` — grid rows stretch items to the row's TALLEST
+ * sibling by default, and arg counts range from 0 (`list_clients`) to 7
+ * (`run_client_report`); without this, a one-argument tool ends up as a
+ * mostly-empty box just to match its row neighbor. */
+.mcp-tool-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-items: start; }
+
+.mcp-tool-card {
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface);
+  padding: 16px; display: grid; gap: 8px; align-content: start;
+  /* A grid ITEM's default `min-width: auto` sizes it to its own min-content
+   * (here: the widest unbroken string in `.mcp-arg-table`'s description
+   * column) even though `minmax(320px, 1fr)` above sets an explicit track
+   * floor — the explicit floor doesn't override an item's own content-based
+   * minimum. Without this, `run_client_report` (7 args, the widest card)
+   * blows past its column and the whole page grows a horizontal scrollbar
+   * — the same `overflow-x:auto` leak this app hit before (task-36),
+   * one level up the ancestor chain from where it usually bites. */
+  min-width: 0;
+}
+.mcp-tool-card > * { min-width: 0; }
+.mcp-arg-table-wrap { overflow-x: auto; contain: paint; }
+.mcp-tool-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mcp-tool-card__head strong { font-size: 15px; }
+.mcp-tool-card__name {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: var(--ink-dim);
+}
+.mcp-tool-card p { margin: 0; color: var(--ink-muted); font-size: 14px; }
+
+.mcp-badge {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+}
+.mcp-badge--read { color: var(--info); background: rgb(123 199 255 / 14%); }
+.mcp-badge--write { color: var(--warning); background: rgb(255 196 94 / 16%); }
+
+.mcp-arg-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+.mcp-arg-table th {
+  text-align: left; font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink-dim); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line-soft);
+}
+.mcp-arg-table td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.mcp-arg-table td:last-child { color: var(--ink-muted); }
+.mcp-arg-table code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+.mcp-no-args { font-size: 13px; color: var(--ink-dim); font-style: italic; }
+
+.mcp-tool-search { min-width: 260px; }
+.mcp-empty { color: var(--ink-dim); margin-top: 18px; }
+
+/* Prompts */
+.mcp-prompt-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); align-items: start; }
+.mcp-prompt-card {
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); padding: 16px;
+  display: grid; gap: 10px; align-content: start;
+  min-width: 0; /* same grid-item pitfall as `.mcp-tool-card` above */
+}
+.mcp-prompt-card > * { min-width: 0; }
+.mcp-prompt-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mcp-prompt-card p { margin: 0; color: var(--ink-muted); font-size: 14px; }
+.mcp-prompt-card pre {
+  margin: 0; padding: 12px; background: var(--canvas-raised); border-radius: var(--radius-sm);
+  font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; overflow-x: auto;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.mcp-starter-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.mcp-starter {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--canvas-raised);
+}
+.mcp-starter__scenario {
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--accent);
+  flex: 0 0 auto; min-width: 100px;
+}
+.mcp-starter__text { flex: 1 1 320px; color: var(--ink); }
+
+/* Resources */
+.mcp-resource-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.mcp-resource-list li {
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); padding: 14px 16px;
+}
+.mcp-resource-list code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--accent); }
+.mcp-resource-list p { margin: 6px 0 0; color: var(--ink-muted); font-size: 14px; }
+
+/* Limits */
+.mcp-limits-list { margin: 0; padding-left: 20px; color: var(--ink-muted); display: grid; gap: 8px; max-width: 74ch; }
+
+@media (max-width: 640px) {
+  .mcp-tool-grid, .mcp-prompt-grid { grid-template-columns: 1fr; }
+  .mcp-status { gap: 18px; }
+}
