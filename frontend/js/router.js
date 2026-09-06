@@ -427,7 +427,7 @@ async function activate() {
     allRoots.filter((el) => el !== archiveCaptureRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     archiveCaptureRoot?.removeAttribute("hidden");
-    const { initArchiveCapturePage } = await import("./archive-capture.js?v=20260905-t62");
+    const { initArchiveCapturePage } = await import("./archive-capture.js?v=20260906-t69");
     await initArchiveCapturePage(route.query);
   } else if (route.name === "url-inspector") {
     dashboardView?.setAttribute("hidden", "");
