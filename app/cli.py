@@ -1520,12 +1520,29 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"fetched: {backfill_outcome.fetched}, failed: {backfill_outcome.failed}")
         return 0
 
+    if args.command == "db-maintenance":
+        # task-68 §1: extracted into `app.db.maintenance.run_maintenance` so
+        # the scheduled version (`DbMaintenanceScheduler`, once/day) and this
+        # manual CLI invocation never diverge.
+        from app.db.maintenance import run_maintenance
+
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            maintenance_result = run_maintenance(session)
+        print("ANALYZE: done (refreshed sqlite_stat1 for the query planner)")
+        state = "blocked by a live reader/writer" if maintenance_result.checkpoint_busy else "clean"
+        print(
+            f"wal_checkpoint(TRUNCATE): busy={maintenance_result.checkpoint_busy} "
+            f"checkpointed={maintenance_result.checkpoint_pages} "
+            f"total={maintenance_result.checkpoint_total_pages} pages ({state})"
+        )
+        print("PRAGMA optimize: done")
+        return 0
+
     parser.error(f"unknown command: {args.command}")
     return 2
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
 
 def _run_user_command(args: argparse.Namespace) -> int:
     """Операторські дії з обліковими записами (task-71).
@@ -1634,6 +1651,11 @@ def _run_user_command(args: argparse.Namespace) -> int:
             return 0
 
     return 2
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
 def _run_audit_command(args: argparse.Namespace) -> int:
     """Журнал дій із командного рядка (task-72) — щоб подивитись «хто що зробив»
     не піднімаючи UI, і щоб запустити прибирання руками."""

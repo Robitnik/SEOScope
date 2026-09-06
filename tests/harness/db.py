@@ -42,11 +42,19 @@ def _reset_process_globals() -> None:
     """
     from app.core.config import get_settings
     from app.db import session as db_session
+    from app.db import writegate as db_writegate
 
     db_session._async_engine = None
     db_session._async_sessionmaker = None
     db_session._sync_engine = None
     db_session._sync_sessionmaker = None
+    # task-66: `DbWriteGate` is ALSO a process-global singleton (its lock
+    # path and slow-job settings are resolved once, at construction, from
+    # whatever `Settings` was cached at the time) — without this reset it
+    # would keep pointing at a PREVIOUS test's tmp database's lock file
+    # instead of this one's, exactly the class of bug this function exists
+    # to prevent for the engine/sessionmaker globals above.
+    db_writegate.reset_write_gate_for_tests()
     get_settings.cache_clear()
 
 

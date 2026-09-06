@@ -216,10 +216,22 @@ def _build_provider_summary(
     period_kind: PeriodKind,
     now: datetime,
     as_of: datetime | None = None,
+    latest_cell_cache: dict[tuple[str, Provider], SyncJobProvider] | None = None,
 ) -> ProviderSummaryDTO:
     """`as_of` bounds which snapshots are visible, so this can rebuild what a
     card *would have shown* on a past date (used by the health backfill).
     `None` — the normal request path — means "everything known now".
+
+    `latest_cell_cache` (task-68 §3): optional pre-fetched
+    `{(client_id, provider): SyncJobProvider}`, from
+    `CellRepository.latest_for_client_providers` — one batched query for
+    every client/provider pair `_run` needs, instead of this function's own
+    single-pair query running once per call (live-measured: 54 calls,
+    ~69ms, on a 15-client dashboard render). `None` (the default, and what
+    `backfill_health_history` still passes) falls back to the original
+    single-pair query — that caller's per-day loop doesn't share this
+    function's "same request, same client set" shape, so batching it isn't
+    a clean fit and isn't attempted here.
     """
     clients = ClientRepository(session)
     integration = clients.get_integration(client_id, provider)
@@ -281,7 +293,11 @@ def _build_provider_summary(
             )
         ):
             current_snapshot = fallback
-    latest_cell = cells.latest_for_client_provider(client_id, provider)
+    latest_cell = (
+        latest_cell_cache.get((client_id, provider))
+        if latest_cell_cache is not None
+        else cells.latest_for_client_provider(client_id, provider)
+    )
 
     last_attempt_at = None
     last_error_code = None
@@ -519,17 +535,23 @@ def _gbp_clicks_trend(session: Session, *, client_id: str, today: date) -> Metri
     A day never collected is simply absent from `history`, never a fabricated
     `0` (PLAN §12, same rule `_health_with_trend` follows above).
     """
-    rows = AnalyticsDatasetRepository(session).latest_rows_by_dimension(
-        client_id, Provider.reporting_ninja, "gbp_daily"
-    )
     since = today - timedelta(days=GBP_CLICKS_HISTORY_DAYS)
+    # task-68 §2: window pushed into SQL — this used to load every row this
+    # client ever had for `gbp_daily` (live-measured: 1659 rows for the
+    # biggest client, 47% of them stale duplicates of an already-superseded
+    # day) only to discard everything outside `since..today` right here.
+    # The dedup-then-discard order was identical either way — nothing
+    # outside the window was ever kept — so this is a pure narrowing, not a
+    # behavior change (verified byte-for-byte against the old Python dedup
+    # across all production clients before this replaced it).
+    rows = AnalyticsDatasetRepository(session).latest_rows_by_dimension(
+        client_id, Provider.reporting_ninja, "gbp_daily", since=since, until=today
+    )
     points: list[HealthPointDTO] = []
     for dimension_value, row in rows.items():
         try:
             day = date.fromisoformat(dimension_value)
         except ValueError:
-            continue
-        if day < since or day > today:
             continue
         raw = row.metrics_json.get("website_clicks")
         if raw is None:
@@ -562,17 +584,19 @@ def _gsc_clicks_trend(session: Session, *, client_id: str, today: date) -> Metri
     dataset `GscAdapter.collect_datasets` already persists for the
     client-page chart, so this needs no new collection path.
     """
-    rows = AnalyticsDatasetRepository(session).latest_rows_by_dimension(
-        client_id, Provider.gsc, "gsc_daily"
-    )
     since = today - timedelta(days=GSC_CLICKS_HISTORY_DAYS)
+    # task-68 §2: window pushed into SQL — see `_gbp_clicks_trend`'s own
+    # comment for the full reasoning; same pure narrowing here (live-
+    # measured: 1333 rows unbounded for the biggest client vs 150-165 once
+    # windowed, 512 vs ~28 unique once also deduped).
+    rows = AnalyticsDatasetRepository(session).latest_rows_by_dimension(
+        client_id, Provider.gsc, "gsc_daily", since=since, until=today
+    )
     points: list[HealthPointDTO] = []
     for dimension_value, row in rows.items():
         try:
             day = date.fromisoformat(dimension_value)
         except ValueError:
-            continue
-        if day < since or day > today:
             continue
         raw = row.metrics_json.get("clicks")
         if raw is None:
@@ -661,6 +685,7 @@ def _build_client_card(
     anchor_dt: datetime,
     now: datetime,
     tech_audit: TechAuditCardDTO,
+    latest_cell_cache: dict[tuple[str, Provider], SyncJobProvider] | None = None,
 ) -> ClientCardDTO:
     periods = resolve_periods(
         period_kind, anchor_dt, tz=client.timezone, mode=ComparisonMode.closed
@@ -673,6 +698,7 @@ def _build_client_card(
             periods=periods,
             period_kind=period_kind,
             now=now,
+            latest_cell_cache=latest_cell_cache,
         )
         for provider in providers
     ]
@@ -839,6 +865,15 @@ async def get_dashboard(
                 or needle in c.slug.lower()
             ]
         audit_cards = _tech_audit_cards(s, [str(client.id) for client in clients], now=now)
+        # task-68 §3: one batched query for every (client, provider) pair
+        # this render needs, instead of `_build_provider_summary`'s own
+        # single-pair query running once per card per provider (live-
+        # measured: 54 calls, ~69ms, on a 15-client render). `providers_wanted`
+        # is the SAME set for every client here, so the full cross product is
+        # exactly what every card below is about to ask for anyway.
+        latest_cell_cache = CellRepository(s).latest_for_client_providers(
+            [(c.id, p) for c in clients for p in providers_wanted]
+        )
         cards = [
             _build_client_card(
                 s,
@@ -848,6 +883,7 @@ async def get_dashboard(
                 anchor_dt=anchor_dt,
                 now=now,
                 tech_audit=audit_cards.get(str(c.id), TechAuditCardDTO()),
+                latest_cell_cache=latest_cell_cache,
             )
             for c in clients
         ]

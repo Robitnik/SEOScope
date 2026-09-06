@@ -10,6 +10,7 @@ same process.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any, cast
 
@@ -274,6 +275,54 @@ class CellRepository:
             .order_by(SyncJobProvider.created_at.desc())
         )
         return self._session.scalars(stmt).first()
+
+    def latest_for_client_providers(
+        self, pairs: Sequence[tuple[str, Provider]]
+    ) -> dict[tuple[str, Provider], SyncJobProvider]:
+        """Batched `latest_for_client_provider` (task-68 §3): one query for
+        every `(client_id, provider)` pair instead of one call per pair —
+        live-measured 123 individual calls (`GET /api/v1/dashboard`, 15
+        clients x up to 5 providers each) at ~0.11-0.25ms apiece, cheap
+        per call but 15-30ms of pure round-trip overhead added up.
+
+        `ROW_NUMBER() OVER (PARTITION BY client_id, provider ORDER BY
+        created_at DESC)`, same technique as
+        `AnalyticsDatasetRepository.latest_rows_by_dimension` (task-68 §2) —
+        this table's own PARTITION key is a 2-tuple instead of a single
+        column, otherwise identical: rank within each partition, keep rank 1.
+        A missing pair (no cell for that client/provider yet, e.g. a
+        never-configured integration) is simply absent from the returned
+        dict — callers already treat a missing entry the same as the
+        single-pair method's `None` return.
+        """
+        if not pairs:
+            return {}
+        client_ids = {client_id for client_id, _ in pairs}
+        providers = {provider for _, provider in pairs}
+        row_number = (
+            func.row_number()
+            .over(
+                partition_by=(SyncJobProvider.client_id, SyncJobProvider.provider),
+                order_by=SyncJobProvider.created_at.desc(),
+            )
+            .label("rn")
+        )
+        subquery = (
+            select(SyncJobProvider, row_number)
+            .where(
+                SyncJobProvider.client_id.in_(client_ids),
+                SyncJobProvider.provider.in_(providers),
+            )
+            .subquery()
+        )
+        newest = aliased(SyncJobProvider, subquery)
+        rows = self._session.scalars(select(newest).where(subquery.c.rn == 1))
+        wanted = set(pairs)
+        return {
+            (row.client_id, row.provider): row
+            for row in rows
+            if (row.client_id, row.provider) in wanted
+        }
 
     def list_for_batch(self, batch_id: str) -> list[SyncJobProvider]:
         stmt = select(SyncJobProvider).where(SyncJobProvider.batch_id == batch_id)

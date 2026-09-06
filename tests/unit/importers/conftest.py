@@ -31,16 +31,23 @@ def cli_env(tmp_path, monkeypatch):
     """
     from app.core.config import get_settings
     from app.db import session as db_session
+    from app.db import writegate as db_writegate
 
     db_path = tmp_path / "cli_test.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
     get_settings.cache_clear()
     db_session._sync_engine = None
     db_session._sync_sessionmaker = None
+    # task-66: the write gate is ALSO a process-global singleton, resolved
+    # from whatever `Settings` was cached at first use — reset it alongside
+    # the engine/sessionmaker above so it derives its lock path from THIS
+    # test's own tmp DB, not a stale previous one.
+    db_writegate.reset_write_gate_for_tests()
 
     Base.metadata.create_all(db_session.get_sync_engine())
     yield tmp_path
 
     db_session._sync_engine = None
     db_session._sync_sessionmaker = None
+    db_writegate.reset_write_gate_for_tests()
     get_settings.cache_clear()

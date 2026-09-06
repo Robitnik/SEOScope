@@ -17,6 +17,7 @@ import types
 from app.cloud.scheduler import CloudScheduler
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
+from app.db.maintenance_scheduler import DbMaintenanceScheduler
 from app.db.session import worker_session_scope
 from app.integrations.browser_session import check_session
 from app.jobs.dispatcher import Dispatcher
@@ -114,6 +115,18 @@ def main() -> None:
     archive_scheduler = ArchiveScheduler(session_scope=worker_session_scope, settings=settings)
     archive_scheduler.start()
 
+    # task-68 §1: `ANALYZE`/`wal_checkpoint(TRUNCATE)`/`PRAGMA optimize`'s
+    # own scheduler loop, independent of the four schedulers above (PLAN
+    # §14 "scheduler loop inside the single worker" — a second process
+    # would be a second SQLite writer, which PLAN §5.1 forbids). One
+    # point-of-contact touch to `app/jobs/worker.py` (task-05 zone), same
+    # pattern as MonitorScheduler/ReportScheduler/CloudScheduler/
+    # ArchiveScheduler above.
+    db_maintenance_scheduler = DbMaintenanceScheduler(
+        session_scope=worker_session_scope, settings=settings
+    )
+    db_maintenance_scheduler.start()
+
     def _handle_signal(signum: int, _frame: types.FrameType | None) -> None:
         logger.info("worker_shutdown_signal signum=%s", signum)
         dispatcher.stop()
@@ -121,6 +134,7 @@ def main() -> None:
         report_scheduler.stop()
         cloud_scheduler.stop()
         archive_scheduler.stop()
+        db_maintenance_scheduler.stop()
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)

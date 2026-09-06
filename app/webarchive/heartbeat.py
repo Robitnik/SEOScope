@@ -38,7 +38,7 @@ import sqlite3
 from datetime import UTC, datetime
 
 from app.core.config import Settings
-from app.db.session import default_write_lock_path, sqlite_db_path
+from app.db.session import default_write_lock_path, sqlite_db_path, sqlite_sync_url
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,16 @@ def refresh_heartbeat_best_effort(settings: Settings, capture_id: str) -> bool:
     caller already has a normal, authoritative heartbeat write later in the
     same flush; this function losing a race is the expected, harmless case,
     not an incident.
+
+    task-75: `False` immediately on a non-SQLite target, before touching
+    any `sqlite3`-specific code. This whole module exists to work around
+    SQLite's single-writer lock — the exact contention that made
+    `heartbeat_at` the first casualty (module docstring above) — which
+    Postgres does not have; the caller's normal, gated write (now a plain
+    commit there too, `app/db/writegate.py`) already lands promptly.
     """
+    if not sqlite_sync_url(settings.database_url).startswith("sqlite://"):
+        return False
     lock_path = default_write_lock_path(settings)
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)

@@ -12,6 +12,20 @@ from scratch. That is safe specifically because a lock error means the
 transaction never committed — the rollback already undid any flush — so
 re-running the callable (including a re-fetch or a re-upload) produces the
 same correct result, never a duplicate.
+
+task-66 §2.4: the actual `fn()` + commit now runs through
+`app.db.writegate.DbWriteGate` (the one global write queue + cross-process
+flock), same as `worker_session_scope`'s own commit and
+`ArchiveWriteController`'s shim. After that gate removes ordinary
+contention, an `OperationalError` reaching this loop at all means some
+writer went around it — the retry schedule below is deliberately much
+shorter than the pre-gate `(1, 5, 15, 30)` history this file used to carry:
+that long schedule was tuned to outlast a THIRTY-SECOND `busy_timeout`
+(`app/db/session.py`, since lowered to 5s for the same reason — see that
+setting's own docstring) that a genuinely external, uncoordinated writer
+might hold for. A short schedule fails fast and logs loud instead, because
+a slow retry storm here just means the actual bug (a write outside the
+gate) stays invisible longer.
 """
 
 from __future__ import annotations
@@ -25,49 +39,66 @@ from typing import TypeVar
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.db.writegate import get_write_gate
+
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
-# A lock error only surfaces AFTER SQLite's own `busy_timeout` (30s,
-# `app.db.session`) has already been waited out — so by the time we retry,
-# the writer ahead of us has been holding the lock for half a minute and
-# sub-second backoff just burns the remaining attempts on the same storm.
-# Live-measured (task-59, 2026-09-04): with (0.1, 0.5, 1.5) six captures
-# bootstrapping at once exhausted all three attempts inside ~92s and
-# crashed; the run that survived took its lock on the second attempt after
-# a multi-second wait.
-LOCK_RETRY_DELAYS_SECONDS = (1.0, 5.0, 15.0, 30.0)
+# Short (task-66 §2.4, see module docstring): the write gate already
+# serializes every gated writer, so a `database is locked` here means a
+# writer bypassed it — this schedule exists to survive a brief race with
+# that stray writer, not to outlast a 30-second `busy_timeout` any more.
+LOCK_RETRY_DELAYS_SECONDS = (0.1, 0.5, 1.0, 2.0)
 
 
 def commit_with_retry(
     session: Session, fn: Callable[[], _T], *, delays: tuple[float, ...] | None = None
 ) -> _T:
-    """Run `fn()` then commit `session`, retrying the whole thing a few
-    times on `database is locked`. Any other `OperationalError`, or any
+    """Run `fn()` then commit `session` — via `DbWriteGate` (task-66 §2.4),
+    so this is serialized against every other write in the process AND
+    across the api/worker process boundary — retrying the whole thing a
+    few times on `database is locked`. Any other `OperationalError`, or any
     other exception `fn()` raises, propagates immediately — this is a
     narrow fix for one specific, observed failure mode, not a general
     retry-everything wrapper.
 
-    `delays` defaults to the long, "a genuinely external process is holding
-    this" schedule above — resolved INSIDE the function body, not as a
-    parameter default (a default is bound once, at import time, so it would
-    never see a test's `monkeypatch.setattr(db_retry, "LOCK_RETRY_DELAYS_SECONDS", ...)`
-    on a later call). `ArchiveWriteController` passes its own, much shorter
-    one (task-62 §2.2 follow-up, live-reproduced 2026-09-05): its single
-    background thread processes one job at a time, so sleeping seconds here
-    on a lock held by a DIRECT (non-controller) writer — e.g. `capture.py`'s
-    own `commit_with_retry`-wrapped call — blocks every OTHER already-queued
-    job behind it too, including, sometimes, the very commit that would
-    release that lock. A short retry fails fast instead and lets the queue
-    keep moving; the caller (a heartbeat or counter update, not the page
-    content itself) tolerates an occasional miss.
+    `delays` defaults to the short schedule above — resolved INSIDE the
+    function body, not as a parameter default (a default is bound once, at
+    import time, so it would never see a test's
+    `monkeypatch.setattr(db_retry, "LOCK_RETRY_DELAYS_SECONDS", ...)` on a
+    later call).
     """
     delays = delays if delays is not None else LOCK_RETRY_DELAYS_SECONDS
     last_exc: OperationalError | None = None
     for attempt, delay in enumerate(delays):
         try:
+            # `fn()` runs HERE, on the caller's own thread — only the
+            # commit hops to the gate. Live-measured 2026-09-06, this is
+            # the difference between a working system and a frozen one,
+            # for two independent reasons:
+            #
+            # 1. Callers pass real work, not a staging closure:
+            #    `app/webarchive/capture.py` submits an entire page
+            #    capture (HTTP fetch of the page AND every subresource).
+            #    Running that inside the gate holds the ONE global
+            #    cross-process flock for the whole network round-trip,
+            #    so every other writer in BOTH processes — and every api
+            #    request on a sync session — waits on a remote server.
+            #    Both `capture.py` and `cloud_sync.py` already document
+            #    this invariant ("only the actual commit is serialized");
+            #    routing `fn` through the gate silently broke it.
+            # 2. Those same callables submit to the gate themselves, which
+            #    on the gate's single thread is a self-deadlock (see
+            #    `DbWriteGate.submit`'s own note on the 2026-09-06
+            #    incident). The re-entrancy guard there makes that
+            #    survivable; keeping `fn` off the gate thread is what
+            #    makes it not happen in the first place.
+            #
+            # The retry contract is unchanged: on a lock error the
+            # rollback below undoes the staged work and the whole `fn` is
+            # redone from scratch on the next attempt.
             result = fn()
-            session.commit()
+            get_write_gate().submit(session, lambda: None)
             return result
         except OperationalError as exc:
             session.rollback()

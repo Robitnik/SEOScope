@@ -457,6 +457,115 @@ class Settings(BaseSettings):
     # the heuristic entirely without a code deploy if it proves noisy.
     archive_js_discovered_assets_per_page: int = 20
 
+    # task-66 §1: live-measured 2026-09-05 — `synchronous=FULL`'s default
+    # cost (1.42ms/commit vs 0.02ms at NORMAL, a live-benchmarked ~70x) is
+    # paid INSIDE the held writer lock, so it multiplies across every other
+    # writer queued behind it. NORMAL cannot corrupt the database in WAL
+    # mode (SQLite's own guarantee) — the only risk is losing the last few
+    # transactions on a power loss/kernel panic (not a process crash), an
+    # accepted tradeoff given the nightly B2 backup (task-52).
+    sqlite_synchronous: str = "NORMAL"
+    # 64MiB: live-measured to make no difference on a warm page cache
+    # (72.6ms vs 74.8ms on the same aggregate query) — set for a cold start
+    # and long-tail latency, not because it was this task's bottleneck.
+    sqlite_cache_kib: int = 65536
+    sqlite_mmap_bytes: int = 268435456
+    # Live-measured (task-66 §0.4): the old 30s value is itself an
+    # amplifier, not a safety net — one stuck writer already means
+    # `commit_with_retry`'s own backoff will retry, so a connection sitting
+    # inside SQLite's driver-level busy wait for 30s just holds a pool slot
+    # idle for that whole time, starving every other request behind it.
+    # After the write gate (§2) removes ordinary cross-thread/cross-process
+    # write contention, an actual `SQLITE_BUSY` here means something wrote
+    # WITHOUT going through the gate — it should fail fast and visibly, not
+    # silently absorb 30s per attempt.
+    sqlite_busy_timeout_ms: int = 5000
+    # QueuePool sizing (task-66 §1.2): the previous default (5 + 10
+    # overflow = 15) was live-measured starved by ~140 threads across the
+    # api and worker processes (monitor 16x6, archive 6x4, reports/cloud/
+    # dispatcher, plus a 40-token anyio threadpool in the api process
+    # alone) — one stuck writer holding a connection poisoned the whole
+    # pool for everyone else, including plain reads. WAL allows unlimited
+    # concurrent readers, so there is no correctness reason to keep this
+    # small; it only needs to be bigger than realistic concurrent demand.
+    sqlite_pool_size: int = 20
+    sqlite_pool_max_overflow: int = 20
+    # The async (aiosqlite) pool, task-67: task-66 §1.2 planned this and
+    # sized only the sync engine, leaving every `async def` endpoint —
+    # `/dashboard` included — on SQLAlchemy's stock 5 + 10.
+    sqlite_async_pool_size: int = 16
+    sqlite_async_pool_max_overflow: int = 16
+    # Live-measured: the old 30s `pool_timeout` let a saturated pool hang a
+    # request for half a minute before it even got a connection to try —
+    # this is most of the operator's own reported "27 seconds, white
+    # page". 5s means a saturated pool fails fast and visibly instead.
+    sqlite_pool_timeout_s: float = 5.0
+    # task-66 §2.3: `DbWriteGate.submit()` logs (or, under
+    # `db_write_gate_strict`, raises) when a queued write job runs longer
+    # than this — a long job under the one global write lock almost always
+    # means network/blocking I/O leaked into a transaction (the exact bug
+    # task-65 fixed once already for `get_or_create_asset`). A knob, not a
+    # hardcoded constant, so a legitimately large batch commit can be
+    # special-cased without a code change.
+    db_write_gate_slow_ms: int = 250
+    db_write_gate_strict: bool = False
+    # Cross-process serialization (task-66 §2.1): `DbWriteGate` takes an
+    # OS-level flock around every actual `session.commit()`, so the api and
+    # worker processes — which do not otherwise coordinate at all — can
+    # never both be mid-write at the same moment. `None` (the default)
+    # means "derive it from `database_url`" (a `<db file>.write.lock`
+    # sibling — see `app.db.session.default_write_lock_path`) rather than a
+    # fixed path: a fixed path would make every test database (each its own
+    # tmp file, `tests/harness/db.py`) share ONE lock with the real
+    # production database bind-mounted into the very same container,
+    # serializing test writes behind live production writes. Set explicitly
+    # only to relocate the real deployment's lock file.
+    db_write_lock_path: Path | None = None
+    # task-67 §2: `0` DISABLES SQLite's automatic checkpoint, which is the
+    # single biggest win measured in this whole area — bigger than
+    # `synchronous=NORMAL` and far bigger than any batching.
+    #
+    # With the stock 1000-page (4MiB) autocheckpoint, whichever ordinary
+    # commit happens to overflow the WAL pays for copying it back into the
+    # main database — WHILE HOLDING THE WRITER LOCK. Live-measured on a
+    # copy of the production DB, 3000 rows into the real
+    # `gsc_dimension_metrics` (5 indexes):
+    #
+    #   autocheckpoint=1000 -> wall 432-571ms, longest single hold 334-432ms
+    #   autocheckpoint=0    -> wall  88-127ms, longest single hold 6.6-88ms
+    #
+    # ~4-5x on throughput and up to ~50x on the longest stall any other
+    # writer can see, because the checkpoint stops landing inside a random
+    # worker's transaction. The work itself does not vanish — it moves to
+    # `DbWriteGate`'s idle checkpointer, which runs it once, deliberately,
+    # when nothing is queued (measured: 455ms, WAL 85MB -> 0).
+    #
+    # This is why the checkpointer is NOT optional: at `0` with nothing
+    # reclaiming it, the WAL grows without bound (85MB for a 4x-daily
+    # burst). Set this back to a page count only to fall back to SQLite's
+    # own behaviour if the checkpointer is ever suspected.
+    sqlite_wal_autocheckpoint: int = 0
+    # How long `DbWriteGate`'s thread must find its queue EMPTY before it
+    # spends time checkpointing. Deliberately short: the gate is the only
+    # writer in the process, so an empty queue really does mean "nobody is
+    # waiting", and a checkpoint that starts now is one that will not have
+    # to run mid-burst later.
+    db_checkpoint_idle_s: float = 2.0
+    # Skip the checkpoint entirely below this WAL size — a checkpoint of a
+    # nearly-empty WAL costs a lock acquisition and some syscalls to
+    # reclaim almost nothing, and this thread wakes up every
+    # `db_checkpoint_idle_s` on an idle system.
+    db_checkpoint_min_wal_mb: float = 4.0
+    # task-68 §1: how often the query planner's statistics get refreshed.
+    # `sqlite_stat1` had NEVER been populated in production, live-measured
+    # to cost ~4000x on the dashboard's own hot query (40ms picking the
+    # wrong index vs 0.01ms after `ANALYZE`) — see `app.db.maintenance`'s
+    # module docstring for the full A/B. Once a day, off-peak: `ANALYZE`
+    # itself costs ~500ms on the full database, cheap next to the win, but
+    # not something to run on every write.
+    db_maintenance_at_utc: str = "03:00"
+
+
     @model_validator(mode="after")
     def validate_cloud_credentials(self) -> Self:
         # `cloud_enabled=True` with missing credentials must fail loudly at

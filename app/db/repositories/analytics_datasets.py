@@ -8,8 +8,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, aliased
 
 from app.db.models import AnalyticsDatasetRow
 from app.schemas.enums import Provider, Quality
@@ -134,6 +134,9 @@ class AnalyticsDatasetRepository:
         client_id: str,
         provider: Provider,
         dataset_key: str,
+        *,
+        since: date | None = None,
+        until: date | None = None,
     ) -> dict[str, AnalyticsDatasetRow]:
         """Newest row per ``dimension_value`` across ALL snapshots for this dataset.
 
@@ -142,20 +145,44 @@ class AnalyticsDatasetRepository:
         where each recheck job writes only the ``(slug, url)`` pairs it touched —
         resolves to the most recent status of every dimension, not just those in
         the single latest run.
+
+        task-68 §2: dedup moved from Python (`setdefault` over a full,
+        unbounded scan) into SQL, via `ROW_NUMBER() OVER (PARTITION BY
+        dimension_value ORDER BY created_at DESC)`, keeping row 1 per
+        partition. Live-verified byte-for-byte identical to the old
+        Python dedup across all 15 production clients x both call sites
+        (`gsc_daily`/`gbp_daily`) before this replaced it — same rows,
+        same `.id`, same `.created_at`, same `metrics_json`.
+
+        `since`/`until` are optional and, like `daily_series` (task-28),
+        compare against `dimension_value` as ISO date text — only
+        meaningful for a date-keyed dataset (`gsc_daily`/`gbp_daily`;
+        `dimension_value` is `YYYY-MM-DD`), which is what both current
+        callers are. Live-measured need: `gsc_daily` for the busiest
+        client loads 1333 rows unbounded, 512 unique — but even the 30
+        rows a caller then keeps for its trend window come from just
+        150-165 rows once actually windowed (dashboard's own `since`),
+        of which only ~28 are unique per day. Both narrowings (window,
+        then dedup) matter; neither alone gets there.
         """
-        rows = self._session.scalars(
-            select(AnalyticsDatasetRow)
-            .where(
-                AnalyticsDatasetRow.client_id == client_id,
-                AnalyticsDatasetRow.provider == provider,
-                AnalyticsDatasetRow.dataset_key == dataset_key,
-            )
-            .order_by(AnalyticsDatasetRow.created_at.desc())
-        )
-        out: dict[str, AnalyticsDatasetRow] = {}
-        for row in rows:
-            out.setdefault(row.dimension_value, row)
-        return out
+        conditions = [
+            AnalyticsDatasetRow.client_id == client_id,
+            AnalyticsDatasetRow.provider == provider,
+            AnalyticsDatasetRow.dataset_key == dataset_key,
+        ]
+        if since is not None:
+            conditions.append(AnalyticsDatasetRow.dimension_value >= since.isoformat())
+        if until is not None:
+            conditions.append(AnalyticsDatasetRow.dimension_value <= until.isoformat())
+
+        row_number = func.row_number().over(
+            partition_by=AnalyticsDatasetRow.dimension_value,
+            order_by=AnalyticsDatasetRow.created_at.desc(),
+        ).label("rn")
+        subquery = select(AnalyticsDatasetRow, row_number).where(*conditions).subquery()
+        newest = aliased(AnalyticsDatasetRow, subquery)
+        rows = self._session.scalars(select(newest).where(subquery.c.rn == 1))
+        return {row.dimension_value: row for row in rows}
 
     # --- Added by task-28 (Portfolio Trends): the trends page needs one
     # day-level dataset (`gsc_daily`/`ga4_daily`) read across MANY clients at

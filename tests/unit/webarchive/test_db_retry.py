@@ -49,3 +49,30 @@ def test_gives_up_after_exhausting_retries(session) -> None:
     with pytest.raises(OperationalError, match="database is locked"):
         commit_with_retry(session, _always_locked)
     assert attempts["n"] == len(db_retry.LOCK_RETRY_DELAYS_SECONDS)
+
+
+def test_fn_runs_on_the_caller_thread_not_the_gate_thread(session) -> None:
+    """task-67 §1. `fn` is real work, not a staging closure:
+    `app/webarchive/capture.py` passes an entire page capture (HTTP fetch
+    of the page and every subresource) through here. Running it on the
+    gate's single thread holds the ONE global cross-process flock for the
+    whole network round-trip — every other writer in BOTH processes waits
+    on a remote server — and, because those same callables submit to the
+    gate themselves, self-deadlocks it (live incident 2026-09-06).
+
+    Only the commit may hop to the gate. Asserting on the thread identity
+    is the only way to pin this down: a test on the RESULT passes happily
+    either way, which is exactly how the regression shipped.
+    """
+    import threading
+
+    caller = threading.current_thread()
+    seen: dict[str, threading.Thread] = {}
+
+    def _fn() -> str:
+        seen["fn"] = threading.current_thread()
+        return "ok"
+
+    assert commit_with_retry(session, _fn) == "ok"
+    assert seen["fn"] is caller
+    assert seen["fn"].name != "db-write-gate"
