@@ -379,7 +379,7 @@ _FIXUP_CSS = (
 ## ✅ Completion report
 
 - **Дата:** 2026-09-07
-- **Гілка / комміт:** `feat/task-80-archive-forced-recapture` @ (див. комміт цього файлу)
+- **Гілка / комміт:** `feat/task-80-archive-forced-recapture` @ `12a122d`
 - **Статус:** done
 
 ### Що зроблено
