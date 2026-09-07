@@ -612,6 +612,30 @@ class Settings(BaseSettings):
     # not something to run on every write.
     db_maintenance_at_utc: str = "03:00"
 
+    # ── Прямий Google API як транспорт для #/trends (task-83) ─────────────
+    # Reporting Ninja — платний посередник над безкоштовними GSC Search
+    # Analytics API і GA4 Data API. Усі клієнтські property висять на одному
+    # агенційному акаунті, тож одного OAuth-клієнта (`Internal` — токен без
+    # 7-денного строку режиму `Testing`) і одного refresh token достатньо,
+    # щоб читати їх усі напряму. Транспорт — це НЕ провайдер (task-83 §2):
+    # `Provider` не змінюється, розвилка живе тут + у необов'язковому ключі
+    # `client_integrations.config_json["transport"]`.
+    #
+    # `.env` тримає секрети (git-ignored, жоден CI/прод-конфіг їх не має);
+    # `scripts/google_oauth_bootstrap.py` відтворює refresh token за 2 хв.
+    # Токени НІКОЛИ не потрапляють у БД, provenance, warnings, логи чи
+    # помилки, віддані UI (CLAUDE.md, PLAN §7).
+    google_api_client_id: str | None = None
+    google_api_secret: str | None = None
+    google_api_refresh_token: str | None = None
+    google_api_timeout_seconds: float = 60.0
+    # Глобальний дефолт, коли `config_json["transport"]` не заданий для
+    # клієнта (task-83 §6.1). `"reporting_ninja"` = сьогоднішня поведінка,
+    # тобто до першої свідомої зміни нічого не змінюється ні для кого.
+    # Обране `"google_api"` без `google_api_refresh_token` → клітинка стає
+    # `not_configured` з явним warning, НІКОЛИ не тихий фолбек на RN.
+    google_api_default_transport: str = "reporting_ninja"
+
 
     @model_validator(mode="after")
     def validate_cloud_credentials(self) -> Self:

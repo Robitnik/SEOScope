@@ -38,6 +38,15 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from app.db.models import DIMENSION_OTHER_VALUE
+from app.integrations.google_api import (
+    GOOGLE_API,
+    GoogleApiConfigError,
+    GoogleApiError,
+    GoogleApiPermissionError,
+    GscClient,
+    open_google_api_session,
+    resolve_transport,
+)
 from app.integrations.progress import PhaseTracker
 from app.integrations.registry import register_adapter
 from app.metrics.catalog import CATALOG
@@ -260,6 +269,143 @@ class GscAdapter:
             )
 
     def _collect_datasets(
+        self,
+        context: CollectionContext,
+        emit: Callable[[ProgressEvent], None],
+    ) -> AnalyticsDatasetCollectionResult:
+        # task-83: `gsc_daily` — the only GSC dataset that feeds `#/trends` —
+        # can be read straight from the GSC Search Analytics API (free) instead
+        # of Reporting Ninja (paid proxy). The transport lives in
+        # `config_json["transport"]`; absent = today's behaviour, so nothing
+        # changes for anyone until a deliberate switch. `collect_dimensions`
+        # (pages/queries, task-16) is a separate method and stays on RN.
+        if resolve_transport(context.integration_config) == GOOGLE_API:
+            return self._collect_datasets_google_api(context, emit)
+        return self._collect_datasets_reporting_ninja(context, emit)
+
+    def _collect_datasets_google_api(
+        self,
+        context: CollectionContext,
+        emit: Callable[[ProgressEvent], None],
+    ) -> AnalyticsDatasetCollectionResult:
+        """The `gsc_daily` series via the GSC Search Analytics API (task-83 §4).
+
+        Same row shape, `dataset_key`, `dimension_key='date'` and metric names
+        as the Reporting Ninja path — the ONLY differences are
+        `provenance.transport` and that `ctr` is the API's own `0..1` fraction
+        with NO ×100 (Reporting Ninja returns a percentage; `_reporting_ninja_ctr`
+        divides that by 100 — doing the same here would inflate every value
+        ×100 while still drawing a plausible graph, task-83 §4/§7.3)."""
+        cfg = context.integration_config
+        site_url = str(cfg.get("account_id") or "").strip()
+        observed_at = datetime.now(UTC)
+
+        if not site_url:
+            return AnalyticsDatasetCollectionResult(
+                provider=self.provider,
+                quality=Quality.unavailable,
+                observed_at=observed_at,
+                warnings=["GSC: account_id (sc-domain:… or a URL) not configured for this client."],
+                error_code="not_configured",
+            )
+        try:
+            session = open_google_api_session()
+        except GoogleApiConfigError as exc:
+            return AnalyticsDatasetCollectionResult(
+                provider=self.provider,
+                quality=Quality.unavailable,
+                observed_at=observed_at,
+                warnings=[f"google_api transport selected but not configured: {exc}"],
+                error_code="not_configured",
+            )
+
+        warnings: list[str] = []
+        values: list[AnalyticsDatasetValueResult] = []
+        completed = 0
+        tracker = PhaseTracker(self.provider, emit, "datasets")
+        tracker.begin("datasets", message="Collecting Search Console daily trend via Google API")
+        with session:
+            client = GscClient(session)
+            for progress_completed, (role, date_range) in enumerate(
+                (
+                    (PeriodRole.current, context.current),
+                    (PeriodRole.previous, context.previous),
+                ),
+                start=1,
+            ):
+                tracker.step(
+                    f"fetch_{role.value}_daily",
+                    completed=progress_completed,
+                    total=2,
+                    message=(
+                        f"GSC daily trend · {role.value} · "
+                        f"{date_range.start} → {date_range.end}"
+                    ),
+                )
+                try:
+                    rows = client.daily_search_analytics(
+                        site_url, date_range.start, date_range.end, search_type="web"
+                    )
+                except GoogleApiPermissionError as exc:
+                    return AnalyticsDatasetCollectionResult(
+                        provider=self.provider,
+                        quality=Quality.unavailable,
+                        observed_at=observed_at,
+                        rows=values,
+                        warnings=[*warnings, f"GSC access denied via google_api: {exc}"],
+                        error_code="not_configured",
+                    )
+                except GoogleApiError as exc:
+                    warnings.append(
+                        f"GSC daily trend via google_api failed for {role.value}: "
+                        f"{type(exc).__name__}"
+                    )
+                    continue
+                values.extend(
+                    AnalyticsDatasetValueResult(
+                        dataset_key="gsc_daily",
+                        dimension_key="date",
+                        dimension_value=row.date,
+                        period_role=role,
+                        period_start=date_range.start,
+                        period_end=date_range.end,
+                        metrics={
+                            "clicks": row.clicks,
+                            "impressions": row.impressions,
+                            "ctr": row.ctr,
+                            "position": row.position,
+                        },
+                        quality=Quality.complete,
+                        rank=rank,
+                    )
+                    for rank, row in enumerate(rows, start=1)
+                )
+                completed += 1
+        tracker.done(
+            "datasets_complete", message="Search Console daily trend collected via Google API"
+        )
+
+        if completed == 0:
+            quality = Quality.unavailable
+        elif completed < 2:
+            quality = Quality.partial
+        else:
+            quality = Quality.complete
+        return AnalyticsDatasetCollectionResult(
+            provider=self.provider,
+            quality=quality,
+            observed_at=observed_at,
+            rows=values,
+            warnings=warnings,
+            provenance={
+                "transport": "google_api",
+                "integration": "search_console",
+                "datasets": ["gsc_daily"],
+                "site_url": site_url,
+            },
+        )
+
+    def _collect_datasets_reporting_ninja(
         self,
         context: CollectionContext,
         emit: Callable[[ProgressEvent], None],

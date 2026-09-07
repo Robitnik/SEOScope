@@ -11,9 +11,18 @@ import os
 import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.db.session import get_sync_sessionmaker
 from app.importers.ai_seo_tools import render_report, run_import
+
+if TYPE_CHECKING:
+    from decimal import Decimal
+
+    from sqlalchemy.orm import Session
+
+    from app.db.models import Client
+    from app.integrations.google_api.compare import ComparisonReport
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -108,6 +117,69 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Print the plan (range, clients) without making requests or writing",
+    )
+
+    compare_transports_cmd = subparsers.add_parser(
+        "compare-transports",
+        help=(
+            "task-83 §7 GATE: fetch the same window for one client through BOTH "
+            "Reporting Ninja and the direct Google API, in memory, and print the "
+            "per-day difference. Writes NOTHING to the database. Exit 1 if any "
+            "metric is outside the §7.3 tolerance."
+        ),
+    )
+    compare_transports_cmd.add_argument(
+        "--client", required=True, help="One client ID or name"
+    )
+    compare_transports_cmd.add_argument(
+        "--days", type=int, default=30, help="Window length in days (default: 30)"
+    )
+    compare_transports_cmd.add_argument(
+        "--dataset",
+        choices=["gsc_daily", "ga4_daily", "ga4_daily_channels", "all"],
+        default="all",
+        help="Which trends dataset to compare (default: all three)",
+    )
+    compare_transports_cmd.add_argument(
+        "--end",
+        default=None,
+        help="Last day of the window, YYYY-MM-DD (default: yesterday)",
+    )
+    compare_transports_cmd.add_argument(
+        "--show-days",
+        action="store_true",
+        help="Print every compared day, not just the out-of-tolerance ones",
+    )
+
+    set_transport_cmd = subparsers.add_parser(
+        "set-transport",
+        help=(
+            "task-83 §8.4: switch which transport fills a client's `#/trends` "
+            "datasets by writing the optional `config_json['transport']` key on "
+            "its GSC and/or Reporting Ninja integration. Reversible — rerun with "
+            "the other value. The next collection picks it up."
+        ),
+    )
+    set_transport_cmd.add_argument("--client", required=True, help="One client ID or name")
+    set_transport_cmd.add_argument(
+        "--transport",
+        required=True,
+        choices=["google_api", "reporting_ninja", "default"],
+        help=(
+            "`google_api` / `reporting_ninja` pin the transport; `default` "
+            "removes the key so the client follows google_api_default_transport"
+        ),
+    )
+    set_transport_cmd.add_argument(
+        "--only",
+        choices=["gsc", "reporting_ninja"],
+        default=None,
+        help="Touch only this one integration (default: both gsc and reporting_ninja)",
+    )
+    set_transport_cmd.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the before/after without writing",
     )
 
     monitor_run_cmd = subparsers.add_parser(
@@ -699,6 +771,12 @@ def main(argv: list[str] | None = None) -> int:
                     )
         print(f"done: {total_written} day(s) written across {len(channel_targets)} client(s)")
         return 0
+
+    if args.command == "compare-transports":
+        return _run_compare_transports(args)
+
+    if args.command == "set-transport":
+        return _run_set_transport(args)
 
     if args.command == "monitor-run":
         # Imported here, not at module scope: pulls in the monitor engine
@@ -1548,6 +1626,359 @@ def main(argv: list[str] | None = None) -> int:
     parser.error(f"unknown command: {args.command}")
     return 2
 
+
+
+def _resolve_client_ref(session: Session, ref: str) -> Client | None:
+    """A client by id or (case-insensitive) name — shared by the task-83
+    transport commands."""
+    from app.db.repositories.clients import ClientRepository
+
+    repo = ClientRepository(session)
+    found = repo.get(ref)
+    if found is not None:
+        return found
+    lowered = ref.strip().lower()
+    matches = [c for c in repo.list_all() if c.name.strip().lower() == lowered]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _cli_decimal(value: object) -> Decimal | None:
+    from decimal import Decimal, InvalidOperation
+
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value).replace(",", "").strip())
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _cli_day(value: object) -> date | None:
+    text = str(value or "").strip()
+    if len(text) == 8 and text.isdigit():
+        text = f"{text[:4]}-{text[4:6]}-{text[6:]}"
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _run_compare_transports(args: argparse.Namespace) -> int:
+    """task-83 §7 GATE — fetch one window through both transports in memory and
+    print the per-day delta. Writes NOTHING (any write would instantly become
+    what `#/trends` shows, §7.2)."""
+    from decimal import Decimal
+
+    from app.db.repositories.clients import ClientRepository
+    from app.integrations.google_api import open_google_api_session
+    from app.integrations.google_api.compare import compare_series
+    from app.integrations.reporting_ninja import (
+        _GA4_DAILY_FIELDS,
+        query_daily_channels,
+        query_ga4_daily_channels_via_google_api,
+        query_ga4_daily_via_google_api,
+    )
+    from app.metrics.portfolio import GA4_LAG_DAYS, GSC_LAG_DAYS
+    from app.schemas.enums import Provider
+
+    if args.days < 1:
+        print("error: --days must be >= 1", file=sys.stderr)
+        return 2
+    today = datetime.now(UTC).date()
+    try:
+        window_end = date.fromisoformat(args.end) if args.end else today - timedelta(days=1)
+    except ValueError:
+        print(f"error: --end is not YYYY-MM-DD: {args.end}", file=sys.stderr)
+        return 2
+    window_start = window_end - timedelta(days=args.days - 1)
+
+    session_factory = get_sync_sessionmaker()
+    with session_factory() as session:
+        client = _resolve_client_ref(session, args.client)
+        if client is None:
+            print(f"error: no single client matches --client {args.client!r}", file=sys.stderr)
+            return 2
+        repo = ClientRepository(session)
+        gsc_int = repo.get_integration(client.id, Provider.gsc)
+        rn_int = repo.get_integration(client.id, Provider.reporting_ninja)
+        client_name = client.name
+        gsc_cfg = dict(gsc_int.config_json or {}) if gsc_int else None
+        rn_cfg = dict(rn_int.config_json or {}) if rn_int else None
+
+    wanted = (
+        ["gsc_daily", "ga4_daily", "ga4_daily_channels"]
+        if args.dataset == "all"
+        else [args.dataset]
+    )
+    print(
+        f"client: {client_name}   window: {window_start} .. {window_end} "
+        f"({args.days}d)   today: {today}"
+    )
+    print("A = reporting_ninja    B = google_api    (nothing is written to the database)")
+
+    from seo_audit.clientreport.api_client import APIError, RateLimitError, ReportingNinjaClient
+    from seo_audit.clientreport.gsc_fetcher import discover_gsc_fields
+
+    def _rn_gsc_daily(rn: ReportingNinjaClient) -> dict[date, dict[str, Decimal | None]]:
+        fields = discover_gsc_fields(rn)
+        query_fields = ["date", fields["clicks"], fields["impressions"]]
+        for optional in ("ctr", "avg_position"):
+            if fields.get(optional):
+                query_fields.append(fields[optional])
+        payload = rn.query_all(
+            "google_search_console",
+            (gsc_cfg or {}).get("connection_key", ""),
+            (gsc_cfg or {})["account_id"],
+            query_fields,
+            window_start.isoformat(),
+            window_end.isoformat(),
+            page_size=25000,
+            max_rows=25000,
+            settings={"search_type": "web"},
+        )
+        out: dict[date, dict[str, Decimal | None]] = {}
+        for row in payload.get("rows", []):
+            day = _cli_day(row.get("date"))
+            if day is None:
+                continue
+            raw_ctr = _cli_decimal(row.get(fields["ctr"])) if fields.get("ctr") else None
+            out[day] = {
+                "clicks": _cli_decimal(row.get(fields["clicks"])),
+                "impressions": _cli_decimal(row.get(fields["impressions"])),
+                "ctr": raw_ctr / Decimal(100) if raw_ctr is not None else None,
+                "position": _cli_decimal(row.get(fields.get("avg_position", ""))),
+            }
+        return out
+
+    def _rn_ga4_daily(rn: ReportingNinjaClient) -> dict[date, dict[str, Decimal | None]]:
+        payload = rn.query_all(
+            "ga4",
+            (rn_cfg or {}).get("connection_key", ""),
+            (rn_cfg or {})["account_id"],
+            ["date", *_GA4_DAILY_FIELDS.values()],
+            window_start.isoformat(),
+            window_end.isoformat(),
+            page_size=10000,
+            max_rows=50000,
+        )
+        out: dict[date, dict[str, Decimal | None]] = {}
+        for row in payload.get("rows", []):
+            day = _cli_day(row.get("date"))
+            if day is None:
+                continue
+            out[day] = {
+                canonical: _cli_decimal(row.get(field))
+                for canonical, field in _GA4_DAILY_FIELDS.items()
+            }
+        return out
+
+    reports = []
+    with ReportingNinjaClient() as rn, open_google_api_session() as gs:
+        from app.integrations.google_api import Ga4Client, GscClient
+
+        for dataset in wanted:
+            try:
+                if dataset == "gsc_daily":
+                    if not (gsc_cfg and gsc_cfg.get("account_id")):
+                        print(f"\n[{dataset}] skipped — client has no GSC integration")
+                        continue
+                    series_a = _rn_gsc_daily(rn)
+                    series_b = {
+                        date.fromisoformat(row.date): {
+                            "clicks": row.clicks,
+                            "impressions": row.impressions,
+                            "ctr": row.ctr,
+                            "position": row.position,
+                        }
+                        for row in GscClient(gs).daily_search_analytics(
+                            gsc_cfg["account_id"], window_start, window_end, search_type="web"
+                        )
+                    }
+                    lag = GSC_LAG_DAYS
+                elif dataset == "ga4_daily":
+                    if not (rn_cfg and rn_cfg.get("account_id")):
+                        print(f"\n[{dataset}] skipped — client has no Reporting Ninja integration")
+                        continue
+                    series_a = _rn_ga4_daily(rn)
+                    series_b = {
+                        date.fromisoformat(day): metrics
+                        for day, metrics in query_ga4_daily_via_google_api(
+                            Ga4Client(gs),
+                            account_id=rn_cfg["account_id"],
+                            start=window_start,
+                            end=window_end,
+                        )
+                    }
+                    lag = GA4_LAG_DAYS
+                else:  # ga4_daily_channels
+                    if not (rn_cfg and rn_cfg.get("account_id")):
+                        print(f"\n[{dataset}] skipped — client has no Reporting Ninja integration")
+                        continue
+                    rn_rows, _truncated = query_daily_channels(
+                        rn,
+                        connection_key=rn_cfg.get("connection_key", ""),
+                        account_id=rn_cfg["account_id"],
+                        start=window_start,
+                        end=window_end,
+                    )
+                    series_a = {date.fromisoformat(day): metrics for day, metrics in rn_rows}
+                    series_b = {
+                        date.fromisoformat(day): metrics
+                        for day, metrics in query_ga4_daily_channels_via_google_api(
+                            Ga4Client(gs),
+                            account_id=rn_cfg["account_id"],
+                            start=window_start,
+                            end=window_end,
+                        )
+                    }
+                    lag = GA4_LAG_DAYS
+            except (APIError, RateLimitError, ValueError, KeyError) as exc:
+                print(f"\n[{dataset}] FETCH FAILED — {type(exc).__name__}: {exc}")
+                return 1
+
+            report = compare_series(
+                dataset,
+                series_a,
+                series_b,
+                label_a="reporting_ninja",
+                label_b="google_api",
+                lag_days=lag,
+                today=today,
+            )
+            _render_comparison(report, series_a, series_b, show_days=args.show_days)
+            reports.append(report)
+
+    if not reports:
+        print("\nnothing compared")
+        return 2
+    ok = all(report.passed for report in reports)
+    print(f"\nGATE G2: {'PASS' if ok else 'FAIL'}")
+    return 0 if ok else 1
+
+
+def _render_comparison(
+    report: ComparisonReport,
+    series_a: dict[date, dict[str, Decimal | None]],
+    series_b: dict[date, dict[str, Decimal | None]],
+    *,
+    show_days: bool,
+) -> None:
+    from app.integrations.google_api.compare import DayDiff, _rel_pct
+
+    print(f"\n-- {report.dataset}  (lag {report.lag_days}d excluded) ".ljust(72, "-"))
+    print(
+        f"days compared: {report.days_compared}   "
+        f"only in A: {len(report.days_only_a)}   only in B: {len(report.days_only_b)}"
+    )
+    if report.days_only_a:
+        joined = ", ".join(d.isoformat() for d in report.days_only_a[:10])
+        print(f"  only in reporting_ninja: {joined}")
+    if report.days_only_b:
+        joined = ", ".join(d.isoformat() for d in report.days_only_b[:10])
+        print(f"  only in google_api:      {joined}")
+    print(
+        f"  {'metric':<20} {'tol':>10} {'n':>5} {'fail':>5} "
+        f"{'max|d|':>16} {'med|d|':>14} {'max%':>9}"
+    )
+    for m in report.per_metric:
+        tol = "exact" if m.kind == "exact" else f"<={m.limit_pct}%"
+        maxrel = "-" if m.max_rel_pct is None else f"{m.max_rel_pct:.3f}"
+        flag = "  OK" if m.failures == 0 else "  FAIL"
+        print(
+            f"  {m.metric:<20} {tol:>10} {m.compared:>5} {m.failures:>5} "
+            f"{str(m.max_abs_diff):>16} {str(m.median_abs_diff):>14} {maxrel:>9}{flag}"
+        )
+
+    shown: list[DayDiff] = list(report.failures)
+    if show_days:
+        common = sorted(set(series_a) & set(series_b))
+        names = [m.metric for m in report.per_metric]
+        shown = []
+        for name in names:
+            for day in common:
+                a = series_a[day].get(name)
+                b = series_b[day].get(name)
+                if a is None and b is None:
+                    continue
+                paired = None if (a is None or b is None) else (abs(a - b), _rel_pct(a, b))
+                shown.append(
+                    DayDiff(
+                        day=day,
+                        metric=name,
+                        a=a,
+                        b=b,
+                        abs_diff=None if paired is None else paired[0],
+                        rel_pct=None if paired is None else paired[1],
+                        within_tolerance=True,
+                    )
+                )
+    if shown:
+        print(f"  {'day':<12} {'metric':<20} {'A':>16} {'B':>16} {'|d|':>16} {'d%':>9}")
+        for d in shown[:200]:
+            if d.rel_pct is None:
+                rel = "-"
+            elif not d.rel_pct.is_finite():
+                rel = "inf"
+            else:
+                rel = f"{d.rel_pct:.3f}"
+            ab = "-" if d.abs_diff is None else str(d.abs_diff)
+            note = f"   {d.note}" if d.note else ""
+            print(
+                f"  {d.day.isoformat():<12} {d.metric:<20} "
+                f"{str(d.a):>16} {str(d.b):>16} {ab:>16} {rel:>9}{note}"
+            )
+
+
+def _run_set_transport(args: argparse.Namespace) -> int:
+    """task-83 §8.4 — write/clear `config_json['transport']` on a client's GSC
+    and/or Reporting Ninja integration. Reversible; picked up on the next
+    collection (§0.5 makes the cutover seamless)."""
+    from app.db.repositories.clients import ClientRepository
+    from app.schemas.enums import Provider
+
+    targets = (
+        [Provider.gsc, Provider.reporting_ninja]
+        if args.only is None
+        else [Provider.gsc if args.only == "gsc" else Provider.reporting_ninja]
+    )
+    session_factory = get_sync_sessionmaker()
+    with session_factory() as session:
+        client = _resolve_client_ref(session, args.client)
+        if client is None:
+            print(f"error: no single client matches --client {args.client!r}", file=sys.stderr)
+            return 2
+        repo = ClientRepository(session)
+        changed = 0
+        for provider in targets:
+            integration = repo.get_integration(client.id, provider)
+            if integration is None:
+                print(f"{provider.value:16} — no integration row, skipped")
+                continue
+            config = dict(integration.config_json or {})
+            before = config.get("transport", "(unset → default)")
+            if args.transport == "default":
+                config.pop("transport", None)
+                after = "(unset → default)"
+            else:
+                config["transport"] = args.transport
+                after = args.transport
+            if before == after:
+                print(f"{provider.value:16} — already {after}")
+                continue
+            print(f"{provider.value:16} {before}  →  {after}")
+            if not args.dry_run:
+                integration.config_json = config
+                session.add(integration)
+                changed += 1
+        if args.dry_run:
+            print("dry run: nothing written")
+            return 0
+        if changed:
+            session.commit()
+            print(f"done: updated {changed} integration(s) for {client.name}")
+        else:
+            print("no changes")
+    return 0
 
 
 def _run_user_command(args: argparse.Namespace) -> int:
