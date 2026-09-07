@@ -271,7 +271,7 @@ _B64ISH_RE = re.compile(r"\b[A-Za-z0-9+/]{24,}={0,2}(?![A-Za-z0-9+/=])")
 ## ✅ Completion report
 
 - **Дата:** 2026-09-07
-- **Гілка / комміт:** `feat/task-80-archive-forced-recapture` @ (див. наступний комміт)
+- **Гілка / комміт:** `feat/task-80-archive-forced-recapture` @ `1e9e556`
 - **Статус:** done
 
 ### Що зроблено
