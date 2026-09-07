@@ -83,10 +83,11 @@ def _throttle():
 
 def _capture_one(
     session, repo, client, archive_url, *, settings, artifacts_dir, now, capture_assets=False,
-    write_controller=None,
+    write_controller=None, force=False,
 ):
     capture = repo.create_capture(
-        client.id, slot_key=f"manual:{now.isoformat()}", scheduled_for=now, trigger="manual"
+        client.id, slot_key=f"manual:{now.isoformat()}", scheduled_for=now, trigger="manual",
+        force=force,
     )
     session.commit()
     controller = write_controller or _OwnController()
@@ -94,7 +95,7 @@ def _capture_one(
         session, repo, client, archive_url,
         capture_id=capture.id, settings=settings, artifacts_dir=artifacts_dir,
         throttle=_throttle(), stats=capturemod.FetchStats(), now=now, capture_assets=capture_assets,
-        write_controller=controller,
+        write_controller=controller, force=force,
     )
     session.commit()
     return result
@@ -214,6 +215,143 @@ def test_weekly_refresh_writes_snapshot_without_change_row(
     assert len(snapshots) == 2
     assert snapshots[0].store_reason == "weekly_refresh"
     assert repo.get_change_by_snapshot(snapshots[0].id) is None
+
+
+# task-80 — "Recapture": `force=True` stores a new snapshot even when the
+# page is byte-for-byte unchanged, instead of `capture_url`'s ordinary early
+# exit into `confirm_snapshot`.
+def test_forced_recapture_of_unchanged_page_writes_new_snapshot_reason_forced(
+    session, artifacts_dir, settings, fake_fetch
+):
+    client, repo, archive_url = _seed(session)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, HTML_V1, headers={"Content-Type": "text/html"}))
+    _capture_one(
+        session, repo, client, archive_url, settings=settings, artifacts_dir=artifacts_dir, now=t0
+    )
+
+    # Same bytes, well within `archive_refresh_after_days` — an ordinary pass
+    # would just confirm the existing row (see the `unchanged` test above).
+    result = _capture_one(
+        session, repo, client, archive_url,
+        settings=settings, artifacts_dir=artifacts_dir, now=t0 + timedelta(hours=6), force=True,
+    )
+
+    assert result.outcome == "new"
+    snapshots = repo.list_snapshots_for_url(archive_url.id)  # newest first
+    assert len(snapshots) == 2
+    assert snapshots[0].store_reason == "forced"
+    assert snapshots[0].prev_snapshot_id == snapshots[1].id
+
+
+def test_forced_recapture_of_unchanged_page_creates_no_change_and_reuses_blob(
+    session, artifacts_dir, settings, fake_fetch
+):
+    """A forced pass over an unchanged page must not (a) fabricate an
+    `ArchiveChange` — the change feed stays a real signal, not noise the
+    operator has to filter out (task-80 plan §0.6) — or (b) double-write the
+    blob on disk: `store_blob` is content-addressed, so the SAME bytes never
+    cost a second file (task-80 plan §0.4, the "this is not a storage
+    doubling button" claim).
+    """
+    from sqlalchemy import select
+
+    from app.db.models import ArchiveBlob, ArchiveChange
+
+    client, repo, archive_url = _seed(session)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, HTML_V1, headers={"Content-Type": "text/html"}))
+    _capture_one(
+        session, repo, client, archive_url, settings=settings, artifacts_dir=artifacts_dir, now=t0
+    )
+    blob_count_before = len(session.scalars(select(ArchiveBlob)).all())
+    change_count_before = len(session.scalars(select(ArchiveChange)).all())
+
+    _capture_one(
+        session, repo, client, archive_url,
+        settings=settings, artifacts_dir=artifacts_dir, now=t0 + timedelta(hours=6), force=True,
+    )
+
+    assert len(session.scalars(select(ArchiveBlob)).all()) == blob_count_before
+    assert len(session.scalars(select(ArchiveChange)).all()) == change_count_before
+
+
+def test_forced_recapture_of_actually_changed_page_keeps_reason_changed(
+    session, artifacts_dir, settings, fake_fetch
+):
+    """Reality outranks intent (task-80 §3.1): if the page genuinely changed
+    during a forced pass, `store_reason` must still say "changed", not
+    "forced" — losing that distinction would hide the one signal a real
+    change happened.
+    """
+    client, repo, archive_url = _seed(session)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, HTML_V1, headers={"Content-Type": "text/html"}))
+    _capture_one(
+        session, repo, client, archive_url, settings=settings, artifacts_dir=artifacts_dir, now=t0
+    )
+
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, HTML_V2, headers={"Content-Type": "text/html"}))
+    result = _capture_one(
+        session, repo, client, archive_url,
+        settings=settings, artifacts_dir=artifacts_dir, now=t0 + timedelta(hours=6), force=True,
+    )
+
+    assert result.outcome == "new"
+    snapshots = repo.list_snapshots_for_url(archive_url.id)
+    assert snapshots[0].store_reason == "changed"
+    assert repo.get_change_by_snapshot(snapshots[0].id) is not None
+
+
+def test_forced_recapture_revalidates_assets_within_window_but_not_new_asset_budget(
+    session, artifacts_dir, settings, fake_fetch
+):
+    """`force` bypasses `archive_asset_revalidate_days` for an asset already
+    known — a "fresh copy" whose CSS is 7 days stale isn't fresh (task-80
+    §3.2) — but a genuinely NEW asset still respects
+    `archive_new_assets_per_page`: forcing a recapture must not turn off the
+    asset-bomb guard.
+    """
+    known_asset_url = "https://acme.example.com/logo.png"
+    new_asset_url = "https://acme.example.com/banner.png"
+    html = (
+        b'<html><head><title>Acme</title></head><body>'
+        b'<img src="/logo.png"><img src="/banner.png"></body></html>'
+    )
+    client, repo, archive_url = _seed(session)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+
+    # First pass: only the "known" asset exists — establishes its
+    # `last_checked_at` well inside the revalidate window for the second pass.
+    html_v1 = b'<html><head><title>Acme</title></head><body><img src="/logo.png"></body></html>'
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, html_v1, headers={"Content-Type": "text/html"}))
+    fake_fetch.set(
+        known_asset_url, _result(known_asset_url, b"PNGDATA", headers={"Content-Type": "image/png"})
+    )
+    _capture_one(
+        session, repo, client, archive_url,
+        settings=settings, artifacts_dir=artifacts_dir, now=t0, capture_assets=True,
+    )
+    assert fake_fetch.calls[known_asset_url] == 1
+
+    # Second pass, one hour later (nowhere near the 7-day revalidate window),
+    # forced, with a brand-new asset added and the new-asset budget at zero —
+    # `logo.png` must still be re-checked (force bypasses the window), while
+    # `banner.png` — never seen before — is truncated, not fetched, exactly
+    # as an ordinary (non-forced) pass would.
+    settings_zero_budget = settings.model_copy(update={"archive_new_assets_per_page": 0})
+    fake_fetch.set(PAGE_URL, _result(PAGE_URL, html, headers={"Content-Type": "text/html"}))
+    fake_fetch.set(
+        new_asset_url, _result(new_asset_url, b"BANNERDATA", headers={"Content-Type": "image/png"})
+    )
+    _capture_one(
+        session, repo, client, archive_url,
+        settings=settings_zero_budget, artifacts_dir=artifacts_dir,
+        now=t0 + timedelta(hours=1), capture_assets=True, force=True,
+    )
+
+    assert fake_fetch.calls[known_asset_url] == 2  # revalidated despite being well within window
+    assert new_asset_url not in fake_fetch.calls  # never fetched — budget exhausted
 
 
 def test_blocked_result_writes_no_snapshot(session, artifacts_dir, settings, fake_fetch):

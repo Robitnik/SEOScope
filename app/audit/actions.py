@@ -132,6 +132,7 @@ ROUTE_ACTIONS: dict[tuple[str, str], ActionSpec] = {
     ),
     # ── web archive ──────────────────────────────────────────────────────
     ("POST", "/api/v1/archive/captures"): ActionSpec("archive.capture_start", "client"),
+    ("POST", "/api/v1/archive/captures/force"): ActionSpec("archive.recapture_start", "client"),
     ("POST", "/api/v1/archive/captures/all"): ActionSpec("archive.capture_all"),
     ("POST", "/api/v1/archive/captures/url"): ActionSpec("archive.capture_url", "archive_url"),
     ("POST", "/api/v1/archive/captures/url-adhoc"): ActionSpec("archive.capture_adhoc"),

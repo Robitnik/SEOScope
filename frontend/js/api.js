@@ -2929,6 +2929,16 @@ export async function startArchiveCapture(clientId) {
   );
 }
 
+// task-80 — "Recapture": forces a new snapshot for every URL, even
+// byte-for-byte unchanged ones, instead of the ordinary "confirm and skip".
+export async function startForcedArchiveCapture(clientId) {
+  return request(
+    `/archive/captures/force?client_id=${encodeURIComponent(clientId)}`,
+    { method: "POST", body: "{}" },
+    `archive-recapture-start:${clientId}`,
+  );
+}
+
 // task-62 §1.1 — "Refresh now" on one URL, not the whole client.
 export async function startArchiveUrlCapture(urlId) {
   return request(

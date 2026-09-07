@@ -21,7 +21,7 @@ import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260821-sp
 import { panelSkeleton } from "./skeleton.js?v=20260821-spin3";
 import {
   calendarMarkup, bindCalendarActions, groupSnapshotsByDay, reasonLabel,
-} from "./archive-calendar.js?v=20260905-t63";
+} from "./archive-calendar.js?v=20260907-t80";
 import { notArchivedMarkup, bindNotArchivedActions } from "./archive-not-archived.js?v=20260906-t70";
 
 const root = document.querySelector("#archive-view-page-root");

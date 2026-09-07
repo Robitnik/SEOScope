@@ -292,6 +292,7 @@ def _capture_assets_for_page(
     now: datetime,
     capture_id: str,
     write_controller: ArchiveWriteController,
+    force: bool = False,
 ) -> _AssetCaptureOutcome:
     outcome = _AssetCaptureOutcome()
     remaining_new_budget = settings.archive_new_assets_per_page
@@ -343,7 +344,7 @@ def _capture_assets_for_page(
         asset = repo.get_or_create_asset(ref.url, key, kind=ref.kind)
         last_checked_at = asset.last_checked_at
         never_checked = last_checked_at is None
-        needs_check = never_checked or (
+        needs_check = never_checked or force or (
             last_checked_at is not None
             and now - last_checked_at >= timedelta(days=settings.archive_asset_revalidate_days)
         )
@@ -461,12 +462,18 @@ def _make_cancel_checker(
 
 
 def _resolve_reason(
-    *, is_first: bool, content_changed: bool, fingerprint_same: bool
+    *, is_first: bool, content_changed: bool, fingerprint_same: bool, forced: bool
 ) -> str:
     if is_first:
         return "first"
     if content_changed:
         return "status_changed" if fingerprint_same else "changed"
+    # Priority of reality over intent (task-80): if the page genuinely
+    # changed under a forced pass, that fact is more valuable than the
+    # operator's intent and must not be swallowed by "forced" — losing it
+    # would drop the one signal a real change happened.
+    if forced:
+        return "forced"
     return "weekly_refresh"
 
 
@@ -484,10 +491,18 @@ def capture_url(
     now: datetime,
     capture_assets: bool,
     write_controller: ArchiveWriteController,
+    force: bool = False,
 ) -> UrlCaptureResult:
     """One URL, one cell (PLAN §9.1). The caller tallies the result into the
     capture's own counters and NEVER lets one raise stop the pass (see
     `run_client_capture`).
+
+    `force` (task-80, "Recapture") stores a new snapshot even when nothing
+    changed — the operator wants a fresh byte-for-byte copy NOW, not a
+    `confirmed_count` bump on the old row. It also revalidates every asset
+    regardless of `archive_asset_revalidate_days` (see
+    `_capture_assets_for_page`), because a "fresh copy" whose CSS is 30 days
+    stale isn't fresh.
     """
     result = fetch(
         archive_url.url,
@@ -536,7 +551,7 @@ def capture_url(
             days=settings.archive_refresh_after_days
         )
 
-    if not content_changed and not is_stale:
+    if not content_changed and not is_stale and not force:
         assert prev_snapshot is not None
         repo.confirm_snapshot(prev_snapshot, observed_at=now)
         repo.touch_url(archive_url, observed_at=now, snapshot_written=False)
@@ -546,7 +561,8 @@ def capture_url(
         prev_snapshot is not None and fingerprint == prev_snapshot.content_fingerprint
     )
     store_reason = _resolve_reason(
-        is_first=is_first, content_changed=content_changed, fingerprint_same=fingerprint_same
+        is_first=is_first, content_changed=content_changed, fingerprint_same=fingerprint_same,
+        forced=force,
     )
 
     blob = storage.store_blob(artifacts_dir, result.body)
@@ -560,7 +576,7 @@ def capture_url(
         asset_outcome = _capture_assets_for_page(
             session, repo, html_text, base_url=result.final_url, settings=settings,
             artifacts_dir=artifacts_dir, throttle=throttle, stats=stats, now=now,
-            capture_id=capture_id, write_controller=write_controller,
+            capture_id=capture_id, write_controller=write_controller, force=force,
         )
 
     new_fields = changesmod.snapshot_fields(
@@ -679,6 +695,7 @@ def _capture_url_and_commit(
     now: datetime,
     capture_assets: bool,
     write_controller: ArchiveWriteController,
+    force: bool = False,
 ) -> UrlCaptureResult:
     """`capture_url` itself only ever stages via `session.add` — this is the
     one place that actually commits it, routed through `write_controller`
@@ -692,7 +709,7 @@ def _capture_url_and_commit(
         session, repo, client, archive_url,
         capture_id=capture_id, settings=settings, artifacts_dir=artifacts_dir,
         throttle=throttle, stats=stats, now=now, capture_assets=capture_assets,
-        write_controller=write_controller,
+        write_controller=write_controller, force=force,
     )
     write_controller.submit(session, lambda: None)
     return result
@@ -709,10 +726,15 @@ def run_client_capture(
     session_scope: Callable[[], AbstractContextManager[Session]],
     now: datetime | None = None,
     only_url_id: str | None = None,
+    force: bool = False,
 ) -> CaptureOutcome:
     """`only_url_id` (task-62 §2.7, the per-page "Refresh now" button) skips
     seeding and the client's full URL list entirely — the capture is exactly
     one cell, `urls_total=1`.
+
+    `force` (task-80, "Recapture") stores a new snapshot for every URL in
+    this pass, even the byte-for-byte unchanged ones — see `capture_url`'s
+    own docstring for why.
     """
     now = now or datetime.now(UTC)
     repo = WebArchiveRepository(session)
@@ -826,7 +848,7 @@ def run_client_capture(
                     _capture_url_and_commit, session, repo, client, archive_url,
                     capture_id=capture_id, settings=settings, artifacts_dir=artifacts_dir,
                     throttle=throttle, stats=stats, now=now, capture_assets=capture_assets,
-                    write_controller=write_controller,
+                    write_controller=write_controller, force=force,
                 ),
             )
         except Exception:  # noqa: BLE001 - one URL's crash must never take down the whole capture

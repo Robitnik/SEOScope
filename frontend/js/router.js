@@ -517,14 +517,14 @@ async function activate() {
     allRoots.filter((el) => el !== archiveRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     archiveRoot?.removeAttribute("hidden");
-    const { initArchivePage } = await import("./archive-page.js?v=20260906-t70");
+    const { initArchivePage } = await import("./archive-page.js?v=20260907-t80");
     await initArchivePage(route.query);
   } else if (route.name === "archive-view") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== archiveViewRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     archiveViewRoot?.removeAttribute("hidden");
-    const { initArchiveViewPage } = await import("./archive-viewer.js?v=20260906-t70");
+    const { initArchiveViewPage } = await import("./archive-viewer.js?v=20260907-t80");
     await initArchiveViewPage(route.query);
   } else if (route.name === "archive-changes") {
     dashboardView?.setAttribute("hidden", "");
@@ -538,7 +538,7 @@ async function activate() {
     allRoots.filter((el) => el !== archiveCaptureRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     archiveCaptureRoot?.removeAttribute("hidden");
-    const { initArchiveCapturePage } = await import("./archive-capture.js?v=20260906-t69");
+    const { initArchiveCapturePage } = await import("./archive-capture.js?v=20260907-t80");
     await initArchiveCapturePage(route.query);
   } else if (route.name === "url-inspector") {
     dashboardView?.setAttribute("hidden", "");

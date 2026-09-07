@@ -337,6 +337,10 @@ def _build_parser() -> argparse.ArgumentParser:
     archive_capture_cmd.add_argument(
         "--no-assets", action="store_true", help="Skip subresources — HTML only, for a quick check"
     )
+    archive_capture_cmd.add_argument(
+        "--force", action="store_true",
+        help="Recapture: store a new snapshot for every URL even if byte-for-byte unchanged",
+    )
 
     archive_backfill_assets_cmd = subparsers.add_parser(
         "archive-backfill-assets",
@@ -1450,6 +1454,7 @@ def main(argv: list[str] | None = None) -> int:
                         slot_key=f"manual:{uuid.uuid4()}",
                         scheduled_for=datetime.now(UTC),
                         trigger="manual",
+                        force=args.force,
                     )
                     session.commit()
                     archive_repo.claim_capture(capture.id, owner="cli")
@@ -1458,6 +1463,7 @@ def main(argv: list[str] | None = None) -> int:
                         session, client, capture_id=capture.id, settings=settings,
                         artifacts_dir=settings.artifacts_dir,
                         write_controller=write_controller, session_scope=session_factory,
+                        force=args.force,
                     )
                     archive_repo.finish_capture(
                         capture.id, status=capture_outcome.status  # type: ignore[arg-type]

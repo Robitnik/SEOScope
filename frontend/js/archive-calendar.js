@@ -83,6 +83,7 @@ export function reasonLabel(reason) {
     {
       first: "First capture", changed: "Changed",
       weekly_refresh: "Confirmed unchanged", status_changed: "Status changed",
+      forced: "Forced copy",
     }[reason] || reason
   );
 }

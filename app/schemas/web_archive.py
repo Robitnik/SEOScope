@@ -17,7 +17,7 @@ CaptureTrigger = Literal["scheduled", "manual"]
 CaptureStatus = Literal["queued", "running", "ok", "partial", "failed", "blocked", "cancelled"]
 CaptureScope = Literal["client", "url"]
 CaptureEventLevel = Literal["debug", "info", "warning", "error"]
-StoreReason = Literal["first", "changed", "weekly_refresh", "status_changed"]
+StoreReason = Literal["first", "changed", "weekly_refresh", "status_changed", "forced"]
 ChangeKind = Literal[
     "title", "description", "h1", "text", "links", "images", "status", "redirect", "noindex"
 ]
@@ -150,6 +150,11 @@ class ArchiveCaptureDTO(BaseModel):
     progress_message: str | None  # the URL last touched, structured (§2.5), not parsed from a log
     cancel_requested: bool
     queue_position: int | None  # 1-based, among `queued` rows only; `None` off that list
+    # task-80 ("Recapture") — without this the UI cannot tell a forced pass
+    # apart from an ordinary one, and `urls_new` on a forced pass reads as
+    # "the whole site changed" when it actually means "we asked for a fresh
+    # copy of everything".
+    force: bool
 
 
 class ArchiveCaptureEventDTO(BaseModel):

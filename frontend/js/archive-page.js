@@ -8,9 +8,9 @@
 // "is the archive actually working" without opening a client.
 import {
   getArchiveOverview, getArchiveQueue, getArchiveUrlTimeline, lookupArchiveUrl,
-  startAllArchiveCaptures, startArchiveCapture, startArchiveUrlCapture,
+  startAllArchiveCaptures, startArchiveCapture, startForcedArchiveCapture, startArchiveUrlCapture,
   startArchiveAdhocUrlCapture, isAbortError,
-} from "./api.js?v=20260905-t63";
+} from "./api.js?v=20260907-t80";
 import {
   buildArchiveCaptureHash, buildArchiveViewHash, buildArchiveChangesHash,
 } from "./router.js?v=20260905-t63";
@@ -20,7 +20,7 @@ import {
 import { sectionSkeleton, panelSkeleton } from "./skeleton.js?v=20260821-spin3";
 import {
   calendarMarkup, bindCalendarActions, groupSnapshotsByDay, reasonLabel,
-} from "./archive-calendar.js?v=20260905-t63";
+} from "./archive-calendar.js?v=20260907-t80";
 import { notArchivedMarkup, bindNotArchivedActions } from "./archive-not-archived.js?v=20260906-t70";
 
 const root = document.querySelector("#archive-page-root");
@@ -57,6 +57,10 @@ export async function initArchivePage(query) {
     overviewError: null,
     queue: null, // ArchiveQueueDTO — running/queued/recent (task-62 §1.4)
     captureStarting: null, // client_id currently being triggered
+    // task-80 — separate from `captureStarting`: sharing one flag would
+    // disable BOTH buttons of every OTHER row the moment either fires on
+    // this one.
+    recaptureStarting: null,
     urlCaptureStarting: false, // "Refresh now" on the currently looked-up URL
     allCapturesStarting: false,
     // Shared by BOTH the hero "Archive now" button and the not-archived
@@ -504,9 +508,12 @@ function clientsTableMarkup(clients) {
               <td>${client.urls_known_to_monitor.toLocaleString("en-US")}</td>
               <td>${client.snapshots_total.toLocaleString("en-US")}</td>
               <td class="analytics-row__value">${client.last_capture_at ? `${formatTimestamp(client.last_capture_at)} — ${captureStatusLabel(client.last_capture_status)}` : "Never"}</td>
-              <td>
+              <td class="archive-clients-table__actions">
                 <button type="button" class="button button--quiet button--small" data-action="capture-now" data-client-id="${escapeHtml(client.client_id)}" ${state.captureStarting === client.client_id ? "disabled" : ""}>
                   ${icon(state.captureStarting === client.client_id ? "loader-2" : "camera", state.captureStarting === client.client_id ? "icon icon--spin" : "icon")}Capture now
+                </button>
+                <button type="button" class="button button--quiet button--small" data-action="recapture-now" data-client-id="${escapeHtml(client.client_id)}" data-client-name="${escapeHtml(client.client_name)}" data-urls-tracked="${client.urls_tracked}" ${state.recaptureStarting === client.client_id ? "disabled" : ""}>
+                  ${icon(state.recaptureStarting === client.client_id ? "loader-2" : "camera-plus", state.recaptureStarting === client.client_id ? "icon icon--spin" : "icon")}Recapture
                 </button>
               </td>
             </tr>`).join("")}
@@ -542,6 +549,7 @@ function captureRowMarkup(c) {
         <a class="archive-capture-row__link" href="${buildArchiveCaptureHash({ id: c.id })}">
           ${statusIcon(captureIcon(c.status), "icon")}
           <span class="analytics-row__value">${label}</span>
+          ${c.force ? `<span class="tag-new">forced</span>` : ""}
           <span class="archive-capture-row__counts">${captureCountsText(c)}</span>
           <span class="archive-capture-row__time">${c.finished_at ? formatTimestamp(c.finished_at) : captureProgressText(c)}</span>
         </a>
@@ -605,6 +613,9 @@ function bindOverviewActions(container) {
   container.querySelectorAll('[data-action="capture-now"]').forEach((button) => {
     button.addEventListener("click", () => triggerCapture(button.dataset.clientId));
   });
+  container.querySelectorAll('[data-action="recapture-now"]').forEach((button) => {
+    button.addEventListener("click", () => triggerRecapture(button.dataset));
+  });
   container.querySelector("#archive-capture-all")?.addEventListener("click", triggerAllCaptures);
 }
 
@@ -619,6 +630,34 @@ async function triggerCapture(clientId) {
     if (!isAbortError(error)) toast(`Could not start the capture: ${error.message}`);
   } finally {
     state.captureStarting = null;
+    renderOverview();
+  }
+}
+
+// task-80 — "Recapture": same queue, same worker, but every URL gets a new
+// snapshot even when byte-for-byte unchanged. Confirmed up front — this is
+// a full-portfolio-of-one-client obhid (up to a few thousand URLs, PLAN
+// §9.1), not a quick refresh — and left in place on this same page
+// (same as "Capture now") rather than redirected to the progress page: the
+// queue panel below already updates live and links into it on its own.
+async function triggerRecapture({ clientId, clientName, urlsTracked }) {
+  if (state.recaptureStarting) return;
+  const count = Number(urlsTracked) || 0;
+  const confirmed = window.confirm(
+    `Recapture the whole site for ${clientName}? This stores a new version of `
+    + `all ${count.toLocaleString("en-US")} page${count === 1 ? "" : "s"}, even the unchanged ones. `
+    + `It can take a while.`,
+  );
+  if (!confirmed) return;
+  state.recaptureStarting = clientId;
+  renderOverview();
+  try {
+    await startForcedArchiveCapture(clientId);
+    toast("Recapture queued — the worker will pick it up within a minute.");
+  } catch (error) {
+    if (!isAbortError(error)) toast(`Could not start the recapture: ${error.message}`);
+  } finally {
+    state.recaptureStarting = null;
     renderOverview();
   }
 }

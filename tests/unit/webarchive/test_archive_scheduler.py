@@ -219,3 +219,85 @@ def test_submit_reads_scope_url_and_captures_exactly_one_url(
     finished = repo.get_capture(capture.id)
     assert finished.status == "ok"
     assert finished.urls_total == 1  # not 2 — the OTHER url must stay untouched
+
+
+def test_submit_reads_force_and_writes_forced_snapshot_on_unchanged_page(
+    session, tmp_path, monkeypatch
+) -> None:
+    """task-80 — the exact class of defect the `scope`/`archive_url_id` test
+    right above documents: without reading `force` back off the claimed row,
+    `_submit` would silently run an ordinary capture and "Recapture" would
+    do nothing observable on an unchanged page.
+    """
+    from contextlib import contextmanager
+
+    from app.core.config import Settings
+    from app.db.repositories.clients import ClientRepository
+    from app.db.repositories.web_archive import WebArchiveRepository
+    from app.webarchive.scheduler import ArchiveScheduler
+
+    client = ClientRepository(session).create(
+        name="Acme", slug="acme", domain="acme.example.com", timezone="America/New_York"
+    )
+    session.commit()
+    repo = WebArchiveRepository(session)
+    archive_url = repo.get_or_create_url(
+        client.id, "https://acme.example.com/", "acme.example.com/", source="manual"
+    )
+    session.commit()
+    html = b"<html><head><title>T</title></head><body>hi</body></html>"
+
+    def _fake_fetch(url, **kwargs):
+        return FetchResult(
+            requested_url=url, final_url=url, status=200, hop_count=0,
+            headers={"Content-Type": "text/html"}, body=html,
+            truncated_body=False, elapsed_ms=1, error=None,
+        )
+
+    monkeypatch.setattr(capturemod, "fetch", _fake_fetch)
+
+    @contextmanager
+    def _scope():
+        yield session
+
+    settings = Settings(
+        _env_file=None, artifacts_dir=tmp_path, archive_host_min_interval_seconds=0.0,
+        archive_client_workers=1,
+    )
+
+    # First pass, NOT forced — establishes an existing snapshot so the second
+    # pass has something to (not) confirm instead of writing a "first".
+    first_capture = repo.create_capture(
+        client.id, slot_key="manual:force-test-1", scheduled_for=datetime.now(UTC),
+        trigger="manual",
+    )
+    session.commit()
+    scheduler = ArchiveScheduler(session_scope=_scope, settings=settings)
+    scheduler._write_controller.start()
+    try:
+        scheduler._submit(client, first_capture.id)
+        scheduler._pool.shutdown(wait=True)
+    finally:
+        scheduler._write_controller.stop()
+    assert repo.latest_snapshot(archive_url.id).store_reason == "first"
+
+    # Second pass, forced, same bytes — an ordinary pass would just confirm
+    # the existing snapshot and write nothing new.
+    forced_capture = repo.create_capture(
+        client.id, slot_key="manual:force-test-2", scheduled_for=datetime.now(UTC),
+        trigger="manual", force=True,
+    )
+    session.commit()
+    scheduler = ArchiveScheduler(session_scope=_scope, settings=settings)
+    scheduler._write_controller.start()
+    try:
+        scheduler._submit(client, forced_capture.id)
+        scheduler._pool.shutdown(wait=True)
+    finally:
+        scheduler._write_controller.stop()
+
+    finished = repo.get_capture(forced_capture.id)
+    assert finished.status == "ok"
+    snapshots = repo.list_snapshots_for_url(archive_url.id)  # newest first
+    assert len(snapshots) == 2
+    assert snapshots[0].store_reason == "forced"

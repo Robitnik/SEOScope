@@ -244,6 +244,7 @@ function renderHeader() {
     <h1>${statusIcon(meta.icon, "icon")}${escapeHtml(meta.label)}</h1>
     <p class="archive-hero__subtitle">
       ${targetLabel} · ${escapeHtml(c.trigger)}
+      ${c.force ? ` · <span class="tag-new">forced</span>` : ""}
       ${c.status === "queued" && c.queue_position ? ` · #${c.queue_position} in queue` : ""}
     </p>`;
 }

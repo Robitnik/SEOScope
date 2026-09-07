@@ -177,3 +177,81 @@ DTO `ArchiveCaptureDTO`/рядок черги отримують **адитив�
 5. Роль `viewer` на живому стеку через тунель (не `127.0.0.1` — на лупбеку bypass завжди дає адміна, пам'ять task-73) отримує 403 і не бачить дії.
 6. У `#/admin/audit` є рядок `archive.recapture_start` з актором і `client_id`.
 7. Чеклист `frontend/AGENTS.md §15–16` пройдено: жодного інлайн-`style=`, обидві кнопки лізуть у рядок на 1280px і не розповзаються на 768px, `?v=` піднято.
+
+---
+
+## ✅ Completion report
+
+- **Дата:** 2026-09-07
+- **Гілка / комміт:** `feat/task-80-archive-forced-recapture` @ (буде в наступному комміті)
+- **Статус:** done
+
+### Що зроблено
+
+Кнопка **Recapture** у рядку таблиці `COVERAGE / CLIENTS` на `#/archive`, поруч із наявною `Capture now`. Повний шлях живий і перевірений на реальному клієнті: клік (з підтвердженням і кількістю сторінок) → `POST /api/v1/archive/captures/force` → рядок `archive_captures.force=true` у черзі → воркер читає прапорець назад і на кожній URL клієнта пише нову версію знімка, навіть якщо байти ідентичні попереднім → `store_reason="forced"` у таймлайні → бейдж `forced`/`FORCED` у черзі, на сторінці живого прогресу й у панелі «Queue & Activity» хабу. CLI отримав `yovth-report archive-capture --force` тим самим шляхом.
+
+### Як зроблено (ключові рішення)
+
+- **Прапорець — колонка, не параметр запиту.** `archive_captures.force: bool` (нова, `NOT NULL DEFAULT false`), бо обхід сайту робить воркер уже ПІСЛЯ HTTP-запиту з API — той самий інваріант, що й `scope`/`archive_url_id` (task-62 §2.7). Найважливіший рядок усієї реалізації — [scheduler.py:293](app/webarchive/scheduler.py#L293), де `_submit` читає `claimed.force` назад із рядка, щойно захопленого `claim_capture`; без цього кнопка дає 202 і тихо виконує звичайний капчур (точний клас дефекту, який документує сусідній коментар про `only_url_id`, живий 2026-09-05).
+- **Ранній вихід у `capture_url`** ([capture.py:539](app/webarchive/capture.py#L539)) отримав третю умову — `and not force` — і більше нічого: увесь інший шлях (fetch → blob → assets → snapshot → links) уже коректний для «нічого не змінилось», бо це той самий шлях, яким ходить `weekly_refresh`.
+- **`_resolve_reason`** ([capture.py:463](app/webarchive/capture.py#L463)) віддає нове значення `"forced"`, але **реальність важливіша за намір**: якщо сторінка під примусовим проходом справді змінилась, причина лишається `"changed"`/`"status_changed"` — інакше губиться єдиний сигнал реальної зміни. Живо перевірено обидва боки (тест + реальний прохід EFFYS дав `"forced"` на незміненій сторінці).
+- **Асети ревалідуються під примусом** незалежно від `archive_asset_revalidate_days` ([capture.py:346](app/webarchive/capture.py#L346), доданий `or force` до `needs_check`), але бюджет **нових** асетів (`archive_new_assets_per_page`) не обходиться — примус не знімає запобіжник на асет-бомбі. Живо: 93 запити асетів (переважно ревалідація, 0 failed) на 17 сторінках EFFYS.
+- **Окремий ендпоінт `POST /captures/force`**, не прапорець на наявному `POST /captures` — журнал дій ключується парою `(метод, шлях)`, і окремий шлях дає окрему дію `archive.recapture_start` замість `archive.capture_start`. Живо підтверджено рядком в `audit_events`.
+- **`triggerRecapture`** підтверджує дію (`window.confirm` з кількістю сторінок клієнта) і лишається на тій самій сторінці — на відміну від чернетки плану (яка малювала перехід на сторінку прогресу за зразком ad-hoc капчура), реалізація свідомо повторює поведінку сусідньої кнопки `Capture now` (тост + черга внизу оновлюється поллінгом): дві сусідні кнопки одного рядка з різною поведінкою після кліку були б незрозумілі оператору. Відхилення від плану §5.1, свідоме.
+- Головні файли: [app/webarchive/capture.py](app/webarchive/capture.py) — рушій (`force` наскрізь через `capture_url`/`_capture_assets_for_page`/`run_client_capture`); [app/webarchive/scheduler.py](app/webarchive/scheduler.py) — читання прапорця з рядка; [app/api/archive.py](app/api/archive.py) — новий ендпоінт; [app/db/models.py](app/db/models.py) + міграція — схема; [frontend/js/archive-page.js](frontend/js/archive-page.js) — кнопка/стан/підтвердження; [frontend/js/archive-capture.js](frontend/js/archive-capture.js) — бейдж на сторінці прогресу; [frontend/js/archive-calendar.js](frontend/js/archive-calendar.js) — `reasonLabel` (спільний для хабу й в'ювера).
+
+### Контрактні зміни (Contract changes)
+
+- `StoreReason` (`app/schemas/web_archive.py`) — нове значення `"forced"` (розширення, старі чотири незмінні).
+- `ArchiveCaptureDTO` (і, транзитивно, `ArchiveQueueDTO`) — нове поле `force: bool`.
+- Схема БД — нова колонка `archive_captures.force` (`NOT NULL DEFAULT false`), міграція `c3a91f7e2b6d` (`d6d668fe8d53 → c3a91f7e2b6d`), прямий `op.add_column`, без `batch_alter_table`.
+- Новий ендпоінт `POST /api/v1/archive/captures/force?client_id=<id>` → `202 ArchiveCaptureAcceptedDTO` (форма відповіді ідентична `POST /captures`).
+- Новий CLI-прапорець `yovth-report archive-capture --force`.
+- Новий рядок журналу дій: `("POST", "/api/v1/archive/captures/force") → ActionSpec("archive.recapture_start", "client")`.
+- `task-02-shared-contracts.md` **не** містить DTO/enum'ів web-архіву (вони з'явились уже після MVP-контракту, поза цим документом) — синхронізувати там нічого не було; якщо колись `task-02` розшириться на архів, `StoreReason`/`ArchiveCaptureDTO` варто буде туди перенести.
+
+### Як перевірити (verification)
+
+```bash
+# Тести модуля
+docker compose exec api poetry run pytest tests/unit/webarchive tests/unit/api/test_archive_api.py -q
+# → 189 passed
+
+# Повний прогін (перевірено — 8 falls пре-екзистентні, не від цієї таски,
+# перевірено git-стешем змін і повторним прогоном саме цих 8 тестів на
+# чистій базі: падають ІДЕНТИЧНО без task-80)
+docker compose exec api poetry run pytest -q
+# → 2680 passed, 1 skipped, 8 failed (pre-existing: aiseotools snapshot,
+#   job_matrix, security_hardening secrets scan, openapi snapshot,
+#   tech_audit dashboard counts, alembic upgrade/downgrade-base, db_health,
+#   mcp oauth.py isolation — жоден не в owned paths цієї таски)
+
+docker compose exec api poetry run ruff check app/webarchive/capture.py app/webarchive/scheduler.py app/api/archive.py app/schemas/web_archive.py app/audit/actions.py app/cli.py app/db/repositories/web_archive.py app/db/models.py
+docker compose exec api poetry run mypy app
+# → чисто
+
+# Міграція: перевірено upgrade → downgrade -1 → upgrade (round-trip),
+# колонка з'являється/зникає чисто на бойовій Postgres-копії
+docker compose exec api poetry run alembic upgrade head
+
+# Жива перевірка (client EFFYS, 17 URL, agent dev bearer token):
+curl -X POST -H "Authorization: Bearer $(grep '^AGENT_DEV_TOKEN=' .env | cut -d= -f2)" \
+  "http://127.0.0.1:6524/api/v1/archive/captures/force?client_id=<effys-id>"
+# → капчур завершився status=ok, urls_captured=17/17, force=true,
+#   snapshots_total 17→34, store_reason="forced" на новому знімку,
+#   /archive/changes лишився порожнім (0 фіктивних змін),
+#   /archive/r/<ts>/<url> віддає 200 з переписаними стилями/скриптами
+#   (перевірено окремим curl на .css-асет — 200 text/css)
+```
+
+### Тести
+
+- `tests/unit/webarchive/test_capture.py` (+4): примусовий прохід незміненої сторінки пише новий знімок з `store_reason="forced"`; той самий прохід не створює ні `ArchiveChange`, ні новий `ArchiveBlob` (дедуп); примусовий прохід дійсно зміненої сторінки лишає `store_reason="changed"`; примус ревалідує вже відомий асет поза вікном ревалідації, але новий асет під нульовим бюджетом лишається truncated (бюджет не знімається).
+- `tests/unit/api/test_archive_api.py` (+4): `POST /captures/force` дає 202 з `force=true` на рядку; 409 при активному капчурі того ж клієнта; 404 на невідомого клієнта; звичайний `POST /captures` явно віддає `force=false` (контракт, не тихе опущення поля).
+- `tests/unit/webarchive/test_archive_scheduler.py` (+1): `_submit` читає `force` з `claimed` і другий (примусовий) прохід дійсно пише другий знімок з `store_reason="forced"` на незміненій сторінці — регресійний тест на клас дефекту `only_url_id` (task-62 §2.7).
+
+### Follow-ups / борг
+
+- **`Recapture all` по портфелю** — свідомо поза обсягом (§8 плану): має бути admin-only клас (як батчі звітів), з окремим підтвердженням. `TODO(task-81)` — але зверни увагу, що `task-81` уже зайнятий іншою паралельною роботою (`doc/dev/new/task-81-archive-replay-unlazy.md`, з'явився в робочому дереві під час цієї сесії) — наступний номер вільний буде після неї.
+- **Роль `viewer` → 403 на цьому ендпоінті не перевірено живим кліком через тунель** (план §9 п.5): generic-тест `test_auth_coverage.py` (параметризований по всіх маршрутах) підтверджує, що анонім отримує 401/403 — це живо перезапущено й зелено. Але саме розрізнення `member`(202)/`viewer`(403) спирається на **не змінений** мною код `required_role()` (ендпоінт не в `admin_only_paths`, тому дефолт — `member`, як і сусідній `POST /captures`, який теж не має власного рольового тесту в цьому файлі) — живого підтвердження з реальним viewer-логіном через `https://seo.theyovth.space` не робив.
+- Примусовий рекапчур однієї URL (`force` на `scope="url"`) технічно вже підтримано колонкою й `capture_url`, бракує лише кнопки в таймлайні поруч із «Refresh now».

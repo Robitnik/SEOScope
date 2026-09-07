@@ -130,6 +130,7 @@ def _capture_dto(
         progress_message=capture.progress_message,
         cancel_requested=capture.cancel_requested,
         queue_position=queue_position,
+        force=capture.force,
     )
 
 
@@ -579,6 +580,60 @@ async def start_archive_capture(client_id: str) -> ArchiveCaptureAcceptedDTO:
     process never crawls a client's site from the API itself.
     """
     result = await run_in_threadpool(_start_capture, client_id)
+    if result == "client_not_found":
+        raise HTTPException(status_code=404, detail=_CLIENT_NOT_FOUND)
+    if result == "already_running":
+        raise HTTPException(status_code=409, detail=_ALREADY_RUNNING)
+    return ArchiveCaptureAcceptedDTO(
+        capture_id=result, status_url=f"/api/v1/archive/captures/{result}"
+    )
+
+
+def _start_forced_capture(client_id: str) -> str:
+    """"Recapture" (task-80) — a copy of `_start_capture` with `force=True`
+    on the row. Separate function, separate route: the worker reads `force`
+    back off the row (`scheduler.py`'s own `_submit`), not off the request,
+    so nothing here differs except that one flag — but a distinct route
+    keeps this distinguishable in the audit log (`archive.recapture_start`
+    vs `archive.capture_start`), which a shared endpoint with a body flag
+    would not.
+    """
+    with worker_session_scope() as session:
+        clients_repo = ClientRepository(session)
+        client = clients_repo.get(client_id)
+        if client is None:
+            return "client_not_found"
+        repo = WebArchiveRepository(session)
+        # Same guard as an ordinary capture (§0.7 of the task plan): forcing
+        # a fresh copy does not bypass the "one active capture per client"
+        # invariant `claim_capture` itself enforces.
+        if repo.has_active_capture(client_id):
+            return "already_running"
+        slot_key = f"manual:{uuid.uuid4()}"
+
+        def _create() -> ArchiveCapture:
+            return repo.create_capture(
+                client_id, slot_key=slot_key, scheduled_for=datetime.now(UTC), trigger="manual",
+                force=True,
+            )
+
+        # Same cross-process retry reasoning as `_start_capture` above.
+        capture = commit_with_retry(session, _create)
+        return capture.id
+
+
+@router.post(
+    "/captures/force",
+    status_code=202,
+    responses={404: {"model": ErrorDTO}, 409: {"model": ErrorDTO}},
+)
+async def start_forced_archive_capture(client_id: str) -> ArchiveCaptureAcceptedDTO:
+    """"Recapture" — stores a new snapshot for every tracked URL of this
+    client, even the ones that didn't change, instead of `confirm_snapshot`
+    bumping the old row's `confirmed_count` (task-80). Same queue, same
+    live-progress page as "Capture now" — only the `force` flag differs.
+    """
+    result = await run_in_threadpool(_start_forced_capture, client_id)
     if result == "client_not_found":
         raise HTTPException(status_code=404, detail=_CLIENT_NOT_FOUND)
     if result == "already_running":

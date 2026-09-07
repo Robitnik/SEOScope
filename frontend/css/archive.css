@@ -101,6 +101,10 @@
 
 .archive-clients-table td:first-child, .archive-clients-table th:first-child { text-align: left; min-width: 160px; }
 .archive-row--disabled { opacity: .55; }
+/* task-80: "Capture now" + "Recapture" share one row's action cell — flex
+   lets them sit side by side and wrap onto their own line rather than
+   forcing the whole table wider on a narrow viewport. */
+.archive-clients-table__actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .archive-columns {
   display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; margin: 0 0 24px;

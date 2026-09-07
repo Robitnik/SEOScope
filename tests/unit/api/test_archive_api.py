@@ -269,6 +269,63 @@ def test_start_capture_refuses_when_one_is_still_queued(client, db):
     assert second.json()["detail"]["error_code"] == "already_running"
 
 
+# task-80 — "Recapture": `POST /captures/force` is otherwise the same queue
+# as an ordinary capture (same 404/409 guards), but the row it creates
+# carries `force=True`, which is what makes the scheduler store a fresh
+# snapshot even for byte-for-byte unchanged pages.
+def test_start_forced_capture_enqueues_with_force_flag(client, db):
+    client_id = _create_client(db)
+
+    response = client.post("/api/v1/archive/captures/force", params={"client_id": client_id})
+    assert response.status_code == 202
+    body = response.json()
+    assert body["capture_id"]
+    assert body["status_url"] == f"/api/v1/archive/captures/{body['capture_id']}"
+
+    listing = client.get("/api/v1/archive/captures", params={"client_id": client_id})
+    captures = listing.json()
+    assert len(captures) == 1
+    assert captures[0]["id"] == body["capture_id"]
+    assert captures[0]["scope"] == "client"
+    assert captures[0]["trigger"] == "manual"
+    assert captures[0]["force"] is True
+
+
+def test_start_forced_capture_refuses_a_second_concurrent_run(client, db):
+    client_id = _create_client(db)
+    repo = WebArchiveRepository(db)
+    running = repo.create_capture(
+        client_id, slot_key="2026-09-04T13:30+03:00", scheduled_for=datetime.now(UTC),
+        trigger="scheduled",
+    )
+    repo.claim_capture(running.id, owner="test")
+    db.commit()
+
+    response = client.post("/api/v1/archive/captures/force", params={"client_id": client_id})
+    assert response.status_code == 409
+    assert response.json()["detail"]["error_code"] == "already_running"
+
+
+def test_start_forced_capture_unknown_client_is_404(client):
+    response = client.post(
+        "/api/v1/archive/captures/force", params={"client_id": "does-not-exist"}
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"]["error_code"] == "client_not_found"
+
+
+def test_ordinary_capture_reports_force_false(client, db):
+    """The `force` field on `ArchiveCaptureDTO` is new (task-80) — an
+    ordinary "Capture now" row must report `false`, not omit the field.
+    """
+    client_id = _create_client(db)
+    started = client.post("/api/v1/archive/captures", params={"client_id": client_id})
+    assert started.status_code == 202
+    listing = client.get("/api/v1/archive/captures", params={"client_id": client_id})
+    captures = listing.json()
+    assert captures[0]["force"] is False
+
+
 def test_start_url_capture_enqueues_scoped_to_that_url(client, db):
     client_id = _create_client(db)
     archive_url, _snapshot = _seed_snapshot(db, client_id)

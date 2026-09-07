@@ -1651,6 +1651,13 @@ class ArchiveCapture(Base):
         GUID, ForeignKey("archive_urls.id", ondelete="SET NULL"), default=None
     )
     progress_message: Mapped[str | None] = mapped_column(String(500), default=None)
+    # task-80: "Recapture" — примусова нова копія навіть незміненої сторінки.
+    # Живе на рядку, не в запиті: обхід робить воркер уже ПІСЛЯ того, як
+    # HTTP-запит завершився (та сама причина, що й `scope`/`archive_url_id`
+    # вище) — планувальник мусить прочитати це поле назад із `claimed`,
+    # інакше кнопка тихо виконує звичайний капчур (той самий клас дефекту,
+    # що вже стався живо з `only_url_id`, task-62 §2.7).
+    force: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class ArchiveUrl(Base):

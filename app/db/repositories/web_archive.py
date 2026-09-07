@@ -116,6 +116,7 @@ class WebArchiveRepository:
         trigger: str,
         scope: str = "client",
         archive_url_id: str | None = None,
+        force: bool = False,
         now: datetime | None = None,
     ) -> ArchiveCapture:
         capture = ArchiveCapture(
@@ -128,6 +129,7 @@ class WebArchiveRepository:
             queued_at=now or utcnow(),
             scope=scope,
             archive_url_id=archive_url_id,
+            force=force,
         )
         self._session.add(capture)
         return capture

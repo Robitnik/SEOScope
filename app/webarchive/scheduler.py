@@ -286,11 +286,18 @@ class ArchiveScheduler:
                     # (caught live, 2026-09-05: a single-URL GOREPORT
                     # refresh captured 2 URLs instead of 1).
                     only_url_id = claimed.archive_url_id if claimed.scope == "url" else None
+                    # task-80: same reasoning as `only_url_id` right above —
+                    # "Recapture" stores its intent on the row itself, and
+                    # skipping this read-back would silently turn the forced
+                    # pass into an ordinary one (the exact class of defect
+                    # `only_url_id`'s own comment documents, live 2026-09-05).
+                    force = bool(claimed.force)
                     outcome = run_client_capture(
                         session, client, capture_id=capture_id, settings=self._settings,
                         artifacts_dir=self._settings.artifacts_dir,
                         write_controller=self._write_controller,
                         only_url_id=only_url_id,
+                        force=force,
                         session_scope=self._session_scope,
                     )
                     self._write_controller.submit(
