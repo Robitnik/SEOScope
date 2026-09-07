@@ -12,7 +12,7 @@
 import {
   computeReportPeriods, createReportBatch, createReportRun, getNinjaBindings, getNinjaReportName,
   getReportTypes, isAbortError, putNinjaReportName,
-} from "./api.js?v=20260907-rn";
+} from "./api.js?v=20260907-rn2";
 import { isPaused } from "./client-status.js?v=20260821-spin3";
 import { buildClientHash } from "./router.js?v=20260821-spin3";
 import {
@@ -559,14 +559,16 @@ function renderInlineConnect(client) {
 
 // The account list is one shared snapshot, so this is the only thing in the
 // flow that costs a cabinet session — offered explicitly instead of being
-// paid for on every Connect click.
+// paid for on every Connect click. A quiet meta row, not another boxed
+// button: it sits right under the primary Save action and must read as a
+// footnote to it, not compete with it (`.button--quiet` at full box size did).
 function inlineRereadButton(client) {
   const entry = state.inlineConnect[client.client_id];
   const age = snapshotAgeLabel(entry?.snapshotAgeSeconds);
   return `
-    <p class="field-help">
-      <button type="button" class="button button--quiet" data-inline-reread="${escapeHtml(client.client_id)}">Re-read the account</button>
-      ${age ? `Account list read ${escapeHtml(age)}.` : ""}
+    <p class="reports-ninja-reread">
+      <span>${age ? `Account list read ${escapeHtml(age)}.` : "Account list not read yet."}</span>
+      <button type="button" class="text-button" data-inline-reread="${escapeHtml(client.client_id)}">Re-read the account</button>
     </p>`;
 }
 
@@ -909,13 +911,13 @@ function renderNinjaNoCandidates() {
 
 // The account list is one shared snapshot, so a re-read is the only step in
 // this flow that costs a cabinet session — offered, not charged for on every
-// lookup.
+// lookup. Same quiet meta row as `inlineRereadButton`.
 function renderNinjaRereadLine() {
   const age = snapshotAgeLabel(state.ninjaSnapshotAgeSeconds);
   return `
-    <p class="field-help">
-      <button type="button" class="button button--quiet" id="rw-ninja-reread">Re-read the account</button>
-      ${age ? `Account list read ${escapeHtml(age)}.` : ""}
+    <p class="reports-ninja-reread">
+      <span>${age ? `Account list read ${escapeHtml(age)}.` : "Account list not read yet."}</span>
+      <button type="button" class="text-button" id="rw-ninja-reread">Re-read the account</button>
     </p>`;
 }
 

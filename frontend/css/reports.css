@@ -282,6 +282,18 @@ tr:has(.reports-cross-check.state-mismatch) { border-left: 3px solid var(--dange
 .reports-ninja-empty .icon { color: var(--warning); flex: 0 0 auto; margin-top: 2px; }
 .reports-ninja-confirm { border-color: var(--danger); background: rgb(255 107 107 / 8%); }
 
+/* A footnote to the Save/error state above it, not another action competing
+   with it — hence a hairline + muted text + `.text-button`, never another
+   boxed `.button`, which at full 44px height read as a second CTA stacked
+   directly under the primary one with no breathing room. */
+.reports-ninja-reread {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 4px 14px; margin: 12px 0 0; padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-dim); font-size: 12px;
+}
+.reports-ninja-reread .text-button { font-size: 12px; flex: 0 0 auto; }
+
 .reports-wizard-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .reports-wizard-reason { color: var(--ink-muted); font-size: 12px; }
 /* task-49 §2.2: the Start button's own "N will fail" notice — never a

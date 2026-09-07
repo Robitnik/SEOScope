@@ -10,7 +10,7 @@ import {
   isAbortError, isFixtureMode, reportBatchPdfArchiveUrl, reportBatchPortfolioPdfUrl,
   reportBatchPortfolioXlsxUrl, reportDocumentUrl, reportFileUrl, retryReportBatchClient,
 } from "./api.js?v=20260821-spin3";
-import { openReportsWizard } from "./reports-wizard.js?v=20260907-rn";
+import { openReportsWizard } from "./reports-wizard.js?v=20260907-rn2";
 // Під тегом самого `session.js`, не під тегом цього файлу: модуль
 // кешується per-URL, і другий тег дав би ДРУГИЙ інстанс із порожнім
 // `cached` — тобто `isAdmin()` завжди false, ще до першого запиту.
