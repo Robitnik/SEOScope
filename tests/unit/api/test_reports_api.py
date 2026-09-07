@@ -16,7 +16,7 @@ from app.db.models import ReportFile
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.reports import ReportRepository
 from app.db.session import worker_session_scope
-from app.reports import ninja_browser
+from app.reports import ninja_browser, ninja_catalog
 from app.reports.batch import reconcile_batches
 from app.schemas.enums import Provider, SourceMode
 
@@ -400,30 +400,50 @@ def test_get_ninja_report_name_skips_the_browser_without_credentials(client, db,
 
 
 def _fake_account(
-    monkeypatch, names: list[str], *, truncated: bool = False, searchable: list[str] | None = None
-) -> None:
-    """`names` is what the SCROLL pass sees; `searchable` (default: the same)
-    is what the cabinet's own SEARCH can find. They differ in reality — a name
-    past the virtualized table's cutoff is invisible to the scroll pass but
-    always findable by search (task-48 §1.6, re-measured live in task-49) —
-    so the two are separate knobs here.
+    monkeypatch,
+    names: list[str],
+    *,
+    truncated: bool = False,
+    fetch_error: str | None = None,
+    names_after_refresh: list[str] | None = None,
+) -> list[str]:
+    """Fake the CABINET, not the endpoint: every per-client answer now comes
+    from one shared account snapshot (`ninja_catalog`), so the only thing a
+    test has to stand in for is the single scroll pass that fills it.
+
+    Returns the list of cabinet passes actually performed, which is what the
+    caching behaviour is asserted on. `names_after_refresh` makes the second
+    pass see something the first did not — the operator who creates a report
+    in Reporting Ninja while the snapshot is already cached.
+
+    The old helper had `names` and `searchable` as separate knobs, because a
+    scroll pass and a search of the same cabinet genuinely disagreed. They no
+    longer do: that disagreement was two cabinet sessions running at once
+    silently disabling each other's filter, and one lock-holding pass reads
+    all 32 names (measured 2026-09-07, `ninja_browser.cabinet_lock`).
     """
-    searchable = names if searchable is None else searchable
     monkeypatch.setenv("REPORTING_NINJA_EMAIL", "ops@example.com")
     monkeypatch.setenv("REPORTING_NINJA_PASSWORD", "secret")
+    # An in-memory stand-in for the on-disk snapshot: the real TTL/refresh
+    # logic runs, but no test ever touches the deployed cache file.
+    cache: dict[str, ninja_catalog.AccountReports] = {}
+    monkeypatch.setattr(ninja_catalog, "_read_cache", lambda: cache.get("snapshot"))
     monkeypatch.setattr(
-        "app.api.reports.ninja_browser.search_report_names",
-        lambda *, query, **_kwargs: [n for n in searchable if query.upper() in n.upper()],
+        ninja_catalog, "_write_cache", lambda snapshot: cache.__setitem__("snapshot", snapshot)
     )
 
-    def fake_discover(*, client_name: str, **_kwargs):
-        return ninja_browser.ReportDiscovery(
-            matches=[n for n in searchable if _name_matches(n, client_name)],
-            all_names=names,
-            truncated=truncated,
-        )
+    passes: list[str] = []
 
-    monkeypatch.setattr("app.api.reports.ninja_browser.discover_report_names", fake_discover)
+    def fake_list_report_names(**_kwargs):
+        passes.append("cabinet-pass")
+        if fetch_error is not None:
+            raise RuntimeError(fetch_error)
+        if names_after_refresh is not None and len(passes) > 1:
+            return list(names_after_refresh), truncated
+        return list(names), truncated
+
+    monkeypatch.setattr(ninja_browser, "list_report_names", fake_list_report_names)
+    return passes
 
 
 def _name_matches(report_name: str, client_name: str) -> bool:
@@ -496,61 +516,94 @@ def test_discovery_marks_a_truncated_full_list(client, db, monkeypatch):
     assert body["others_truncated"] is True
 
 
-def test_discovery_marks_a_scroll_list_that_search_proves_incomplete(client, db, monkeypatch):
-    """task-49: the scroll pass claimed `truncated=False` over a list that
-    demonstrably lacked a name search had just found (measured live: 16 names
-    ending at "G"). A list proven partial must never be reported as complete,
-    or the operator reads a name's absence from `others` as "does not exist".
-    """
-    client_id = _create_client(db)  # client name is EFFYS
-    _fake_account(
-        monkeypatch,
-        ["ADA-client"],  # what the scroll pass saw…
-        truncated=False,  # …and wrongly called complete
-        searchable=["ADA-client", "EFFYS-Internal report"],
-    )
+def test_discovery_does_not_report_an_unreadable_cabinet_as_an_empty_account(
+    client, db, monkeypatch
+):
+    """A cabinet pass that FAILED must not arrive as "this client has no
+    report". The UI's next line on an empty answer is "Create the client's
+    report in Reporting Ninja first" — advice that is actively wrong, and
+    acting on it means a duplicate report in the account.
 
-    body = client.get(f"/api/v1/reports/clients/{client_id}/ninja-report").json()
-    assert [c["name"] for c in body["matches"]] == ["EFFYS-Internal report"]
-    assert body["others_truncated"] is True
-
-
-def test_discovery_finds_a_match_the_full_list_missed(client, db, monkeypatch):
-    # task-48 §1.6 live case: a client's report sorts past the cabinet
-    # table's cutoff, so a full scroll pass never lists it. The targeted
-    # search (`discover_report_names`'s `matches`) must still surface it.
-    client_id = _create_client(db)  # client name is EFFYS
-
-    def fake_discover(*, client_name: str, **_kwargs):
-        return ninja_browser.ReportDiscovery(
-            matches=["EFFYS-Internal report"], all_names=["ADA-client"], truncated=True,
-        )
-
-    monkeypatch.setenv("REPORTING_NINJA_EMAIL", "ops@example.com")
-    monkeypatch.setenv("REPORTING_NINJA_PASSWORD", "secret")
-    monkeypatch.setattr("app.api.reports.ninja_browser.discover_report_names", fake_discover)
-
-    body = client.get(f"/api/v1/reports/clients/{client_id}/ninja-report").json()
-    assert [c["name"] for c in body["matches"]] == ["EFFYS-Internal report"]
-    assert body["others_truncated"] is True
-
-
-def test_put_saves_a_name_the_scroll_list_never_listed(client, db, monkeypatch):
-    """The live task-49 defect: `list_report_names` returned 16 names ending
-    at `GRP-Internal report` while claiming `truncated=False`, so validating
-    a save against it rejected every client sorting past "G" (SWM, SAPHNY,
-    SDS, SHB, …) as `report_name_unknown` — the exact clients inline Connect
-    exists for. Validation now asks the cabinet's own search, which found the
-    name every time, so a save must succeed even when the scroll pass never
-    listed it AND wrongly believed itself complete.
+    This replaces task-49's "a scroll list that search proves incomplete":
+    its premise (a scroll and a search of the same cabinet disagreeing) was
+    the concurrency defect, not a property of the cabinet. The invariant it
+    was really protecting — never present an unproven absence as a fact
+    (task-48 §1.7) — is what is asserted here.
     """
     client_id = _create_client(db)
-    _fake_account(
-        monkeypatch,
-        ["ADA-client", "GRP-Internal report"],  # the scroll pass's stunted view…
-        truncated=False,  # …which even claims to be complete
-        searchable=["ADA-client", "GRP-Internal report", "EFFYS-Internal report"],
+    _fake_account(monkeypatch, [], fetch_error="cabinet session is not live")
+
+    body = client.get(f"/api/v1/reports/clients/{client_id}/ninja-report").json()
+    assert body["matches"] == []
+    assert body["others"] == []
+    assert body["lookup_error"] is not None  # …so the UI can say which of the two it is
+    assert body["others_truncated"] is True
+
+
+def test_a_failed_refresh_keeps_serving_the_last_good_snapshot(client, db, monkeypatch):
+    # A stale list of real names beats an empty one that reads as "the
+    # account has no reports".
+    client_id = _create_client(db)  # client name is EFFYS
+    _fake_account(monkeypatch, ["ADA-client", "EFFYS-Internal report"])
+    client.get(f"/api/v1/reports/clients/{client_id}/ninja-report")
+
+    monkeypatch.setattr(
+        ninja_browser,
+        "list_report_names",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("cabinet busy")),
     )
+    body = client.get(
+        f"/api/v1/reports/clients/{client_id}/ninja-report?refresh=true"
+    ).json()
+    assert [c["name"] for c in body["matches"]] == ["EFFYS-Internal report"]
+    assert body["lookup_error"] is not None
+
+
+def test_one_cabinet_pass_answers_every_client(client, db, monkeypatch):
+    """The cost fix. Opening `Connect` used to launch its own Chromium, log
+    in and re-read the same cabinet PER CLIENT — and strictly one at a time,
+    because two cabinet sessions corrupt each other. Fifteen disconnected
+    clients meant fifteen logins, then one more for every save.
+    """
+    first = _create_client(db)
+    second = _create_client(db, slug="ada", name="ADA")
+    passes = _fake_account(monkeypatch, ["ADA-client", "EFFYS-Internal report"])
+
+    for client_id in (first, second, first):
+        assert client.get(f"/api/v1/reports/clients/{client_id}/ninja-report").status_code == 200
+    client.put(
+        f"/api/v1/reports/clients/{first}/ninja-report",
+        json={"ninja_report_name": "EFFYS-Internal report"},
+    )
+    assert passes == ["cabinet-pass"]
+
+
+def test_refresh_true_re_reads_the_cabinet(client, db, monkeypatch):
+    client_id = _create_client(db)
+    passes = _fake_account(monkeypatch, ["EFFYS-Internal report"])
+
+    client.get(f"/api/v1/reports/clients/{client_id}/ninja-report")
+    client.get(f"/api/v1/reports/clients/{client_id}/ninja-report?refresh=true")
+    assert passes == ["cabinet-pass", "cabinet-pass"]
+
+
+def test_put_saves_a_report_created_after_the_snapshot_was_taken(client, db, monkeypatch):
+    """The live symptom this whole change started from: saving `SDS-client`
+    failed with `report_name_unknown` on a name the account really has.
+
+    A name missing from the snapshot is never rejected on that alone — the
+    cabinet is re-read once first, because "the operator created this report
+    minutes ago" is the ordinary case. This replaces task-49's "saves a name
+    the scroll list never listed", whose mechanism (validate via search
+    instead of the scroll) was a workaround for the concurrency defect.
+    """
+    client_id = _create_client(db)
+    passes = _fake_account(
+        monkeypatch,
+        ["ADA-client"],  # the cached snapshot, taken before the report existed
+        names_after_refresh=["ADA-client", "EFFYS-Internal report"],
+    )
+    client.get(f"/api/v1/reports/clients/{client_id}/ninja-report")
 
     response = client.put(
         f"/api/v1/reports/clients/{client_id}/ninja-report",
@@ -558,6 +611,7 @@ def test_put_saves_a_name_the_scroll_list_never_listed(client, db, monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["ninja_report_name"] == "EFFYS-Internal report"
+    assert passes == ["cabinet-pass", "cabinet-pass"]  # one re-read, then trusted
 
 
 def test_put_without_credentials_cannot_verify_and_does_not_reject(client, db, monkeypatch):

@@ -2293,8 +2293,17 @@ export function reportRunEventsUrl(runId) {
 // name starts with the client's name versus the rest of the account. The
 // fixture always includes `others`, because that is the case the wizard's
 // confirmation gate exists for.
-export async function getNinjaReportName(clientId) {
-  if (!FIXTURE_MODE) return request(`/reports/clients/${clientId}/ninja-report`, {}, `reports-ninja-report-${clientId}`);
+// `refresh: true` re-reads the Reporting Ninja cabinet instead of answering
+// from the shared account snapshot — for the operator who has just created
+// this client's report and will not wait out the snapshot's TTL.
+export async function getNinjaReportName(clientId, { refresh = false } = {}) {
+  if (!FIXTURE_MODE) {
+    return request(
+      `/reports/clients/${clientId}/ninja-report${refresh ? "?refresh=true" : ""}`,
+      {},
+      `reports-ninja-report-${clientId}`,
+    );
+  }
   if (FIXTURE_MODE === "error") { await wait(300); throw new Error("Fixture connection error"); }
   await wait(220);
   const configured = clientId === "client-nyc-hearing";

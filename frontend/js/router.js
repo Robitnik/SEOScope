@@ -461,7 +461,7 @@ async function activate() {
     allRoots.filter((el) => el !== reportsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     reportsRoot?.removeAttribute("hidden");
-    const { initReportsPage } = await import("./reports-page.js?v=20260821-spin3");
+    const { initReportsPage } = await import("./reports-page.js?v=20260907-rn");
     await initReportsPage(route.query);
   } else if (route.name === "reports-run") {
     dashboardView?.setAttribute("hidden", "");
@@ -475,7 +475,7 @@ async function activate() {
     allRoots.filter((el) => el !== reportsBatchRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     reportsBatchRoot?.removeAttribute("hidden");
-    const { initReportsBatchPage } = await import("./reports-batch.js?v=20260907-roles");
+    const { initReportsBatchPage } = await import("./reports-batch.js?v=20260907-rn");
     await initReportsBatchPage(route.batchId);
   } else if (route.name === "ahrefs") {
     dashboardView?.setAttribute("hidden", "");

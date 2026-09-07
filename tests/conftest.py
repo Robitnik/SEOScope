@@ -93,6 +93,25 @@ def _isolated_write_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
 
 
 @pytest.fixture(autouse=True)
+def _isolated_ninja_names_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Reporting Ninja account snapshot (`app/reports/ninja_catalog.py`)
+    is a file in `app_data/`, shared by the api and worker — i.e. THIS
+    container's production state, for the same reason `_isolated_write_gate`
+    explains: tests run inside it.
+
+    Found while adding the module: a test that deletes
+    `REPORTING_NINJA_EMAIL` to prove no browser is launched still got the
+    live account's 32 real report names back, because the snapshot the
+    running api had just written was sitting there and needed no
+    credentials to read. Autouse, so no test can read the deployed snapshot
+    or overwrite it with fixture names.
+    """
+    monkeypatch.setenv(
+        "REPORTING_NINJA_NAMES_CACHE_PATH", str(tmp_path / "ninja_report_names.json")
+    )
+
+
+@pytest.fixture(autouse=True)
 def _isolated_audit_sink(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """task-72: `AuditSink` (`app/audit/sink.py`) is the SAME class of
     process-wide singleton as `DbWriteGate` above, with the same failure

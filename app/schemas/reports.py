@@ -244,6 +244,15 @@ class NinjaReportNameDTO(BaseModel):
     # the UI must never read a name's absence from `others` as "this report
     # does not exist" while this is set.
     others_truncated: bool = False
+    # Additive (2026-09-07): `matches`/`others` come from a CACHED account
+    # snapshot, so the UI needs to tell three states apart that all used to
+    # arrive as one empty list. `lookup_error` set means the cabinet could
+    # not be read — "no reports for this client" would be a lie, and the
+    # operator must not be told to go create a report that already exists.
+    # `snapshot_age_seconds` is how old the answer is, so a re-read can be
+    # offered honestly (`?refresh=true`); `None` means no snapshot at all.
+    lookup_error: str | None = None
+    snapshot_age_seconds: float | None = None
 
 
 class NinjaReportNameUpdateRequest(BaseModel):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -11,16 +12,28 @@ from app.reports.periods import ReportPeriod
 
 
 class FakeLocator:
-    def __init__(self, count: int = 0, texts: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        count: int = 0,
+        texts: list[str] | None = None,
+        on_dblclick: Callable[[str], None] | None = None,
+    ) -> None:
         self._count = count
         self._texts = texts or []
         self.filled: str | None = None
+        self._on_dblclick = on_dblclick
 
     def count(self) -> int:
         return self._count
 
     def all_text_contents(self) -> list[str]:
         return self._texts
+
+    def all(self) -> list[FakeLocator]:
+        return [FakeLocator(1, [text], self._on_dblclick) for text in self._texts]
+
+    def text_content(self) -> str | None:
+        return self._texts[0] if self._texts else None
 
     @property
     def first(self) -> FakeLocator:
@@ -29,8 +42,18 @@ class FakeLocator:
     def click(self, *_args, **_kwargs) -> None:
         pass
 
+    def wait_for(self, *_args, **_kwargs) -> None:
+        pass
+
+    def dblclick(self, *_args, **_kwargs) -> None:
+        if self._on_dblclick is not None:
+            self._on_dblclick(self._texts[0] if self._texts else "")
+
     def fill(self, value: str) -> None:
         self.filled = value
+
+    def input_value(self) -> str:
+        return self.filled or ""
 
 
 class FakePage:
@@ -38,10 +61,17 @@ class FakePage:
         self, *, url: str = "https://app.reportingninja.com/#!reports",
         closed: bool = False, password_count: int = 0, report_names: list[str] | None = None,
         report_names_by_screen: list[list[str]] | None = None,
+        filter_broken: bool = False,
     ) -> None:
         self.url = url
         self._closed = closed
         self._password_count = password_count
+        # The live corruption two concurrent cabinet sessions cause
+        # (`ninja_browser.cabinet_lock`): the search box accepts the query,
+        # the filter RPC is a silent no-op, and the table keeps showing the
+        # whole unfiltered first screen.
+        self._filter_broken = filter_broken
+        self.opened: list[str] = []
         self._report_names = report_names or []
         # Simulates a virtualized table's growing DOM as it scrolls
         # (task-48 §2.1): each `.locator(...).all_text_contents()` call
@@ -55,9 +85,18 @@ class FakePage:
 
     def _current_report_names(self) -> list[str]:
         if self._report_names_by_screen is None:
-            return self._report_names
-        index = min(self._screen_index, len(self._report_names_by_screen) - 1)
-        return self._report_names_by_screen[index]
+            names = self._report_names
+        else:
+            index = min(self._screen_index, len(self._report_names_by_screen) - 1)
+            names = self._report_names_by_screen[index]
+        # A real cabinet filters SERVER-side on whatever is in the search
+        # box, so the fake does too — otherwise a test cannot tell a
+        # genuinely filtered read from the unfiltered one that the old code
+        # accepted as a search result.
+        query = (self.search_input.filled or "").strip()
+        if query and not self._filter_broken:
+            return [name for name in names if query.casefold() in name.casefold()]
+        return names
 
     def locator(self, selector: str) -> FakeLocator:
         if selector == "input[type='password']":
@@ -66,7 +105,7 @@ class FakePage:
             return self.search_input
         if selector == "div.v-label.cursorPointer":
             names = self._current_report_names()
-            return FakeLocator(len(names), names)
+            return FakeLocator(len(names), names, self.opened.append)
         return FakeLocator(0)
 
     def wait_for_selector(self, *_args, **_kwargs) -> None:
@@ -535,10 +574,91 @@ def test_discover_report_names_combines_search_and_full_scroll_in_one_session(
     result = nb.discover_report_names(
         email="a", password="b", session_path=tmp_path / "session.json", client_name="SWM",
     )
-    assert result.matches == ["SWM-client", "EFFYS-Internal report"]
+    # The search half returns ONLY this client's reports. This assertion used
+    # to read `["SWM-client", "EFFYS-Internal report"]` — an unfiltered table
+    # accepted as a search result, which is the live defect itself written
+    # down as the expectation.
+    assert result.matches == ["SWM-client"]
+    # ...and the scroll half still sees the whole account, because
+    # `_go_to_reports` now clears the search box. Before that fix this came
+    # back as `["SWM-client"]` with `truncated=False`: one report presented
+    # as the entire cabinet, measured live for real on 2026-09-07.
     assert result.all_names == ["SWM-client", "EFFYS-Internal report"]
     assert result.truncated is False
     assert calls == ["launch"]  # exactly one browser session for both passes
+
+
+# --- the concurrency corruption, and the guards that make it loud ------------
+
+
+def test_a_search_whose_filter_never_landed_raises_instead_of_answering(monkeypatch, tmp_path):
+    """The measured failure: two cabinet sessions at once, the filter RPC is a
+    no-op, and the read returns the account's unfiltered first screen. Taken
+    as a search result it made `_cabinet_has_report_name` report every client
+    sorting past "G" as absent — the live `report_name_unknown`.
+    """
+    monkeypatch.setattr(nb, "sync_playwright", _fake_sync_playwright)
+    monkeypatch.setattr(
+        FakeContext,
+        "new_page",
+        lambda self: FakePage(
+            report_names=["19CLV-client", "3XE-client", "GRP-client"], filter_broken=True
+        ),
+    )
+    monkeypatch.setattr(nb, "_ensure_session", lambda browser, ctx, page, **k: (ctx, page))
+
+    with pytest.raises(nb.CabinetFilterError):
+        nb.search_report_names(
+            email="a", password="b", session_path=tmp_path / "session.json", query="SDS-client"
+        )
+
+
+def test_an_empty_search_result_is_a_legitimate_answer(monkeypatch, tmp_path):
+    # "No such report" must stay expressible — the filter-landed check keys
+    # off rows that contradict the query, not off the result being empty.
+    monkeypatch.setattr(nb, "sync_playwright", _fake_sync_playwright)
+    monkeypatch.setattr(
+        FakeContext, "new_page", lambda self: FakePage(report_names=["19CLV-client"])
+    )
+    monkeypatch.setattr(nb, "_ensure_session", lambda browser, ctx, page, **k: (ctx, page))
+
+    assert nb.search_report_names(
+        email="a", password="b", session_path=tmp_path / "session.json", query="NOPE"
+    ) == []
+
+
+def test_open_report_refuses_to_open_a_different_report(monkeypatch):
+    """The severe one. With the filter a no-op, `.first` was `19CLV-client`,
+    so a PDF run for SDS downloaded another client's report and every metric
+    parsed out of it was stored under SDS — a well-formed PDF with all 8/8
+    metrics and a filename taken from the argument, so nothing downstream
+    could ever have noticed.
+    """
+    # The live shape: the unfiltered screen is the account's first 15 reports,
+    # cut off alphabetically at `GRP-client`, and `SDS-client` is past it.
+    page = FakePage(
+        report_names=["19CLV-client", "3XE-client", "GRP-client"], filter_broken=True
+    )
+    with pytest.raises(RuntimeError, match="refusing to open a different report"):
+        nb._open_report(page, "SDS-client")
+    assert page.opened == []  # `.first` would have opened 19CLV-client
+
+
+def test_open_report_opens_the_row_whose_name_matches_exactly(monkeypatch):
+    page = FakePage(report_names=["SDS-client", "SDS-Internal report"])
+    nb._open_report(page, "SDS-Internal report")
+    assert page.opened == ["SDS-Internal report"]
+
+
+def test_landing_on_the_login_form_is_an_auth_failure_not_an_empty_account(monkeypatch):
+    """A session that died after `_ensure_session` puts the cabinet back on
+    the login form, whose email box is ALSO `input.v-textfield` — so the
+    caller used to type its query into the login form, read zero rows, and
+    hand that up as a truthful "the account has no such report".
+    """
+    page = FakePage(password_count=1, report_names=[])
+    with pytest.raises(nb.AuthenticationFailedError):
+        nb._go_to_reports(page)
 
 
 class _FakePlaywrightContextManager:
@@ -558,3 +678,30 @@ class _FakePlaywrightContextManager:
 
 def _fake_sync_playwright() -> _FakePlaywrightContextManager:
     return _FakePlaywrightContextManager()
+
+
+# --- cabinet_lock: the invariant the cabinet was missing ----------------------
+
+
+def test_cabinet_lock_excludes_a_second_holder(monkeypatch, tmp_path):
+    monkeypatch.setenv("SEOAUDIT_DASHBOARD_NINJA_SESSION_PATH", str(tmp_path / "s.json"))
+    with nb.cabinet_lock(timeout_seconds=0.1):
+        with pytest.raises(nb.CabinetBusyError):
+            with nb.cabinet_lock(timeout_seconds=0.1):
+                pass
+
+
+def test_cabinet_lock_is_free_again_after_its_holder_leaves(monkeypatch, tmp_path):
+    monkeypatch.setenv("SEOAUDIT_DASHBOARD_NINJA_SESSION_PATH", str(tmp_path / "s.json"))
+    with nb.cabinet_lock(timeout_seconds=0.1):
+        pass
+    with nb.cabinet_lock(timeout_seconds=0.1):
+        pass
+
+
+def test_cabinet_lock_releases_even_when_the_body_raises(monkeypatch, tmp_path):
+    monkeypatch.setenv("SEOAUDIT_DASHBOARD_NINJA_SESSION_PATH", str(tmp_path / "s.json"))
+    with pytest.raises(ValueError, match="boom"), nb.cabinet_lock(timeout_seconds=0.1):
+        raise ValueError("boom")
+    with nb.cabinet_lock(timeout_seconds=0.1):
+        pass

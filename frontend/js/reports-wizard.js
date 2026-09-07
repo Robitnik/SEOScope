@@ -12,7 +12,7 @@
 import {
   computeReportPeriods, createReportBatch, createReportRun, getNinjaBindings, getNinjaReportName,
   getReportTypes, isAbortError, putNinjaReportName,
-} from "./api.js?v=20260821-spin3";
+} from "./api.js?v=20260907-rn";
 import { isPaused } from "./client-status.js?v=20260821-spin3";
 import { buildClientHash } from "./router.js?v=20260821-spin3";
 import {
@@ -55,6 +55,7 @@ function defaultState() {
     // `ninjaConfirmed` — binding a foreign report is permanent and makes every
     // later PDF run report another client's numbers under this client's name.
     ninjaMatches: [], ninjaOthers: [], ninjaSelectedCandidate: "", ninjaConfirmed: false,
+    ninjaLookupError: null, ninjaSnapshotAgeSeconds: null, ninjaRefreshing: false,
     error: null,
     // task-49 §2.1: `null` until `getNinjaBindings()` resolves — the
     // checklist shows a short loading line rather than treating "not loaded
@@ -502,14 +503,29 @@ function renderInlineConnect(client) {
   const entry = state.inlineConnect[client.client_id];
   const found = entry.matches.length + entry.others.length;
   if (entry.status === "checking") {
-    return `<p class="field-help">${statusIcon("loader-2")}Searching the Reporting Ninja account for this client's report…</p>`;
+    return `<p class="field-help">${statusIcon("loader-2")}${entry.refreshing
+      ? "Re-reading the Reporting Ninja account — about 10 seconds…"
+      : "Looking up this client's report in the Reporting Ninja account…"}</p>`;
   }
   if (entry.status === "error") {
     return `<p class="form-error" role="alert">${escapeHtml(entry.message)}</p>`;
   }
   if (entry.status !== "known") return "";
+  // Three states used to arrive as one empty list. "The account has no report
+  // for this client" is a claim about the account, and it is only safe to
+  // make from a cabinet read that actually succeeded — telling the operator
+  // to go create a report that already exists earns a duplicate in the
+  // account (AGENTS §5: unavailable, truncated and empty are distinct).
+  if (entry.lookupError) {
+    return `
+      <p class="form-error" role="alert">Could not read the Reporting Ninja account: ${escapeHtml(entry.lookupError)}</p>
+      <p class="field-help">Any report name saved earlier still applies. A report run in progress holds the Reporting Ninja session — retry once it finishes.</p>
+      ${inlineRereadButton(client)}`;
+  }
   if (!found) {
-    return `<p class="form-error" role="alert">No reports found in the Reporting Ninja account for this client. Create the client's report in Reporting Ninja first.</p>`;
+    return `
+      <p class="form-error" role="alert">No report in the Reporting Ninja account belongs to this client. Create the client's report in Reporting Ninja, then re-read the account.</p>
+      ${inlineRereadButton(client)}`;
   }
   const foreign = inlineCandidateIsForeign(entry);
   const saveBlocked = entry.saving || !entry.selectedCandidate || (foreign && !entry.confirmed);
@@ -537,7 +553,30 @@ function renderInlineConnect(client) {
       </label>` : ""}
     <button type="button" class="button button--primary" data-inline-save="${escapeHtml(client.client_id)}" ${saveBlocked ? "disabled" : ""}>
       ${entry.saving ? statusIcon("loader-2") : ""}${entry.saving ? "Saving…" : "Save this report name"}
-    </button>`;
+    </button>
+    ${inlineRereadButton(client)}`;
+}
+
+// The account list is one shared snapshot, so this is the only thing in the
+// flow that costs a cabinet session — offered explicitly instead of being
+// paid for on every Connect click.
+function inlineRereadButton(client) {
+  const entry = state.inlineConnect[client.client_id];
+  const age = snapshotAgeLabel(entry?.snapshotAgeSeconds);
+  return `
+    <p class="field-help">
+      <button type="button" class="button button--quiet" data-inline-reread="${escapeHtml(client.client_id)}">Re-read the account</button>
+      ${age ? `Account list read ${escapeHtml(age)}.` : ""}
+    </p>`;
+}
+
+function snapshotAgeLabel(seconds) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return "";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
 }
 
 function renderInlineCandidateRow(client, candidate) {
@@ -554,15 +593,16 @@ function inlineCandidateIsForeign(entry) {
   return Boolean(entry.selectedCandidate) && !entry.matches.some((c) => c.name === entry.selectedCandidate);
 }
 
-function openInlineConnect(clientId) {
+function openInlineConnect(clientId, { refresh = false } = {}) {
   const existing = state.inlineConnect[clientId];
-  if (existing?.open) { existing.open = false; rerenderScopeStep(); return; }
+  if (existing?.open && !refresh) { existing.open = false; rerenderScopeStep(); return; }
   state.inlineConnect[clientId] = {
     open: true, status: "checking", name: null, matches: [], others: [],
     selectedCandidate: "", confirmed: false, message: "", saving: false, saveError: null,
+    lookupError: null, snapshotAgeSeconds: null, refreshing: refresh,
   };
   rerenderScopeStep();
-  getNinjaReportName(clientId).then((result) => {
+  getNinjaReportName(clientId, { refresh }).then((result) => {
     if (!state) return;
     const entry = state.inlineConnect[clientId];
     if (!entry) return;
@@ -570,6 +610,8 @@ function openInlineConnect(clientId) {
     entry.name = result.ninja_report_name || null;
     entry.matches = result.matches || [];
     entry.others = result.others || [];
+    entry.lookupError = result.lookup_error || null;
+    entry.snapshotAgeSeconds = result.snapshot_age_seconds ?? null;
     entry.selectedCandidate = entry.matches[0]?.name || "";
     rerenderScopeStep();
   }).catch((error) => {
@@ -836,17 +878,45 @@ function renderNinjaReportBlock() {
     ${savedLine}
     <div class="reports-ninja-discovery">
       <p>${state.ninjaState === "checking"
-        ? "Searching the Reporting Ninja account for this client's report — first time takes about 10 seconds."
+        ? (state.ninjaRefreshing
+          ? "Re-reading the Reporting Ninja account — about 10 seconds."
+          : "Looking up this client's report in the Reporting Ninja account.")
         : state.ninjaName
           ? "Pick a different report only if this client's PDFs really come from it."
           : "No saved Reporting Ninja report name for this client yet."}</p>
       <button type="button" class="button button--primary" id="rw-ninja-find" ${state.ninjaState === "checking" ? "disabled" : ""}>
         ${state.ninjaState === "checking" ? statusIcon("loader-2") : icon("search", "icon icon--tiny")}
-        ${state.ninjaState === "checking" ? "Searching…" : "Find report"}
+        ${state.ninjaState === "checking" ? "Looking up…" : "Find report"}
       </button>
       ${state.ninjaState === "known" && found ? renderNinjaCandidates() : ""}
-      ${state.ninjaState === "known" && !found ? `<p class="form-error" role="alert">No reports found in the Reporting Ninja account for this client. Create the client's report in Reporting Ninja first.</p>` : ""}
+      ${state.ninjaState === "known" && !found ? renderNinjaNoCandidates() : ""}
+      ${state.ninjaState === "known" ? renderNinjaRereadLine() : ""}
     </div>`;
+}
+
+// "The account has no report for this client" is a claim about the account,
+// safe to make only from a cabinet read that succeeded. Told wrongly, the
+// operator creates a report that already exists (AGENTS §5: unavailable and
+// empty are distinct states, and every failed state names its next action).
+function renderNinjaNoCandidates() {
+  if (state.ninjaLookupError) {
+    return `
+      <p class="form-error" role="alert">Could not read the Reporting Ninja account: ${escapeHtml(state.ninjaLookupError)}</p>
+      <p class="field-help">Any report name saved earlier still applies. A report run in progress holds the Reporting Ninja session — retry once it finishes.</p>`;
+  }
+  return `<p class="form-error" role="alert">No report in the Reporting Ninja account belongs to this client. Create the client's report in Reporting Ninja, then re-read the account.</p>`;
+}
+
+// The account list is one shared snapshot, so a re-read is the only step in
+// this flow that costs a cabinet session — offered, not charged for on every
+// lookup.
+function renderNinjaRereadLine() {
+  const age = snapshotAgeLabel(state.ninjaSnapshotAgeSeconds);
+  return `
+    <p class="field-help">
+      <button type="button" class="button button--quiet" id="rw-ninja-reread">Re-read the account</button>
+      ${age ? `Account list read ${escapeHtml(age)}.` : ""}
+    </p>`;
 }
 
 function renderNinjaCandidateRow(candidate) {
@@ -910,6 +980,12 @@ function onBodyClick(event) {
   const connectButton = event.target.closest("[data-scope-connect]");
   if (connectButton) { openInlineConnect(connectButton.dataset.scopeConnect); return; }
 
+  const rereadButton = event.target.closest("[data-inline-reread]");
+  if (rereadButton) {
+    openInlineConnect(rereadButton.dataset.inlineReread, { refresh: true });
+    return;
+  }
+
   const excludeButton = event.target.closest("[data-scope-exclude]");
   if (excludeButton) { excludeScopeClient(excludeButton.dataset.scopeExclude); return; }
 
@@ -947,6 +1023,7 @@ function onBodyClick(event) {
   const sourceCard = event.target.closest("[data-source]");
   if (sourceCard) { selectSource(sourceCard.dataset.source); return; }
 
+  if (event.target.closest("#rw-ninja-reread")) { void checkNinjaReport({ refresh: true }); return; }
   if (event.target.closest("#rw-ninja-find") || event.target.closest("#rw-ninja-recheck")) { void checkNinjaReport(); return; }
   if (event.target.closest("#rw-ninja-save")) { void saveNinjaReport(); }
 }
@@ -1060,16 +1137,19 @@ function selectSource(source) {
   renderStep();
 }
 
-async function checkNinjaReport() {
+async function checkNinjaReport({ refresh = false } = {}) {
   state.ninjaState = "checking";
+  state.ninjaRefreshing = refresh;
   renderStep();
   try {
-    const result = await getNinjaReportName(state.clientId);
+    const result = await getNinjaReportName(state.clientId, { refresh });
     if (!state) return;
     state.ninjaState = "known";
     state.ninjaName = result.ninja_report_name || null;
     state.ninjaMatches = result.matches || [];
     state.ninjaOthers = result.others || [];
+    state.ninjaLookupError = result.lookup_error || null;
+    state.ninjaSnapshotAgeSeconds = result.snapshot_age_seconds ?? null;
     state.ninjaConfirmed = false;
     // Pre-selects only a report that actually belongs to this client. When
     // there is none, nothing is selected — the operator has to choose, which

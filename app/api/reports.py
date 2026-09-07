@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import os
 import tempfile
 import zipfile
 from datetime import UTC, date, datetime
@@ -32,7 +31,7 @@ from app.db.repositories.clients import ClientRepository
 from app.db.repositories.reports import ReportRepository
 from app.db.session import worker_session_scope
 from app.jobs.events import event_stream
-from app.reports import ninja_browser
+from app.reports import ninja_catalog
 from app.reports.batch import (
     NoClientsSelectedError,
     cancel_batch,
@@ -582,32 +581,39 @@ def _name_matches_client(report_name: str, client_name: str) -> bool:
 def _cabinet_has_report_name(name: str) -> bool | None:
     """Does the Reporting Ninja cabinet actually hold this exact report name?
 
-    Asked through the cabinet's OWN search (task-48 §2.1 point 1), never
-    through the scroll-until-stable full list. Measured live on this account
-    (2026-08-19, task-49): `list_report_names` returned 16 names ending at
-    `GRP-Internal report` while reporting `truncated=False` — a silently
-    INCOMPLETE list claiming to be complete, because "the visible set stopped
-    growing" cannot tell a finished scroll from a stalled one. Validating
-    against it rejected every real client sorting past "G" (SWM, SAPHNY, SDS,
-    SHB, HWELL, LAXTON, NYCHA, PJC) as `report_name_unknown` — i.e. exactly
-    the clients task-49's inline Connect exists to fix, and the same
-    past-the-cutoff trap task-48 §1.6 already found once.
+    Answered from the shared account snapshot (`ninja_catalog`), and only
+    ever rejected on a snapshot that can actually PROVE absence — complete,
+    freshly read, credentials present. A snapshot that merely fails to
+    contain the name is re-read once first, because the ordinary reason for
+    a missing name is that the operator created the report in Reporting
+    Ninja minutes ago.
 
-    Search has no such failure mode: the server does the filtering, so
-    virtualization cannot hide a row from it, and an empty result for one
-    exact name IS evidence of absence (unlike an unproven absence from a
-    truncated scroll, task-48 §1.7). `None` means the question could not be
-    asked at all — no credentials, hence no browser — never "absent".
+    `None` means the question could not be asked or could not be answered —
+    no credentials, a failed cabinet pass, a truncated scroll — and is never
+    "absent" (task-48 §1.7).
+
+    This used to run its own `search_report_names`, i.e. a whole Chromium
+    launch and login per SAVE, on top of the one `Connect` had just paid for
+    seconds earlier. It also inherited that search's failure mode: two
+    cabinet sessions at once made the filter RPC a no-op and the read
+    returned the account's unfiltered first 15 rows, so every client sorting
+    past "G" was rejected as `report_name_unknown` — the live symptom, and
+    (measured 2026-09-07) the real cause of the "virtualization cuts off
+    after G" diagnosis in task-48/49. `ninja_browser.cabinet_lock` closes
+    the concurrency; this closes the cost.
     """
-    email = os.environ.get("REPORTING_NINJA_EMAIL", "")
-    password = os.environ.get("REPORTING_NINJA_PASSWORD", "")
-    if not email or not password:
-        return None
-    settings = get_settings()
-    found = ninja_browser.search_report_names(
-        email=email, password=password, headless=settings.reports_headless, query=name
-    )
-    return name in found
+    snapshot = ninja_catalog.get_account_reports()
+    if snapshot.has(name):
+        return True
+    if snapshot.stale or not snapshot.available or snapshot.error is not None:
+        snapshot = ninja_catalog.get_account_reports(force_refresh=True)
+    elif not snapshot.truncated:
+        # A complete, fresh snapshot without the name: re-read once before
+        # calling a name absent, then trust the answer.
+        snapshot = ninja_catalog.get_account_reports(force_refresh=True)
+    if snapshot.has(name):
+        return True
+    return False if snapshot.proves_absent(name) else None
 
 
 def _client_identity(client_id: str) -> tuple[str, str | None, bool] | None:
@@ -632,8 +638,10 @@ def _current_ninja_report(client_id: str) -> NinjaReportNameDTO | None:
     )
 
 
-def _discover_ninja_report(client_id: str) -> NinjaReportNameDTO | None:
-    """task-45 §1.2: the account list is 32 reports belonging to ~30 different
+def _discover_ninja_report(
+    client_id: str, *, force_refresh: bool = False
+) -> NinjaReportNameDTO | None:
+    """task-45 §1.2: the account list is 32 reports belonging to 16 different
     clients, and task-42 returned all of them as one `candidates` list where
     `exact_match` only affected SORT ORDER. Nothing stopped an operator from
     picking `EFFYS-Internal report` for SAPHNY and saving it forever, after
@@ -641,65 +649,66 @@ def _discover_ninja_report(client_id: str) -> NinjaReportNameDTO | None:
     name. Splitting the answer is the first of three guards (the confirmation
     checkbox and the server-side `PUT` validation are the other two).
 
-    task-48 §1.6/§2.1: a plain read of the reports table only ever saw
-    whatever the virtualized DOM had painted (measured live: 32 names,
-    cutting off before every client sorting after "G"). `matches` now comes
-    from the cabinet's own search — the same mechanism `_open_report`
-    already uses to open a report by name — so a client past that cutoff is
-    still found; `others`/`others_truncated` come from a bounded
-    scroll-until-stable pass, done in the same browser session.
+    Both halves of that split now come from ONE shared account snapshot
+    (`ninja_catalog`) rather than from a per-client cabinet session. What
+    this replaced: a `Connect` click launched Chromium, logged in, searched
+    for this client, THEN scrolled the whole account — per client, and
+    strictly one at a time, because the cabinet cannot be read concurrently
+    (`ninja_browser.cabinet_lock`). Fifteen disconnected clients cost fifteen
+    of those, plus one more per save.
+
+    The old mechanic was also wrong in a way the snapshot cannot be. Its
+    scroll pass ran after its search in the same tab, and
+    `page.goto(".../#!reports")` only changes the FRAGMENT, so the Vaadin SPA
+    never reloaded and the search filter stayed applied: measured live
+    (2026-09-07) discovery for "SDS" reported `all_names=['SDS-client',
+    'SDS-Internal report']` with `truncated=False` — two reports presented
+    as the entire account, which is exactly the shape that makes `others`
+    look reassuringly short. One clean pass returns all 32.
     """
     identity = _client_identity(client_id)
     if identity is None:
         return None
     client_name, current, _has_integration = identity
 
-    email = os.environ.get("REPORTING_NINJA_EMAIL", "")
-    password = os.environ.get("REPORTING_NINJA_PASSWORD", "")
-    if not email or not password:
+    snapshot = ninja_catalog.get_account_reports(force_refresh=force_refresh)
+    if not snapshot.available:
         return NinjaReportNameDTO(
             client_id=client_id, client_name=client_name, ninja_report_name=current
         )
 
-    settings = get_settings()
-    discovery = ninja_browser.discover_report_names(
-        email=email, password=password, headless=settings.reports_headless,
-        client_name=client_name,
-    )
-    # Search results first: on a truncated full list, a search hit is the
-    # ONLY place a past-the-cutoff name shows up at all.
-    all_names = list(dict.fromkeys([*discovery.matches, *discovery.all_names]))
     matches: list[NinjaReportCandidateDTO] = []
     others: list[NinjaReportCandidateDTO] = []
-    for name in all_names:
+    for name in snapshot.names:
         candidate = NinjaReportCandidateDTO(
             name=name, exact_match=_name_matches_client(name, client_name)
         )
         (matches if candidate.exact_match else others).append(candidate)
-    # task-49: `discovery.truncated` alone cannot be trusted to mean "this
-    # list is complete" — measured live (2026-08-19) it reported `False` over
-    # a list of 16 names that stopped at `GRP-Internal report`, because
-    # `_scroll_all_names`' "stopped growing" heuristic reads a STALLED scroll
-    # exactly like a finished one. Search is the ground truth here, so a match
-    # it found that the scroll list lacks PROVES the list is partial no matter
-    # what the flag says. Never present a truncated list as an exact total
-    # (PLAN §12 / AGENTS §5) — the operator must not read a name's absence
-    # from `others` as "this report does not exist".
-    scrolled = set(discovery.all_names)
-    provably_partial = any(name not in scrolled for name in discovery.matches)
     return NinjaReportNameDTO(
         client_id=client_id,
         client_name=client_name,
         ninja_report_name=current,
         matches=matches,
         others=others,
-        others_truncated=discovery.truncated or provably_partial,
+        # A snapshot whose scroll ran out of budget, or one no cabinet pass
+        # could produce at all, is "not proven complete" — the UI must not
+        # read a name's absence from `others` as "this report does not
+        # exist" while this is set (task-48 §1.7, PLAN §12 / AGENTS §5).
+        others_truncated=snapshot.truncated or snapshot.error is not None,
+        lookup_error=snapshot.error,
+        snapshot_age_seconds=snapshot.age_seconds if snapshot.fetched_at else None,
     )
 
 
 @router.get("/clients/{client_id}/ninja-report", responses={404: {"model": ErrorDTO}})
-async def get_ninja_report_name(client_id: str) -> NinjaReportNameDTO:
-    dto = await run_in_threadpool(_discover_ninja_report, client_id)
+async def get_ninja_report_name(
+    client_id: str,
+    # Additive: the snapshot is cached for hours, so an operator who has JUST
+    # created this client's report in Reporting Ninja needs a way to say so
+    # without waiting out the TTL.
+    refresh: bool = False,
+) -> NinjaReportNameDTO:
+    dto = await run_in_threadpool(_discover_ninja_report, client_id, force_refresh=refresh)
     if dto is None:
         raise HTTPException(404, _CLIENT_NOT_FOUND)
     return dto

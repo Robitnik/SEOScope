@@ -21,10 +21,12 @@ kept verbatim. What changes here:
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import os
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -63,6 +65,15 @@ _DEAD_URL_MARKERS = ("chrome-error://", "/downloadreport")
 _REPORT_HOST = "app.reportingninja.com"
 
 _STEP_PAUSE_MS = 800
+_LOCK_POLL_SECONDS = 0.25
+# An interactive HTTP request waits this long for the cabinet, then says so.
+_INTERACTIVE_LOCK_TIMEOUT = 90.0
+_ROW_SELECTOR = "div.v-label.cursorPointer"
+# How long a filter RPC gets to actually land before the read is called
+# garbage (`_search_names`): one 1200ms settle plus this many re-reads.
+_FILTER_SETTLE_MS = 1200
+_FILTER_RETRY_MS = 700
+_FILTER_MAX_REREADS = 6
 Emit = Callable[[str, str, str, dict[str, Any]], None]
 # `(label, state, *, attempt=1, max_attempts=1)` — loosely typed on purpose:
 # the one real implementation (`runner.py::_make_period_marker`) forwards
@@ -77,6 +88,91 @@ class AuthenticationFailedError(RuntimeError):
     hit the login form (task-42 §3.7.1: a real credential/2FA problem, not
     a network blip).
     """
+
+
+class CabinetBusyError(RuntimeError):
+    """Another Reporting Ninja browser session holds the cabinet lock and did
+    not release it within this caller's budget. A LOUD, retriable failure on
+    purpose: the alternative (running anyway) is what silently corrupted the
+    cabinet's own search — see `cabinet_lock`.
+    """
+
+
+class CabinetFilterError(RuntimeError):
+    """The cabinet's search box was typed into, but the row set that came back
+    is not the filtered one. See `_search_names` — reading it as a search
+    result is what produced `report_name_unknown` for names that exist.
+    """
+
+
+def _lock_path() -> Path:
+    return _session_path().with_suffix(".lock")
+
+
+@contextlib.contextmanager
+def cabinet_lock(*, timeout_seconds: float | None = None) -> Generator[None, None, None]:
+    """Exclusive, CROSS-PROCESS access to the Reporting Ninja cabinet.
+
+    Not an optimisation — a correctness requirement, and the project-wide
+    invariant "browser profiles of one provider never run in parallel"
+    (PLAN §9.1) applied to the one provider that was missing it. Measured
+    live (2026-09-07) with two concurrent `search_report_names` calls: BOTH
+    returned the identical UNFILTERED first virtualized screen — 15 reports
+    alphabetically cut off at `GRP-client` — instead of their own filtered
+    result. All three cabinet readers share one `storage_state`, hence one
+    Reporting Ninja session cookie, hence one server-side Vaadin UI; a second
+    context attaching to it makes the filter RPC a silent no-op, and the DOM
+    read that follows looks like a perfectly ordinary answer.
+
+    The two things that answer then get wrong are both silent and both
+    already happened:
+
+    - `_cabinet_has_report_name("SDS-client")` reads the unfiltered screen,
+      does not find the name, and reports the report as ABSENT — the live
+      `report_name_unknown` on a name the account really has;
+    - `_open_report` takes `.first` of the row set, so a PDF run for SDS
+      opens `19CLV-client` and stores another client's 8/8 metrics under
+      SDS — the exact §1.2 poisoning, through a different door.
+
+    The historical "virtualization cuts the list off after G" diagnosis
+    (task-48 §1.6, task-49) describes this same 15-row screen. A single
+    lock-holding `list_report_names` returns all 32 names in 6.6s with
+    `truncated=False`.
+
+    `fcntl.flock` (not a lock row, not a `threading.Lock`) for two reasons:
+    the api and worker are separate PROCESSES sharing this cabinet, and the
+    kernel releases an flock when its holder dies, so a crashed run can
+    never wedge the cabinet permanently.
+
+    `timeout_seconds=None` waits indefinitely — for `download_periods`,
+    which is the work everything else should yield to. An interactive caller
+    passes a budget and surfaces `CabinetBusyError` ("a report run is using
+    the Reporting Ninja session"), because a request that hangs for the
+    length of a 6-period PDF run is not an answer either.
+    """
+    path = _lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = open(path, "a+b")  # noqa: SIM115 - held for the lock's duration, closed in `finally`
+    try:
+        if timeout_seconds is None:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        else:
+            deadline = time.monotonic() + timeout_seconds
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise CabinetBusyError(
+                            "The Reporting Ninja browser session is busy with another "
+                            f"cabinet operation (waited {timeout_seconds:g}s)"
+                        ) from None
+                    time.sleep(_LOCK_POLL_SECONDS)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
 
 
 @dataclass(frozen=True)
@@ -171,21 +267,85 @@ def _ensure_session(
     return ctx, page
 
 
+def _row_names(page: Page) -> list[str]:
+    """The report names the cabinet's table currently shows, de-duplicated.
+
+    Every report renders its label TWICE in this grid, so the raw read of
+    32 reports is 64 strings; callers that count or compare want reports,
+    not labels.
+    """
+    return list(
+        dict.fromkeys(_clean_names(page.locator(_ROW_SELECTOR).all_text_contents()))
+    )
+
+
+def _clear_search(page: Page) -> None:
+    """Empty the cabinet's search box and let the unfiltered list come back.
+
+    `_go_to_reports`' `page.goto(".../#!reports")` cannot do this: the target
+    differs from the current URL only in the FRAGMENT, so a Vaadin SPA
+    already sitting on `#!reports` does not reload and the previous search
+    stays applied. Measured live (2026-09-07): `discover_report_names` for
+    "SDS" returned `all_names=['SDS-client', 'SDS-Internal report']` with
+    `truncated=False` — the scroll pass had faithfully walked the still-
+    FILTERED table and reported two reports as the whole account.
+    """
+    search_input = page.locator("input.v-textfield").first
+    if not (search_input.input_value() or "").strip():
+        return
+    search_input.click(click_count=3)
+    search_input.fill("")
+    page.wait_for_timeout(_FILTER_SETTLE_MS)
+
+
 def _go_to_reports(page: Page) -> None:
     page.goto(f"{BASE_URL}/#!reports", wait_until="domcontentloaded")
     page.wait_for_selector("input.v-textfield", timeout=20_000)
     page.wait_for_timeout(_STEP_PAUSE_MS)
+    # A session that died between `_ensure_session` and here lands on the
+    # login form, whose email box is ALSO `input.v-textfield` — so without
+    # this check the caller types its query into the login form and reads
+    # zero rows, which every reader downstream then treats as a truthful
+    # "the account has no such report" (task-48 §1.7 names that inversion
+    # exactly; nothing enforced it on this path).
+    if _is_login_page(page):
+        raise AuthenticationFailedError(
+            "Reporting Ninja session is not live — the reports cabinet showed the login form"
+        )
+    _clear_search(page)
 
 
 def _open_report(page: Page, report_name: str) -> None:
+    """Open exactly `report_name`, or refuse to open anything.
+
+    The row is picked by EXACT name, never as `.first` of whatever the table
+    happens to show. `.first` was safe only for as long as the search filter
+    was guaranteed to have landed, and it is not: with the filter a no-op
+    (`cabinet_lock`), `.first` is `19CLV-client` — the account's
+    alphabetically first report — so a run for SDS downloaded another
+    client's PDF and every metric parsed out of it was stored under SDS.
+    Nothing downstream could have caught that: the PDF is well-formed, it
+    has all 8/8 metrics, and its filename comes from the argument, not from
+    the report that was actually opened.
+    """
     _go_to_reports(page)
     search_input = page.locator("input.v-textfield").first
     search_input.click(click_count=3)
     search_input.fill(report_name)
-    page.wait_for_timeout(1200)
+    page.wait_for_timeout(_FILTER_SETTLE_MS)
+    page.locator(_ROW_SELECTOR).first.wait_for(state="visible", timeout=10_000)
 
-    row = page.locator("div.v-label.cursorPointer").first
-    row.wait_for(state="visible", timeout=10_000)
+    wanted = report_name.strip()
+    row = None
+    for candidate in page.locator(_ROW_SELECTOR).all():
+        if (candidate.text_content() or "").strip() == wanted:
+            row = candidate
+            break
+    if row is None:
+        raise RuntimeError(
+            f"Report {report_name!r} is not among the rows the Reporting Ninja search "
+            f"returned for it ({_row_names(page)!r}) — refusing to open a different report"
+        )
     row.dblclick()
     page.wait_for_timeout(_STEP_PAUSE_MS * 2)
 
@@ -349,7 +509,9 @@ def download_periods(  # noqa: PLR0913 - every argument is load-bearing, see doc
     relogin_budget = [1]
     downloaded: list[DownloadedPeriod] = []
 
-    with sync_playwright() as playwright:
+    # No timeout: a report run is the work every interactive cabinet lookup
+    # should queue behind, not the other way round (`cabinet_lock`).
+    with cabinet_lock(), sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless)
         ctx = new_stealth_context(
             browser, storage_state=str(session_path) if session_path.exists() else None,
@@ -505,18 +667,58 @@ def _clean_names(raw: list[str]) -> list[str]:
     return [name.strip() for name in raw if name.strip()]
 
 
+def _filter_landed(names: list[str], query: str) -> bool:
+    """Is `names` a filtered answer to `query`, or the unfiltered table?
+
+    An empty result is a legitimate filtered answer ("no such report"), so
+    the signal is the opposite: a row that has nothing to do with the query
+    proves the filter did NOT apply, because the server does the filtering.
+
+    Substring containment is the test. Every query this module ever sends is
+    either a client name or a whole report name, and this account names every
+    report `<CLIENT>-client` / `<CLIENT>-Internal report`, so a legitimately
+    matching row always contains the query. Should Reporting Ninja ever match
+    on a field other than the name, this turns into a loud
+    `CabinetFilterError` — deliberately preferred over the silent wrong answer
+    it replaces (a false `report_name_unknown`, or `_open_report` opening
+    another client's report).
+    """
+    needle = query.strip().casefold()
+    return all(needle in name.casefold() for name in names)
+
+
 def _search_names(page: Page, query: str) -> list[str]:
     """Whatever the cabinet's own search box returns for `query` — the same
     mechanism `_open_report` already uses to open a report by name (task-48
     §1.6/§2.1): the server filters, so a name past the table's first
     virtualized screen is found exactly as reliably as one on it.
+
+    The row set is now VERIFIED to be the filtered one before it is returned
+    (`_filter_landed`). The read used to be a single unconditional one 1200ms
+    after typing, which is why a filter RPC that never landed came back as an
+    ordinary-looking list of the account's first 15 reports — see
+    `cabinet_lock` for the measurement and for both silent corruptions that
+    list caused.
     """
     _go_to_reports(page)
     search_input = page.locator("input.v-textfield").first
     search_input.click(click_count=3)
     search_input.fill(query)
-    page.wait_for_timeout(1200)
-    return _clean_names(page.locator("div.v-label.cursorPointer").all_text_contents())
+    page.wait_for_timeout(_FILTER_SETTLE_MS)
+
+    names = _row_names(page)
+    rereads = 0
+    while not _filter_landed(names, query):
+        if rereads >= _FILTER_MAX_REREADS:
+            raise CabinetFilterError(
+                f"The Reporting Ninja search for {query!r} did not filter the reports "
+                f"table (still showing {len(names)} unrelated reports). The cabinet "
+                "session is not usable for this lookup."
+            )
+        rereads += 1
+        page.wait_for_timeout(_FILTER_RETRY_MS)
+        names = _row_names(page)
+    return names
 
 
 def _scroll_reports_list(page: Page) -> None:
@@ -552,7 +754,7 @@ def _scroll_all_names(
     stable_count = 0
     truncated = True
     for _ in range(max_iterations):
-        names = _clean_names(page.locator("div.v-label.cursorPointer").all_text_contents())
+        names = _row_names(page)
         grew = False
         for name in names:
             if name not in seen_set:
@@ -578,10 +780,11 @@ def search_report_names(
     headless: bool = True,
     session_path: Path | None = None,
     query: str,
+    lock_timeout_seconds: float | None = _INTERACTIVE_LOCK_TIMEOUT,
 ) -> list[str]:
     """Own-session wrapper around `_search_names` (task-48 §2.1 point 1)."""
     session_path = session_path or _session_path()
-    with sync_playwright() as playwright:
+    with cabinet_lock(timeout_seconds=lock_timeout_seconds), sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless)
         ctx = new_stealth_context(
             browser, storage_state=str(session_path) if session_path.exists() else None,
@@ -607,6 +810,7 @@ def list_report_names(
     session_path: Path | None = None,
     max_iterations: int = _MAX_SCROLL_ITERATIONS,
     stable_rounds: int = _SCROLL_STABLE_ROUNDS,
+    lock_timeout_seconds: float | None = _INTERACTIVE_LOCK_TIMEOUT,
 ) -> tuple[list[str], bool]:
     """Own-session wrapper around `_scroll_all_names` (task-48 §2.1 point 2):
     every report name in the Reporting Ninja cabinet, or as many as a bounded
@@ -618,7 +822,7 @@ def list_report_names(
     excluding every client whose name sorts after that point.
     """
     session_path = session_path or _session_path()
-    with sync_playwright() as playwright:
+    with cabinet_lock(timeout_seconds=lock_timeout_seconds), sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless)
         ctx = new_stealth_context(
             browser, storage_state=str(session_path) if session_path.exists() else None,
@@ -647,13 +851,14 @@ def discover_report_names(
     client_name: str,
     max_iterations: int = _MAX_SCROLL_ITERATIONS,
     stable_rounds: int = _SCROLL_STABLE_ROUNDS,
+    lock_timeout_seconds: float | None = _INTERACTIVE_LOCK_TIMEOUT,
 ) -> ReportDiscovery:
     """One login, both discovery passes (task-48 §2.1) — used by the
     `GET /clients/{id}/ninja-report` endpoint so a targeted search and a full
     scroll never cost two separate browser sessions.
     """
     session_path = session_path or _session_path()
-    with sync_playwright() as playwright:
+    with cabinet_lock(timeout_seconds=lock_timeout_seconds), sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=headless)
         ctx = new_stealth_context(
             browser, storage_state=str(session_path) if session_path.exists() else None,

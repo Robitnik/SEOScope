@@ -17,7 +17,7 @@ import {
   escapeHtml, formatDuration, formatTimestamp, icon, isTerminal, stateClass, statusIcon,
 } from "./formatters.js?v=20260821-spin3";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
-import { openReportsWizard } from "./reports-wizard.js?v=20260821-spin3";
+import { openReportsWizard } from "./reports-wizard.js?v=20260907-rn";
 
 const root = document.querySelector("#reports-page-root");
 const PAGE_SIZE = 25;
