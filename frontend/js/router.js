@@ -475,7 +475,7 @@ async function activate() {
     allRoots.filter((el) => el !== reportsBatchRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     reportsBatchRoot?.removeAttribute("hidden");
-    const { initReportsBatchPage } = await import("./reports-batch.js?v=20260821-spin3");
+    const { initReportsBatchPage } = await import("./reports-batch.js?v=20260907-roles");
     await initReportsBatchPage(route.batchId);
   } else if (route.name === "ahrefs") {
     dashboardView?.setAttribute("hidden", "");

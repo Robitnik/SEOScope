@@ -7,8 +7,11 @@
    мінімум: усе інше закрите за замовчуванням, включно з `/index.html`,
    `/js/**`, `/api/v1/**` і replay-роутами архіву.
 2. **Admin-only шляхи** — керування користувачами й дорогі/незворотні
-   операції: батч-звіти, імпорти, cloud. Список розширюваний через
+   операції: імпорти, cloud. Список розширюваний через
    `settings.auth_admin_only_paths` без правок коду.
+2a. **Admin-only на запис** — зони, де admin потрібен лише на мутацію, а
+   читання відкрите всім автентифікованим: батч-звіти. Запустити батч —
+   дорога дія; ПРОЧИТАТИ вже готовий звіт — щоденна робота команди.
 3. **Метод** — `viewer` бачить усе, але будь-який мутуючий метод для нього
    403. Решта (`member`) — звичайна щоденна робота.
 """
@@ -50,15 +53,25 @@ _PUBLIC_EXACT = frozenset(
 # визначенням анонімні: клієнт читає їх ДО того, як має бодай якийсь токен.
 _PUBLIC_PREFIXES = ("/assets/", "/vendor/", "/.well-known/")
 
-# Дефолтні admin-only зони. Батчі — свідомо тут: один запуск batch-звітів
-# витрачає зовнішні квоти по всьому портфелю, імпорт переписує історію, а
-# cloud-операції (restore/prune) незворотні.
+# Дефолтні admin-only зони — і на читання, і на запис: імпорт переписує
+# історію, cloud-операції (restore/prune) незворотні, а `/admin` — це чужі
+# облікові записи й журнал дій.
 DEFAULT_ADMIN_ONLY_PATHS: tuple[str, ...] = (
     "/api/v1/admin",
-    "/api/v1/reports/batches",
     "/api/v1/imports",
     "/api/v1/cloud",
 )
+
+# Зони, де admin потрібен ЛИШЕ на мутацію, а безпечні методи відкриті всім
+# автентифікованим. Батчі саме такі: один ЗАПУСК палить зовнішні квоти по
+# всьому портфелю (рішення оператора — лишається за admin), але результат,
+# який з нього вийшов, — звичайний робочий артефакт агенції. Поки батчі
+# були admin-only цілком, member/viewer отримували 403 навіть на
+# `GET /reports/batches`, а разом із ним падала вся сторінка Reports:
+# `reports-page.js` вантажить історію одним `Promise.all([runs, batches])`.
+# Хто хоче закрити батчі повністю, як раніше, — додає той самий префікс у
+# `settings.auth_admin_only_paths`: він перевіряється першим і б'є цей список.
+DEFAULT_ADMIN_WRITE_ONLY_PATHS: tuple[str, ...] = ("/api/v1/reports/batches",)
 
 # Самообслуговування (task-79): мутація тут дозволена НАВІТЬ viewer'у, бо
 # вона завжди діє лише на власний ресурс виклика (перевіряється в самому
@@ -84,6 +97,13 @@ def admin_only_paths(settings: Settings | None = None) -> tuple[str, ...]:
     return tuple(DEFAULT_ADMIN_ONLY_PATHS) + tuple(settings.auth_admin_only_paths)
 
 
+def admin_write_only_paths() -> tuple[str, ...]:
+    """Без конфіг-хвоста, на відміну від `admin_only_paths`: щоб посилити
+    правило, префікс додають у `auth_admin_only_paths` (перевіряється
+    першим і закриває шлях цілком) — послаблювати ж тут нема куди."""
+    return DEFAULT_ADMIN_WRITE_ONLY_PATHS
+
+
 def _matches_prefix(path: str, prefix: str) -> bool:
     return path == prefix or path.startswith(prefix.rstrip("/") + "/")
 
@@ -94,6 +114,10 @@ def required_role(method: str, path: str, settings: Settings | None = None) -> U
     for prefix in admin_only_paths(settings):
         if _matches_prefix(path, prefix):
             return UserRole.admin
+    if not is_safe_method(method):
+        for prefix in admin_write_only_paths():
+            if _matches_prefix(path, prefix):
+                return UserRole.admin
     if any(_matches_prefix(path, prefix) for prefix in SELF_SERVICE_PATHS):
         return UserRole.viewer
     if is_safe_method(method):
@@ -126,6 +150,9 @@ def admin_only_tool_slugs(settings: Settings | None = None) -> list[str]:
             slug = prefix[len(marker) :].strip("/")
             if slug:
                 slugs.append(slug)
-    if "/api/v1/reports/batches" in admin_only_paths(settings):
+    # Батч-звіт: читання відкрите всім, але ЗАПУСК лишається admin-only —
+    # для UI це той самий сигнал «не малюй кнопку, яка дасть 403».
+    batch_prefix = "/api/v1/reports/batches"
+    if batch_prefix in admin_only_paths(settings) or batch_prefix in admin_write_only_paths():
         slugs.append("reports-batch")
     return slugs

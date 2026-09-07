@@ -118,15 +118,37 @@ def test_viewer_can_read_but_never_write(auth_client: TestClient, make_user, sig
     assert response.json()["detail"]["error_code"] == "forbidden"
 
 
-def test_member_cannot_reach_admin_or_batch_endpoints(
+def test_member_cannot_reach_admin_or_start_batches(
     auth_client: TestClient, make_user, sign_in
 ) -> None:
     email, password = make_user("member@yovth.com", role="member")
     headers = sign_in(email, password)
     assert auth_client.get("/api/v1/admin/users").status_code == 403
-    # Батчі — свідомо admin-only: один запуск палить зовнішні квоти по всьому
-    # портфелю (рішення оператора, task-71 §2).
-    assert auth_client.post("/api/v1/reports/batches", json={}, headers=headers).status_code == 403
+    # ЗАПУСК батчу — свідомо admin-only: один запуск палить зовнішні квоти по
+    # всьому портфелю (рішення оператора, task-71 §2). Те саме для дій над
+    # уже запущеним батчем: cancel/retry керують чужим портфельним прогоном.
+    batch = "/api/v1/reports/batches"
+    assert auth_client.post(batch, json={}, headers=headers).status_code == 403
+    assert auth_client.post(f"{batch}/probe/cancel", json={}, headers=headers).status_code == 403
+    retry = f"{batch}/probe/clients/probe/retry"
+    assert auth_client.post(retry, json={}, headers=headers).status_code == 403
+
+
+def test_every_role_can_read_batch_reports(auth_client: TestClient, make_user, sign_in) -> None:
+    """Дзеркало тесту вище: заборонений лише запуск, не результат.
+
+    Звіт, який вийшов із батчу, — робочий артефакт усієї агенції. Поки
+    `GET /reports/batches` теж був admin-only, member/viewer отримували 403
+    не лише на батч, а й на всю сторінку Reports: вона тягне історію одним
+    `Promise.all([runs, batches])`, і 403 в одній гілці валив увесь екран.
+    """
+    for role in ("member", "viewer"):
+        email, password = make_user(f"reader-{role}@yovth.com", role=role)
+        sign_in(email, password)
+        assert auth_client.get("/api/v1/reports/batches").status_code == 200
+        # Неіснуючий id має дійти до хендлера (404), а не спинитись на ролі.
+        detail = auth_client.get("/api/v1/reports/batches/8d1f4c2e-0000-4000-8000-000000000000")
+        assert detail.status_code == 404, detail.text
 
 
 def test_secrets_never_appear_in_logs(

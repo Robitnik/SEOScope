@@ -11,6 +11,10 @@ import {
   reportBatchPortfolioXlsxUrl, reportDocumentUrl, reportFileUrl, retryReportBatchClient,
 } from "./api.js?v=20260821-spin3";
 import { openReportsWizard } from "./reports-wizard.js?v=20260821-spin3";
+// Під тегом самого `session.js`, не під тегом цього файлу: модуль
+// кешується per-URL, і другий тег дав би ДРУГИЙ інстанс із порожнім
+// `cached` — тобто `isAdmin()` завжди false, ще до першого запиту.
+import { isAdmin } from "./session.js?v=20260906-t72";
 import { buildReportsHash, buildReportsRunHash } from "./router.js?v=20260821-spin3";
 import {
   REPORT_KIND_META, REPORT_RUN_STATUS_META, REPORT_SOURCE_META,
@@ -153,13 +157,17 @@ function renderHeader() {
   const kindMeta = REPORT_KIND_META[batch.kind];
   const sourceMeta = REPORT_SOURCE_META[batch.source] || REPORT_SOURCE_META.api;
   const statusMeta = REPORT_RUN_STATUS_META[batch.status] || REPORT_RUN_STATUS_META.queued;
-  const canCancel = !isTerminal(batch.status);
+  // Reading a batch is open to every signed-in role; running/cancelling
+  // one stays admin-only server-side (`DEFAULT_ADMIN_WRITE_ONLY_PATHS`), so
+  // the buttons that POST are drawn only where they would actually work.
+  const canManage = isAdmin();
+  const canCancel = canManage && !isTerminal(batch.status);
   const hasClientPdfs = batch.clients_done > 0;
   // task-49 §2.5: rebuild is a terminal-batch, PDF-only action — force_refresh
   // has no effect on the API path (runner.py's `_run_api` never reads it),
   // and rebuilding a client while a sibling is still running isn't a choice
   // that means anything yet.
-  const canRebuild = isTerminal(batch.status) && batch.source === "pdf";
+  const canRebuild = canManage && isTerminal(batch.status) && batch.source === "pdf";
   const hasFailed = batch.clients.some(isRetryable);
   host.innerHTML = `
     <header class="reports-run-header reports-batch-header">
@@ -304,7 +312,7 @@ function renderClientRow(client) {
   const succeeded = client.status === "succeeded" || client.status === "partial";
   const pdfPending = pendingClientPdf.has(client.run_id);
   const nameMissing = client.status === "failed" && client.error_code === "report_name_missing";
-  const retryable = isRetryable(client);
+  const retryable = isAdmin() && isRetryable(client);
   return `
     <li class="reports-batch-matrix-row" data-state="${escapeHtml(client.status)}">
       <div class="reports-batch-matrix-row__label">
