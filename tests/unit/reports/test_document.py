@@ -248,12 +248,72 @@ def test_each_chart_card_shows_its_own_series_date_range():
     assert html.count("December 2025 – July 2026") == 4
 
 
+def test_tile_label_drops_the_group_prefix_for_the_eye_but_not_for_a_reader():
+    # task-85 §2.3: with a visible `<h3>` per group, printing "Monthly" in
+    # all four of its tiles is redundant — and it was what wrapped
+    # "Quarterly YOY Organic Conversions" onto three lines. The period must
+    # still reach assistive tech, so the full label goes in a
+    # visually-hidden span and the visible one is aria-hidden.
+    html = _render()
+    assert '<span class="visually-hidden">Quarterly YOY Organic Conversions</span>' in html
+    visible_label = (
+        '<span class="report-doc__tile-label" aria-hidden="true">Organic Conversions</span>'
+    )
+    assert visible_label in html
+    # The redundant visible form is gone: "Monthly Clicks" survives only
+    # inside the screen-reader span.
+    without_sr_labels = html.replace('class="visually-hidden">Monthly Clicks', "")
+    assert ">Monthly Clicks</span>" not in without_sr_labels
+
+
+def test_stylesheet_link_is_cache_busted():
+    # Live failure this guards (2026-09-07): the markup comes from Python and
+    # is never cached, but Cloudflare serves `/css/*` with max-age=14400 — so
+    # a CSS change landed hours after the HTML that needed it and the
+    # document rendered new markup under old rules.
+    html = _render()
+    assert 'href="/css/report-doc.css?v=' in html
+
+
+def test_chart_axis_labels_are_round_numbers():
+    # task-85: the axis is the only way to read a value off a curve in a
+    # printed document, and the raw data min/max produced labels like
+    # "8,488". Bounds now round outwards to a 1/2/5 step.
+    html = _render()
+    chart = html.split('data-chart-id="chart-clicks"')[1].split("</svg>")[0]
+    # The fixture's clicks history spans 7,500..8,728, so the step lands on
+    # 500 and the axis runs 7,500..9,500 — five round labels, and the top
+    # one sits above the real maximum rather than on it.
+    for expected in ("9,500", "9,000", "8,500", "8,000", "7,500"):
+        assert f">{expected}</text>" in chart
+
+
+def test_rounded_axis_never_clips_the_series():
+    # Outwards only: an axis that rounded INWARDS would push a real point
+    # outside the plot and silently crop the line.
+    from app.reports.svg_charts import _nice_bounds
+
+    for lo, hi in ((6794.0, 9052.0), (0.0391, 0.0481), (3.0, 7.0), (0.0, 4.0), (944.0, 1979.0)):
+        nice_lo, nice_hi = _nice_bounds(lo, hi, 4)
+        assert nice_lo <= lo
+        assert nice_hi >= hi
+
+
+def test_a_flat_series_keeps_its_own_bounds():
+    from app.reports.svg_charts import _nice_bounds
+
+    assert _nice_bounds(100.0, 100.0, 4) == (100.0, 100.0)
+
+
 def test_structural_snapshot_guards_every_section():
     # Not a byte-for-byte snapshot (too brittle against whitespace) — a
     # regression guard against a future edit silently dropping or reordering
     # a whole section (task-85 §4.8).
     html = _render()
-    assert html.count('class="report-doc__tile-block"') == 4
+    # One `<h3>` per group — counted instead of the block class itself,
+    # which the lead block extends with a modifier (`--lead`).
+    assert html.count('class="report-doc__tile-block-title"') == 4
+    assert html.count("report-doc__tile-block--lead") == 1
     assert html.count('class="report-doc__chart-card"') == 4
     assert html.count("report-doc__section-title") == 2
     order = [

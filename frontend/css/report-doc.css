@@ -35,16 +35,28 @@
 
 /* The fired brand ribbon as a low-density, full-bleed watermark (task-47
    §3.2) — the first prototype clipped it and it read as a stray artifact;
-   here it is the page's own background, not a positioned decoration. */
+   here it is the page's own background, not a positioned decoration.
+   Re-anchored to the bottom-right corner (task-85): the two-up chart grid
+   made the page ~500px shorter, and the old top-anchored position left the
+   ribbon's mid-section cutting diagonally across the lower-left — the exact
+   "stray artifact" reading task-47 had already fixed once. Anchored to a
+   corner it exits the page instead of crossing it, at any page height. */
 .report-doc__page::before {
   content: "";
   position: absolute;
   inset: 0;
   background-image: var(--brand-ribbon);
   background-repeat: no-repeat;
-  background-position: right -420px top -120px;
-  background-size: 2200px auto;
-  opacity: .16;
+  background-position: right -380px bottom -420px;
+  background-size: 1350px auto;
+  opacity: .13;
+  /* The ribbon artwork is a wide spirograph net: at any size that covers a
+     corner it also reaches across the page, and lowering opacity alone just
+     made a faint net instead of a strong one. Masking it to a radial
+     falloff from the bottom-right corner is what turns it back into a
+     signature — dense where it belongs, gone before it reaches a number. */
+  -webkit-mask-image: radial-gradient(115% 85% at 100% 100%, #000 22%, transparent 68%);
+  mask-image: radial-gradient(115% 85% at 100% 100%, #000 22%, transparent 68%);
   pointer-events: none;
 }
 
@@ -112,7 +124,14 @@
 .report-doc__tiles--secondary .report-doc__section-title { font-size: 15px; color: var(--ink-muted); }
 
 .report-doc__tile-blocks { display: flex; gap: 20px; }
-.report-doc__tile-block { flex: 1 1 0; display: flex; flex-direction: column; gap: 10px; break-inside: avoid; }
+.report-doc__tile-block {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  break-inside: avoid;
+}
 .report-doc__tile-block-title {
   margin: 0;
   font-size: 12px;
@@ -121,6 +140,25 @@
   letter-spacing: .05em;
   color: var(--ink-muted);
 }
+/* The entry point (Monthly): §2.3's "obvious in 3 seconds" needs ONE cluster
+   to be brighter than the rest, not just first in reading order — four
+   equal-weight blocks gave the eye nowhere to land. The accent rule is the
+   brand's own, and the heading goes to full `--ink` while its three
+   siblings stay muted. */
+.report-doc__tile-block--lead .report-doc__tile-block-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+.report-doc__tile-block--lead .report-doc__tile-block-title::before {
+  content: "";
+  width: 18px;
+  height: 2px;
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+.report-doc__tile-block--lead .report-doc__tile { background: var(--surface-strong); }
 /* Both sides of the comparison, always (task-85 §2.6) — a live incident
    traced a "data mismatch" report back to comparing our August document
    against a Reporting Ninja screenshot from July; a number with no visible
@@ -135,14 +173,21 @@
 .report-doc__tile-group {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: 10px;
 }
 .report-doc__tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 18px 10px;
+  /* Label at the top, value + delta anchored to the BOTTOM via the `1fr`
+     row. Grid cells already stretch to equal height, so bottom-anchoring is
+     what keeps the four values in a row on one line even when one label
+     wraps to two ("Organic Conversions" at narrow widths) — misaligned
+     values were the loudest thing wrong with this grid (task-85 §2.4). It
+     also avoids reserving two label lines everywhere, which left a visible
+     hole above every single-word tile. */
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  justify-items: center;
+  gap: 6px;
+  padding: 14px 10px 12px;
   border: 1px solid var(--line);
   background: var(--surface);
   text-align: center;
@@ -151,24 +196,51 @@
 .report-doc__tile-label {
   font-size: 11px;
   font-weight: 700;
+  line-height: 1.25;
   text-transform: uppercase;
   letter-spacing: .05em;
   color: var(--ink-muted);
+  text-wrap: balance;
 }
 .report-doc__tile-value {
   font-family: var(--font-display);
   font-size: 28px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
-/* Large-text exception (WCAG AA §1.4.3): at this weight/size `--ink-dim` on
-   `--surface` measures 3.54:1, under the 4.5:1 normal-text floor but past
-   the 3:1 large-text one — unlike the small text below, which needed the
-   brighter token instead of a size argument (task-85 §2.5). */
 .report-doc__tile-value--muted { color: var(--ink-dim); }
 .report-doc__tiles--primary .report-doc__tile-value { font-size: 34px; }
-.report-doc__tiles--secondary .report-doc__tile { padding: 14px 10px; }
-.report-doc__tiles--secondary .report-doc__tile-value { font-size: 23px; }
+/* Year over Year is context for the numbers above, not a second headline:
+   no filled surface, a softer rule and smaller type demote the whole band
+   at once, so the page reads primary → charts → reference instead of two
+   competing grids of eight (task-85 §1.3/§2.3). */
+.report-doc__tiles--secondary .report-doc__tile {
+  padding: 10px 8px 9px;
+  /* Darker than the primary tiles' `--surface`, but still OPAQUE. A
+     transparent tile demoted the band nicely and then let the ribbon
+     watermark run straight through the numbers — both ugly and a contrast
+     hazard, since every ratio measured for §2.5 assumes a flat surface
+     behind the text. */
+  background: var(--canvas-raised);
+  border-color: var(--line-soft);
+}
+.report-doc__tiles--secondary .report-doc__tile-label { font-size: 10px; }
+.report-doc__tiles--secondary .report-doc__tile-value { font-size: 22px; }
+
+/* A missing value is an em-dash, never a 0 (PLAN §12) — but at the primary
+   block's full 34px of League Spartan Black that dash rendered as a thick
+   slab, reading like a redaction bar rather than "not collected". Sized
+   down it reads as the dash it is and recedes behind the real numbers next
+   to it. Declared AFTER the primary/secondary rules above and with matching
+   specificity on purpose: at one class it lost to `--primary`'s 34px and
+   silently did nothing. Still large-text under WCAG AA §1.4.3 (≥18.66px
+   bold), so `--ink-dim`'s 3.22:1 on the lead block's `--surface-strong`
+   clears the 3:1 floor that applies at this size — the small text elsewhere
+   could not make that argument and took the brighter token instead
+   (task-85 §2.5). */
+.report-doc__tiles .report-doc__tile-value--muted { font-size: 22px; }
+.report-doc__tiles--secondary .report-doc__delta { font-size: 12px; }
 
 .report-doc__delta {
   display: inline-flex;
@@ -191,16 +263,26 @@
 /* Charts (task-47 §1.3/§3.2) — inline SVG, vector at any zoom          */
 /* ------------------------------------------------------------------ */
 
-.report-doc__charts { display: flex; flex-direction: column; gap: 18px; }
+/* Two-up (task-85 §2.4). Four full-width cards stacked made the document
+   ~2100px tall, which is a lot of scrolling — and a lot of PDF page — for
+   four small series; paired, the whole report reads in one screen and the
+   month axes line up column-to-column for comparison. `render_line_chart`
+   is given a half-page viewBox to match (`_CHART_WIDTH`), so the axis type
+   is not scaled down into illegibility. */
+.report-doc__charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
 .report-doc__chart-card {
   border: 1px solid var(--line);
   background: var(--surface);
-  padding: 16px 16px 10px;
+  padding: 14px 14px 8px;
   break-inside: avoid;
 }
 .report-doc__chart-title {
   margin: 0 0 2px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .05em;
@@ -230,3 +312,19 @@
   font-size: 11px;
 }
 .report-doc__footer p { margin: 0; }
+
+/* ------------------------------------------------------------------ */
+/* Narrow screens                                                      */
+/* ------------------------------------------------------------------ */
+
+/* The PDF always renders at 860px (`client_pdf._PAGE_WIDTH_PX`), so this
+   only ever affects the operator previewing on a small screen — but a
+   two-up chart at ~300px would scale its axis labels below legibility, and
+   four tiles across two blocks would squeeze to ~140px each. */
+@media (max-width: 700px) {
+  .report-doc { padding: 20px 12px; }
+  .report-doc__page { padding: 24px 20px 28px; }
+  .report-doc__tile-blocks { flex-direction: column; }
+  .report-doc__charts { grid-template-columns: minmax(0, 1fr); }
+  .report-doc__identity h1 { font-size: 32px; }
+}

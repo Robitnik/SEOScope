@@ -25,6 +25,15 @@ from typing import Any
 
 from app.reports.svg_charts import render_line_chart
 
+# Cache-buster for the ONE stylesheet this document owns. Live failure it
+# exists to prevent (caught 2026-09-07, on the tunnel): the HTML comes from
+# Python and is never cached, but Cloudflare serves `/css/*` with
+# `max-age=14400` regardless of the app's own headers — so a CSS change
+# lands up to 4 hours after the markup that needs it, and the document
+# renders as new markup styled by old rules. Bump on every edit to
+# `frontend/css/report-doc.css`.
+_CSS_VERSION = "20260907-doc2"
+
 # The 4 metrics the document highlights, in the order the hand-kept sheet
 # used (task-47 §1.5) — a subset of `app.reports.models.METRICS`. All four
 # are "more is better": no `better_direction=down` metric belongs in a
@@ -42,6 +51,9 @@ _TILE_METRICS: tuple[tuple[str, str], ...] = (
 # the SAME columns `app.reports.table._MONTHLY_CHANGES` already computes.
 _MONTHLY_TILES: tuple[tuple[str, str], ...] = (("This Month", "% M/M"), ("This Quarter", "% Q/Q"))
 _YOY_TILES: tuple[tuple[str, str], ...] = (("This Month", "% M YOY"), ("This Quarter", "% Q YOY"))
+
+_CHART_WIDTH = 380
+_CHART_HEIGHT = 210
 
 _CHART_METRICS: tuple[tuple[str, str, str], ...] = (
     ("clicks", "Clicks Dynamics", "chart-clicks"),
@@ -145,10 +157,23 @@ def _delta_html(value: float | None) -> str:
     )
 
 
-def _tile_html(label: str, value: int | None, change: float | None) -> str:
+def _tile_html(
+    metric_label: str, full_label: str, value: int | None, change: float | None
+) -> str:
+    """`metric_label` is what the eye reads ("Clicks"); `full_label` is what a
+    screen reader reads ("Monthly YOY Clicks").
+
+    They differ on purpose (task-85 §2.3): once every group carries a visible
+    `<h3>` + date range, repeating the group name inside all four of its
+    tiles is redundant — and it was what wrapped "Quarterly YOY Organic
+    Conversions" onto three lines, leaving the values in one row sitting at
+    different heights. The period never disappears for assistive tech, it
+    just stops being printed four times per block.
+    """
     value_cls = "" if value is not None else " report-doc__tile-value--muted"
     return f"""<div class="report-doc__tile">
-      <span class="report-doc__tile-label">{escape(label)}</span>
+      <span class="visually-hidden">{escape(full_label)}</span>
+      <span class="report-doc__tile-label" aria-hidden="true">{escape(metric_label)}</span>
       <strong class="report-doc__tile-value{value_cls}">{escape(_fmt_int(value))}</strong>
       {_delta_html(change)}
     </div>"""
@@ -168,7 +193,7 @@ def _tile_group(
         row = _row_for(rows, key)
         value = _period_values(periods, row["values"], period_label) if row else None
         change = _change_value(change_labels, row["changes"], change_label) if row else None
-        tiles.append(_tile_html(f"{prefix} {metric_label}", value, change))
+        tiles.append(_tile_html(metric_label, f"{prefix} {metric_label}", value, change))
     return f'<div class="report-doc__tile-group">{"".join(tiles)}</div>'
 
 
@@ -180,11 +205,17 @@ def _tile_block(
     prefix: str,
     period_label: str,
     change_label: str,
+    lead: bool = False,
 ) -> str:
     """One of the four visible groups (Monthly / Quarterly / Monthly YOY /
     Quarterly YOY) — task-85 §1.2/§2.6: a real `<h3>` heading so the eye can
     tell the two 8-tile blocks apart without reading `aria-label`, and the
     date range both sides of the comparison used to reach the numbers below.
+
+    `lead=True` (Monthly only) is §2.3's "obvious in 3 seconds" criterion: a
+    brighter surface and a full-strength heading make one cluster the entry
+    point, and its first cell is Monthly Clicks. Position alone did not do
+    it — all four blocks were the same weight, so the eye had nowhere to land.
     """
     group_html = _tile_group(
         rows, periods, change_labels, prefix=prefix,
@@ -195,7 +226,8 @@ def _tile_block(
     range_html = (
         f'<p class="report-doc__tile-block-range">{escape(range_label)}</p>' if range_label else ""
     )
-    return f"""<div class="report-doc__tile-block">
+    lead_cls = " report-doc__tile-block--lead" if lead else ""
+    return f"""<div class="report-doc__tile-block{lead_cls}">
       <h3 class="report-doc__tile-block-title">{escape(prefix)}</h3>
       {range_html}
       {group_html}
@@ -217,7 +249,16 @@ def _chart_card_html(
 ) -> str:
     points = _history_series(history, key)
     formatter = _fmt_ctr_axis if key == "ctr" else (lambda v: f"{v:,.0f}")
-    svg = render_line_chart(points, chart_id=chart_id, value_format=formatter)
+    # The 4 charts sit two-up (task-85 §2.3/§2.4), so the viewBox is sized
+    # for HALF the page rather than all of it. This matters beyond
+    # proportions: the SVG scales to its container, so a 760-wide viewBox in
+    # a ~350px column would shrink 10px axis labels to ~4.6px — vector, and
+    # unreadable. Sizing the box near its rendered width keeps the type at
+    # the size it was chosen to be.
+    svg = render_line_chart(
+        points, chart_id=chart_id, value_format=formatter, width=_CHART_WIDTH,
+        height=_CHART_HEIGHT,
+    )
     # task-85 §2.6: without its own range, a chart ending in `… July 2026` is
     # indistinguishable from one ending in the current month — the exact
     # ambiguity that made a stale Reporting Ninja screenshot pass for current
@@ -342,7 +383,7 @@ def render_document_html(
 
     monthly_tiles = _tile_block(
         rows, periods, change_labels, prefix="Monthly",
-        period_label=monthly_period, change_label=monthly_change,
+        period_label=monthly_period, change_label=monthly_change, lead=True,
     )
     quarterly_tiles = _tile_block(
         rows, periods, change_labels, prefix="Quarterly",
@@ -392,7 +433,7 @@ def render_document_html(
 <meta name="author" content="The Yovth">
 <title>{escape(doc_title)}</title>
 <link rel="stylesheet" href="/css/tokens.css">
-<link rel="stylesheet" href="/css/report-doc.css">
+<link rel="stylesheet" href="/css/report-doc.css?v={_CSS_VERSION}">
 </head>
 <body class="report-doc-body">
 <main class="report-doc">

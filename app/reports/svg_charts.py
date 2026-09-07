@@ -15,6 +15,7 @@ why points are grouped into contiguous runs rather than joined by one path.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from html import escape
 
@@ -25,10 +26,48 @@ _PAD_RIGHT = 12
 _PAD_TOP = 16
 _PAD_BOTTOM = 28
 _GRIDLINES = 4
+# Below this per-label spacing, 3-letter month labels start touching at
+# font-size 10 — the point where every second one is dropped instead.
+_MIN_TICK_SPACING = 30
 
 
 def _default_format(value: float) -> str:
     return f"{value:,.0f}"
+
+
+def _nice_bounds(lo: float, hi: float, steps: int) -> tuple[float, float]:
+    """Round the axis outwards so every gridline lands on a human number.
+
+    The raw data min/max produced gridline labels like `9,052 · 8,488 ·
+    7,923` — arithmetically exact and unreadable, because nobody carries a
+    mental reference for "8,488". This returns bounds whose span is exactly
+    `steps` multiples of a 1/2/5 × 10ⁿ step, so all `steps + 1` printed
+    labels are round (`10,000 · 9,000 · 8,000 · 7,000 · 6,000`). That
+    matters more here than on screen: a printed document has no hover, so
+    the axis IS the only way to read a value off the curve.
+
+    Outwards only — the returned range always still contains the real data,
+    so no point is ever clipped and the curve is never rescaled in a way
+    that would overstate a change.
+    """
+    span = hi - lo
+    if span <= 0:
+        return lo, hi
+    magnitude = 10.0 ** math.floor(math.log10(span / steps))
+    # Ascending 1/2/5 × 10ⁿ. Rounding `lo` down and `hi` up can add up to
+    # two extra steps, so the first candidate step is not always the one
+    # that still fits in `steps` rows — hence trying successively coarser
+    # ones instead of assuming.
+    for exponent in range(4):
+        for factor in (1, 2, 5):
+            step = factor * magnitude * 10**exponent
+            nice_lo = math.floor(lo / step) * step
+            nice_hi = math.ceil(hi / step) * step
+            if round((nice_hi - nice_lo) / step) <= steps:
+                # Pad up to exactly `steps` rows so the intermediate labels
+                # are multiples of `step` too, not of (range / steps).
+                return nice_lo, nice_lo + steps * step
+    return lo, hi
 
 
 def _empty_chart_svg(labels: list[str], *, chart_id: str, width: int, height: int) -> str:
@@ -42,7 +81,7 @@ def _empty_chart_svg(labels: list[str], *, chart_id: str, width: int, height: in
     (task-85 §2.5) — `--ink-muted` clears it at 6.88:1.
     """
     axis_y = height - _PAD_BOTTOM
-    ticks = _x_ticks(labels, width)
+    ticks = _x_ticks(labels, width, height)
     return f"""<svg class="report-doc-chart" viewBox="0 0 {width} {height}" role="img"
      aria-label="No data available for this range" data-chart-id="{escape(chart_id)}">
   <line x1="{_PAD_LEFT}" y1="{axis_y}" x2="{width - _PAD_RIGHT}" y2="{axis_y}"
@@ -53,14 +92,28 @@ def _empty_chart_svg(labels: list[str], *, chart_id: str, width: int, height: in
 </svg>"""
 
 
-def _x_ticks(labels: list[str], width: int) -> str:
+def _x_ticks(labels: list[str], width: int, height: int = _HEIGHT) -> str:
+    """Month labels under the axis, thinned when they would collide.
+
+    `height` is a parameter rather than the module constant because the
+    document now renders these charts two-up at a different box size
+    (task-85): baking `_HEIGHT` in here put the labels at the wrong `y` the
+    moment a caller passed anything else.
+
+    Thinning keeps the FIRST and LAST label unconditionally — the last month
+    is the one a reader checks to see whether the series is current (task-85
+    §2.6), so it is the one label that must never be the one dropped.
+    """
     n = len(labels)
     if n == 0:
         return ""
     step = (width - _PAD_LEFT - _PAD_RIGHT) / max(1, n - 1)
-    y = _HEIGHT - _PAD_BOTTOM + 16
+    stride = 2 if step < _MIN_TICK_SPACING and n > 6 else 1
+    y = height - _PAD_BOTTOM + 16
     parts = []
     for i, label in enumerate(labels):
+        if i % stride and i != n - 1:
+            continue
         x = _PAD_LEFT + i * step
         parts.append(
             f'<text x="{x:.1f}" y="{y}" text-anchor="middle" '
@@ -94,7 +147,7 @@ def render_line_chart(
     x_step = plot_w / max(1, n - 1)
 
     values = [v for _, v in known]
-    lo, hi = min(values), max(values)
+    lo, hi = _nice_bounds(min(values), max(values), _GRIDLINES)
     flat = hi == lo
 
     def x_at(i: int) -> float:
@@ -171,7 +224,7 @@ def render_line_chart(
   {"".join(lines)}
   {"".join(dots)}
   {"".join(grid_labels)}
-  {_x_ticks(labels, width)}
+  {_x_ticks(labels, width, height)}
 </svg>"""
 
 
