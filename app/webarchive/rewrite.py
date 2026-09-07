@@ -76,6 +76,39 @@ _INTEGRITY_RE = re.compile(r"""\s+integrity\s*=\s*["'][^"']*["']""", re.IGNORECA
 _CROSSORIGIN_RE = re.compile(r"""\s+crossorigin(?:\s*=\s*["'][^"']*["'])?""", re.IGNORECASE)
 _CSS_URL_RE = re.compile(r"""url\(\s*(['"]?)(?!data:)([^)'"]+)\1\s*\)""", re.IGNORECASE)
 
+# task-81 §2.1-§2.2: WP Rocket LazyLoad's lazy-image attributes, promoted to
+# their real counterparts on every render — see `unlazy_html` below.
+_LAZY_ATTRS = (
+    ("data-lazy-src", "src"),
+    ("data-lazy-srcset", "srcset"),
+    ("data-lazy-sizes", "sizes"),
+)
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_LAZY_ATTR_VALUE_RE = {
+    lazy: re.compile(
+        rf"""\s{re.escape(lazy)}\s*=\s*(?P<quote>["'])(?P<value>.*?)(?P=quote)""",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for lazy, _real in _LAZY_ATTRS
+}
+_REAL_ATTR_VALUE_RE = {
+    real: re.compile(
+        rf"""\s{re.escape(real)}\s*=\s*(?P<quote>["'])(?P<value>.*?)(?P=quote)""",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for _lazy, real in _LAZY_ATTRS
+}
+# A sentinel of the same class the module already uses (`_PLACEHOLDER`),
+# marking an `<img>` this pass just promoted so the very next step can find
+# ONLY the `<noscript>` immediately following it — never one anywhere else
+# in the document. `\x00` cannot legally occur in HTML text, same invariant
+# `_PLACEHOLDER` already relies on.
+_LAZY_PROMOTED_MARK = "\x00WEBARCHIVE-LAZY\x00"
+_LAZY_NOSCRIPT_RE = re.compile(
+    re.escape(_LAZY_PROMOTED_MARK) + r"(<noscript>\s*(?:<img\b[^>]*>|\s)*\s*</noscript\s*>)",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 def replay_url(absolute_url: str, *, ts: str) -> str:
     """`/archive/r/<ts>/<absolute url>` — readable on purpose, matching
@@ -145,6 +178,67 @@ def _iframe_absolute_src(tag_text: str, *, base_url: str) -> str | None:
     return resolve(base_url, src_match.group(2))
 
 
+def unlazy_html(html: str) -> str:
+    """Promote WP Rocket LazyLoad's lazy `<img>` attributes to their real
+    counterparts and drop the now-redundant `<noscript>` fallback copy
+    (task-81 §2.1-§2.2).
+
+    MUST run AFTER `_rewrite_tag_attrs` — `data-lazy-src`/`data-lazy-srcset`
+    are both already in `_ATTR_RE`/`_SRCSET_RE`'s reach (the latter's bare
+    `\\bsrcset` also matches inside `data-lazy-srcset`), so by the time this
+    runs their values already carry a `/archive/r/<ts>/...` replay path,
+    not the original raw URL — this function only MOVES an already-correct
+    value, it never resolves one itself. Safe to run on the whole
+    document, `<script>`/`<style>` bodies included: they are still
+    placeholders at this point (this is called from `rewrite_html` after
+    `_stash`, before `_PLACEHOLDER_RE.sub` restores them).
+
+    Why the archived page needs this at all: the lazy copy's `src` is a
+    dummy SVG placeholder, and the library that is supposed to promote it
+    (`lazyload.min.js`) is loaded by a deferred bootstrap that, in a
+    sandboxed replay iframe with no `allow-same-origin`, throws on its very
+    first line (`localStorage.getItem(...)`) and never runs (task-81 §0.3)
+    — so with scripts ON the reader sees no image at all, and only with
+    scripts OFF does the browser fall back to rendering the `<noscript>`
+    copy. Promoting on every render makes both states show the real image.
+    """
+
+    def _promote_img(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        promoted = False
+        for lazy, real in _LAZY_ATTRS:
+            lazy_match = _LAZY_ATTR_VALUE_RE[lazy].search(tag)
+            if lazy_match is None:
+                continue
+            value = lazy_match.group("value")
+            quote = lazy_match.group("quote")
+            # Drop the lazy attribute FIRST — otherwise WP Rocket's own
+            # `[data-lazy-src]{display:none!important}` `<noscript>` rule
+            # (present on the same pages) would hide the very element we
+            # just promoted.
+            tag = _LAZY_ATTR_VALUE_RE[lazy].sub("", tag, count=1)
+            real_match = _REAL_ATTR_VALUE_RE[real].search(tag)
+            if real_match is not None:
+                tag = (
+                    tag[: real_match.start("value")]
+                    + value
+                    + tag[real_match.end("value") :]
+                )
+            else:
+                closing = "/>" if tag.rstrip().endswith("/>") else ">"
+                body = tag[: -len(closing)].rstrip()
+                tag = f"{body} {real}={quote}{value}{quote}{closing}"
+            promoted = True
+        # The mark lets the next pass find ONLY a `<noscript>` that sits
+        # immediately after a tag THIS pass actually touched — never one
+        # anywhere else in the document (task-81 §2.2).
+        return f"{tag}{_LAZY_PROMOTED_MARK}" if promoted else tag
+
+    promoted_html = _IMG_TAG_RE.sub(_promote_img, html)
+    without_noscript = _LAZY_NOSCRIPT_RE.sub("", promoted_html)
+    return without_noscript.replace(_LAZY_PROMOTED_MARK, "")
+
+
 def rewrite_css(css_text: str, *, base_url: str, ts: str) -> str:
     """Rewrite every `url(...)` in a CSS document or an inline `style="..."`
     value. Safe to run on raw CSS text directly — `url()` syntax is
@@ -166,6 +260,7 @@ def rewrite_html(
     ts: str,
     live_iframes: bool = True,
     analytics_hosts: frozenset[str] | None = None,
+    unlazy: bool = True,
 ) -> str:
     """Rewrite an HTML document for replay at `ts` (14-digit
     `app.webarchive.replay.format_ts` form), resolving every relative
@@ -176,6 +271,9 @@ def rewrite_html(
     behavior of rewriting (and thus 404ing) every iframe, no exceptions.
     `analytics_hosts` is `Settings.archive_iframe_analytics_hosts`; `None`
     falls back to `is_analytics_iframe_src`'s own built-in default.
+    `unlazy` is `Settings.archive_unlazy_html` (task-81 §2.1-§2.3) — the
+    kill-switch for `unlazy_html`; `False` reproduces the pre-task-81
+    behavior of leaving lazy-load markup exactly as captured.
     """
     placeholders: list[str] = []
 
@@ -213,6 +311,8 @@ def rewrite_html(
         stashed = _FRAME_TAG_RE.sub(_stash_iframe, stashed)
     stashed = _SCRIPT_OR_STYLE_RE.sub(_stash, stashed)
     rewritten = _rewrite_tag_attrs(stashed, base_url=base_url, ts=ts)
+    if unlazy:
+        rewritten = unlazy_html(rewritten)
 
     def _restore(match: re.Match[str]) -> str:
         return placeholders[int(match.group(1))]

@@ -192,3 +192,102 @@ def test_live_iframe_hosts_empty_when_flag_off() -> None:
 
 def test_live_iframe_hosts_empty_for_a_page_with_no_iframes() -> None:
     assert live_iframe_hosts("<p>No embeds here.</p>", base_url=BASE) == []
+
+
+# --- task-81 §2.1-§2.3: unlazy — replay must not depend on page JS -------
+
+
+def test_unlazy_promotes_data_lazy_src() -> None:
+    html = (
+        '<img src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E" '
+        'data-lazy-src="/logo.png" alt="logo">'
+    )
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert f'src="/archive/r/{TS}/https://example.com/logo.png"' in out
+    assert "data:image/svg+xml" not in out
+    assert "data-lazy-src" not in out
+
+
+def test_unlazy_promotes_srcset_and_sizes() -> None:
+    html = (
+        '<img src="data:image/svg+xml,x" '
+        'data-lazy-src="/logo.png" '
+        'data-lazy-srcset="/logo.png 1x, /logo-2x.png 2x" '
+        'data-lazy-sizes="(max-width: 516px) 100vw, 516px">'
+    )
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert (
+        f'srcset="/archive/r/{TS}/https://example.com/logo.png 1x, '
+        f'/archive/r/{TS}/https://example.com/logo-2x.png 2x"' in out
+    )
+    assert 'sizes="(max-width: 516px) 100vw, 516px"' in out
+
+
+def test_unlazy_removes_lazy_attributes() -> None:
+    html = '<img src="data:x" data-lazy-src="/a.png" data-lazy-srcset="/a.png 1x">'
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert "data-lazy-src" not in out
+    assert "data-lazy-srcset" not in out
+
+
+def test_unlazy_drops_the_paired_noscript() -> None:
+    html = (
+        '<img src="data:x" data-lazy-src="/a.png" alt="a">'
+        '<noscript><img src="/a.png" alt="a"></noscript>'
+    )
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert out.count("<img") == 1
+    assert "<noscript>" not in out
+
+
+def test_unlazy_keeps_unrelated_noscript() -> None:
+    html = (
+        '<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-X">'
+        "</iframe></noscript>"
+        '<noscript><style id="rocket-lazyload-nojs-css">'
+        "[data-lazy-src]{display:none!important}</style></noscript>"
+    )
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert out.count("<noscript>") == 2
+    assert "googletagmanager.com/ns.html" in out
+    assert "rocket-lazyload-nojs-css" in out
+
+
+def test_unlazy_keeps_noscript_not_adjacent_to_a_lazy_image() -> None:
+    html = '<p>text</p><noscript><img src="/c.png"></noscript>'
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert "<noscript>" in out
+    assert f'src="/archive/r/{TS}/https://example.com/c.png"' in out
+
+
+def test_unlazy_never_touches_script_bodies() -> None:
+    html = (
+        '<script>window.lazyLoadOptions = [{elements_selector: '
+        '"img[data-lazy-src],.rocket-lazyload,iframe[data-lazy-src]", '
+        'data_src: "lazy-src"}];</script>'
+    )
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert 'elements_selector: "img[data-lazy-src],.rocket-lazyload,iframe[data-lazy-src]"' in out
+    assert "/archive/r/" not in out
+
+
+def test_unlazy_is_a_noop_without_lazy_markup() -> None:
+    html = '<img src="/normal.jpg" alt="normal">'
+    out = rewrite_html(html, base_url=BASE, ts=TS)
+    assert out == f'<img src="/archive/r/{TS}/https://example.com/normal.jpg" alt="normal">'
+
+
+def test_unlazy_can_be_disabled() -> None:
+    html = '<img src="data:x" data-lazy-src="/a.png">'
+    out = rewrite_html(html, base_url=BASE, ts=TS, unlazy=False)
+    assert 'src="data:x"' in out
+    assert f'data-lazy-src="/archive/r/{TS}/https://example.com/a.png"' in out
+
+
+def test_unlazy_handles_self_closing_and_bare_img() -> None:
+    self_closing = rewrite_html('<img data-lazy-src="/a.png" />', base_url=BASE, ts=TS)
+    bare = rewrite_html('<img data-lazy-src="/a.png">', base_url=BASE, ts=TS)
+    assert f'/archive/r/{TS}/https://example.com/a.png' in self_closing
+    assert f'/archive/r/{TS}/https://example.com/a.png' in bare
+    assert self_closing.endswith("/>")
+    assert bare.endswith(">") and not bare.endswith("/>")

@@ -376,3 +376,57 @@ def test_replay_miss_survives_a_locked_database(client, db, monkeypatch):
 
     assert response.status_code == 404
     assert response.headers["content-security-policy"]
+
+
+# --- task-81 §2.4-§2.5: fix-up stylesheet + CSP `blob:` -------------------
+
+
+def test_replay_injects_the_fixup_stylesheet(client, db):
+    ts, url = _seed_page(db)
+    response = client.get(f"/archive/r/{ts}/{url}")
+    assert (
+        '<style id="archive-replay-fixups">'
+        ".elementor-invisible{visibility:visible!important}"
+        "</style>" in response.text
+    )
+    # Sits right next to the shim tag, inside `<head>`.
+    head = response.text.split("<head>", 1)[1].split("</head>", 1)[0]
+    assert "/archive/static/shim.js" in head
+    assert "archive-replay-fixups" in head
+    assert response.text.index("shim.js") < response.text.index("archive-replay-fixups")
+
+
+def test_replay_fixup_stylesheet_can_be_disabled(client, db, monkeypatch):
+    monkeypatch.setenv("ARCHIVE_REPLAY_FIXUP_CSS", "false")
+    get_settings.cache_clear()
+    try:
+        ts, url = _seed_page(db)
+        response = client.get(f"/archive/r/{ts}/{url}")
+    finally:
+        get_settings.cache_clear()
+
+    assert "archive-replay-fixups" not in response.text
+    assert "/archive/static/shim.js" in response.text  # the shim itself is untouched
+
+
+def test_replay_csp_allows_blob_scripts(client, db):
+    ts, url = _seed_page(db)
+    response = client.get(f"/archive/r/{ts}/{url}")
+    csp = response.headers["content-security-policy"]
+    assert "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:" in csp
+    # `blob:` is scoped to `script-src` only — every other directive is
+    # exactly what it was before task-81 (`img-src` already had `blob:`).
+    directives = {part.split(" ", 1)[0]: part for part in csp.split("; ")}
+    assert directives["frame-src"] == "frame-src https:"
+    assert directives["connect-src"] == "connect-src 'self'"
+    assert directives["img-src"] == "img-src 'self' data: blob:"
+
+
+def test_replay_non_html_is_not_touched(client, db):
+    ts, _url = _seed_page(db)
+    _seed_css_asset(db, url_key="acme.com/style.css")
+
+    response = client.get(f"/archive/r/{ts}/https://acme.com/style.css")
+    assert response.status_code == 200
+    assert "archive-replay-fixups" not in response.text
+    assert "shim.js" not in response.text

@@ -474,6 +474,26 @@ class Settings(BaseSettings):
     # the asset queue. A kill-switch, not just a tuning knob: `0` disables
     # the heuristic entirely without a code deploy if it proves noisy.
     archive_js_discovered_assets_per_page: int = 20
+    # task-81 §2.1-§2.3: replay must not depend on whether a page's own JS
+    # ran. WP Rocket LazyLoad ships every `<img>` twice — a lazy copy
+    # (`data-lazy-src` + an SVG placeholder `src`) and a `<noscript>` copy
+    # with the real `src` — and on 66% of the portfolio's pages the JS that
+    # is supposed to promote the lazy copy never gets that far (it dies on
+    # its first line inside our sandboxed, `allow-same-origin`-less iframe;
+    # task-81 §0.3). `rewrite_html` promotes the lazy attributes to real
+    # ones and drops the now-redundant `<noscript>` copy on every render —
+    # a kill-switch, same class as `archive_live_iframes`, in case some
+    # client's markup turns out not to fit the assumption.
+    archive_unlazy_html: bool = True
+    # task-81 §2.4: Elementor's entrance-animation class (`elementor-
+    # invisible`, `visibility:hidden`) is meant to be removed by
+    # `elementor-frontend.js` once the element scrolls into view — a JS
+    # step that, like the lazy-load one above, never runs in replay, so the
+    # block stays hidden FOREVER (SHB's homepage was a single black
+    # rectangle because of this — task-81 §0.6). Injects one `<style>`
+    # override next to the shim tag rather than editing `class="..."`
+    # attributes with a regex.
+    archive_replay_fixup_css: bool = True
 
     # task-66 §1: live-measured 2026-09-05 — `synchronous=FULL`'s default
     # cost (1.42ms/commit vs 0.02ms at NORMAL, a live-benchmarked ~70x) is

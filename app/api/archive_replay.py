@@ -61,7 +61,15 @@ def _replay_csp(*, live_iframes: bool) -> str:
         "img-src 'self' data: blob:; "
         "media-src 'self' data: blob:; "
         "style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        # `blob:` (task-81 §2.5/§0.7): a client's own deferred-loading
+        # bootstrap can turn each of its inline `<script>`s into a `blob:`
+        # URL (`URL.createObjectURL(new Blob([...]))`) before assigning it
+        # to a new `<script>`'s `src` — live-observed on 3275/5638 archived
+        # pages. This directive already carries `'unsafe-inline'
+        # 'unsafe-eval'`, so the page can already run arbitrary script;
+        # `blob:` adds no new capability, it only stops us from blocking a
+        # script the page itself already had the right to run.
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; "
         "font-src 'self' data:; "
         "connect-src 'self'; "
         f"frame-src {frame_src}; "
@@ -318,8 +326,32 @@ _SHIM_JS = r"""(function () {
 """
 
 
+# task-81 §2.4/§0.6: Elementor hangs this class off every element with an
+# entrance animation and removes it via its own frontend JS once the
+# element scrolls into view — a step that, like WP Rocket LazyLoad's own
+# bootstrap (task-81 §0.3), never runs in replay, so the block stays
+# `visibility:hidden` FOREVER (SHB's homepage was a single black rectangle
+# because of this). Injected as a `<style>` next to the shim tag rather
+# than stripped from `class="..."` with a regex — see the module docstring
+# note in `app.webarchive.rewrite` for why that path is avoided elsewhere
+# in this module too. The page's own rule ships without `!important`
+# (verified against real captured markup), so ours wins regardless of
+# stylesheet order.
+_FIXUP_CSS = (
+    '<style id="archive-replay-fixups">'
+    ".elementor-invisible{visibility:visible!important}"
+    "</style>"
+)
+
+
 def _inject_shim(
-    html: str, *, ts: str, origin: str, snapshot_id: str | None, self_origin: str
+    html: str,
+    *,
+    ts: str,
+    origin: str,
+    snapshot_id: str | None,
+    self_origin: str,
+    fixup_css: bool = True,
 ) -> str:
     tag = (
         '<script src="/archive/static/shim.js"'
@@ -328,6 +360,8 @@ def _inject_shim(
         f' data-snapshot="{escape(snapshot_id or "")}"'
         f' data-self-origin="{escape(self_origin)}"></script>'
     )
+    if fixup_css:
+        tag += _FIXUP_CSS
     lowered = html.lower()
     head_index = lowered.find("<head")
     if head_index != -1:
@@ -550,6 +584,7 @@ async def replay(
         rewritten = rewritemod.rewrite_html(
             text, base_url=base_url or original_url, ts=ts,
             live_iframes=live_iframes, analytics_hosts=analytics_hosts,
+            unlazy=settings.archive_unlazy_html,
         )
         rewritten = _inject_shim(
             rewritten,
@@ -557,6 +592,7 @@ async def replay(
             origin=base_url or original_url,
             snapshot_id=target.snapshot_id,
             self_origin=f"{parsed.scheme}://{parsed.netloc}",
+            fixup_css=settings.archive_replay_fixup_css,
         )
         return Response(
             content=rewritten, media_type="text/html; charset=utf-8",
