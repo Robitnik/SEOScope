@@ -75,6 +75,12 @@ class Client(Base):
 
     id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
     name: Mapped[str] = mapped_column(String(200))
+    # `display_name` (task-85 §2.1) — the full name shown on CLIENT-facing
+    # surfaces only (the report document's `<h1>`). `NULL` = "use `name`":
+    # every existing row keeps rendering exactly as before. Internal surfaces
+    # (dashboard, filters, `#/trends`) stay on the short `name` on purpose —
+    # that code is what the agency itself expects to see there.
+    display_name: Mapped[str | None] = mapped_column(String(200), default=None)
     slug: Mapped[str] = mapped_column(String(200), unique=True, index=True)
     domain: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     logo_path: Mapped[str | None] = mapped_column(String(500), default=None)

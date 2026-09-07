@@ -867,7 +867,12 @@ def _document_source(run_id: str) -> tuple[Any, str] | None:
         if run is None:
             return None
         client = ClientRepository(session).get(run.client_id)
-        return run, (client.name if client else run.client_id)
+        # task-85 §2.1: the client-facing document shows the full name, never
+        # the agency's internal short code (`Client.name`) — `display_name`
+        # is `None` until an operator fills it in, so this falls back exactly
+        # to today's behavior for every client that hasn't set one yet.
+        name = (client.display_name or client.name) if client else run.client_id
+        return run, name
 
 
 @router.get(
@@ -882,7 +887,7 @@ async def get_report_document(run_id: str) -> HTMLResponse:
         raise HTTPException(422, _RUN_NOT_FINISHED)
     html = render_document_html(
         client_name=client_name, table=run.result_json,
-        generated_at=run.finished_at or datetime.now(UTC),
+        generated_at=run.finished_at or datetime.now(UTC), source=run.source,
     )
     # `SecurityHeadersMiddleware` sets a blanket `X-Frame-Options: DENY` via
     # `setdefault` (app/core/security.py), which otherwise blocks this exact

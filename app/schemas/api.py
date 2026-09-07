@@ -234,6 +234,9 @@ class DashboardResponse(BaseModel):
 class ClientDTO(BaseModel):
     id: str
     name: str
+    # task-85 §2.1: full name for client-facing surfaces (the report
+    # document's `<h1>`). `None` = no override yet, callers fall back to `name`.
+    display_name: str | None = None
     slug: str
     domain: str
     logo_path: str | None = None
@@ -265,6 +268,7 @@ class ClientUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = None
+    display_name: str | None = None
     domain: str | None = None
     market: str | None = None
     timezone: str | None = None

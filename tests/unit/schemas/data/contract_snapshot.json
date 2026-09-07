@@ -1502,6 +1502,18 @@
           "title": "Created At",
           "type": "string"
         },
+        "display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
         "domain": {
           "title": "Domain",
           "type": "string"
@@ -1644,6 +1656,18 @@
     "ClientUpdateRequest": {
       "additionalProperties": false,
       "properties": {
+        "display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
         "domain": {
           "anyOf": [
             {

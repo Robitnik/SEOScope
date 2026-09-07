@@ -1,4 +1,4 @@
-import { createSyncJob, getDashboard, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, getMonitorSummary, getClientMonthlyTable, getPageInventorySummary, isAbortError, isFixtureMode } from "./api.js?v=20260821-spin3";
+import { createSyncJob, getDashboard, getClient, updateClientDisplayName, getClientAnalytics, getClientAlerts, getClientAnalyticsChart, getReportingNinjaDataset, getTechAuditLatest, getTechAuditFindings, startTechAudit, recheckTechAuditFindings, techAuditExportUrl, getBlogsLatest, getMonitorSummary, getClientMonthlyTable, getPageInventorySummary, isAbortError, isFixtureMode } from "./api.js?v=20260907-doc1";
 import { clientHeaderSkeleton, panelSkeleton, sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
 import { clientStatusBadge, clientStatusNote, devBadge, isPaused, openClientStatusDialog } from "./client-status.js?v=20260821-spin3";
 import { renderAuditPanel, renderAuditError } from "./audit-panel.js?v=20260821-spin3";
@@ -400,7 +400,10 @@ function renderHeader(client) {
       ${logo}
       <div>
         <p class="eyebrow">Client analytics</p>
-        <h1>${escapeHtml(client.name)}</h1>
+        <h1>${escapeHtml(client.name)}
+          <button class="icon-button" type="button" data-action="edit-client-name"
+            aria-label="Edit the full name shown to clients">${icon("pencil", "icon icon--tiny")}</button>
+        </h1>
         <a href="https://${encodeURI(client.domain)}" target="_blank" rel="noreferrer">${escapeHtml(client.domain)}</a>
       </div>
     </div>
@@ -425,7 +428,101 @@ function renderHeader(client) {
       onSaved: () => loadClient(),
     });
   });
+  header.querySelector('[data-action="edit-client-name"]')?.addEventListener("click", (event) => {
+    openClientNameDialog({
+      client,
+      trigger: event.currentTarget,
+      onSaved: () => loadClient(),
+    });
+  });
   settle("#cp-header");
+}
+
+// task-85 §2.1 — editing `Client.display_name` (the full name the report
+// document's `<h1>` shows to the client, instead of the agency's own short
+// `name`) from the page that already displays this client's identity. Built
+// in JS, not static markup in `index.html` (that file isn't this task's to
+// touch) — same pattern `alt-text-tool.js` uses for its preview dialog.
+let clientNameDialogContext = null;
+
+function clientNameDialog() {
+  let dialog = document.querySelector("#cp-name-dialog");
+  if (dialog) return dialog;
+  dialog = document.createElement("dialog");
+  dialog.id = "cp-name-dialog";
+  dialog.setAttribute("aria-labelledby", "cp-name-dialog-title");
+  dialog.innerHTML = `
+    <form class="dialog-shell dialog-shell--compact" id="cp-name-form">
+      <header class="dialog-header">
+        <div><p class="eyebrow">Client</p><h2 id="cp-name-dialog-title">Client-facing name</h2></div>
+        <button class="icon-button" type="button" data-close aria-label="Close dialog">${icon("x")}</button>
+      </header>
+      <div class="dialog-body">
+        <label class="form-field">Full name (shown to clients)<input name="display-name" maxlength="200" autocomplete="off"></label>
+        <p class="field-help">Used only on the client-facing report document. Leave empty to show the internal name below instead.</p>
+        <p class="form-error" id="cp-name-error" role="alert"></p>
+      </div>
+      <footer class="dialog-footer">
+        <button class="button button--quiet" type="button" data-close>Cancel</button>
+        <button class="button button--primary" type="submit" id="cp-name-save">Save</button>
+      </footer>
+    </form>`;
+  document.body.append(dialog);
+  dialog.querySelectorAll("[data-close]").forEach((button) =>
+    button.addEventListener("click", () => dialog.close()),
+  );
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+  dialog.querySelector("#cp-name-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!clientNameDialogContext) return;
+    const { client, onSaved } = clientNameDialogContext;
+    const input = dialog.querySelector('input[name="display-name"]');
+    const errorLine = dialog.querySelector("#cp-name-error");
+    const saveButton = dialog.querySelector("#cp-name-save");
+    errorLine.textContent = "";
+    saveButton.disabled = true;
+    saveButton.textContent = "Saving…";
+    try {
+      await updateClientDisplayName(client.client_id || client.id, input.value.trim());
+      dialog.close();
+      onSaved?.();
+    } catch (error) {
+      errorLine.textContent = `Could not save the name: ${error.message}`;
+    } finally {
+      saveButton.disabled = false;
+      saveButton.textContent = "Save";
+    }
+  });
+  dialog.addEventListener("close", () => {
+    clientNameDialogContext?.trigger?.focus?.();
+    clientNameDialogContext = null;
+  });
+  return dialog;
+}
+
+async function openClientNameDialog({ client, trigger, onSaved }) {
+  const dialog = clientNameDialog();
+  clientNameDialogContext = { client, trigger, onSaved };
+  const input = dialog.querySelector('input[name="display-name"]');
+  dialog.querySelector("#cp-name-error").textContent = "";
+  input.placeholder = client.name;
+  input.value = "";
+  dialog.showModal();
+  input.focus();
+  // The dashboard card this page renders from deliberately has no
+  // `display_name` (§2.1 — internal surfaces stay on `name`), so today's
+  // override, if any, is fetched fresh rather than carried on that payload.
+  const requestedFor = client;
+  try {
+    const full = await getClient(client.client_id || client.id);
+    if (clientNameDialogContext?.client !== requestedFor) return; // superseded by a newer open
+    input.value = full.display_name || "";
+  } catch {
+    // Left blank/placeholder-only — saving still works, it just won't show
+    // an existing override until the next successful load.
+  }
 }
 
 function coverageNote() {

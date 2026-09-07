@@ -35,6 +35,11 @@ def _empty_chart_svg(labels: list[str], *, chart_id: str, width: int, height: in
     """No usable data at all — every point `None`, or every present value is
     0 (task-47 §7: "максимум 0 -> графік із порожнім станом, не ділення на
     нуль"). A flat axis with the real month labels, never a fabricated curve.
+
+    Tick/empty-state text is `#aaa6a0` (`--ink-muted`), not `--ink-dim`
+    (`#77736e`, task-47's original choice): measured at 3.54:1 on
+    `--surface`, `--ink-dim` fails WCAG AA (4.5:1) at these font sizes
+    (task-85 §2.5) — `--ink-muted` clears it at 6.88:1.
     """
     axis_y = height - _PAD_BOTTOM
     ticks = _x_ticks(labels, width)
@@ -44,7 +49,7 @@ def _empty_chart_svg(labels: list[str], *, chart_id: str, width: int, height: in
         stroke="#383838" stroke-width="1"/>
   {ticks}
   <text x="{width / 2:.1f}" y="{(_PAD_TOP + axis_y) / 2:.1f}" text-anchor="middle"
-        class="report-doc-chart__empty" fill="#77736e" font-size="13">No data for this range</text>
+        class="report-doc-chart__empty" fill="#aaa6a0" font-size="13">No data for this range</text>
 </svg>"""
 
 
@@ -59,7 +64,7 @@ def _x_ticks(labels: list[str], width: int) -> str:
         x = _PAD_LEFT + i * step
         parts.append(
             f'<text x="{x:.1f}" y="{y}" text-anchor="middle" '
-            f'class="report-doc-chart__tick" fill="#77736e" font-size="10">{escape(label)}</text>'
+            f'class="report-doc-chart__tick" fill="#aaa6a0" font-size="10">{escape(label)}</text>'
         )
     return "\n  ".join(parts)
 
@@ -149,7 +154,7 @@ def render_line_chart(
         )
         grid_labels.append(
             f'<text x="{_PAD_LEFT - 8}" y="{y + 3:.1f}" text-anchor="end" '
-            f'class="report-doc-chart__tick" fill="#77736e" font-size="10">'
+            f'class="report-doc-chart__tick" fill="#aaa6a0" font-size="10">'
             f'{escape(value_format(value))}</text>'
         )
 

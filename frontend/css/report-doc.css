@@ -93,11 +93,46 @@
 
 /* ------------------------------------------------------------------ */
 /* Tiles (8 Monthly/Quarterly, 8 YOY — task-47 §3.2)                   */
+/*                                                                      */
+/* task-85 §1.2/§2.2/§2.3/§2.6: the two halves used to be visually      */
+/* identical 8-tile grids with no on-page label — a real `<h2>` per     */
+/* section, a real `<h3>` + dated range per tile-group, and a size step */
+/* between `--primary` (Monthly & Quarterly, the number that matters)   */
+/* and `--secondary` (Year over Year, the context for it).              */
 /* ------------------------------------------------------------------ */
 
-.report-doc__tiles { display: flex; gap: 20px; }
+.report-doc__tiles { display: flex; flex-direction: column; gap: 14px; }
+.report-doc__section-title {
+  margin: 0;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.report-doc__tiles--primary .report-doc__section-title { font-size: 20px; color: var(--ink); }
+.report-doc__tiles--secondary .report-doc__section-title { font-size: 15px; color: var(--ink-muted); }
+
+.report-doc__tile-blocks { display: flex; gap: 20px; }
+.report-doc__tile-block { flex: 1 1 0; display: flex; flex-direction: column; gap: 10px; break-inside: avoid; }
+.report-doc__tile-block-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--ink-muted);
+}
+/* Both sides of the comparison, always (task-85 §2.6) — a live incident
+   traced a "data mismatch" report back to comparing our August document
+   against a Reporting Ninja screenshot from July; a number with no visible
+   baseline period can't be checked by anyone without opening the database. */
+.report-doc__tile-block-range {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .report-doc__tile-group {
-  flex: 1 1 0;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
@@ -111,6 +146,7 @@
   border: 1px solid var(--line);
   background: var(--surface);
   text-align: center;
+  break-inside: avoid;
 }
 .report-doc__tile-label {
   font-size: 11px;
@@ -125,7 +161,14 @@
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
+/* Large-text exception (WCAG AA §1.4.3): at this weight/size `--ink-dim` on
+   `--surface` measures 3.54:1, under the 4.5:1 normal-text floor but past
+   the 3:1 large-text one — unlike the small text below, which needed the
+   brighter token instead of a size argument (task-85 §2.5). */
 .report-doc__tile-value--muted { color: var(--ink-dim); }
+.report-doc__tiles--primary .report-doc__tile-value { font-size: 34px; }
+.report-doc__tiles--secondary .report-doc__tile { padding: 14px 10px; }
+.report-doc__tiles--secondary .report-doc__tile-value { font-size: 23px; }
 
 .report-doc__delta {
   display: inline-flex;
@@ -137,7 +180,11 @@
 }
 .report-doc__delta--up { color: var(--success); }
 .report-doc__delta--down { color: var(--danger); }
-.report-doc__delta--flat { color: var(--ink-dim); }
+/* `--ink-dim` measures 3.54:1 on `--surface` at this 13px/700 weight — under
+   the 4.5:1 AA floor (that weight/size isn't "large text" either). Same fix
+   as the chart ticks: `--ink-muted` (6.88:1) instead of a token that was
+   never AA-safe for body-sized text in the first place (task-85 §2.5). */
+.report-doc__delta--flat { color: var(--ink-muted); }
 .report-doc__arrow { flex: 0 0 auto; }
 
 /* ------------------------------------------------------------------ */
@@ -149,15 +196,20 @@
   border: 1px solid var(--line);
   background: var(--surface);
   padding: 16px 16px 10px;
+  break-inside: avoid;
 }
 .report-doc__chart-title {
-  margin: 0 0 10px;
+  margin: 0 0 2px;
   font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .05em;
   color: var(--ink-muted);
 }
+/* task-85 §2.6: which months this line actually covers — without it a chart
+   ending in "… July 2026" reads the same whether it is current or a month
+   behind, which is exactly how a stale screenshot passed for live data once. */
+.report-doc__chart-range { margin: 0 0 10px; font-size: 11px; color: var(--ink-muted); }
 .report-doc-chart { display: block; width: 100%; height: auto; }
 .report-doc-chart__tick, .report-doc-chart__empty { font-family: var(--font-body); }
 
@@ -172,7 +224,9 @@
   gap: 8px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
-  color: var(--ink-dim);
+  /* `--ink-dim` on `--canvas` measures 4.10:1 at 11px — under the 4.5:1 AA
+     floor. `--ink-muted` clears it at 7.97:1 (task-85 §2.5). */
+  color: var(--ink-muted);
   font-size: 11px;
 }
 .report-doc__footer p { margin: 0; }

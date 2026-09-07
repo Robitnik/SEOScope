@@ -552,7 +552,7 @@ async function activate() {
     allRoots.filter((el) => el !== clientRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     clientRoot?.removeAttribute("hidden");
-    const { initClientPage } = await import("./client-page.js?v=20260821-spin3");
+    const { initClientPage } = await import("./client-page.js?v=20260907-doc1");
     initClientPage(route.clientId, route.query);
   } else {
     allRoots.forEach((el) => el?.setAttribute("hidden", ""));

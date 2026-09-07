@@ -165,6 +165,33 @@ export async function setClientStatus(clientId, status, note) {
   });
 }
 
+// task-85 §2.1: the full `ClientDTO` (has `display_name`) — the dashboard's
+// `ClientCardDTO` this page otherwise renders from deliberately doesn't
+// carry it (internal surfaces stay on `name`), so the edit dialog fetches it
+// fresh rather than the dashboard payload growing a field almost nothing
+// else on that surface needs.
+export async function getClient(clientId) {
+  if (FIXTURE_MODE) {
+    await wait(200);
+    return { id: clientId, display_name: null };
+  }
+  return request(`/clients/${clientId}`);
+}
+
+// task-85 §2.1: the client-facing full name (report document `<h1>`), edited
+// from the client page header. A plain PATCH, not a dedicated endpoint like
+// `setClientStatus` above — there is no side effect to record, just one field.
+export async function updateClientDisplayName(clientId, displayName) {
+  if (FIXTURE_MODE) {
+    await wait(300);
+    return { id: clientId, display_name: displayName || null };
+  }
+  return request(`/clients/${clientId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ display_name: displayName || null }),
+  });
+}
+
 export async function getClientHistory(clientId, period = "week") {
   if (FIXTURE_MODE) {
     const payload = await fixture("history");

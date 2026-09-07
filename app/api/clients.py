@@ -114,6 +114,7 @@ def _to_client_dto(client: Client) -> ClientDTO:
     return ClientDTO(
         id=client.id,
         name=client.name,
+        display_name=client.display_name,
         slug=client.slug,
         domain=client.domain,
         logo_path=_logo_url(client),
