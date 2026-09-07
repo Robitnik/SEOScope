@@ -1148,10 +1148,12 @@ class MonitorRedirect(Base):
 #
 # `kind`/`source`/`status`/`cross_check_status` are plain `String`, not
 # `sa.Enum` — the same choice task-35 already made for monitor's own
-# tool-level states: adding a report kind or a new source must not require
-# DDL. Reports are deliberately NOT a `SyncJob`/provider (task-42 §2.2): no
-# `(client, provider)` cell, no metrics catalog, no browser profile lock —
-# just a client, a parameter set and a list of output files.
+# tool-level states: a new report kind or source needs no enum/CHECK DDL. It
+# can still need a width bump: `source` was `String(8)` for `api`/`pdf` and
+# task-84's `google_api` (10 chars) needed a widening migration to `String(16)`
+# (`b7d3f9a24e18`). Reports are deliberately NOT a `SyncJob`/provider (task-42
+# §2.2): no `(client, provider)` cell, no metrics catalog, no browser profile
+# lock — just a client, a parameter set and a list of output files.
 
 
 # --- Added by task-47 (batch reports + client document/PDF) ----------------
@@ -1171,7 +1173,7 @@ class ReportBatch(Base):
 
     id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
     kind: Mapped[str] = mapped_column(String(32))
-    source: Mapped[str] = mapped_column(String(8))
+    source: Mapped[str] = mapped_column(String(16))  # api|pdf|google_api (task-84)
     params_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(16), default="queued")
     client_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -1207,7 +1209,7 @@ class ReportRun(Base):
         GUID, ForeignKey("report_batches.id", ondelete="SET NULL"), default=None, index=True
     )
     kind: Mapped[str] = mapped_column(String(32))  # monthly|yearly|custom_months|comparator
-    source: Mapped[str] = mapped_column(String(8))  # api|pdf
+    source: Mapped[str] = mapped_column(String(16))  # api|pdf|google_api (task-84)
     status: Mapped[str] = mapped_column(String(16), default="queued")
     # Report parameters only (years/span/months/force_refresh) — NEVER secrets
     # (PLAN §13): API keys/passwords/session cookies must never land here.

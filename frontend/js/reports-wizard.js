@@ -284,6 +284,12 @@ function step3Reason() {
 
 function step4Reason() {
   if (!state.source) return "Choose a collection source to continue.";
+  // task-84 §1: a comparator column is `PDF | API | Diff %` — it compares the
+  // two Reporting Ninja transports, so the direct source has no place in it.
+  // Blocked here AND in the runner, never silently sent to a failing run.
+  if (state.source === "google_api" && state.kind === "comparator") {
+    return "The Google API source can't build a comparator — that report compares the PDF and API transports. Pick API or PDF, or a different report type.";
+  }
   // The per-client Reporting Ninja discovery flow (Find/save a report name)
   // only makes sense for one client — a batch's PDF children are validated
   // per-client at run time instead (see `clientDisabledReason`'s docstring).
@@ -372,7 +378,8 @@ function renderFooter() {
 function startButtonLabel() {
   if (submitting) return "Starting…";
   const kindLabel = REPORT_KIND_META[state.kind]?.label || "report";
-  const sourceLabel = state.source === "pdf" ? "Ninja PDFs" : "API";
+  const sourceLabel = state.source === "pdf" ? "Ninja PDFs"
+    : state.source === "google_api" ? "Google API" : "API";
   if (state.scope === "all") {
     const n = state.selectedClientIds.length;
     return `Generate ${n} ${kindLabel.toLowerCase()} report${n === 1 ? "" : "s"} (${sourceLabel})`;
@@ -825,7 +832,12 @@ function renderStep4() {
       <button type="button" class="reports-source-card" data-source="api" aria-pressed="${state.source === "api"}" data-autofocus>
         <strong>API — fast</strong>
         <span class="reports-source-card__estimate">${apiEstimate}</span>
-        <p>Same numbers as the PDF report, verified.</p>
+        <p>Same numbers as the PDF report, verified. Via Reporting Ninja.</p>
+      </button>
+      <button type="button" class="reports-source-card" data-source="google_api" aria-pressed="${state.source === "google_api"}">
+        <strong>Google API</strong>
+        <span class="reports-source-card__estimate">${apiEstimate}</span>
+        <p>Direct from Google — no Reporting Ninja. Same numbers, one dependency fewer.</p>
       </button>
       <button type="button" class="reports-source-card" data-source="pdf" aria-pressed="${state.source === "pdf"}">
         <strong>PDF — evidence</strong>
@@ -834,7 +846,8 @@ function renderStep4() {
         <small class="reports-source-card__caveat">${escapeHtml(pdfCaveat)}</small>
       </button>
     </div>
-    ${state.source === "pdf" ? (state.scope === "one" ? renderPdfExtras() : renderBatchPdfNote()) : ""}`;
+    ${state.source === "pdf" ? (state.scope === "one" ? renderPdfExtras() : renderBatchPdfNote()) : ""}
+    ${state.source === "google_api" ? renderGoogleApiNote() : ""}`;
 }
 
 // task-49: a batch had NO force-refresh control at all — `force_refresh`
@@ -859,6 +872,22 @@ function renderBatchPdfNote() {
     <p class="reports-client-hint">${icon("info-circle")}
       A client with no saved Reporting Ninja report name fails on its own — the rest of the batch keeps going.
       Connect or exclude it in the Scope step above.
+    </p>`;
+}
+
+// task-84 §4.1: the direct source has no per-client setup step — the GA4
+// property id and GSC site are already stored. The two things worth saying
+// are the missing dependency (the point of the source) and the one hard
+// limit the operator can actually hit: GSC's 16-month history ceiling.
+function renderGoogleApiNote() {
+  const historyLimited = state.kind === "yearly" || state.kind === "custom_months";
+  return `
+    <p class="reports-client-hint">${icon("brand-google")}
+      Reads GSC Search Analytics and GA4 directly — Reporting Ninja is never contacted.${
+        historyLimited
+          ? " Google's Search Analytics API only serves ~16 months of history, so any column older than that shows as “—”, never zero."
+          : ""
+      }
     </p>`;
 }
 

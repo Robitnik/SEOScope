@@ -30,7 +30,8 @@ from typing import Any
 from app.core.config import Settings
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.reports import ReportRepository
-from app.reports import ninja_browser
+from app.integrations.google_api import GoogleApiConfigError, open_google_api_session
+from app.reports import google_source, ninja_browser
 from app.reports.api_source import discover_ga4_fields, discover_gsc_fields, fetch_period_metrics
 from app.reports.history import HistoryMonth, ReportHistory
 from app.reports.models import PeriodMetrics
@@ -144,6 +145,38 @@ def _refetch_api(
             ga4_account_id=rn_integration.config_json["account_id"],
             ga4_fields=ga4_fields, gsc_ref=gsc_ref, gsc_fields=gsc_fields,
             date_from=period.date_from, date_to=period.date_to,
+        )
+
+
+def _refetch_google(
+    period: ReportPeriod, rn_integration: Any, gsc_integration: Any, settings: Settings
+) -> PeriodMetrics:
+    """The direct-Google-API mirror of `_refetch_api` (task-84 §3.1). The GA4
+    property id comes from the `reporting_ninja` integration's `account_id`
+    (already in `properties/<id>` form); `connection_key` is not needed.
+    """
+    if rn_integration is None or not rn_integration.config_json.get("account_id"):
+        raise NotConfiguredError("No GA4 property id for this client")
+    ga4_property_id = rn_integration.config_json["account_id"]
+
+    gsc_site_url: str | None = None
+    if gsc_integration is not None and gsc_integration.config_json.get("account_id"):
+        gsc_site_url = gsc_integration.config_json["account_id"]
+
+    try:
+        google = open_google_api_session(settings)
+    except GoogleApiConfigError as exc:
+        raise NotConfiguredError(
+            "Google API is not configured (no refresh token in the environment)",
+            error_code="not_configured",
+        ) from exc
+    with google:
+        return google_source.fetch_period_metrics(
+            google,
+            ga4_property_id=ga4_property_id,
+            gsc_site_url=gsc_site_url,
+            date_from=period.date_from,
+            date_to=period.date_to,
         )
 
 
@@ -277,6 +310,8 @@ def retry_period(session_scope: Any, settings: Settings, run_id: str, label: str
     try:
         if source == "api":
             metrics = _refetch_api(period, rn_integration, gsc_integration, settings)
+        elif source == "google_api":
+            metrics = _refetch_google(period, rn_integration, gsc_integration, settings)
         else:
             metrics = _refetch_pdf(
                 session_scope, settings, run_id, client, period, rn_integration, emit

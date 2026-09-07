@@ -34,7 +34,12 @@ from typing import Any
 from app.core.config import Settings
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.reports import ReportRepository
-from app.reports import ninja_browser
+from app.integrations.google_api import (
+    GoogleApiConfigError,
+    GoogleApiPermissionError,
+    open_google_api_session,
+)
+from app.reports import google_source, ninja_browser
 from app.reports.api_source import (
     discover_ga4_fields,
     discover_gsc_fields,
@@ -278,11 +283,21 @@ def run(session_scope: Any, settings: Settings, run_id: str) -> None:
                 session_scope, settings, run_id, client, kind, periods, emit, is_cancelled,
                 mark_period,
             )
-        else:
+        elif source == "google_api":
+            # An explicit branch, NOT an extension of the `pdf` fallthrough
+            # (task-84 §0.2): a `pdf` `else` would have sent every unknown
+            # source silently down the browser path.
+            table = _run_google(
+                session_scope, settings, run_id, client, kind, periods, emit, is_cancelled,
+                mark_period,
+            )
+        elif source == "pdf":
             table, cc_result = _run_pdf(
                 session_scope, settings, run_id, client, kind, periods, emit, is_cancelled,
                 mark_period, force_refresh=bool(params.get("force_refresh")),
             )
+        else:
+            raise ValueError(f"unknown report source: {source!r}")
         cross_check_status = cc_result.status if cc_result is not None else None
     except NotConfiguredError as exc:
         _skip_pending_periods(session_scope, run_id)
@@ -582,6 +597,209 @@ def _run_api(  # noqa: PLR0913 - orchestrator, see module docstring
         emit("info", "run", f"{ninja.request_count} Reporting Ninja requests", {})
 
     return replace(build_table(kind, periods, metrics_by_label), history=history)
+
+
+# GSC Search Analytics API returns at most ~16 months of history (task-84
+# §0.7). A period older than this cannot be filled by the direct transport at
+# all — the column becomes `—`, and the operator is told why rather than left
+# to guess (task-84 §4.3).
+_GSC_HISTORY_LIMIT_DAYS = 16 * 31
+
+
+def _fetch_google_period_with_retry(  # noqa: PLR0913 - bounded retry, mirrors `_fetch_period_metrics_with_retry`
+    session: Any,
+    *,
+    ga4_property_id: str,
+    gsc_site_url: str | None,
+    date_from: date,
+    date_to: date,
+    label: str,
+    retries: int,
+    mark_period: Any,
+    emit: Emit,
+    is_cancelled: Any,
+    sleep: Any = time.sleep,
+) -> PeriodMetrics:
+    """Up to `retries` attempts, the same shape as the API path's own retry
+    helper. A `403 PERMISSION_DENIED` / missing-credentials failure is NOT
+    retried — it will fail identically every time — and is re-raised for the
+    caller to turn into a single `not_configured` run (task-84 §3.4).
+    """
+    for attempt in range(1, retries + 1):
+        if is_cancelled():
+            raise RuntimeError(f"Cancelled while fetching {label!r}")
+        mark_period(label, "running", attempt=attempt, max_attempts=retries)
+        try:
+            return google_source.fetch_period_metrics(
+                session,
+                ga4_property_id=ga4_property_id,
+                gsc_site_url=gsc_site_url,
+                date_from=date_from,
+                date_to=date_to,
+            )
+        except (GoogleApiPermissionError, GoogleApiConfigError):
+            raise
+        except Exception as exc:  # noqa: BLE001 - bounded retry, caller isolates the final failure
+            if attempt == retries:
+                raise
+            emit(
+                "warning", "fetch",
+                f"{label}: attempt {attempt}/{retries} failed ({exc}) — retrying",
+                {"period": label, "attempt": attempt, "max_attempts": retries},
+            )
+            sleep(3.0 * attempt)
+    raise AssertionError("unreachable")  # pragma: no cover - loop always returns or raises
+
+
+def _run_google(  # noqa: PLR0913 - orchestrator, mirrors `_run_api`
+    session_scope: Any,
+    settings: Settings,
+    run_id: str,
+    client: Any,
+    kind: str,
+    periods: list[ReportPeriod],
+    emit: Emit,
+    is_cancelled: Any,
+    mark_period: Any,
+) -> ReportTable:
+    """The direct-Google-API source (task-84): the same per-period isolation,
+    `mark_period` transitions and `emit` cadence as `_run_api`, only the data
+    module differs — Reporting Ninja is not in the chain at all.
+    """
+    if kind == "comparator":
+        # task-84 §1: a comparator column is `PDF | API | Diff %` — it compares
+        # the two Reporting Ninja transports, which this source replaces rather
+        # than joins. Fail loudly instead of producing a half-built table.
+        raise NotConfiguredError(
+            "The Google API source does not produce comparator reports — that "
+            "report compares the PDF and API transports column by column. Use "
+            "API or PDF for a comparator.",
+            error_code="source_unsupported",
+        )
+
+    with session_scope() as session:
+        client_repo = ClientRepository(session)
+        rn_integration = client_repo.get_integration(client.id, Provider.reporting_ninja)
+        gsc_integration = client_repo.get_integration(client.id, Provider.gsc)
+
+    # The GA4 property id lives on the `reporting_ninja` integration's
+    # `config_json["account_id"]`, already in Google's own `properties/<id>`
+    # form (task-84 §2 / task-83 §0.3) — no `connection_key` needed here.
+    if rn_integration is None or not rn_integration.config_json.get("account_id"):
+        raise NotConfiguredError(
+            "No GA4 property id for this client (the Reporting Ninja integration "
+            "holds it) — connect it before generating a Google API report"
+        )
+    ga4_property_id = rn_integration.config_json["account_id"]
+
+    gsc_site_url: str | None = None
+    if gsc_integration is not None and gsc_integration.config_json.get("account_id"):
+        gsc_site_url = gsc_integration.config_json["account_id"]
+    else:
+        emit("warning", "preflight", "GSC not configured — clicks/impressions unavailable", {})
+
+    try:
+        google = open_google_api_session(settings)
+    except GoogleApiConfigError as exc:
+        # No refresh token in the environment. `not_configured`, never a silent
+        # fallback to Reporting Ninja (task-84 §4.3 / task-83 §6.1.3).
+        raise NotConfiguredError(
+            "Google API is not configured (no refresh token in the environment) "
+            "— pick the API or PDF source, or set it up",
+            error_code="not_configured",
+        ) from exc
+
+    metrics_by_label: dict[str, PeriodMetrics] = {}
+    periods_done = periods_failed = 0
+    with google:
+        for period in periods:
+            if is_cancelled():
+                emit("info", "run", "Cancelled", {})
+                break
+            try:
+                metrics = _fetch_google_period_with_retry(
+                    google,
+                    ga4_property_id=ga4_property_id,
+                    gsc_site_url=gsc_site_url,
+                    date_from=period.date_from,
+                    date_to=period.date_to,
+                    label=period.label,
+                    retries=settings.reports_api_period_retries,
+                    mark_period=mark_period,
+                    emit=emit,
+                    is_cancelled=is_cancelled,
+                )
+            except GoogleApiPermissionError as exc:
+                # task-84 §3.4 / PLAN §9.2: no access to the property is "not
+                # configured", not a red run — every remaining period is the
+                # same property and would fail identically.
+                raise NotConfiguredError(
+                    "Google API: the agency account has no access to this "
+                    f"client's GA4/GSC property ({exc})",
+                    error_code="not_configured",
+                ) from exc
+            except Exception as exc:  # noqa: BLE001 - isolate this period, keep going
+                periods_failed += 1
+                mark_period(period.label, "failed", error=str(exc))
+                emit("error", "fetch", f"{period.label} failed: {exc}", {"period": period.label})
+            else:
+                metrics_by_label[period.label] = metrics
+                periods_done += 1
+                mark_period(period.label, "done")
+                emit("info", "fetch", f"{period.label} done", {"period": period.label})
+                if (
+                    gsc_site_url
+                    and metrics.clicks is None
+                    and (date.today() - period.date_from).days > _GSC_HISTORY_LIMIT_DAYS
+                ):
+                    emit(
+                        "warning", "fetch",
+                        f"{period.label}: GSC Search Analytics API only serves ~16 months "
+                        "of history — Clicks/Impressions for this period cannot be read "
+                        "directly and stay blank",
+                        {"period": period.label},
+                    )
+            with session_scope() as session:
+                ReportRepository(session).update_progress(
+                    run_id, periods_done=periods_done, periods_failed=periods_failed
+                )
+
+        history = (
+            None
+            if is_cancelled()
+            else _google_history(google, settings, ga4_property_id, gsc_site_url, emit)
+        )
+
+    return replace(build_table(kind, periods, metrics_by_label), history=history)
+
+
+def _google_history(
+    session: Any,
+    settings: Settings,
+    ga4_property_id: str,
+    gsc_site_url: str | None,
+    emit: Emit,
+) -> ReportHistory | None:
+    """The monthly Historical Data block through the direct transport —
+    best-effort, exactly like `_history_with_client`: a run with a valid table
+    is never failed by its history block.
+    """
+    try:
+        history = google_source.fetch_history(
+            session,
+            ga4_property_id=ga4_property_id,
+            gsc_site_url=gsc_site_url,
+            months=settings.reports_history_months,
+        )
+        emit(
+            "info", "history",
+            f"Historical Data: {len(history.months)} complete month(s)",
+            {},
+        )
+        return history
+    except Exception as exc:  # noqa: BLE001 - see docstring
+        emit("warning", "history", f"Historical Data could not be collected: {exc}", {})
+        return None
 
 
 def _run_pdf(  # noqa: PLR0913 - orchestrator, see module docstring

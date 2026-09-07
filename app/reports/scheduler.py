@@ -5,14 +5,20 @@ shape: a background thread ticking every `tick_interval_seconds`, a bounded
 `ThreadPoolExecutor` per path, and startup recovery for orphaned `running`
 rows before the loop starts.
 
-Three independent pools, not one: standalone API-path runs
+Four independent pools, not one: standalone API-path runs
 (`reports_api_workers`, default 3), batch API-path runs
-(`reports_batch_client_workers`, default 3, task-47 §2.3), and the PDF path
+(`reports_batch_client_workers`, default 3, task-47 §2.3), the direct Google
+API source (`reports_google_api_workers`, task-84 §3.3 — no browser, no
+Reporting Ninja rate limit, so it can run wider), and the PDF path
 (hard-capped at 1 — one login, one browser, one cabinet session for the
 whole process, §2.3) never compete for the same slot. Without the
 batch/standalone split, a 14-client batch would occupy every API slot and an
 operator's unrelated single-client report would queue behind the whole
 batch (task-47 §2.3).
+
+`source` in `claim_next_queued` is a plain string filter, so a
+`source="google_api"` run needs its OWN `_fill` call — without it that run
+is never claimed and sits `queued` forever with no error (task-84 §0.3).
 """
 
 from __future__ import annotations
@@ -48,6 +54,7 @@ class ReportScheduler:
 
         self._api_capacity = max(1, settings.reports_api_workers)
         self._batch_api_capacity = max(1, settings.reports_batch_client_workers)
+        self._google_api_capacity = max(1, settings.reports_google_api_workers)
         self._pdf_capacity = 1  # NOT configurable — see module docstring
         self._api_pool = ThreadPoolExecutor(
             max_workers=self._api_capacity, thread_name_prefix="reports-api"
@@ -55,11 +62,15 @@ class ReportScheduler:
         self._batch_api_pool = ThreadPoolExecutor(
             max_workers=self._batch_api_capacity, thread_name_prefix="reports-batch-api"
         )
+        self._google_api_pool = ThreadPoolExecutor(
+            max_workers=self._google_api_capacity, thread_name_prefix="reports-google-api"
+        )
         self._pdf_pool = ThreadPoolExecutor(
             max_workers=self._pdf_capacity, thread_name_prefix="reports-pdf"
         )
         self._in_flight_api: set[str] = set()
         self._in_flight_batch_api: set[str] = set()
+        self._in_flight_google_api: set[str] = set()
         self._in_flight_pdf: set[str] = set()
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -73,8 +84,8 @@ class ReportScheduler:
         self._thread = threading.Thread(target=self._loop, name="report-scheduler", daemon=True)
         self._thread.start()
         logger.info(
-            "report_scheduler_started api_workers=%d pdf_workers=%d",
-            self._api_capacity, self._pdf_capacity,
+            "report_scheduler_started api_workers=%d google_api_workers=%d pdf_workers=%d",
+            self._api_capacity, self._google_api_capacity, self._pdf_capacity,
         )
 
     def stop(self) -> None:
@@ -83,6 +94,7 @@ class ReportScheduler:
             self._thread.join(timeout=30)
         self._api_pool.shutdown(wait=True)
         self._batch_api_pool.shutdown(wait=True)
+        self._google_api_pool.shutdown(wait=True)
         self._pdf_pool.shutdown(wait=True)
 
     def _recover_stale_runs(self) -> None:
@@ -111,6 +123,14 @@ class ReportScheduler:
         self._fill(
             "api", self._in_flight_batch_api, self._batch_api_capacity, self._batch_api_pool,
             batch_only=True,
+        )
+        # One pool for `google_api`, standalone and batch children alike
+        # (task-84 §3.3): the direct transport has neither a browser nor
+        # Reporting Ninja's 300/min account limit, so a batch cannot starve an
+        # ad-hoc run the way it could on the `api` path.
+        self._fill(
+            "google_api", self._in_flight_google_api, self._google_api_capacity,
+            self._google_api_pool,
         )
         self._fill("pdf", self._in_flight_pdf, self._pdf_capacity, self._pdf_pool)
         try:

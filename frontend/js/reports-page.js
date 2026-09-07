@@ -15,9 +15,9 @@ import {
 import {
   REPORT_CROSS_CHECK_META, REPORT_KIND_META, REPORT_RUN_STATUS_META, REPORT_SOURCE_META,
   escapeHtml, formatDuration, formatTimestamp, icon, isTerminal, stateClass, statusIcon,
-} from "./formatters.js?v=20260821-spin3";
+} from "./formatters.js?v=20260907-t84";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
-import { openReportsWizard } from "./reports-wizard.js?v=20260907-rn2";
+import { openReportsWizard } from "./reports-wizard.js?v=20260907-t84";
 
 const root = document.querySelector("#reports-page-root");
 const PAGE_SIZE = 25;
@@ -40,7 +40,7 @@ function paramsFromQuery(query) {
   return {
     client: query.get("client") || "",
     kind: ["monthly", "yearly", "custom_months", "comparator"].includes(query.get("kind")) ? query.get("kind") : "",
-    source: ["api", "pdf"].includes(query.get("source")) ? query.get("source") : "",
+    source: ["api", "pdf", "google_api"].includes(query.get("source")) ? query.get("source") : "",
     status: ["queued", "running", "succeeded", "partial", "failed", "cancelled"].includes(query.get("status")) ? query.get("status") : "",
     // Scope (task-47 §3.5 point 6): `all` is the neutral default (single
     // runs + batch cards, never a batch's own children as separate rows —
@@ -442,7 +442,9 @@ function renderRow(run) {
 }
 
 function filesCountLabel(run) {
-  if (run.status === "queued" || (run.status === "running" && run.source === "api")) return "—";
+  // Only the PDF path writes files while it runs (one per period); the API
+  // and Google API paths produce just the final XLSX.
+  if (run.status === "queued" || (run.status === "running" && run.source !== "pdf")) return "—";
   const pdfCount = run.source === "pdf" ? run.periods_done : 0;
   const parts = [];
   if (pdfCount) parts.push(`<strong>${pdfCount}</strong> PDF`);

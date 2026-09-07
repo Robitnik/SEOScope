@@ -1615,6 +1615,10 @@
             ],
             "title": "Finished At"
           },
+          "force": {
+            "title": "Force",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -1760,7 +1764,8 @@
           "target_url",
           "progress_message",
           "cancel_requested",
-          "queue_position"
+          "queue_position",
+          "force"
         ],
         "title": "ArchiveCaptureDTO",
         "type": "object"
@@ -2372,7 +2377,8 @@
               "first",
               "changed",
               "weekly_refresh",
-              "status_changed"
+              "status_changed",
+              "forced"
             ],
             "title": "Store Reason",
             "type": "string"
@@ -2492,7 +2498,8 @@
               "first",
               "changed",
               "weekly_refresh",
-              "status_changed"
+              "status_changed",
+              "forced"
             ],
             "title": "Store Reason",
             "type": "string"
@@ -4059,6 +4066,34 @@
         "title": "ComparisonMode",
         "type": "string"
       },
+      "ConsentRequest": {
+        "properties": {
+          "request_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "title": "ConsentRequest",
+        "type": "object"
+      },
+      "ConsentResponse": {
+        "properties": {
+          "redirect_to": {
+            "title": "Redirect To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirect_to"
+        ],
+        "title": "ConsentResponse",
+        "type": "object"
+      },
       "ContentQaFindingDTO": {
         "properties": {
           "check": {
@@ -5436,6 +5471,10 @@
             "title": "Groups",
             "type": "array"
           },
+          "mcp_url": {
+            "title": "Mcp Url",
+            "type": "string"
+          },
           "prompts": {
             "items": {
               "$ref": "#/components/schemas/McpPromptSpec"
@@ -5481,6 +5520,7 @@
           "groups",
           "tools",
           "all_tools_prompt",
+          "mcp_url",
           "prompts",
           "resources",
           "starter_prompts"
@@ -8362,6 +8402,17 @@
             ],
             "title": "Client Name"
           },
+          "lookup_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lookup Error"
+          },
           "matches": {
             "items": {
               "$ref": "#/components/schemas/NinjaReportCandidateDTO"
@@ -8391,6 +8442,17 @@
             "default": false,
             "title": "Others Truncated",
             "type": "boolean"
+          },
+          "snapshot_age_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Age Seconds"
           }
         },
         "required": [
@@ -8778,6 +8840,43 @@
           "profile"
         ],
         "title": "PageInventoryTableDTO",
+        "type": "object"
+      },
+      "PendingAuthorizationDTO": {
+        "properties": {
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "redirect_host": {
+            "title": "Redirect Host",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "request_id",
+          "client_name",
+          "redirect_host",
+          "scopes",
+          "expires_at"
+        ],
+        "title": "PendingAuthorizationDTO",
         "type": "object"
       },
       "PeriodKind": {
@@ -10360,7 +10459,8 @@
           "source": {
             "enum": [
               "api",
-              "pdf"
+              "pdf",
+              "google_api"
             ],
             "title": "Source",
             "type": "string"
@@ -10468,7 +10568,8 @@
           "source": {
             "enum": [
               "api",
-              "pdf"
+              "pdf",
+              "google_api"
             ],
             "title": "Source",
             "type": "string"
@@ -10878,7 +10979,8 @@
           "source": {
             "enum": [
               "api",
-              "pdf"
+              "pdf",
+              "google_api"
             ],
             "title": "Source",
             "type": "string"
@@ -11090,7 +11192,8 @@
           "source": {
             "enum": [
               "api",
-              "pdf"
+              "pdf",
+              "google_api"
             ],
             "title": "Source",
             "type": "string"
@@ -11246,7 +11349,8 @@
           "source": {
             "enum": [
               "api",
-              "pdf"
+              "pdf",
+              "google_api"
             ],
             "title": "Source",
             "type": "string"
@@ -15728,6 +15832,69 @@
           }
         },
         "summary": "Start All Archive Captures",
+        "tags": [
+          "web-archive"
+        ]
+      }
+    },
+    "/api/v1/archive/captures/force": {
+      "post": {
+        "description": "\"Recapture\" \u2014 stores a new snapshot for every tracked URL of this\nclient, even the ones that didn't change, instead of `confirm_snapshot`\nbumping the old row's `confirmed_count` (task-80). Same queue, same\nlive-progress page as \"Capture now\" \u2014 only the `force` flag differs.",
+        "operationId": "start_forced_archive_capture_api_v1_archive_captures_force_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveCaptureAcceptedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Forced Archive Capture",
         "tags": [
           "web-archive"
         ]
@@ -21851,6 +22018,89 @@
         ]
       }
     },
+    "/api/v1/oauth/consent": {
+      "post": {
+        "operationId": "approve_api_v1_oauth_consent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve",
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
+    "/api/v1/oauth/pending/{request_id}": {
+      "get": {
+        "operationId": "get_pending_api_v1_oauth_pending__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingAuthorizationDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Pending",
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
     "/api/v1/providers/status": {
       "get": {
         "operationId": "get_providers_status_api_v1_providers_status_get",
@@ -22601,6 +22851,16 @@
             "schema": {
               "title": "Client Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
             }
           }
         ],

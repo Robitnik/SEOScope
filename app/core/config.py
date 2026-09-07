@@ -349,6 +349,14 @@ class Settings(BaseSettings):
     # batch. `ReportScheduler` now runs standalone and batch-sourced API runs
     # in two independent pools of this size.
     reports_batch_client_workers: int = 3
+    # The direct Google API report source (task-84 §3.3). Its own scheduler
+    # pool, like `reports_batch_client_workers` above: a `source="google_api"`
+    # run is claimed by `source` string, so without a dedicated `_fill` call
+    # it would sit `queued` forever. Higher than `reports_api_workers` because
+    # this path has no browser and no Reporting Ninja 300/min account limit —
+    # only GA4's per-property quota, which our ~2 requests/period/client is
+    # orders of magnitude under.
+    reports_google_api_workers: int = 4
     # Token-bucket ceiling on Reporting Ninja API calls, shared across the
     # whole process (task-47 §1.6/§2.3): the account's own limit is 300/min,
     # and a 14-client batch alone issues ~280 — without a limiter here, one

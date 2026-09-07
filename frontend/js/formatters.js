@@ -365,6 +365,8 @@ export const REPORT_RUN_STATUS_META = {
 export const REPORT_SOURCE_META = {
   api: { label: "API", icon: "bolt" },
   pdf: { label: "PDF", icon: "file-text" },
+  // task-84: the direct Google API source — Reporting Ninja out of the chain.
+  google_api: { label: "Google API", icon: "brand-google" },
 };
 
 // New `.state-*` tones (match/within_tolerance/mismatch) live in

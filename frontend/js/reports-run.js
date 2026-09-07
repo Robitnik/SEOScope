@@ -20,7 +20,7 @@ import {
   REPORT_CROSS_CHECK_META, REPORT_KIND_META, REPORT_RUN_STATUS_META, REPORT_SOURCE_META,
   escapeHtml, formatDateRange, formatDuration, formatDurationSeconds, formatFileSize,
   formatMetricValue, formatTimestamp, icon, isTerminal, stateClass, statusIcon,
-} from "./formatters.js?v=20260821-spin3";
+} from "./formatters.js?v=20260907-t84";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
 
 const root = document.querySelector("#reports-run-page-root");
@@ -243,7 +243,7 @@ function renderHeader() {
   const client = clientsById.get(run.client_id);
   const statusMeta = REPORT_RUN_STATUS_META[run.status] || REPORT_RUN_STATUS_META.queued;
   const kindMeta = REPORT_KIND_META[run.kind];
-  const sourceMeta = REPORT_SOURCE_META[run.source];
+  const sourceMeta = REPORT_SOURCE_META[run.source] || REPORT_SOURCE_META.api;
   const canCancel = !isTerminal(run.status);
   const foreign = run.source === "pdf" && isForeignBinding(run.ninja_report_name, client?.name);
   // task-49 §2.5 wants Rebuild at the RUN level for any finished run, not

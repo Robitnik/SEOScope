@@ -14,7 +14,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 ReportKind = Literal["monthly", "yearly", "custom_months", "comparator"]
-ReportSource = Literal["api", "pdf"]
+# `api`/`pdf` are two transports to ONE provider (Reporting Ninja: its REST API
+# and its browser cabinet). `google_api` (task-84) is the first source that
+# leaves Reporting Ninja out of the chain entirely — GSC Search Analytics API
+# and GA4 Data API directly. Plain-`String` column (see module docstring): the
+# added value never needs a migration, and existing `api`/`pdf` rows stay valid.
+ReportSource = Literal["api", "pdf", "google_api"]
 ReportStatus = Literal["queued", "running", "succeeded", "partial", "failed", "cancelled"]
 CrossCheckStatus = Literal["match", "within_tolerance", "mismatch"]
 YearlySpan = Literal["ytd", "full"]

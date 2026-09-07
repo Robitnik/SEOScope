@@ -247,7 +247,7 @@ tr:has(.reports-cross-check.state-mismatch) { border-left: 3px solid var(--dange
 .reports-period-preview__row span { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .reports-period-preview__partial { margin-left: auto; }
 
-.reports-source-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.reports-source-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
 .reports-source-card {
   display: flex; flex-direction: column; gap: 6px; align-items: start; text-align: left;
   padding: 20px; border: 1px solid var(--line); background: var(--canvas-raised); cursor: pointer;
