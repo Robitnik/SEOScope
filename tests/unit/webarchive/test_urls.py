@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.webarchive.urls import (
+    frontier_decision,
     is_analytics_iframe_src,
     is_asset_like_url,
     looks_like_binary_content_type,
@@ -180,3 +181,47 @@ def test_is_analytics_iframe_src_honors_custom_host_set() -> None:
     # A custom set REPLACES the built-in default for this call, matching
     # `Settings.archive_iframe_analytics_hosts` being the canonical list.
     assert not is_analytics_iframe_src("https://googletagmanager.com/ns.html", hosts=custom)
+
+
+# --- task-82 §2: frontier_decision — a discovered link can be a button ----
+
+
+def test_frontier_decision_drops_action_links() -> None:
+    assert frontier_decision("https://example.com/product/?add-to-cart=818653") is None
+    assert frontier_decision("https://example.com/cart/?wc-ajax=get_refreshed_fragments") is None
+    assert frontier_decision("https://example.com/post/?replytocom=42") is None
+
+
+def test_frontier_decision_strips_tracking_params() -> None:
+    assert (
+        frontier_decision("https://example.com/x?utm_source=a&utm_medium=b")
+        == "https://example.com/x"
+    )
+    assert (
+        frontier_decision("https://example.com/x?utm_source=a&page=2")
+        == "https://example.com/x?page=2"
+    )
+    assert frontier_decision("https://example.com/x?fbclid=abc123") == "https://example.com/x"
+
+
+def test_frontier_decision_keeps_filter_and_sort_params() -> None:
+    # These select genuinely DIFFERENT content — task-82 §2, never stripped.
+    assert (
+        frontier_decision("https://example.com/shop?orderby=price")
+        == "https://example.com/shop?orderby=price"
+    )
+    kept = frontier_decision(
+        "https://example.com/shop?taxonomy=product_shipping_class&term=123"
+    )
+    assert kept == "https://example.com/shop?taxonomy=product_shipping_class&term=123"
+
+
+def test_frontier_decision_keeps_a_plain_url() -> None:
+    url = "https://example.com/about/"
+    assert frontier_decision(url) == url  # byte-identical, not re-encoded
+
+
+def test_frontier_decision_action_param_wins_over_a_real_sort_param() -> None:
+    # The measured live shape (task-82 §0.1): the action param almost always
+    # rides ALONGSIDE a real sort/filter one — the whole link is a button.
+    assert frontier_decision("https://example.com/shop/?orderby=price&add-to-cart=1") is None

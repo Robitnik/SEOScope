@@ -71,6 +71,43 @@ class TestNoiseIsIgnored:
         b = BASE_HTML.replace("\n", "\n  ")
         assert content_fingerprint(BASE_HTML) == content_fingerprint(b)
 
+    def test_hidden_input_value_changes(self) -> None:
+        """task-82 §0.3/§3: Gravity Forms mints a fresh encrypted
+        `gform_currency` on every render — the ONE noise source measured
+        live in all 5 consecutive same-content snapshot pairs of a real
+        client homepage.
+        """
+        a = BASE_HTML.replace(
+            "</body>",
+            '<input type="hidden" name="gform_currency" '
+            'value="vxJFVayIQbIAh0rlGL+wfv8co8lVo5joEZPmK4VG2SvIOCGyi7o+fM4REvTCFtY4GU0S0y1YD1oLDud83zcs7q1NEV0N4mtdo+NF010sK1kA/0E=">'
+            "</body>",
+        )
+        b = BASE_HTML.replace(
+            "</body>",
+            '<input type="hidden" name="gform_currency" '
+            'value="x+gIHIBF/wbPoVHqpuG0wwTOXukzpU9xY6GKZPKv/vSoDOh/7Nw4E+HbtUc2Hu8BTd4fhfFncUFmzbV56nYIJrEaZwSWNF58me+tyd97BVFpFmo=">'
+            "</body>",
+        )
+        assert content_fingerprint(a) == content_fingerprint(b)
+
+    def test_base64_token_changes(self) -> None:
+        """task-82 §3: `_HEXISH_RE` only matches hex — a per-render token
+        using the full base64 alphabet (`+`, `/`, mixed case) needs its
+        own collapse, same as a hex nonce.
+        """
+        a = _mutate(
+            BASE_HTML,
+            '<meta name="description"',
+            '<meta name="csrf-token" content="Zm9vYmFyYmF6cXV1eGZyZWQxMjM0NTY3ODkwYWJjZGVm">'
+            '\n<meta name="description"',
+        )
+        b = a.replace(
+            "Zm9vYmFyYmF6cXV1eGZyZWQxMjM0NTY3ODkwYWJjZGVm",
+            "d29ybGRoZWxsbzk4NzY1NDMyMTBmZWRjYmF6eHV1cXZlcg==",
+        )
+        assert content_fingerprint(a) == content_fingerprint(b)
+
 
 class TestRealEditsAreCaught:
     def test_title_changes(self) -> None:
@@ -92,3 +129,13 @@ class TestRealEditsAreCaught:
     def test_new_link_added(self) -> None:
         b = BASE_HTML.replace("</body>", '<a href="/products/new-item">New item</a></body>')
         assert content_fingerprint(BASE_HTML) != content_fingerprint(b)
+
+    def test_visible_input_value_changes(self) -> None:
+        """task-82 §3: the hidden-input exclusion must stay exactly as
+        narrow as it says — a VISIBLE field's `value` (a pre-filled
+        default, a button label) is something a visitor actually sees and
+        must still register as a real change.
+        """
+        a = BASE_HTML.replace("</body>", '<input type="text" value="Search"></body>')
+        b = a.replace('value="Search"', 'value="Find a product"')
+        assert content_fingerprint(a) != content_fingerprint(b)

@@ -10,7 +10,7 @@ bare-domain form for the exact same page (live-checked task-59 §0.6).
 
 from __future__ import annotations
 
-from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit, urlunsplit
 
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
@@ -60,6 +60,70 @@ def normalize_url(url: str, *, keep_query: bool = True) -> str:
     if query:
         key = f"{key}?{query}"
     return key
+
+
+# task-82 §2: parameters that mark an ACTION a visitor triggers ("add this
+# to the cart", "remove this line item"), not a page they land on. A link
+# carrying one of these is a button, not an address — `frontier_decision`
+# below refuses it into the crawl frontier ENTIRELY (not "cleaned": the
+# cleaned version — the product page itself — is already in the frontier
+# from the sitemap). Live-measured (task-82 §0.1): 2944/3194 (92%) of
+# LAXTON's frontier was exactly this, one WooCommerce product page
+# multiplied by every `?add-to-cart=<id>` a "buy" button on it ever carried.
+_FRONTIER_ACTION_PARAMS = frozenset(
+    {
+        "add-to-cart", "remove_item", "undo_item", "removed_item",
+        "wc-ajax", "replytocom", "share", "print", "download",
+    }
+)
+# Parameters that mark WHO sent the visit, not WHAT page it is — stripped
+# (not refused) so `?utm_source=x` and the bare address collapse into one
+# frontier row instead of forking it in two. Deliberately a SEPARATE set
+# from `_TRACKING_PARAMS` above: that one feeds `normalize_url`, which is
+# every already-stored row's identity key — widening it would silently
+# change the on-disk identity of every URL ever captured. This one only
+# decides what a NEW frontier row's address looks like going forward.
+_FRONTIER_TRACKING_PARAM_PREFIXES = ("utm_", "pk_", "mtm_")
+_FRONTIER_TRACKING_PARAMS = frozenset(
+    {"fbclid", "gclid", "msclkid", "gbraid", "wbraid", "_ga", "ref"}
+)
+
+
+def frontier_decision(url: str) -> str | None:
+    """Whether a same-host link discovered by crawling a page
+    (`_discover_same_host_links`, task-59 §1.9) should become a new tracked
+    URL — and if so, under which (possibly cleaned) address.
+
+    `None` means: do not add this to the frontier at all — it is an action,
+    not a page (task-82 §0.1). Otherwise the URL comes back with any
+    pure-tracking query parameter stripped. Sort/filter parameters
+    (`orderby`, `taxonomy`, `term`, ...) are left exactly alone — they
+    select genuinely different content, and in practice they arrive
+    together with an action param often enough that the action check above
+    already screens most of them out; a clean `?orderby=price` link is a
+    real, distinct page and stays.
+
+    Only for CRAWL-discovered links — a sitemap-seeded URL
+    (`seed_urls_from_monitor`, `source="sitemap"`) never runs through this:
+    the client put it there themselves, which already IS the "this is a
+    page" signal, and second-guessing it would be unrequested policy
+    overreach on data the client controls.
+    """
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    if any(key.lower() in _FRONTIER_ACTION_PARAMS for key, _value in pairs):
+        return None
+    kept = [
+        (key, value)
+        for key, value in pairs
+        if key.lower() not in _FRONTIER_TRACKING_PARAMS
+        and not key.lower().startswith(_FRONTIER_TRACKING_PARAM_PREFIXES)
+    ]
+    if kept == pairs:
+        return url  # nothing to strip — hand back the exact original string
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), parts.fragment))
 
 
 def trailing_slash_variant(url_key: str) -> str | None:

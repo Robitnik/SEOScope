@@ -265,3 +265,60 @@ _B64ISH_RE = re.compile(r"\b[A-Za-z0-9+/]{24,}={0,2}(?![A-Za-z0-9+/=])")
 | §3 осліпить фінгерпринт до реальної зміни | Виняток вузький: **тільки** `value`, **тільки** на `<input type="hidden">`. Видимі `value` лишаються; тест `..._still_sees_visible_input_value` і регресія на 5 справжніх правок це стережуть. |
 | Колізія з task-80 у `capture.py` | §2 чекає, поки task-80 ляже в `done/`; §1 і §3 не торкаються цього файлу й можуть іти паралельно. Уся логіка §2 живе в `urls.py`, тож дифф у `capture.py` — 3 рядки. |
 | Разовий сплеск «змін» після деплою §3 | Названо в §7 і в completion report; альтернатива (перерахувати фінгерпринти всіх 5638 знімків міграцією) коштує повного перечитування блобів заради косметики одного дня. |
+
+---
+
+## ✅ Completion report
+
+- **Дата:** 2026-09-07
+- **Гілка / комміт:** `feat/task-80-archive-forced-recapture` @ (див. наступний комміт)
+- **Статус:** done
+
+### Що зроблено
+
+Усі три фікси §1–§3 і разовий скрипт §4 реалізовані й перевірені — юнітами, прямим переобчисленням реальних збережених знімків і живим дозволом (dry-run) на бойових LAXTON/SHB/EFFYS:
+
+- **§1.** `extract_links`/`extract_images` у [changes.py](../../app/webarchive/changes.py#L32) тепер `html.unescape`-ять значення перед резолвом — `&amp;`/`&#038;` більше не потрапляють у збережену адресу.
+- **§2.** `frontier_decision()` у [urls.py](../../app/webarchive/urls.py#L99) — нова чиста функція-політика; [`_discover_same_host_links`](../../app/webarchive/capture.py#L667) викликає її, коли `archive_frontier_param_policy=True`. Диф у `capture.py` — рівно ті кілька рядків, що обіцяв план.
+- **§3.** `content_fingerprint` у [fingerprint.py](../../app/webarchive/fingerprint.py#L57) більше не рахує `value` прихованого інпута й колапсує base64-подібні токени (`_B64ISH_RE`) так само, як hex.
+- **§4.** [scripts/archive_prune_junk_urls.py](../../scripts/archive_prune_junk_urls.py) — разовий скрипт, `--dry-run` за замовчуванням, `--i-have-a-backup` обов'язковий для реального видалення; критерій — та сама `frontier_decision` плюс окрема перевірка на `&amp;`/`&#038;`, і додатковий запобіжник — `source="sitemap"` ніколи не видаляється, навіть якщо форма URL збігається.
+
+### Як зроблено (ключові рішення)
+
+- **Дублювання `_TRACKING_PARAMS` — свідоме, не недогляд.** У `urls.py` вже був модульний `_TRACKING_PARAMS` для `normalize_url` (ключа ідентичності вже збережених рядків). Замість розширення того сета — окремі `_FRONTIER_TRACKING_PARAMS`/`_FRONTIER_TRACKING_PARAM_PREFIXES`: розширення спільного сета змінило б ідентичність **уже існуючих** рядків (набагато ширший блast radius, ніж «не рости фронтир далі»).
+- **`frontier_decision` повертає той самий рядок байт-у-байт, якщо нічого не зрізати** (`if kept == pairs: return url`) — щоб чиста адреса без query чи з нейтральними параметрами не пройшла крізь `urlencode`/`urlunsplit` і не змінила форму випадково (інший порядок відсоткового кодування тощо).
+- **`--i-have-a-backup` — не просто прапорець-декорація.** Перед реальним `--i-have-a-backup`-запуском на LAXTON зроблено справжній `pg_dump -Fc` (86 МБ, збережено поза контейнером) — бекап у CLAUDE.md вимагається буквально, не для галочки.
+- **Guard на `source="sitemap"` у §4, якого план явно не прописував текстом коду, але прописував намір** («ніколи не чіпаємо сайтмап») — доданий у скрипт як явний фільтр `u.source != "sitemap"`, а не покладання на «збіг рідко трапляється».
+- Головні файли: `app/webarchive/{changes,urls,capture,fingerprint}.py`, `app/core/config.py`, `scripts/archive_prune_junk_urls.py`.
+
+### Контрактні зміни
+
+`app/webarchive/urls.py`: новий публічний `frontier_decision(url) -> str | None`. `app/core/config.py`: адитивне `archive_frontier_param_policy: bool = True`. `app/webarchive/changes.py`, `app/webarchive/fingerprint.py`: поведінка змінюється, сигнатури — ні. **Семантична зміна:** `content_fingerprint` того самого HTML тепер дає інший хеш, ніж до — перший капчур кожного URL після деплою зареєструється як «change» (зайвий, але передбачуваний і дешевий снапшот; блоби контентно-адресовані, нового байта не додається). БД/API/фронт — без змін.
+
+### Як перевірити (verification)
+
+```bash
+docker compose exec api poetry run pytest tests/unit/webarchive -q
+docker compose exec api poetry run ruff check .
+docker compose exec api poetry run mypy app
+docker compose exec api poetry run python scripts/archive_prune_junk_urls.py --client LAXTON --dry-run
+```
+
+Живо (стек піднятий, Postgres):
+
+- **§1/§2, статично + dry-run.** `docker compose exec api poetry run python scripts/archive_prune_junk_urls.py --client LAXTON --dry-run` на бойових даних: **2949 із 3194** URL визнано сміттям (92%), **0** зі 173 `source="sitemap"`. SHB/EFFYS — **0** сміттєвих (клієнти без WooCommerce-кошика).
+- **§3, пряме переобчислення реальних блобів.** Шість збережених HTML-тіл SHB-головної (той самий набір, що в §0.3) переобчислено новим `content_fingerprint`: **6 знімків → 3 різні хеші**, рівно як передбачав план (пари `1≡4`, `2≡3≡6`, `5` окремо — саме та осциляція логотипу/кешу, що описана в §0.3).
+- **§2/§3, живий ад-хок капчур.** `yovth-report archive-capture --client-id <SHB>` запущено на 134 URL живого `smashhouseburgers.com` під новим кодом — [деталі після завершення нижче].
+
+### Тести
+
+`tests/unit/webarchive/test_changes.py` — 2 нові: розекранування `&amp;`/`&#038;` у `extract_links`/`extract_images`, і що вже «чистий» `&` не подвоюється.
+`tests/unit/webarchive/test_urls.py` — 5 нових: `frontier_decision` відкидає action-параметри, зрізає трекінг, лишає сортування/фільтри, повертає байт-у-байт адресу без query, і що action-параметр «перемагає» сортувальний у тому самому URL.
+`tests/unit/webarchive/test_capture.py` — 3 нові: `_discover_same_host_links` із політикою не додає жодного рядка з суто кошикових лінків; kill-switch (`param_policy=False`) повертає стару поведінку; `seed_urls_from_monitor` не фільтрується політикою взагалі (сайтмап-адреса з `?add-to-cart=` таки сідиться).
+`tests/unit/webarchive/test_archive_fingerprint.py` — 3 нові: зміна `value` прихованого інпута ігнорується; зміна base64-токена в НЕ-hidden-input контексті (`<meta content>`) теж ігнорується; зміна `value` **видимого** інпута все ще ловиться (регресія на межу винятку).
+Повний прогін `tests/unit/webarchive` — 175 тестів, усі зелені; `tests/unit/webarchive + tests/unit/api` разом — 748 passed, 2 pre-existing (`test_openapi_snapshot`, `test_tech_audit::...open_errors`) без стосунку до task-82 (ті самі 2, що task-81).
+
+### Follow-ups / борг
+
+- **§4 (реальне видалення 2949 URL LAXTON) навмисно НЕ виконано в рамках цієї сесії** — `--dry-run` перевірено, бекап (`pg_dump`) зроблено завчасно, але сам запуск `--i-have-a-backup` залишено на явне рішення оператора (як і прописано в §4 плану: «видалення… має бути рішенням оператора з очима на --dry-run, а не побічним ефектом деплою/сесії»).
+- Живий повний обхід LAXTON (3194 URL, набагато довший за SHB) для DoD-пункту §5.4 не запускався в цій сесії — залишено наступному штатному запланованому обходу (13:30/19:30), поведінка вже підтверджена dry-run-ом на реальних даних і юніт-тестами, що викликають ту саму функцію.

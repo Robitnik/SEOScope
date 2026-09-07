@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.webarchive.changes import diff_fields, snapshot_fields
+from app.webarchive.changes import diff_fields, extract_images, extract_links, snapshot_fields
 
 OLD_HTML = """<html><head><title>Old Title</title>
 <meta name="description" content="Old desc"></head>
@@ -59,3 +59,26 @@ def test_noindex_transition_detected() -> None:
     assert diff is not None
     assert "noindex" in diff.change_kinds
     assert diff.summary["noindex"] == {"old": False, "new": True}
+
+
+# --- task-82 §1: WordPress escapes `&` in href/src; resolve the real URL ---
+
+
+def test_extract_links_unescapes_named_and_numeric_entities() -> None:
+    html = (
+        '<a href="/x/?a=1&amp;b=2">A</a>'
+        '<a href="/y/?taxonomy=product_shipping_class&#038;term=123">B</a>'
+        '<a href="/z/?a=1&b=2">C</a>'  # already a bare `&` — must not double-escape
+    )
+    links = extract_links(html, "https://example.com/")
+    assert links == {
+        "https://example.com/x/?a=1&b=2",
+        "https://example.com/y/?taxonomy=product_shipping_class&term=123",
+        "https://example.com/z/?a=1&b=2",
+    }
+
+
+def test_extract_images_unescapes_entities() -> None:
+    html = '<img src="/img.php?w=100&amp;h=200">'
+    images = extract_images(html, "https://example.com/")
+    assert images == {"https://example.com/img.php?w=100&h=200"}

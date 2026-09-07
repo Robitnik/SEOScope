@@ -46,7 +46,12 @@ from app.webarchive import storage
 from app.webarchive.db_retry import commit_with_retry
 from app.webarchive.fingerprint import content_fingerprint
 from app.webarchive.heartbeat import refresh_heartbeat_best_effort
-from app.webarchive.urls import is_asset_like_url, looks_like_binary_content_type, normalize_url
+from app.webarchive.urls import (
+    frontier_decision,
+    is_asset_like_url,
+    looks_like_binary_content_type,
+    normalize_url,
+)
 from app.webarchive.writequeue import ArchiveWriteController
 
 logger = logging.getLogger(__name__)
@@ -645,7 +650,10 @@ def capture_url(
             )
 
     repo.touch_url(archive_url, observed_at=now, snapshot_written=True)
-    _discover_same_host_links(repo, client, archive_url, new_fields.links)
+    _discover_same_host_links(
+        repo, client, archive_url, new_fields.links,
+        param_policy=settings.archive_frontier_param_policy,
+    )
     return UrlCaptureResult(
         outcome="new",
         bytes_stored=blob.gzip_size_bytes,
@@ -656,7 +664,12 @@ def capture_url(
 
 
 def _discover_same_host_links(
-    repo: WebArchiveRepository, client: Client, archive_url: ArchiveUrl, links: frozenset[str]
+    repo: WebArchiveRepository,
+    client: Client,
+    archive_url: ArchiveUrl,
+    links: frozenset[str],
+    *,
+    param_policy: bool = True,
 ) -> None:
     """Same-host links found while parsing an already-fetched page become
     tracked URLs (`source="link"`) for the NEXT capture pass (task-59 §1.9)
@@ -664,6 +677,12 @@ def _discover_same_host_links(
     links (CDNs, social, the client's OWN other domains) are deliberately
     never followed here; the monitor's own sitemap seed
     (`seed_urls_from_monitor`) is the only OTHER source of new URLs.
+
+    `param_policy` is `Settings.archive_frontier_param_policy` (task-82
+    §2) — a kill-switch, same class as `archive_live_iframes`: `False`
+    reverts to following every same-host link byte-for-byte, including
+    action links (`?add-to-cart=…`) that live-measured 92% of one client's
+    frontier (task-82 §0.1).
     """
     page_host = urlsplit(archive_url.url).hostname
     if not page_host:
@@ -676,6 +695,11 @@ def _discover_same_host_links(
             # host link but not a page a visitor lands on — see
             # `app.webarchive.urls`'s module note (task-59, 2026-09-04).
             continue
+        if param_policy:
+            decided = frontier_decision(link)
+            if decided is None:
+                continue
+            link = decided
         key = normalize_url(link)
         if repo.find_url(client.id, key) is None:
             repo.get_or_create_url(client.id, link, key, source="link")

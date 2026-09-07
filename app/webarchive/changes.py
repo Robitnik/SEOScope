@@ -15,6 +15,7 @@ from __future__ import annotations
 import difflib
 import re
 from dataclasses import dataclass
+from html import unescape
 
 from app.monitor.page import extract_signals
 from app.webarchive.urls import resolve
@@ -32,7 +33,15 @@ _MAX_EXAMPLES = 20
 def extract_links(html: str, base_url: str) -> set[str]:
     found: set[str] = set()
     for raw in _ANCHOR_HREF_RE.findall(html):
-        absolute = resolve(base_url, raw)
+        # WordPress (among others) escapes `&` in an `href` attribute value
+        # — both the named (`&amp;`) and numeric (`&#038;`) form. Without
+        # this, a multi-param link like `?orderby=price&amp;add-to-cart=1`
+        # gets resolved and archived VERBATIM, under a query parameter
+        # literally named `amp;add-to-cart` — a URL that has never existed
+        # on the real site (task-82 §0.2: 1875 such rows measured live in
+        # LAXTON's frontier). `unescape` on a value that already has a
+        # bare `&` is a no-op (nothing to match), so this is safe either way.
+        absolute = resolve(base_url, unescape(raw))
         if absolute is not None:
             found.add(absolute)
     return found
@@ -41,7 +50,7 @@ def extract_links(html: str, base_url: str) -> set[str]:
 def extract_images(html: str, base_url: str) -> set[str]:
     found: set[str] = set()
     for raw in _IMG_SRC_RE.findall(html):
-        absolute = resolve(base_url, raw)
+        absolute = resolve(base_url, unescape(raw))
         if absolute is not None:
             found.add(absolute)
     return found

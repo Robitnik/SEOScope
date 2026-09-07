@@ -57,11 +57,20 @@ _KEPT_ATTRS = frozenset(
 _HEXISH_RE = re.compile(
     r"(?i)\b(?:[0-9a-f]{8,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b"
 )
+# task-82 §3: a base64-encoded per-render token (Gravity Forms' own
+# `gform_currency` hidden-field value is exactly this — an encrypted
+# payload, freshly minted on every render) uses the FULL base64 alphabet
+# (`+`, `/`, mixed case), which `_HEXISH_RE` above cannot see at all —
+# `[0-9a-f]{8,}` only matches hex. Applied BEFORE `_HEXISH_RE` so a
+# shorter, pure-hex nonce elsewhere in the same value still gets collapsed
+# by that regex afterward instead of surviving as a leftover fragment.
+_B64ISH_RE = re.compile(r"\b[A-Za-z0-9+/]{24,}={0,2}(?![A-Za-z0-9+/=])")
 _LONGNUM_RE = re.compile(r"\b\d{9,}\b")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _normalize_value(value: str) -> str:
+    value = _B64ISH_RE.sub("#", value)
     value = _HEXISH_RE.sub("#", value)
     value = _LONGNUM_RE.sub("#", value)
     return _WHITESPACE_RE.sub(" ", value).strip()
@@ -79,10 +88,21 @@ class _FingerprintParser(HTMLParser):
             src = dict(attrs).get("src")
             self.tokens.append(f"<{tag} src={_normalize_value(src or '')}>")
             return
+        attrs_dict = dict(attrs)
+        is_hidden_input = tag == "input" and (attrs_dict.get("type") or "").lower() == "hidden"
         kept = sorted(
             (name, _normalize_value(value or ""))
             for name, value in attrs
             if name in _KEPT_ATTRS
+            # A hidden input's `value` is FORM STATE (a CSRF token, an
+            # encrypted per-render payload like Gravity Forms' own
+            # `gform_currency`) rather than content — task-82 §0.3,
+            # live-measured as the one noise source present in ALL 5
+            # consecutive same-content snapshot pairs of one client's
+            # homepage. A VISIBLE input's `value` (a pre-filled field, a
+            # button label) still enters the fingerprint — it's something
+            # a visitor actually sees.
+            and not (is_hidden_input and name == "value")
         )
         self.tokens.append("<" + tag + "".join(f" {name}={value}" for name, value in kept) + ">")
 

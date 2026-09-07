@@ -494,6 +494,15 @@ class Settings(BaseSettings):
     # override next to the shim tag rather than editing `class="..."`
     # attributes with a regex.
     archive_replay_fixup_css: bool = True
+    # task-82 §2: a same-host link the crawler discovers can be a button,
+    # not an address — `?add-to-cart=<id>` on a WooCommerce product page
+    # was live-measured as 92% of one client's entire frontier (task-82
+    # §0.1), each one a distinct row that never gets captured and never
+    # goes away. `frontier_decision` refuses action-shaped links into the
+    # frontier entirely and strips pure-tracking query params from the
+    # rest; a kill-switch, same class as `archive_live_iframes`, in case a
+    # client's markup uses one of these parameter names for something else.
+    archive_frontier_param_policy: bool = True
 
     # task-66 §1: live-measured 2026-09-05 — `synchronous=FULL`'s default
     # cost (1.42ms/commit vs 0.02ms at NORMAL, a live-benchmarked ~70x) is

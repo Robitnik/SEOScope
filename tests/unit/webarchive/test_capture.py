@@ -597,6 +597,72 @@ def test_discover_same_host_links_skips_asset_like_urls(session):
     assert repo.find_url(client.id, "acme.example.com/gallery/photo-scaled.webp") is None
 
 
+def test_discover_links_respects_the_policy(session):
+    """task-82 §2: a page whose ONLY same-host links are e-commerce
+    action buttons must not add a single new row to the frontier —
+    live-measured as 92% of one real client's entire archive_urls table
+    (task-82 §0.1).
+    """
+    client, repo, archive_url = _seed(session)
+    before = repo.find_url(client.id, "acme.example.com/product")
+
+    capturemod._discover_same_host_links(
+        repo, client, archive_url,
+        frozenset(
+            {
+                "https://acme.example.com/product/?add-to-cart=1",
+                "https://acme.example.com/product/?add-to-cart=2",
+                "https://acme.example.com/?wc-ajax=get_refreshed_fragments",
+            }
+        ),
+    )
+    session.commit()
+
+    assert before is None
+    assert repo.find_url(client.id, "acme.example.com/product") is None
+    assert repo.find_url(client.id, "acme.example.com/product/") is None
+
+
+def test_discover_links_kill_switch_reverts_to_following_every_link(session):
+    client, repo, archive_url = _seed(session)
+
+    capturemod._discover_same_host_links(
+        repo, client, archive_url,
+        frozenset({"https://acme.example.com/product/?add-to-cart=1"}),
+        param_policy=False,
+    )
+    session.commit()
+
+    assert repo.find_url(client.id, "acme.example.com/product/?add-to-cart=1") is not None
+
+
+def test_sitemap_seed_is_not_filtered(session):
+    """task-82 §2: the policy applies ONLY to links discovered by crawling
+    an already-fetched page — a client's own sitemap listing an
+    action-shaped URL is a deliberate claim ("this is a page"), never
+    second-guessed.
+    """
+    from app.db.models import MonitorPage
+
+    client = _client(session)
+    repo = WebArchiveRepository(session)
+    session.add(
+        MonitorPage(client_id=client.id, url="https://acme.example.com/product/?add-to-cart=1")
+    )
+    session.commit()
+
+    seeded = capturemod.seed_urls_from_monitor(
+        session, repo, client, max_urls=100, write_controller=_OwnController()
+    )
+    session.commit()
+
+    assert seeded == 1
+    key = capturemod.normalize_url("https://acme.example.com/product/?add-to-cart=1")
+    archive_url = repo.find_url(client.id, key)
+    assert archive_url is not None
+    assert archive_url.source == "sitemap"
+
+
 def test_has_running_capture_blocks_a_second_manual_run(session):
     client, repo, _archive_url = _seed(session)
     running = repo.create_capture(
