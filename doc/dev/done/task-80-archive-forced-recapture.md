@@ -183,7 +183,7 @@ DTO `ArchiveCaptureDTO`/рядок черги отримують **адитив�
 ## ✅ Completion report
 
 - **Дата:** 2026-09-07
-- **Гілка / комміт:** `feat/task-80-archive-forced-recapture` @ (буде в наступному комміті)
+- **Гілка / комміт:** `feat/task-80-archive-forced-recapture` @ `496068b`
 - **Статус:** done
 
 ### Що зроблено
