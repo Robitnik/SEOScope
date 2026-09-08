@@ -1,0 +1,13 @@
+{
+  "source": "our_db_analytics_dataset_rows",
+  "client_id": "5bd8658b-d1e5-4195-8b10-1cd4c315fe58",
+  "days_gsc": 31,
+  "days_ga4_channels": 31,
+  "missing_gsc_days": [],
+  "missing_ga4_channels_days": [],
+  "clicks": 8598,
+  "impressions": 179118,
+  "conversions_organic": 1178,
+  "conversions_direct": 1202,
+  "note": "organic_users is not carried by ga4_daily_channels rows \u2014 this dataset only ever stored conversions_organic/conversions_direct, never a users split (see REPORT.md finding)."
+}

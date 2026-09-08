@@ -1,0 +1,406 @@
+{
+  "property": "sc-domain:nysapphire.com",
+  "warnings": [],
+  "index_coverage": [
+    {
+      "Reason": "Not found (404)",
+      "Source": "Website",
+      "Validation": "Failed",
+      "Trend": "",
+      "Pages": "541"
+    },
+    {
+      "Reason": "Alternate page with proper canonical tag",
+      "Source": "Website",
+      "Validation": "Failed",
+      "Trend": "",
+      "Pages": "455"
+    },
+    {
+      "Reason": "Page with redirect",
+      "Source": "Website",
+      "Validation": "Failed",
+      "Trend": "",
+      "Pages": "176"
+    },
+    {
+      "Reason": "Blocked by robots.txt",
+      "Source": "Website",
+      "Validation": "Failed",
+      "Trend": "",
+      "Pages": "77"
+    },
+    {
+      "Reason": "Excluded by ‘noindex’ tag",
+      "Source": "Website",
+      "Validation": "Failed",
+      "Trend": "",
+      "Pages": "42"
+    },
+    {
+      "Reason": "Duplicate without user-selected canonical",
+      "Source": "Website",
+      "Validation": "Failed",
+      "Trend": "",
+      "Pages": "5"
+    },
+    {
+      "Reason": "Crawled - currently not indexed",
+      "Source": "Google systems",
+      "Validation": "Failed",
+      "Trend": "",
+      "Pages": "478"
+    },
+    {
+      "Reason": "Duplicate, Google chose different canonical than user",
+      "Source": "Google systems",
+      "Validation": "Failed",
+      "Trend": "",
+      "Pages": "5"
+    },
+    {
+      "Reason": "Server error (5xx)",
+      "Source": "Website",
+      "Validation": "Not Started",
+      "Trend": "",
+      "Pages": "2"
+    },
+    {
+      "Reason": "Blocked due to other 4xx issue",
+      "Source": "Website",
+      "Validation": "Not Started",
+      "Trend": "",
+      "Pages": "1"
+    },
+    {
+      "Reason": "Redirect error",
+      "Source": "Website",
+      "Validation": "Started",
+      "Trend": "",
+      "Pages": "1"
+    },
+    {
+      "Reason": "Discovered - currently not indexed",
+      "Source": "Google systems",
+      "Validation": "Started",
+      "Trend": "",
+      "Pages": "66"
+    }
+  ],
+  "sitemaps": [
+    {
+      "Sitemap": "https://www.nysapphire.com/sitemap.xml",
+      "Type": "Sitemap index",
+      "Submitted": "Feb 18, 2025",
+      "Last read": "Sep 7, 2026",
+      "Status": "Success",
+      "Discovered pages": "487",
+      "Discovered videos": "0",
+      "": ""
+    },
+    {
+      "Sitemap": "https://www.nysapphire.com/sitemap_index.xml",
+      "Type": "Sitemap index",
+      "Submitted": "Sep 3, 2024",
+      "Last read": "Sep 8, 2026",
+      "Status": "Success",
+      "Discovered pages": "487",
+      "Discovered videos": "0",
+      "": ""
+    }
+  ],
+  "removals": [],
+  "cwv_mobile": [
+    {
+      "Severity": "warning\nNeed improvement",
+      "Issue": "LCP issue: longer than 2.5s (mobile)",
+      "Validation": "Not Started",
+      "Trend": "",
+      "URLs": "114"
+    }
+  ],
+  "cwv_desktop": [],
+  "links": {
+    "external_top_pages": [
+      {
+        "cells": [
+          "https://www.nysapphire.com/",
+          "1,176"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/adult-packages/adult-star-packages/",
+          "213"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/sapphire-nyc-reservations/",
+          "93"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/adult-packages/",
+          "92"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/gentlemens-club-locations/sapphire-times-square/",
+          "48"
+        ]
+      }
+    ],
+    "external_top_sites": [
+      {
+        "cells": [
+          "avn.com",
+          "308"
+        ]
+      },
+      {
+        "cells": [
+          "candy.adult",
+          "152"
+        ]
+      },
+      {
+        "cells": [
+          "xbiz.com",
+          "143"
+        ]
+      },
+      {
+        "cells": [
+          "posh.vip",
+          "116"
+        ]
+      },
+      {
+        "cells": [
+          "candy.porn",
+          "96"
+        ]
+      }
+    ],
+    "external_top_text": [
+      {
+        "cells": [
+          "here"
+        ]
+      },
+      {
+        "cells": [
+          "nysapphire com"
+        ]
+      },
+      {
+        "cells": [
+          "https nysapphire com"
+        ]
+      },
+      {
+        "cells": [
+          "http www nysapphire com"
+        ]
+      },
+      {
+        "cells": [
+          "(empty)"
+        ]
+      }
+    ],
+    "internal_top_pages": [
+      {
+        "cells": [
+          "https://www.nysapphire.com/sins/",
+          "767"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/",
+          "622"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/all-events/sapphire-60/",
+          "566"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/all-events/sapphire-times-square/",
+          "563"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/all-events/sapphire-39/",
+          "554"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/contact-sapphire-new-york/",
+          "438"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/adult-packages/",
+          "437"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/gentlemens-club-locations/",
+          "435"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/sapphire-strip-club-jobs/",
+          "434"
+        ]
+      },
+      {
+        "cells": [
+          "https://www.nysapphire.com/adult-packages/tables-and-cabana-packages/",
+          "433"
+        ]
+      }
+    ]
+  },
+  "https": [],
+  "video_index": [
+    {
+      "Reason": "Video isn't on a watch page",
+      "Validation": "Not Started",
+      "Trend": "",
+      "Videos": "3"
+    }
+  ],
+  "insights_queries": [
+    {
+      "label": "sapphire nyc",
+      "detail": "sapphire new york, saphire nyc, sapphire club nyc, nyc sapphire, sapphire ny, nysapphire, sapphires nyc, sapphire nyc events, sapphire nyc club, sapphire strip club nyc, sapphirenyc, saphire new york, ny sapphire, sapphire club ny, sapphire manhattan, saphire strip club nyc, saphhire nyc, saphire ny, sapphire gentlemen new york, club sapphire nyc, saphire club nyc, saphires nyc, sapphire club new york, sapphireny, sapphires new york, sapphire new york city, sapphire new york club, sapphire strip club ny, sapphire strip nyc, sapphire strip club new york, nyc saphire, sapphire club new york city, sapphire gentlemen's club nyc, sapphire lounge nyc, sapphire nyc strip club, nyc sapphire events, saphire lounge nyc, sapphire times square nyc gentlemen's club, new york sapphire, ny saphire, sapphire club manhattan, sapphire new york strip club, sapphires ny",
+      "trend": "down",
+      "pct_change": "8%",
+      "value": "1.09K"
+    },
+    {
+      "label": "nyc strip clubs",
+      "detail": "strip clubs nyc, new york strip club, nyc strip club, strip club nyc, strip club new york, new york strip clubs, strip clubs in nyc, strip clubs new york, strip club manhattan, strip club in new york, strip club times square, strip clubs in new york, strip club in nyc, strip clubs in manhattan, stripclub new york, stripclub nyc, new york city strip clubs, strip clubs manhattan, manhattan strip clubs, stripclubs in nyc, gentleman club nyc, gentlemen club new york, manhattan strip club, new york city strip club, nyc gentleman club, nyc stripclubs, gentleman club new york, gentlemans club nyc, gentlemen club nyc, new york strippers, strip clubs in ny, strip clubs near times square, times square strip club, gentlemens club nyc, new york stripclub, strip club in new york city, strip club new york city, strip clubs in new york city, stripclubs in new york, stripclubs nyc, full nude strip club nyc, gay strip club nyc, gentlemans club new york city, gentlemans club times square, gentlemans clubs nyc, gentlemen clubs nyc, gentlemen's club new york city, new york gentleman's club, new york gentlemans club, nyc gentlemans club, nyc stripclub, strip club in times square, strip club ny, time square strip club, gentlemen club in new york, new york gentlemen club, new york gentlemen's club, newyork strip club, ny strip clubs, nyc gentlemens club, strip bar new york, strip club in manhattan, strip club in newyork, strip club in time square, strip club manhatten, strip club near times square, strip club newyork, strip clubs in times square, strip clubs manhatten, strip clubs new york city, strip clubs ny, stripclub newyork, stripclub ny, stripclubs new york, times square strip clubs, all nude strip clubs nyc, are there strip clubs in new york, full nude strip clubs nyc, gay strip clubs in nyc, gay strip clubs new york, gay strip clubs nyc, gentleman club in nyc, gentleman club time square, gentleman club times square, gentlemans club manhattan, gentlemen club manhattan, gentlemen club manhattan new york, gentlemen's club times square, gentlemens club new york, gentlemens club ny, gentlemens clubs nyc, male strip clubs nyc, male strip show nyc, male stripper new york, manhatten strip club, new york city stripclub, new york male strip club, new york strip bar, new york stripers, new york stripper, new york striptiz club, newyork strip clubs, nude bar nyc, nude club nyc, nude strip clubs nyc, ny strip club, ny strippers, nyc gentlemen club, nyc gentlemen clubs, nyc strip joints, nyc strip.clubs, strip club in ny, strip club near msg, strip club near time square, strip club time square, strip clubs near time square, strip clubs times square, strip joints nyc, strip show in new york, strip show nyc, strip.club new york, strip.clubs nyc, stripclub in new york, stripclubs manhattan, stripper new york, strippers in nyc, strippers new york, striptease nyc, titty bar nyc, topless bar nyc, topless bars nyc, ニューヨーク ストリップバー, gentlemen's club in new york city, gentlemen's club nyc, gentlemans club new york, new york gentlemens club, new york stripclubs, nyc strip.club, strip clubs time square, gentleman club ny, gentlemen's clubs nyc, new york gentleman club, club strip new york, gentleman club in new york, gentlemen's club in new york, male strip club new york, male strip nyc, male strippers nyc, manhattan strippers, manhatten strip clubs, new york city gentlemen's club, nyc gentlemen's club, nyc strip joint, nyc stripper, strip clubs in newyork, strip clubs near times square nyc, strip clubs newyork, strip show new york, strip.club nyc, stripclub manhattan, stripper in new york, strippers in manhattan, strippers nyc, table dance new york",
+      "trend": "up",
+      "pct_change": "9%",
+      "value": "738"
+    },
+    {
+      "label": "sapphire 39",
+      "detail": "saphire 39, sapphire 39 nyc, sapphire39, sapphire nyc 39, sapphire 39 new york, sapphires 39, saphire 39 nyc, sapphire 39th, saphhire 39, sapphire 39th st",
+      "trend": "down",
+      "pct_change": "15%",
+      "value": "243"
+    },
+    {
+      "label": "sapphire times square",
+      "detail": "sapphire 60 new york, sapphire new york times square, sapphire 60 nyc, sapphire club times square, sapphire times square new york, saphire times square, sapphire time square, sapphire tsq, saphire time square, sapphire nyc 60th, sapphire time square nyc, sapphires times square, sapphire times square nyc, sapphire 60th nyc, sapphire nyc times square, sapphire times square new york ny, saphire 60 nyc, sapphire times swuare",
+      "trend": "up",
+      "pct_change": "14%",
+      "value": "185"
+    },
+    {
+      "label": "sapphire 60",
+      "detail": "saphire 60, sapphire60, sapphire midtown, sapphire 60th, sapphires 60th, sapphires 60, sapphire 39 midtown, sapphire 60th st",
+      "trend": "down",
+      "pct_change": "<1%",
+      "value": "155"
+    },
+    {
+      "label": "nyc strip clubsstrip clubs nyc, new york strip club, nyc strip club, strip club nyc, strip club new york, new york strip clubs, strip clubs in nyc, strip clubs…",
+      "detail": null,
+      "trend": "up",
+      "pct_change": "9%",
+      "value": null
+    },
+    {
+      "label": "sasha pearl\"sasha pearl\", sasha pearl.com",
+      "detail": null,
+      "trend": "up",
+      "pct_change": "800%",
+      "value": null
+    },
+    {
+      "label": "sapphire times squaresapphire 60 new york, sapphire new york times square, sapphire 60 nyc, sapphire club times square, sapphire times square new york, saphire…",
+      "detail": null,
+      "trend": "up",
+      "pct_change": "14%",
+      "value": null
+    },
+    {
+      "label": "venus valencia escort",
+      "detail": null,
+      "trend": "up",
+      "pct_change": "113%",
+      "value": null
+    },
+    {
+      "label": "sapphiresaphire, shappire, saffaire, saffire, sahpire, salphire, saphhire, sephire",
+      "detail": null,
+      "trend": "up",
+      "pct_change": "21%",
+      "value": null
+    },
+    {
+      "label": "sapphire nycsapphire new york, saphire nyc, sapphire club nyc, nyc sapphire, sapphire ny, nysapphire, sapphires nyc, sapphire nyc events, sapphire nyc club, sa…",
+      "detail": null,
+      "trend": "down",
+      "pct_change": "8%",
+      "value": null
+    },
+    {
+      "label": "sapphire 39saphire 39, sapphire 39 nyc, sapphire39, sapphire nyc 39, sapphire 39 new york, sapphires 39, saphire 39 nyc, sapphire 39th, saphhire 39, sapphire 3…",
+      "detail": null,
+      "trend": "down",
+      "pct_change": "15%",
+      "value": null
+    },
+    {
+      "label": "anissa kate escortdoes anissa kate escort, annisa kate escort, anisa kate escort, escort anissa kate",
+      "detail": null,
+      "trend": "down",
+      "pct_change": "23%",
+      "value": null
+    },
+    {
+      "label": "jennifer white escortdoes jennifer white escort, jennifer white pornstar escort",
+      "detail": null,
+      "trend": "down",
+      "pct_change": "22%",
+      "value": null
+    },
+    {
+      "label": "cindy starfall escort",
+      "detail": null,
+      "trend": "down",
+      "pct_change": "43%",
+      "value": null
+    }
+  ],
+  "enhancements": {
+    "breadcrumbs": {
+      "kind": "breadcrumbs",
+      "label": "Breadcrumbs",
+      "invalid": 0,
+      "valid": 121,
+      "issues": []
+    }
+  },
+  "merchant_opportunities": {
+    "available": false
+  }
+}

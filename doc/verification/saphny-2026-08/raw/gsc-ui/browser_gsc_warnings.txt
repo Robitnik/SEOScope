@@ -1,0 +1,39 @@
+performance_queries.csv: 1000 rows = GSC 1000-row UI cap — truncated.
+coverage[Redirect error]: skipped (TimeoutError: Locator.click: Timeout 8000ms exceeded.
+Call log:
+  - waiting for get_by_text(re.compile(r"^\s*Redirect\ error\s*$", re.IGNORECASE)).first
+    - locator resolved to <span class="PkjLuf   " title="Redirect error">…</span>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is not visible
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is not visible
+    - retrying click action
+      - waiting 100ms
+    15 × waiting for element to be visible, enabled and stable
+       - element is not visible
+     - retrying click action
+       - waiting 500ms
+).
+coverage[Discovered - currently not indexed]: skipped (TimeoutError: Locator.click: Timeout 8000ms exceeded.
+Call log:
+  - waiting for get_by_text(re.compile(r"^\s*Discovered\ \-\ currently\ not\ indexed\s*$", re.IGNORECASE)).first
+    - locator resolved to <span class="PkjLuf   " title="Discovered - currently not indexed">…</span>
+  - attempting click action
+    2 × waiting for element to be visible, enabled and stable
+      - element is not visible
+    - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is not visible
+    - retrying click action
+      - waiting 100ms
+    15 × waiting for element to be visible, enabled and stable
+       - element is not visible
+     - retrying click action
+       - waiting 500ms
+).
+cwv/desktop: no issue rows on the summary — nothing to walk (a property with no problems of this kind shows an empty table).
+enhancements/Breadcrumbs: no issue rows on the summary — nothing to walk (a property with no problems of this kind shows an empty table).
