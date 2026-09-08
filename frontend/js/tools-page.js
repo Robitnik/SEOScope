@@ -16,8 +16,8 @@ const TOOL_MODULES = {
   "alt-text": () => import("./alt-text-tool.js?v=20260821-spin3"),
   "redirects": () => import("./redirect-tool.js?v=20260821-spin3"),
   "char-counter": () => import("./char-counter-tool.js?v=20260821-spin3"),
-  "strategy-check": () => import("./strategy-check-tool.js?v=20260821-spin3"),
-  "framework-check": () => import("./framework-check-tool.js?v=20260821-spin3"),
+  "strategy-check": () => import("./strategy-check-tool.js?v=20260908-t87"),
+  "framework-check": () => import("./framework-check-tool.js?v=20260908-t87"),
   "schema-markup": () => import("./schema-markup-tool.js?v=20260821-spin3"),
 };
 

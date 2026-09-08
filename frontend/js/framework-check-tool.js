@@ -1,19 +1,32 @@
-/* Framework Check tool (task-53): upload a standalone page/blog-framework
- * brief (DOCX, no sibling framework_data.json — that path is already covered
- * by AISeoTools' own `framework-qa`), get the same rule catalog back as
- * Strategy Check. Persisted server-side (`content_qa_reports`) — list view
- * (past reports) + detail view (`#/tools/framework-check/<id>`, shareable),
- * the same two-view shape as `strategy-check-tool.js`/`alt-text-tool.js`.
+/* Framework Check tool (task-53, extended task-87): upload a standalone
+ * page/blog-framework brief (DOCX, no sibling framework_data.json — that
+ * path is already covered by AISeoTools' own `framework-qa`), get the same
+ * rule catalog back as Strategy Check. Persisted server-side
+ * (`content_qa_reports`) — list view (past reports) + detail view
+ * (`#/tools/framework-check/<id>`, shareable), the same two-view shape as
+ * `strategy-check-tool.js`/`alt-text-tool.js`.
+ *
+ * task-87 adds a Swedish locale option and a client picker with
+ * domain-based locale autofill — the same additions as Strategy Check
+ * (§1.6), minus the sheet picker: a DOCX framework has no sheets.
  */
-import { checkFramework, getFrameworkReport, getFrameworkReports } from "./api.js?v=20260821-spin3";
-import { buildToolsHash } from "./router.js?v=20260821-spin3";
-import { escapeHtml, icon } from "./formatters.js?v=20260821-spin3";
-import { panelSkeleton } from "./skeleton.js?v=20260821-spin3";
-import { renderError, renderReport, renderReportsList, wireReport } from "./content-qa-render.js?v=20260821-spin3";
+import { checkFramework, getDashboard, getFrameworkReport, getFrameworkReports } from "./api.js?v=20260908-t87";
+import { buildToolsHash } from "./router.js?v=20260908-t87";
+import { escapeHtml, icon } from "./formatters.js?v=20260908-t87";
+import { panelSkeleton } from "./skeleton.js?v=20260908-t87";
+import {
+  guessContentQaClient, guessLocaleForDomain, renderError, renderReport, renderReportsList,
+  wireReport,
+} from "./content-qa-render.js?v=20260908-t87";
 
 const TOOL_KEY = "framework-check";
 let root = null;
 let requestToken = 0;
+
+// Той самий кеш-на-модуль, що strategy-check-tool.js — окремий запит тут
+// коштував би нічого не заощаджуючи (обидва тули живуть на різних сторінках,
+// requestKey у getDashboard свій), але тримає симетрію коду однакового виду.
+let clientOptions = null;
 
 export async function initTool(mount, route) {
   root = mount;
@@ -68,29 +81,83 @@ function renderForm() {
             <option value="blog">Blog framework</option>
           </select>
         </label>
+        <label class="form-field">Client
+          <select id="cq-client"><option value="">No client</option></select>
+        </label>
         <label class="form-field">Locale
           <select id="cq-locale">
             <option value="en-US" selected>American English (en-US)</option>
             <option value="en-GB">British English (en-GB)</option>
+            <option value="sv-SE">Swedish (sv-SE)</option>
           </select>
         </label>
         <label class="form-field">Brand name(s)
           <input id="cq-brand" type="text" placeholder="e.g. Acme, Acme Software" autocomplete="off">
         </label>
       </div>
-      <p class="field-help">Framework type matters: the FAQ question-count band applies to blog
+      <p class="field-help" id="cq-client-hint">Framework type matters: the FAQ question-count band applies to blog
         frameworks only — a page framework has no FAQ minimum or maximum by design.</p>
       <p class="form-error" id="cq-form-error" role="alert"></p>
       <button class="button button--primary" type="submit" id="cq-submit">Run check</button>
     </form>`;
+
+  void fillClientOptions(body.querySelector("#cq-client"));
+  wireTouchTracking(body.querySelector("#cq-client"));
+  wireTouchTracking(body.querySelector("#cq-locale"));
+
   body.querySelector("#cq-file").addEventListener("change", (event) => {
     const [file] = event.target.files;
     body.querySelector("#cq-file-name").textContent = file ? file.name : "No file selected";
+    if (file) autofillFromFilename(file.name);
   });
   body.querySelector("#cq-form").addEventListener("submit", (event) => {
     event.preventDefault();
     void runCheck();
   });
+}
+
+function wireTouchTracking(select) {
+  select.addEventListener("change", () => {
+    select.dataset.touched = "1";
+    select.closest(".form-field")?.classList.remove("form-field--autofilled");
+  });
+}
+
+async function fillClientOptions(select) {
+  try {
+    if (clientOptions === null) {
+      const dashboard = await getDashboard({ period: "week" });
+      clientOptions = (dashboard.clients || []).map((client) => ({
+        id: client.client_id, name: client.name, domain: client.domain || "",
+      }));
+    }
+    clientOptions.forEach((client) => {
+      const option = document.createElement("option");
+      option.value = client.id;
+      option.textContent = client.name;
+      select.append(option);
+    });
+  } catch {
+    select.insertAdjacentHTML("beforeend", '<option value="" disabled>Client list unavailable</option>');
+  }
+}
+
+function autofillFromFilename(filename) {
+  if (!clientOptions) return;
+  const guess = guessContentQaClient(filename, clientOptions);
+  if (!guess) return;
+
+  const clientSelect = root.querySelector("#cq-client");
+  if (clientSelect && !clientSelect.dataset.touched) {
+    clientSelect.value = guess.id;
+    clientSelect.closest(".form-field")?.classList.add("form-field--autofilled");
+  }
+
+  const localeSelect = root.querySelector("#cq-locale");
+  if (localeSelect && !localeSelect.dataset.touched) {
+    localeSelect.value = guessLocaleForDomain(guess.domain);
+    localeSelect.closest(".form-field")?.classList.add("form-field--autofilled");
+  }
 }
 
 async function runCheck() {
@@ -107,6 +174,7 @@ async function runCheck() {
 
   const profile = {
     kind: root.querySelector("#cq-kind").value,
+    clientId: root.querySelector("#cq-client").value || null,
     locale: root.querySelector("#cq-locale").value,
     brandNames: root.querySelector("#cq-brand").value.split(",").map((s) => s.trim()).filter(Boolean),
   };
@@ -159,7 +227,7 @@ async function renderReportView(reportId) {
     const report = await getFrameworkReport(reportId);
     if (token !== requestToken) return;
     body.innerHTML = renderReport(report, { toolKey: TOOL_KEY });
-    wireReport(body);
+    wireReport(body, report);
   } catch (error) {
     if (token !== requestToken) return;
     body.innerHTML = renderError(error);

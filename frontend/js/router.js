@@ -440,7 +440,7 @@ async function activate() {
     allRoots.filter((el) => el !== toolsRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     toolsRoot?.removeAttribute("hidden");
-    const { initToolsRoute } = await import("./tools-page.js?v=20260821-spin3");
+    const { initToolsRoute } = await import("./tools-page.js?v=20260908-t87");
     await initToolsRoute(route);
   } else if (route.name === "trends") {
     dashboardView?.setAttribute("hidden", "");

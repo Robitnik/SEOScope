@@ -21,6 +21,7 @@ import re
 from dataclasses import dataclass
 
 from app.contentqa.findings import Finding, excerpt
+from app.contentqa.lexicon import Lexicon, get_lexicon
 from app.contentqa.model import ContentDoc, ContentItem
 from app.contentqa.policy_bridge import text_similarity
 
@@ -31,8 +32,27 @@ from app.contentqa.policy_bridge import text_similarity
 class Profile:
     kind: str = "page"  # "page" | "blog"
     intent: str = "commercial"  # "commercial" | "informational" | "navigational"
-    locale: str = "en-US"  # "en-US" | "en-GB"
+    locale: str = "en-US"  # "en-US" | "en-GB" | "sv-SE"
     brand_names: tuple[str, ...] = ()
+    # False = дублі/канібалізація (check_cross_page/check_meta_duplicates)
+    # рахуються в межах аркуша, не по всьому документу (task-87 §1.3) —
+    # дефолт True зберігає поводження звітів, збережених до task-87.
+    cross_sheet: bool = True
+
+    @property
+    def language(self) -> str:
+        """ISO 639-1 з `locale` — "en" для en-US І en-GB (обидва йдуть через
+        policy_bridge/AISeoTools незмінно), "sv" для sv-SE. Лейни питають цю
+        властивість, а не `locale` напряму (task-87 §1.1): додати мову —
+        значить дописати `app/contentqa/lexicon/<code>.py` і зареєструвати
+        його в `lexicon.get_lexicon()`, не чіпаючи жодного правила тут."""
+        return (self.locale or "en-US").split("-")[0].lower()
+
+    @property
+    def lexicon(self) -> Lexicon | None:
+        """`None` для "en" (лейни йдуть через policy_bridge як і раніше) і
+        для будь-якої мови без написаного лексикону."""
+        return get_lexicon(self.language)
 
 
 # ── meta MIN (MAX живе в policy_bridge — це framework-qa.py власний додаток) ──
@@ -382,6 +402,11 @@ def check_links(item: ContentItem, profile: Profile) -> list[Finding]:
                 f"unless the brief approves more.",
             ))
 
+    generic_anchors = {"click here", "read more", "learn more"}
+    lexicon = profile.lexicon
+    if lexicon is not None:
+        generic_anchors = generic_anchors | lexicon.anchor_generic
+
     anchor_counts: dict[str, int] = {}
     for link in item.internal_links:
         anchor = link.split("(", 1)[0].strip().lower()
@@ -394,7 +419,7 @@ def check_links(item: ContentItem, profile: Profile) -> list[Finding]:
                 f"Anchor {anchor!r} reused {count} times.",
                 value=anchor,
             ))
-        if anchor in {"click here", "read more", "learn more"}:
+        if anchor in generic_anchors:
             f.append(Finding(
                 "anchor-generic", "info", item.ref,
                 f"Generic anchor text: {anchor!r}.",
@@ -409,6 +434,25 @@ def check_links(item: ContentItem, profile: Profile) -> list[Finding]:
 
 def check_brand_voice_own(item: ContentItem, profile: Profile) -> list[Finding]:
     f: list[Finding] = []
+    lexicon = profile.lexicon
+    is_english = profile.language == "en"
+
+    # Дублі — не мовно-специфічні (терміни агенції, не природна мова) — як є.
+    # Contractions: англ. апострофні форми лише для "en"; для іншої мови —
+    # лексиконовий regex розмовних форм, якщо він є (task-87 §1.2).
+    contractions_re = (
+        CONTRACTIONS_RE if is_english
+        else (lexicon.contractions_re if lexicon else None)
+    )
+    # US/GB spelling має сенс лише для англійської — на живому шведському
+    # копірайті стріляв у слова "program"/"favorite" (task-87 §0.2).
+    variants = (
+        (US_GB_SPELLING if profile.locale == "en-GB"
+         else {v: k for k, v in US_GB_SPELLING.items()})
+        if is_english else {}
+    )
+    word_swaps = WORD_SWAPS if is_english else (lexicon.word_swaps if lexicon else {})
+
     for field_name, text in _fields(item):
         low = text.lower()
         value = excerpt(text)
@@ -421,24 +465,20 @@ def check_brand_voice_own(item: ContentItem, profile: Profile) -> list[Finding]:
                     value=value,
                 ))
 
-        if MONEY_TRIGGER_RE.search(text) and CURRENCY_RE.search(text):
+        if _money_leak_hit(text, lexicon):
             f.append(Finding(
                 "voice-money-leak", "error", item.ref,
                 f"{field_name}: a fee/salary figure appears to be exposed.",
                 value=value,
             ))
 
-        if profile.kind != "email" and CONTRACTIONS_RE.search(text):
+        if profile.kind != "email" and contractions_re and contractions_re.search(text):
             f.append(Finding(
                 "voice-contraction-in-formal", "warn", item.ref,
                 f"{field_name}: contraction in a formal deliverable.",
                 value=value,
             ))
 
-        variants = (
-            US_GB_SPELLING if profile.locale == "en-GB"
-            else {v: k for k, v in US_GB_SPELLING.items()}
-        )
         for wrong, right in variants.items():
             if re.search(rf"\b{re.escape(wrong)}\w*\b", low):
                 f.append(Finding(
@@ -448,7 +488,7 @@ def check_brand_voice_own(item: ContentItem, profile: Profile) -> list[Finding]:
                     value=value,
                 ))
 
-        for bad, suggestion in WORD_SWAPS.items():
+        for bad, suggestion in word_swaps.items():
             if bad in low:
                 f.append(Finding(
                     "voice-word-swap", "info", item.ref,
@@ -459,54 +499,92 @@ def check_brand_voice_own(item: ContentItem, profile: Profile) -> list[Finding]:
     return f
 
 
+def _money_leak_hit(text: str, lexicon: Lexicon | None) -> bool:
+    """Тригер-слово + валюта — обидві сторони можуть прийти або з
+    англійського дефолту, або з лексикону мови: документ, що леакає
+    гонорар англійським словом у шведському тексті (чи навпаки), усе одно
+    має спрацювати (task-87 §1.2 — money-leak рядок)."""
+    trigger = bool(MONEY_TRIGGER_RE.search(text)) or bool(
+        lexicon and lexicon.money_trigger_re and lexicon.money_trigger_re.search(text)
+    )
+    currency = bool(CURRENCY_RE.search(text)) or bool(
+        lexicon and lexicon.money_currency_re and lexicon.money_currency_re.search(text)
+    )
+    return trigger and currency
+
+
 # ── D: SLOP поза AI_SLOP_PHRASES ───────────────────────────────────────────
 
 
 def check_wikipedia_slop(item: ContentItem, profile: Profile) -> list[Finding]:
     f: list[Finding] = []
     doc_text_parts: list[str] = []
+    lexicon = profile.lexicon
+    is_english = profile.language == "en"
+
+    negative_parallelism_re = (
+        NEGATIVE_PARALLELISM_RE if is_english
+        else (lexicon.negative_parallelism_re if lexicon else None)
+    )
+    copula_avoidance_phrases = (
+        COPULA_AVOIDANCE_PHRASES if is_english
+        else (lexicon.copula_avoidance_phrases if lexicon else ())
+    )
+    vague_attribution_phrases = (
+        VAGUE_ATTRIBUTION_PHRASES if is_english
+        else (lexicon.vague_attribution_phrases if lexicon else ())
+    )
+    collaborative_voice_phrases = (
+        COLLABORATIVE_VOICE_PHRASES if is_english
+        else (lexicon.collaborative_voice_phrases if lexicon else ())
+    )
+    # Participle-chain, undue-significance і rule-of-three (нижче) лишаються
+    # чисто англійськими синтаксичними явищами — немає шведського
+    # відповідника в task-87 §1.2, лейн просто не спрацьовує для інших мов
+    # (видно в locale-rules-adjusted, engine.py).
 
     for field_name, text in _fields(item):
         doc_text_parts.append(text)
         low = text.lower()
         value = excerpt(text)
 
-        if NEGATIVE_PARALLELISM_RE.search(text):
+        if negative_parallelism_re and negative_parallelism_re.search(text):
             f.append(Finding(
                 "slop-negative-parallelism", "info", item.ref,
                 f"{field_name}: 'not just/only X but Y' construction.",
                 value=value,
             ))
 
-        for phrase in _phrase_hits(text, COPULA_AVOIDANCE_PHRASES):
+        for phrase in _phrase_hits(text, copula_avoidance_phrases):
             f.append(Finding(
                 "slop-copula-avoidance", "info", item.ref,
                 f"{field_name}: {phrase!r} avoids a plain 'is/are'.",
                 value=value,
             ))
 
-        for phrase in _phrase_hits(text, VAGUE_ATTRIBUTION_PHRASES):
+        for phrase in _phrase_hits(text, vague_attribution_phrases):
             f.append(Finding(
                 "slop-vague-attribution", "warn", item.ref,
                 f"{field_name}: {phrase!r} names no actual source.",
                 value=value,
             ))
 
-        if PARTICIPLE_CHAIN_RE.search(text):
+        if is_english and PARTICIPLE_CHAIN_RE.search(text):
             f.append(Finding(
                 "slop-participle-chain", "info", item.ref,
                 f"{field_name}: trailing participle clause adds no evidence.",
                 value=value,
             ))
 
-        for phrase in _phrase_hits(text, UNDUE_SIGNIFICANCE_PHRASES):
-            f.append(Finding(
-                "slop-undue-significance", "info", item.ref,
-                f"{field_name}: {phrase!r} inflates importance without a fact.",
-                value=value,
-            ))
+        if is_english:
+            for phrase in _phrase_hits(text, UNDUE_SIGNIFICANCE_PHRASES):
+                f.append(Finding(
+                    "slop-undue-significance", "info", item.ref,
+                    f"{field_name}: {phrase!r} inflates importance without a fact.",
+                    value=value,
+                ))
 
-        for phrase in _phrase_hits(text, COLLABORATIVE_VOICE_PHRASES):
+        for phrase in _phrase_hits(text, collaborative_voice_phrases):
             f.append(Finding(
                 "slop-collaborative-voice", "warn", item.ref,
                 f"{field_name}: {phrase!r} breaks third-person deliverable voice.",
@@ -542,12 +620,13 @@ def check_wikipedia_slop(item: ContentItem, profile: Profile) -> list[Finding]:
                 value=value,
             ))
 
-    doc_text = " ".join(doc_text_parts)
-    if len(RULE_OF_THREE_RE.findall(doc_text)) > RULE_OF_THREE_DOC_THRESHOLD:
-        f.append(Finding(
-            "slop-rule-of-three", "info", item.ref,
-            "Triadic 'X, Y, and Z' lists appear more than 3 times.",
-        ))
+    if is_english:
+        doc_text = " ".join(doc_text_parts)
+        if len(RULE_OF_THREE_RE.findall(doc_text)) > RULE_OF_THREE_DOC_THRESHOLD:
+            f.append(Finding(
+                "slop-rule-of-three", "info", item.ref,
+                "Triadic 'X, Y, and Z' lists appear more than 3 times.",
+            ))
 
     return f
 
@@ -571,34 +650,54 @@ def check_data_integrity(item: ContentItem, profile: Profile) -> list[Finding]:
 
 
 def check_cross_page(doc: ContentDoc, profile: Profile) -> list[Finding]:
+    """Дублі URL і канібалізація ключів — за замовчуванням у межах аркуша,
+    не по всьому документу (task-87 §1.3): сторінка, що є і в Q2-, і в
+    Q3-стратегії того самого файлу, — історія планування, не помилка.
+    `Profile.cross_sheet=True` (дефолт — сумісність зі звітами до task-87)
+    повертає старе поводження свідомо."""
     f: list[Finding] = []
-    by_url: dict[str, list[ContentItem]] = {}
-    by_keyword: dict[str, list[ContentItem]] = {}
-    for item in doc.items:
-        if item.url:
-            by_url.setdefault(item.url, []).append(item)
-        if item.keywords:
-            primary = item.keywords[0].strip().lower()
-            if primary:
-                by_keyword.setdefault(primary, []).append(item)
+    for group in _sheet_groups(doc.items, profile):
+        by_url: dict[str, list[ContentItem]] = {}
+        by_keyword: dict[str, list[ContentItem]] = {}
+        for item in group:
+            if item.url:
+                by_url.setdefault(item.url, []).append(item)
+            if item.keywords:
+                primary = item.keywords[0].strip().lower()
+                if primary:
+                    by_keyword.setdefault(primary, []).append(item)
 
-    for url, items in by_url.items():
-        if len(items) > 1:
-            refs = ", ".join(i.ref for i in items)
-            f.append(Finding(
-                "url-duplicate", "error", refs,
-                f"URL {url!r} appears on {len(items)} rows: {refs}",
-                value=url,
-            ))
+        for url, items in by_url.items():
+            if len(items) > 1:
+                refs = ", ".join(i.ref for i in items)
+                f.append(Finding(
+                    "url-duplicate", "error", refs,
+                    f"URL {url!r} appears on {len(items)} rows: {refs}",
+                    value=url,
+                ))
 
-    for kw, items in by_keyword.items():
-        if len(items) > 1:
-            refs = ", ".join(i.ref for i in items)
-            f.append(Finding(
-                "keyword-duplicate-across-pages", "error", refs,
-                f"Primary keyword {kw!r} targeted by {len(items)} pages "
-                f"(cannibalization risk): {refs}",
-                value=kw,
-            ))
+        for kw, items in by_keyword.items():
+            if len(items) > 1:
+                refs = ", ".join(i.ref for i in items)
+                f.append(Finding(
+                    "keyword-duplicate-across-pages", "error", refs,
+                    f"Primary keyword {kw!r} targeted by {len(items)} pages "
+                    f"(cannibalization risk): {refs}",
+                    value=kw,
+                ))
 
     return f
+
+
+def _sheet_groups(
+    items: tuple[ContentItem, ...], profile: Profile
+) -> list[list[ContentItem]]:
+    """Групує items за `item.sheet` для крос-сторінкових перевірок, якщо
+    `profile.cross_sheet` вимкнено; інакше — один список, як до task-87.
+    DOCX-документи (`sheet is None` для всіх) завжди дають одну групу."""
+    if profile.cross_sheet:
+        return [list(items)]
+    groups: dict[str | None, list[ContentItem]] = {}
+    for item in items:
+        groups.setdefault(item.sheet, []).append(item)
+    return list(groups.values())

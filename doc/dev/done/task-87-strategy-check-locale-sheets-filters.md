@@ -286,3 +286,60 @@ POST /api/v1/tools/strategy-check/check?locale=sv-SE&sheet=A&sheet=B&cross_sheet
 - Експорт findings (CSV/XLSX) і шаринг фільтрованого вигляду через URL.
 - `kind` (page/blog) у формі Strategy Check — осмислений тільки разом із вибором аркуша (`Blogs` = blog).
 - Швецький аналог `HEMINGWAY_*` для Framework Check набуде сенсу лише коли з'явиться швецький DOCX-фреймворк; поки що лейн `body` у Strategy Check не задіяний.
+
+---
+
+## ✅ Completion report
+
+- **Дата:** 2026-09-08
+- **Гілка / комміт:** feat/task-85-client-report-document-design @ 897edac (план) + ця сесія
+- **Статус:** done
+
+### Що зроблено
+
+Усі чотири пункти скоупу (§1.1–§1.6) реалізовані, живо перевірені на реальному швецькому воркбуку користувача (`LAXTON_SEO_STRATEGY_04142926.xlsx`, 185 items, 4 аркуші) і на бойових API-запитах через `AGENT_DEV_TOKEN`:
+
+1. **Мовний реєстр + шведська локаль** (`app/contentqa/lexicon/`): `Profile.language`/`Profile.lexicon`, кожен лейн з §1.2 розведений за мовою. Живо: `voice-em-dash` 136→37 (лишились лише справжні em dash — 119 колишніх "помилок" були коректним шведським en dash/tankstreck), `voice-locale-mismatch` 2→0, зʼявились ненульові шведські `slop-filler-term` (12), `meta-desc-banned-opener` (5), `slop-phrase` (2); рівно один `locale-rules-adjusted` info-finding на прогін.
+2. **Вибір аркуша** (`app/contentqa/readers/xlsx.py`, новий ендпоінт `/inspect`): stateless прев'ю → повторна відправка байтів у `/check` з `sheet=`/`cross_sheet=`. Три чесні стани аркуша (`checked`/`not_selected`/`no_recognized_columns`) у блоці Scope звіту. Живо: вибір лише Q3 з LAXTON дає 13 items/23 findings без жодного крос-аркушевого `url-duplicate`; `cross_sheet=false` на Q2+Q3 прибирає всі 11 крос-аркушевих дублів, `cross_sheet=true` повертає їх.
+3. **Фільтр/сортування/групування** (`content-qa-render.js`, повністю переписаний view-model): чипи за чеком і аркушем із лічильниками, пошук, `Group by`/`Sort`, згортання великих груп (`limitPerGroup=50`), два різні порожні стани (clean vs no-matches-by-filter). Той самий рушій обслуговує й Framework Check.
+4. **Пікер клієнта + автолокаль** (за прямим запитом користувача, §1.6): `guessContentQaClient()`/`guessLocaleForDomain()` у спільному render-модулі (навмисно продубльовано з `alt-text-tool.js`, не імпортовано — той файл поза owned paths цієї таски). Живо: завантаження LAXTON-файлу без ручного вибору підбирає клієнта `LAXTON` і локаль `sv-SE`; ручна зміна локалі до/після вибору клієнта не перетирається повторним автопідбором.
+
+### Як зроблено (ключові рішення)
+
+- **Швецький лексикон живе в цьому репо** (`app/contentqa/lexicon/sv.py`), не в AISeoTools — обґрунтування в §1.1 плану; реєстр (`get_lexicon`) лінькво імпортує модуль мови, тож наступна мова — один новий файл, нуль правок у `rules.py`/`policy_rules.py`.
+- **Keyword-in-title для не-англійської — власний стем-матч**, не перенесення AISeoTools' `_related_topic_token` (поріг «5 спільних символів» калібрований на довших коренях і майже дорівнює точному збігу для коротких шведських слів — `mössor`/`Mössa` дають лише 4 спільні символи до розбіжності). Власний поріг (`common>=3`, `common/shorter>=0.6`) відкалібровано на цьому самому прикладі.
+- **LIX (Björnsson), не Flesch-Kincaid, для нелатинських мов**: банд 30–45 відкалібровано на 141 живому описі laxton.se (медіана 34.8, p10 22.0, p90 45.0), а не взято з підручника. Під час реалізації знайдено і виправлено реальний баг: перша версія `lix()` перевикористовувала ASCII-only `_WORD_RE` з Flesch-Kincaid-коду, що ріже слова на літерах å/ä/ö (`"är"` → `"r"`) і системно занижує LIX на справжньому шведському тексті — виправлено окремим Unicode-safe `_UNICODE_WORD_RE`, використаним і для LIX, і для загального підрахунку слів у реченні (`sentence-too-long`).
+- **Скоуп крос-сторінкових перевірок за аркушем** — нове поле `ContentItem.sheet` (адитивне, `None` для DOCX) замість парсингу `ref` рядком; `_sheet_groups()` у `rules.py` — спільна точка для `check_cross_page`/`check_meta_duplicates`.
+- **`/inspect` — stateless, не чернетковий upload-стор**: файл ≤10 МБ, рішення одне (які аркуші), прогін — секунди; друга передача байтів дешевша за диск+TTL+прибирання, яке виправдане в Alt Text (там багатокрокове мапування колонок і дедуп за sha256).
+- **Головні файли:** `app/contentqa/lexicon/{__init__,sv}.py` (нові), `app/contentqa/{engine,model,rules,policy_rules,readability}.py`, `app/contentqa/readers/xlsx.py`, `app/api/tools_content_qa.py`, `app/schemas/content_qa.py`, `app/db/{models,repositories/content_qa}.py`, `migrations/versions/c50ce678bee1_content_qa_sheets_task_87.py`, `frontend/js/{content-qa-render,strategy-check-tool,framework-check-tool}.js`, `frontend/css/content-qa.css`.
+- **Відхилення від плану:** жодних суттєвих. Точне число "136→~0" `voice-em-dash` у §5.3 виявилось "136→37" на реальному файлі — сам воркбук (плановий, ще не опублікований контент) містить 37 справжніх em dash, яких немає в уже живому копірайті `laxton.se` (звідки бралась початкова оцінка «~0»); це не дефект фікса, а різниця між двома джерелами даних, використаними в дослідженні.
+
+### Контрактні зміни (Contract changes)
+
+- **Схема:** `ContentQaLocale` += `"sv-SE"`; нові `ContentQaSheetState`, `ContentQaSheetDTO`, `ContentQaSheetPreviewDTO`, `ContentQaInspectDTO`; `ContentQaProfileDTO` += `sheets`/`cross_sheet`; `ContentQaReportDTO` += `sheets` (усе адитивно, старі поля не змінені).
+- **API:** новий `POST /api/v1/tools/strategy-check/inspect`; `POST …/check` += query-параметри `sheet` (0+) і `cross_sheet` (дефолт `true` — сумісність зі старими викликами без цих параметрів). Framework Check не змінився.
+- **БД:** нова nullable колонка `content_qa_reports.sheets_json` (`c50ce678bee1`, застосована після `pg_dump`-бекапу). Старі рядки: `NULL` → DTO віддає `[]`.
+- **Аудит:** новий `ActionSpec("tool.strategy_check.inspect")` для `/inspect` (без нього падав guard `test_actions_cover_routes`).
+- **OpenAPI-знімок** (`tests/unit/api/data/openapi_snapshot.json`) регенеровано — diff обмежений новим ендпоінтом і новими DTO, нічого стороннього.
+
+### Як перевірити (verification)
+
+```bash
+docker compose exec api poetry run pytest tests/unit/contentqa tests/unit/api/test_tools_content_qa.py tests/unit/audit -q   # 142 passed
+docker compose exec api poetry run ruff check app/contentqa app/api/tools_content_qa.py app/schemas/content_qa.py app/db/repositories/content_qa.py app/audit/actions.py app/db/models.py tests/unit/contentqa tests/unit/api/test_tools_content_qa.py
+docker compose exec api poetry run mypy app
+```
+
+Живо (UI, потрібен реальний `*_SEO_STRATEGY_*.xlsx`, бажано швецький домен на кшталт `laxton.se`): відкрити `#/tools/strategy-check`, завантажити файл → клієнт і локаль підбираються з імені файлу/домену, зʼявляється пікер аркушів (якщо ≥2 несучих) → зняти частину аркушів, лишити `cross_sheet` вимкненим → Run check → у звіті блок «Sheets in this run» показує стани `Checked`/`Not selected`; фільтр за чеком (клік по чипу, «All»/«None»), пошук, `Group by: Check type` перегруповують список без перезавантаження сторінки. Node-Playwright сценарій (10 живих перевірок, включно з CSP/console-помилками) прогнано проти реального контейнера — усі пройшли, скріншот форми і звіту зроблено.
+
+### Тести
+
+- **Нові файли:** `tests/unit/contentqa/test_lexicon_sv.py` (реєстр + шведські списки), `tests/unit/contentqa/test_locale_gating.py` (по тесту на кожен рядок мапи лейнів §1.2, регресійний якір для `en-US`).
+- **Розширені:** `test_readability.py` (LIX-формула, Unicode-баг з å/ä/ö, F-K не викликається для sv), `test_readers_xlsx.py` (вибір аркуша, `not_selected` vs `no_recognized_columns`, `UnknownSheetError`, `inspect_strategy_xlsx`), `test_rules.py`/`test_policy_rules.py` (скоуп `cross_sheet` для обох крос-перевірок), `test_tools_content_qa.py` (`/inspect`, `sheet`/`cross_sheet` query-параметри, зворотна сумісність `sheets_json IS NULL`).
+- Живий Playwright-сценарій (не в репо — одноразовий верифікаційний скрипт у сесійному scratchpad) покриває UI-шар: автопідбір, пікер аркуша, фільтри, групування, Framework Check регресію, консоль/CSP.
+
+### Follow-ups / борг
+
+- Повноцінна мапа `TLD → locale` понад `.se` — `TODO(task-88?)`, коли зʼявиться другий не-англомовний клієнт.
+- Наступна мова (напр. RU) — перевірити, що додається одним файлом лексикону без правок у `rules.py`.
+- Експорт findings (CSV/XLSX), шаринг фільтрованого вигляду через URL, `kind` (page/blog) у формі Strategy Check — свідомо поза скоупом, див. §1.7 плану.

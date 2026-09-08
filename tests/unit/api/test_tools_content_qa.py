@@ -203,6 +203,91 @@ def test_framework_check_rejects_unreadable_file(client: Any) -> None:
     assert resp.json()["detail"]["error_code"] == "unreadable_docx"
 
 
+STRATEGY_TWO_SHEET_ROWS = [
+    ["Page Name", "URL", "Title", "Description"],
+    ["Homepage", "https://example.com/", "x" * 55, "y" * 150],
+]
+
+
+def _xlsx_two_sheets() -> bytes:
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "Q2"
+    for row in STRATEGY_TWO_SHEET_ROWS:
+        ws1.append(row)
+    ws2 = wb.create_sheet("Q3")
+    for row in STRATEGY_TWO_SHEET_ROWS:
+        ws2.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+# ── task-87 §1.3: /inspect + sheet selection + cross_sheet ────────────────────
+
+
+def test_inspect_strategy_lists_sheets_without_persisting_anything(client: Any) -> None:
+    resp = _post(client, "strategy-check/inspect", _xlsx(STRATEGY_ROWS), "strategy.xlsx")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["source_filename"] == "strategy.xlsx"
+    assert [s["name"] for s in body["sheets"]] == ["Q3 Strategy"]
+    assert body["sheets"][0]["load_bearing"] is True
+    assert body["suggested_sheets"] == ["Q3 Strategy"]
+
+    # Нічого не персистувалось — список звітів лишається порожнім.
+    listed = client.get("/api/v1/tools/strategy-check/reports").json()
+    assert listed["total"] == 0
+
+
+def test_inspect_rejects_unreadable_file(client: Any) -> None:
+    resp = _post(client, "strategy-check/inspect", b"not an xlsx file", "broken.xlsx")
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["error_code"] == "unreadable_xlsx"
+
+
+def test_check_with_sheet_param_limits_items_and_records_scope(client: Any) -> None:
+    resp = _post(client, "strategy-check/check", _xlsx_two_sheets(), "s.xlsx", sheet="Q3")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["item_count"] == 1
+    states = {s["name"]: s["state"] for s in body["sheets"]}
+    assert states == {"Q2": "not_selected", "Q3": "checked"}
+    assert body["profile"]["sheets"] == ["Q3"]
+
+
+def test_check_with_unknown_sheet_is_400_not_a_silent_full_check(client: Any) -> None:
+    resp = _post(client, "strategy-check/check", _xlsx_two_sheets(), "s.xlsx", sheet="Nope")
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["error_code"] == "unknown_sheet"
+
+
+def test_check_without_sheet_param_behaves_like_before_task_87(client: Any) -> None:
+    resp = _post(client, "strategy-check/check", _xlsx_two_sheets(), "s.xlsx")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["item_count"] == 2
+    assert body["profile"]["sheets"] is None
+    assert body["profile"]["cross_sheet"] is True
+
+
+def test_old_report_without_sheets_column_reads_back_as_empty_list(client: Any, db: Any) -> None:
+    # `sheets_json IS NULL` — звіт, збережений до task-87. DTO не додумує
+    # аркуші заднім числом (CLAUDE.md: відсутність даних не підміняється).
+    from app.db.repositories.content_qa import ContentQaReportInput, ContentQaRepository
+
+    report = ContentQaRepository(db).create_report(ContentQaReportInput(
+        client_id=None, doc_type="strategy_xlsx", source_filename="old.xlsx",
+        profile={"kind": "page", "intent": "commercial", "locale": "en-US", "brand_names": []},
+        item_count=0, skipped_sheets=(), findings=[], severity_counts={},
+    ))
+    db.commit()
+
+    resp = client.get(f"/api/v1/tools/strategy-check/reports/{report.id}")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["sheets"] == []
+
+
 def test_brand_padding_uses_brand_query_param(client: Any) -> None:
     rows = [
         ["Page Name", "URL", "H1", "Title", "Description"],

@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from openpyxl import Workbook
 
-from app.contentqa.readers.xlsx import read_strategy_xlsx
+from app.contentqa.readers.xlsx import (
+    UnknownSheetError,
+    inspect_strategy_xlsx,
+    read_strategy_xlsx,
+)
 
 
 def _build_workbook() -> bytes:
@@ -79,3 +84,60 @@ def test_missing_secondary_longtail_keys_do_not_pad_with_empty_strings() -> None
     doc = read_strategy_xlsx(_build_workbook(), source="test.xlsx")
     pricing = doc.items[1]
     assert pricing.keywords == ("survey software pricing",)
+
+
+def test_item_carries_its_source_sheet_name() -> None:
+    doc = read_strategy_xlsx(_build_workbook(), source="test.xlsx")
+    assert doc.items[0].sheet == "Q3 Strategy"
+
+
+# ── task-87 §1.3: вибір аркуша ────────────────────────────────────────────────
+
+
+def test_default_sheets_none_checks_everything_like_before_task_87() -> None:
+    doc = read_strategy_xlsx(_build_workbook(), source="test.xlsx")
+    states = {s.name: s.state for s in doc.sheet_states}
+    assert states == {"Q3 Strategy": "checked", "Structure v 2.0": "no_recognized_columns"}
+
+
+def test_selecting_a_subset_of_sheets_limits_items() -> None:
+    wb = _build_workbook()
+    doc = read_strategy_xlsx(wb, source="test.xlsx", sheets=["Q3 Strategy"])
+    assert len(doc.items) == 2  # той самий workbook, дефолт теж дає 2 — тут це єдиний несучий аркуш
+
+
+def test_unselected_sheet_is_not_selected_not_skipped() -> None:
+    # Другий несучий аркуш у тому самому workbook, щоб перевірити, що
+    # "не обраний" (not_selected) — не те саме, що "нема title/description"
+    # (no_recognized_columns).
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "Q2"
+    ws1.append(["Title", "Description"])
+    ws1.append(["T1", "D1"])
+    ws2 = wb.create_sheet("Q3")
+    ws2.append(["Title", "Description"])
+    ws2.append(["T2", "D2"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    content = buf.getvalue()
+
+    doc = read_strategy_xlsx(content, source="test.xlsx", sheets=["Q3"])
+    states = {s.name: s.state for s in doc.sheet_states}
+    assert states == {"Q2": "not_selected", "Q3": "checked"}
+    assert doc.skipped_sheets == ()  # not_selected НЕ потрапляє в skipped_sheets
+    assert [i.ref for i in doc.items] == ["Q3!row 2"]
+
+
+def test_unknown_sheet_raises_not_silently_checks_everything() -> None:
+    with pytest.raises(UnknownSheetError):
+        read_strategy_xlsx(_build_workbook(), source="test.xlsx", sheets=["Does Not Exist"])
+
+
+def test_inspect_reports_load_bearing_and_row_counts_without_building_items() -> None:
+    inspection = inspect_strategy_xlsx(_build_workbook())
+    by_name = {s.name: s for s in inspection.sheets}
+    assert by_name["Q3 Strategy"].load_bearing is True
+    assert by_name["Q3 Strategy"].row_count == 2
+    assert by_name["Structure v 2.0"].load_bearing is False
+    assert inspection.suggested_sheets == ("Q3 Strategy",)

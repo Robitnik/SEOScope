@@ -21,16 +21,25 @@ title/description: такий блок просто не дає жодного i
 
 Аркуш, де жоден блок не має ні title, ні description, -> `skipped_sheets`, а
 не тиха «чистота» (PLAN §12: не перевірили ≠ порушень немає).
+
+**task-87 §1.3 (вибір аркуша):** `sheets=` фільтрує, які аркуші йдуть у
+`ContentDoc.items`; аркуші, яких оператор не обрав, усе одно скануються
+(легко — лише підрахунок рядків, без побудови items) і потрапляють у
+`ContentDoc.sheet_states` зі станом `"not_selected"`, щоб блок Scope у звіті
+міг сказати «Q2 2026 Strategy (154 rows) — not selected», а не мовчати про
+нього. `inspect_strategy_xlsx()` ділить той самий скан-код для прев'ю кроку
+1 (`POST …/strategy-check/inspect`) — жодного другого парсера.
 """
 
 from __future__ import annotations
 
 import io
 import re
+from dataclasses import dataclass
 
 from openpyxl import load_workbook
 
-from app.contentqa.model import ContentDoc, ContentItem
+from app.contentqa.model import ContentDoc, ContentItem, SheetInfo
 
 _HEADER_MIN_SCORE = 2
 
@@ -54,6 +63,11 @@ _ALIASES: dict[str, str] = {
     "external link + anchor text": "external_links",
 }
 _LOAD_BEARING = {"title", "description"}
+
+
+class UnknownSheetError(ValueError):
+    """Оператор попросив аркуш, якого немає у файлі — 400, не тиха
+    перевірка «всього файлу» (task-87 §1.3, крок 7 плану)."""
 
 
 def _norm(value: object) -> str:
@@ -88,7 +102,9 @@ def _iter_header_blocks(all_rows: list[tuple[object, ...]]) -> list[tuple[int, d
     return blocks
 
 
-def _row_to_item(ref: str, row: tuple[object, ...], col_map: dict[int, str]) -> ContentItem | None:
+def _row_to_item(
+    ref: str, row: tuple[object, ...], col_map: dict[int, str], *, sheet: str
+) -> ContentItem | None:
     values: dict[str, str] = {}
     keywords: list[str] = []
     for col_idx, tag in col_map.items():
@@ -124,38 +140,156 @@ def _row_to_item(ref: str, row: tuple[object, ...], col_map: dict[int, str]) -> 
         internal_links=_split_links(values["internal_links"]) if "internal_links" in values else (),
         external_links=_split_links(values["external_links"]) if "external_links" in values else (),
         raw=values,
+        sheet=sheet,
     )
 
 
-def read_strategy_xlsx(content: bytes, *, source: str) -> ContentDoc:
-    wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-    items: list[ContentItem] = []
-    skipped: list[str] = []
+def _non_empty_row_count(all_rows: list[tuple[object, ...]], start: int, end: int) -> int:
+    return sum(1 for i in range(start, end) if not all(cell is None for cell in all_rows[i]))
 
-    for sheet_name in wb.sheetnames:
+
+@dataclass(frozen=True)
+class _SheetScan:
+    """Один аркуш, повністю просканований (блоки заголовків + межі) —
+    спільний проміжний результат для `read_strategy_xlsx` (будує items лише
+    для обраних аркушів) і `inspect_strategy_xlsx` (нічого не будує, лише
+    прев'ю)."""
+
+    name: str
+    index: int
+    all_rows: list[tuple[object, ...]]
+    blocks: list[tuple[int, dict[int, str]]]
+    load_bearing: list[tuple[int, dict[int, str]]]
+
+    @property
+    def is_load_bearing(self) -> bool:
+        return bool(self.load_bearing)
+
+    def row_count(self) -> int:
+        """Рядків-кандидатів під усіма несучими блоками цього аркуша —
+        показується і для обраних (у Scope як 'checked'), і для необраних
+        аркушів ('154 rows, not selected'), тому рахується завжди, не лише
+        коли аркуш дійсно перевіряється."""
+        total = 0
+        for b, (header_row_idx, col_map) in enumerate(self.blocks):
+            if not (_LOAD_BEARING & set(col_map.values())):
+                continue
+            data_end = self.blocks[b + 1][0] if b + 1 < len(self.blocks) else len(self.all_rows)
+            total += _non_empty_row_count(self.all_rows, header_row_idx + 1, data_end)
+        return total
+
+    def columns(self) -> list[str]:
+        """Об'єднання розпізнаних тегів по всіх несучих блоках аркуша, у
+        порядку першої появи — для прев'ю /inspect."""
+        seen: list[str] = []
+        for _, col_map in self.load_bearing:
+            for tag in col_map.values():
+                if tag not in seen:
+                    seen.append(tag)
+        return seen
+
+    def build_items(self) -> list[ContentItem]:
+        items: list[ContentItem] = []
+        for b, (header_row_idx, col_map) in enumerate(self.blocks):
+            if not (_LOAD_BEARING & set(col_map.values())):
+                continue
+            data_end = self.blocks[b + 1][0] if b + 1 < len(self.blocks) else len(self.all_rows)
+            for i in range(header_row_idx + 1, data_end):
+                row = self.all_rows[i]
+                if all(cell is None for cell in row):
+                    continue
+                ref = f"{self.name}!row {i + 1}"
+                item = _row_to_item(ref, row, col_map, sheet=self.name)
+                if item is not None:
+                    items.append(item)
+        return items
+
+
+def _scan_workbook(content: bytes) -> list[_SheetScan]:
+    wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    scans: list[_SheetScan] = []
+    for index, sheet_name in enumerate(wb.sheetnames):
         ws = wb[sheet_name]
         all_rows = [tuple(row) for row in ws.iter_rows(values_only=True)]
         blocks = _iter_header_blocks(all_rows)
         load_bearing = [(idx, cm) for idx, cm in blocks if _LOAD_BEARING & set(cm.values())]
+        scans.append(_SheetScan(
+            name=sheet_name, index=index, all_rows=all_rows,
+            blocks=blocks, load_bearing=load_bearing,
+        ))
+    return scans
 
-        if not load_bearing:
-            skipped.append(sheet_name)
+
+def _check_requested_sheets(scans: list[_SheetScan], sheets: list[str] | None) -> None:
+    if sheets is None:
+        return
+    known = {s.name for s in scans}
+    unknown = [s for s in sheets if s not in known]
+    if unknown:
+        raise UnknownSheetError(f"Sheet(s) not found in this workbook: {', '.join(unknown)}")
+
+
+def read_strategy_xlsx(
+    content: bytes, *, source: str, sheets: list[str] | None = None
+) -> ContentDoc:
+    """`sheets=None` (дефолт) перевіряє всі несучі аркуші — те саме
+    поводження, що до task-87. `sheets=[...]` обмежує items лише цими
+    аркушами; решта аркушів workbook усе одно потрапляє в
+    `ContentDoc.sheet_states` зі станом `not_selected`, а не зникає мовчки."""
+    scans = _scan_workbook(content)
+    _check_requested_sheets(scans, sheets)
+    selected = set(sheets) if sheets is not None else {s.name for s in scans}
+
+    items: list[ContentItem] = []
+    skipped: list[str] = []
+    sheet_states: list[SheetInfo] = []
+
+    for scan in scans:
+        if scan.name not in selected:
+            sheet_states.append(SheetInfo(scan.name, "not_selected", scan.row_count()))
             continue
-
-        for b, (header_row_idx, col_map) in enumerate(blocks):
-            if not (_LOAD_BEARING & set(col_map.values())):
-                continue
-            data_end = blocks[b + 1][0] if b + 1 < len(blocks) else len(all_rows)
-            for i in range(header_row_idx + 1, data_end):
-                row = all_rows[i]
-                if all(cell is None for cell in row):
-                    continue
-                ref = f"{sheet_name}!row {i + 1}"
-                item = _row_to_item(ref, row, col_map)
-                if item is not None:
-                    items.append(item)
+        if not scan.is_load_bearing:
+            skipped.append(scan.name)
+            sheet_states.append(SheetInfo(scan.name, "no_recognized_columns", 0))
+            continue
+        sheet_items = scan.build_items()
+        items.extend(sheet_items)
+        sheet_states.append(SheetInfo(scan.name, "checked", len(sheet_items)))
 
     return ContentDoc(
         source=source, doc_type="strategy_xlsx",
         items=tuple(items), skipped_sheets=tuple(skipped),
+        sheet_states=tuple(sheet_states),
     )
+
+
+@dataclass(frozen=True)
+class SheetPreview:
+    name: str
+    index: int
+    load_bearing: bool
+    columns: tuple[str, ...]
+    row_count: int
+    blocks: int
+
+
+@dataclass(frozen=True)
+class WorkbookInspection:
+    sheets: tuple[SheetPreview, ...]
+    suggested_sheets: tuple[str, ...]  # усі несучі — дефолтний вибір форми
+
+
+def inspect_strategy_xlsx(content: bytes) -> WorkbookInspection:
+    """Крок 1 вибору аркуша (task-87 §1.3): прев'ю без побудови items і без
+    жодного побічного ефекту — той самий скан, що `read_strategy_xlsx`."""
+    scans = _scan_workbook(content)
+    previews = tuple(
+        SheetPreview(
+            name=scan.name, index=scan.index, load_bearing=scan.is_load_bearing,
+            columns=tuple(scan.columns()), row_count=scan.row_count(),
+            blocks=len(scan.blocks),
+        )
+        for scan in scans
+    )
+    suggested = tuple(p.name for p in previews if p.load_bearing)
+    return WorkbookInspection(sheets=previews, suggested_sheets=suggested)

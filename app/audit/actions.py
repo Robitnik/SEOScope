@@ -168,6 +168,7 @@ ROUTE_ACTIONS: dict[tuple[str, str], ActionSpec] = {
     ): ActionSpec("tool.redirects.run_target", "redirect_check", "check_id"),
     ("POST", "/api/v1/tools/redirects/trace"): ActionSpec("tool.redirects.trace"),
     ("POST", "/api/v1/tools/schema-markup/checks"): ActionSpec("tool.schema_markup.run"),
+    ("POST", "/api/v1/tools/strategy-check/inspect"): ActionSpec("tool.strategy_check.inspect"),
     ("POST", "/api/v1/tools/strategy-check/check"): ActionSpec("tool.strategy_check.run"),
     ("POST", "/api/v1/tools/framework-check/check"): ActionSpec("tool.framework_check.run"),
     ("POST", "/api/v1/url-inspector/live"): ActionSpec("tool.url_inspector.live"),

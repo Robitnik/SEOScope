@@ -651,6 +651,12 @@ class ContentQaReport(Base):
     skipped_sheets_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     findings_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     severity_counts_json: Mapped[dict[str, int]] = mapped_column(JSON, default=dict)
+    # Стан кожного аркуша workbook (task-87 §1.3): checked/not_selected/
+    # no_recognized_columns + item_count. `[]` для рядків до task-87
+    # (nullable, backfilled лише лінивою десеріалізацією в DTO — `[]`
+    # читається так само, як і "не було колонки") і для DOCX-звітів
+    # (Framework Check аркушів не має).
+    sheets_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 

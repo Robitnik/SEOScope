@@ -27,9 +27,13 @@ from app.api import register_router
 from app.api.deps import PaginationDep, SessionDep
 from app.contentqa.engine import run_checks
 from app.contentqa.findings import Finding
-from app.contentqa.model import ContentDoc
+from app.contentqa.model import ContentDoc, SheetInfo
 from app.contentqa.readers.docx import read_framework_docx
-from app.contentqa.readers.xlsx import read_strategy_xlsx
+from app.contentqa.readers.xlsx import (
+    UnknownSheetError,
+    inspect_strategy_xlsx,
+    read_strategy_xlsx,
+)
 from app.contentqa.rules import Profile
 from app.db.models import ContentQaReport
 from app.db.repositories.clients import ClientRepository
@@ -37,6 +41,7 @@ from app.db.repositories.content_qa import ContentQaReportInput, ContentQaReposi
 from app.schemas.api import ErrorDTO
 from app.schemas.content_qa import (
     ContentQaFindingDTO,
+    ContentQaInspectDTO,
     ContentQaIntent,
     ContentQaKind,
     ContentQaLocale,
@@ -44,6 +49,8 @@ from app.schemas.content_qa import (
     ContentQaReportDTO,
     ContentQaReportsPageDTO,
     ContentQaReportSummaryDTO,
+    ContentQaSheetDTO,
+    ContentQaSheetPreviewDTO,
 )
 
 router = APIRouter(prefix="/api/v1/tools", tags=["content-qa"])
@@ -75,18 +82,31 @@ def _build_profile(
     intent: ContentQaIntent,
     locale: ContentQaLocale,
     brand: list[str] | None,
+    *,
+    cross_sheet: bool = True,
 ) -> Profile:
     names = tuple(b.strip() for b in (brand or []) if b.strip())
-    return Profile(kind=kind, intent=intent, locale=locale, brand_names=names)
+    return Profile(
+        kind=kind, intent=intent, locale=locale, brand_names=names, cross_sheet=cross_sheet
+    )
 
 
-def _profile_dict(profile: Profile) -> dict[str, object]:
+def _profile_dict(profile: Profile, *, sheets: list[str] | None = None) -> dict[str, object]:
     return {
         "kind": profile.kind,
         "intent": profile.intent,
         "locale": profile.locale,
         "brand_names": list(profile.brand_names),
+        "sheets": sheets,
+        "cross_sheet": profile.cross_sheet,
     }
+
+
+def _sheet_state_dicts(sheet_states: tuple[SheetInfo, ...]) -> list[dict[str, object]]:
+    return [
+        {"name": s.name, "state": s.state, "item_count": s.item_count}
+        for s in sheet_states
+    ]
 
 
 def _finding_dicts(findings: Iterable[Finding]) -> list[dict[str, str | None]]:
@@ -113,6 +133,8 @@ def _detail_dto(report: ContentQaReport, *, client_name: str | None) -> ContentQ
         profile=ContentQaProfileDTO(**report.profile_json),
         skipped_sheets=report.skipped_sheets_json,
         findings=[ContentQaFindingDTO(**f) for f in report.findings_json],
+        # `sheets_json IS NULL` для звітів до task-87 -> `[]`, не додумуємо.
+        sheets=[ContentQaSheetDTO(**s) for s in (report.sheets_json or [])],
     )
 
 
@@ -131,6 +153,7 @@ async def _run_and_persist(
     filename: str,
     profile: Profile,
     client_id: str | None,
+    sheets: list[str] | None = None,
 ) -> ContentQaReportDTO:
     findings = run_checks(doc, profile)
 
@@ -140,11 +163,12 @@ async def _run_and_persist(
             client_id=client_id,
             doc_type=doc_type,
             source_filename=filename,
-            profile=_profile_dict(profile),
+            profile=_profile_dict(profile, sheets=sheets),
             item_count=len(doc.items),
             skipped_sheets=doc.skipped_sheets,
             findings=_finding_dicts(findings),
             severity_counts=dict(collections.Counter(f.severity for f in findings)),
+            sheets=_sheet_state_dicts(doc.sheet_states) if doc.sheet_states else None,
         ))
         return _detail_dto(report, client_name=client_name)
 
@@ -190,6 +214,38 @@ async def _get(session: SessionDep, *, doc_type: str, report_id: str) -> Content
     return dto
 
 
+@router.post("/strategy-check/inspect", response_model=ContentQaInspectDTO)
+async def inspect_strategy(
+    request: Request,
+    x_filename: str | None = None,
+) -> ContentQaInspectDTO:
+    """Крок 1 вибору аркуша (task-87 §1.3): сирі байти в, перелік аркушів із
+    прев'ю назад — нічого не персистує, той самий stateless вибір, що
+    /check. Фронт повторно надсилає ці ж байти в `/check` разом з обраними
+    `sheet`; двократна передача ≤10 МБ дешевша за чернетковий upload-стор
+    (`_StoredUpload`, TTL, прибирання), який тут не виправданий одним
+    рішенням "які аркуші"."""
+    filename, content = await _read_upload(request, x_filename)
+    try:
+        inspected = await run_in_threadpool(inspect_strategy_xlsx, content)
+    except Exception as exc:  # openpyxl кидає різне на битих архівах
+        raise HTTPException(
+            status_code=400, detail=_error("unreadable_xlsx", str(exc))
+        ) from exc
+
+    return ContentQaInspectDTO(
+        source_filename=filename,
+        sheets=[
+            ContentQaSheetPreviewDTO(
+                name=s.name, index=s.index, load_bearing=s.load_bearing,
+                columns=list(s.columns), row_count=s.row_count, blocks=s.blocks,
+            )
+            for s in inspected.sheets
+        ],
+        suggested_sheets=list(inspected.suggested_sheets),
+    )
+
+
 @router.post("/strategy-check/check", response_model=ContentQaReportDTO)
 async def check_strategy(
     request: Request,
@@ -200,22 +256,32 @@ async def check_strategy(
     locale: ContentQaLocale = "en-US",
     client_id: str | None = None,
     brand: Annotated[list[str] | None, Query()] = None,
+    sheet: Annotated[list[str] | None, Query()] = None,
+    cross_sheet: bool = True,
 ) -> ContentQaReportDTO:
-    """SEO-стратегія (XLSX) -> findings, персистовано. Мапінг колонок і вкладка
-    визначаються самим ридером (§2.3 task-53 плану) — на відміну від Alt Text
-    тут немає двозначності, яку мав би вирішувати оператор перед прогоном."""
+    """SEO-стратегія (XLSX) -> findings, персистовано. Мапінг колонок і
+    несучість аркуша визначаються самим ридером (§2.3 task-53 плану).
+
+    `sheet` (0+ query-параметрів) обмежує перевірку обраними аркушами —
+    `None`/відсутній перевіряє всі несучі аркуші, те саме поводження, що до
+    task-87 (§1.3). `cross_sheet=False` рахує дублі/канібалізацію лише в
+    межах кожного обраного аркуша окремо."""
     filename, content = await _read_upload(request, x_filename)
     try:
-        doc = await run_in_threadpool(read_strategy_xlsx, content, source=filename)
+        doc = await run_in_threadpool(read_strategy_xlsx, content, source=filename, sheets=sheet)
+    except UnknownSheetError as exc:
+        raise HTTPException(
+            status_code=400, detail=_error("unknown_sheet", str(exc))
+        ) from exc
     except Exception as exc:  # openpyxl кидає різне на битих архівах
         raise HTTPException(
             status_code=400, detail=_error("unreadable_xlsx", str(exc))
         ) from exc
 
-    profile = _build_profile(kind, intent, locale, brand)
+    profile = _build_profile(kind, intent, locale, brand, cross_sheet=cross_sheet)
     return await _run_and_persist(
         session, doc_type="strategy_xlsx", doc=doc, filename=filename,
-        profile=profile, client_id=client_id,
+        profile=profile, client_id=client_id, sheets=sheet,
     )
 
 

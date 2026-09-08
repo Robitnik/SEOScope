@@ -20,6 +20,36 @@
 .cq-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px 20px; }
 .cq-fields select, .cq-fields input { display: block; width: 100%; margin-top: 6px; }
 
+/* --- sheet picker (task-87 §1.3), sits between the file input and the
+   rest of the form fields --- */
+.cq-sheet-single, .cq-sheet-picker__loading, .cq-sheet-picker__error {
+  display: flex; align-items: center; gap: 8px; margin: -6px 0 18px; padding: 10px 12px;
+  border: 1px solid var(--line); background: var(--canvas-raised); font-size: 12px; color: var(--ink-muted);
+}
+.cq-sheet-single .icon, .cq-sheet-picker__loading .icon { color: var(--ink-dim); flex: 0 0 auto; }
+.cq-sheet-single strong { color: var(--ink); }
+.cq-sheet-picker__error { border-left: 3px solid var(--warning); color: var(--ink-muted); }
+.cq-sheet-picker__error .icon { color: var(--warning); flex: 0 0 auto; margin-top: 1px; }
+
+.cq-sheet-picker {
+  margin: -6px 0 18px; padding: 12px 14px; border: 1px solid var(--line); background: var(--canvas-raised);
+}
+.cq-sheet-picker__label {
+  margin: 0 0 8px; color: var(--ink-muted); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.cq-sheet-picker__list { display: grid; gap: 6px; margin: 0 0 12px; padding: 0; list-style: none; }
+.cq-sheet-picker__item label {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 400; margin: 0; cursor: pointer;
+}
+.cq-sheet-picker__item--unrecognized label { cursor: not-allowed; color: var(--ink-dim); }
+.cq-sheet-picker__meta { color: var(--ink-dim); font-size: 11px; }
+.cq-sheet-picker__cross {
+  display: flex; align-items: flex-start; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line-soft);
+  font-weight: 400; font-size: 12px; color: var(--ink-muted); cursor: pointer;
+}
+.cq-sheet-picker__cross input { margin-top: 2px; }
+
 /* --- results panel --- */
 .cq-report { display: grid; gap: 18px; }
 
@@ -53,6 +83,30 @@
 .cq-skipped .icon { flex: 0 0 auto; margin-top: 1px; color: var(--ink-dim); width: 16px; height: 16px; }
 .cq-skipped strong { color: var(--ink); }
 
+/* --- scope block (task-87 §1.3): which sheets were checked / skipped on
+   purpose / had no recognized columns — three different things, one list. --- */
+.cq-scope {
+  padding: 12px 14px; border: 1px solid var(--line); background: var(--canvas-raised); font-size: 12px;
+}
+.cq-scope__label {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--ink-muted);
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+}
+.cq-scope__list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.cq-scope__item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cq-scope__item .icon { width: 14px; height: 14px; flex: 0 0 auto; }
+.cq-scope__name { color: var(--ink); font-weight: 700; }
+.cq-scope__detail { color: var(--ink-muted); }
+.cq-sheet--checked .icon { color: var(--success); }
+.cq-sheet--not-selected .icon { color: var(--ink-dim); }
+.cq-sheet--not-selected { color: var(--ink-dim); }
+.cq-sheet--unrecognized .icon { color: var(--ink-dim); }
+
+/* --- filter/sort/group toolbar (task-87 §1.4) --- */
+.cq-controls { display: grid; gap: 10px; }
+.cq-controls__row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.cq-controls__row--group { align-items: flex-end; }
+
 .cq-filter { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border: 1px solid var(--line); width: fit-content; }
 .cq-filter__option {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; cursor: pointer;
@@ -63,6 +117,41 @@
 .cq-filter__option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .cq-filter__option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 
+.cq-search {
+  display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; flex: 1 1 220px;
+  border: 1px solid var(--line); background: var(--canvas-raised);
+}
+.cq-search .icon { width: 14px; height: 14px; color: var(--ink-dim); flex: 0 0 auto; }
+.cq-search input {
+  border: 0; background: none; color: var(--ink); font-size: 13px; width: 100%; padding: 0;
+}
+.cq-search input:focus { outline: none; }
+.cq-search:focus-within { border-color: var(--accent); }
+
+.cq-checkchips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cq-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--canvas-raised); color: var(--ink-muted);
+  font-size: 11px; font-family: var(--font-mono, monospace);
+}
+.cq-chip:hover { border-color: var(--ink-dim); }
+.cq-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cq-chip--active { background: var(--surface-strong); border-color: var(--ink-dim); color: var(--ink); }
+.cq-chip__count { font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+.cq-chip--active .cq-chip__count { color: var(--ink-muted); }
+.cq-chip__all { font-size: 11px; padding: 5px 10px; }
+
+.form-field--inline { display: inline-flex; flex-direction: column; gap: 4px; margin: 0; font-size: 11px; }
+.form-field--inline select { margin-top: 0; width: auto; min-width: 140px; }
+
+.cq-no-matches {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 28px;
+  background: var(--surface); border: 1px solid var(--line); color: var(--ink-muted); text-align: center;
+}
+.cq-no-matches .icon { width: 24px; height: 24px; color: var(--ink-dim); }
+.cq-no-matches p { margin: 0; }
+.cq-no-matches strong { color: var(--ink); }
+
 .cq-groups { display: grid; gap: 16px; }
 .cq-group__title {
   display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding-bottom: 8px;
@@ -71,6 +160,7 @@
 .cq-group__title .icon { width: 16px; height: 16px; }
 .cq-group__count { margin-left: auto; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .cq-group__list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.cq-group__more { margin-top: 8px; }
 
 .cq-finding {
   display: grid; gap: 4px; padding: 10px 12px; background: var(--canvas-raised);
@@ -115,4 +205,7 @@
   .cq-fields { grid-template-columns: 1fr; }
   .cq-report__meta { flex-direction: column; align-items: flex-start; gap: 6px; }
   .cq-report__link { margin-left: 0; }
+  .cq-controls__row--group { align-items: stretch; }
+  .form-field--inline select { min-width: 0; width: 100%; }
+  .cq-search { flex-basis: 100%; }
 }

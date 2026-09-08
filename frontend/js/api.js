@@ -2698,26 +2698,22 @@ export async function getBatchPortfolioTable(batchId) {
 // `#/tools/<key>/<id>` link — list/get below read that same table.
 let contentQaFixtureCounter = 0;
 
-async function checkContentQa(route, file, profile, fixtureName) {
-  if (FIXTURE_MODE) {
-    await wait(420);
-    const data = await fixture(fixtureName);
-    contentQaFixtureCounter += 1;
-    return {
-      ...data,
-      id: `${data.id}-${contentQaFixtureCounter}`,
-      source_filename: file.name,
-      created_at: new Date().toISOString(),
-    };
+// Raw-byte POST shared by /inspect and /check (task-87): both take the file
+// body + `X-Filename`, both return JSON, both throw the same normalized
+// error shape. `params` builds the query string — a plain object of
+// string|string[]|boolean, arrays repeat the key (`sheet=A&sheet=B`).
+async function postContentQaBytes(path, file, params) {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined || value === null || value === "") continue;
+    if (Array.isArray(value)) {
+      for (const item of value) if (String(item).trim()) qs.append(key, item);
+    } else {
+      qs.set(key, value);
+    }
   }
-  const params = new URLSearchParams();
-  if (profile?.kind) params.set("kind", profile.kind);
-  if (profile?.locale) params.set("locale", profile.locale);
-  for (const name of profile?.brandNames || []) {
-    if (name.trim()) params.append("brand", name.trim());
-  }
-  const qs = params.toString();
-  const response = await fetch(`${API_ROOT}/tools/${route}${qs ? `?${qs}` : ""}`, {
+  const search = qs.toString();
+  const response = await fetch(`${API_ROOT}${path}${search ? `?${search}` : ""}`, {
     method: "POST",
     headers: { "Content-Type": "application/octet-stream", "X-Filename": file.name, Accept: "application/json" },
     body: file,
@@ -2734,12 +2730,47 @@ async function checkContentQa(route, file, profile, fixtureName) {
   return response.json();
 }
 
+async function checkContentQa(route, file, profile, fixtureName, extraParams) {
+  if (FIXTURE_MODE) {
+    await wait(420);
+    const data = await fixture(fixtureName);
+    contentQaFixtureCounter += 1;
+    return {
+      ...data,
+      id: `${data.id}-${contentQaFixtureCounter}`,
+      source_filename: file.name,
+      created_at: new Date().toISOString(),
+    };
+  }
+  return postContentQaBytes(`/tools/${route}`, file, {
+    kind: profile?.kind,
+    locale: profile?.locale,
+    brand: (profile?.brandNames || []).map((name) => name.trim()).filter(Boolean),
+    client_id: profile?.clientId || undefined,
+    ...extraParams,
+  });
+}
+
 export async function checkStrategy(file, profile) {
-  return checkContentQa("strategy-check/check", file, profile, "strategy-check-report");
+  return checkContentQa("strategy-check/check", file, profile, "strategy-check-report", {
+    sheet: profile?.sheets || undefined,
+    cross_sheet: profile?.crossSheet === false ? "false" : undefined,
+  });
 }
 
 export async function checkFramework(file, profile) {
   return checkContentQa("framework-check/check", file, profile, "framework-check-report");
+}
+
+// Крок 1 вибору аркуша (task-87 §1.3): сирі байти -> перелік аркушів з
+// прев'ю, нічого не персистується. Фронт тримає `file` в пам'яті й
+// повторно шле ці ж байти в `checkStrategy` разом з обраним `sheets`.
+export async function inspectStrategyWorkbook(file) {
+  if (FIXTURE_MODE) {
+    await wait(280);
+    return fixture("strategy-check-inspect");
+  }
+  return postContentQaBytes("/tools/strategy-check/inspect", file, {});
 }
 
 async function listContentQaReports(route, fixtureName, requestKey) {

@@ -1,0 +1,30 @@
+{
+  "source_filename": "SEO_STRATEGY_Q3.xlsx",
+  "sheets": [
+    {
+      "name": "Q3 Strategy",
+      "index": 0,
+      "load_bearing": true,
+      "columns": ["intent", "page_name", "url", "primary_key", "h1", "title", "description"],
+      "row_count": 7,
+      "blocks": 1
+    },
+    {
+      "name": "Blogs",
+      "index": 1,
+      "load_bearing": true,
+      "columns": ["page_name", "keywords_csv", "title", "description"],
+      "row_count": 2,
+      "blocks": 1
+    },
+    {
+      "name": "Structure v 2.0",
+      "index": 2,
+      "load_bearing": false,
+      "columns": ["page_name", "url"],
+      "row_count": 1,
+      "blocks": 1
+    }
+  ],
+  "suggested_sheets": ["Q3 Strategy", "Blogs"]
+}

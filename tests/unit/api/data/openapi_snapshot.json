@@ -4160,6 +4160,35 @@
         "title": "ContentQaFindingDTO",
         "type": "object"
       },
+      "ContentQaInspectDTO": {
+        "properties": {
+          "sheets": {
+            "items": {
+              "$ref": "#/components/schemas/ContentQaSheetPreviewDTO"
+            },
+            "title": "Sheets",
+            "type": "array"
+          },
+          "source_filename": {
+            "title": "Source Filename",
+            "type": "string"
+          },
+          "suggested_sheets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Suggested Sheets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_filename",
+          "sheets",
+          "suggested_sheets"
+        ],
+        "title": "ContentQaInspectDTO",
+        "type": "object"
+      },
       "ContentQaProfileDTO": {
         "properties": {
           "brand_names": {
@@ -4169,6 +4198,11 @@
             },
             "title": "Brand Names",
             "type": "array"
+          },
+          "cross_sheet": {
+            "default": true,
+            "title": "Cross Sheet",
+            "type": "boolean"
           },
           "intent": {
             "default": "commercial",
@@ -4193,10 +4227,25 @@
             "default": "en-US",
             "enum": [
               "en-US",
-              "en-GB"
+              "en-GB",
+              "sv-SE"
             ],
             "title": "Locale",
             "type": "string"
+          },
+          "sheets": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheets"
           }
         },
         "title": "ContentQaProfileDTO",
@@ -4265,6 +4314,14 @@
             "default": {},
             "title": "Severity Counts",
             "type": "object"
+          },
+          "sheets": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ContentQaSheetDTO"
+            },
+            "title": "Sheets",
+            "type": "array"
           },
           "skipped_sheets": {
             "default": [],
@@ -4387,6 +4444,76 @@
           "reports"
         ],
         "title": "ContentQaReportsPageDTO",
+        "type": "object"
+      },
+      "ContentQaSheetDTO": {
+        "properties": {
+          "item_count": {
+            "title": "Item Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "checked",
+              "not_selected",
+              "no_recognized_columns"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "item_count"
+        ],
+        "title": "ContentQaSheetDTO",
+        "type": "object"
+      },
+      "ContentQaSheetPreviewDTO": {
+        "description": "\u041e\u0434\u0438\u043d \u0430\u0440\u043a\u0443\u0448 \u0443 \u0432\u0456\u0434\u043f\u043e\u0432\u0456\u0434\u0456 `/inspect` (task-87 \u00a71.3, \u043a\u0440\u043e\u043a 1).",
+        "properties": {
+          "blocks": {
+            "title": "Blocks",
+            "type": "integer"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "load_bearing": {
+            "title": "Load Bearing",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "index",
+          "load_bearing",
+          "columns",
+          "row_count",
+          "blocks"
+        ],
+        "title": "ContentQaSheetPreviewDTO",
         "type": "object"
       },
       "CreateMyTokenRequest": {
@@ -25097,7 +25224,8 @@
               "default": "en-US",
               "enum": [
                 "en-US",
-                "en-GB"
+                "en-GB",
+                "sv-SE"
               ],
               "title": "Locale",
               "type": "string"
@@ -26008,7 +26136,7 @@
     },
     "/api/v1/tools/strategy-check/check": {
       "post": {
-        "description": "SEO-\u0441\u0442\u0440\u0430\u0442\u0435\u0433\u0456\u044f (XLSX) -> findings, \u043f\u0435\u0440\u0441\u0438\u0441\u0442\u043e\u0432\u0430\u043d\u043e. \u041c\u0430\u043f\u0456\u043d\u0433 \u043a\u043e\u043b\u043e\u043d\u043e\u043a \u0456 \u0432\u043a\u043b\u0430\u0434\u043a\u0430\n\u0432\u0438\u0437\u043d\u0430\u0447\u0430\u044e\u0442\u044c\u0441\u044f \u0441\u0430\u043c\u0438\u043c \u0440\u0438\u0434\u0435\u0440\u043e\u043c (\u00a72.3 task-53 \u043f\u043b\u0430\u043d\u0443) \u2014 \u043d\u0430 \u0432\u0456\u0434\u043c\u0456\u043d\u0443 \u0432\u0456\u0434 Alt Text\n\u0442\u0443\u0442 \u043d\u0435\u043c\u0430\u0454 \u0434\u0432\u043e\u0437\u043d\u0430\u0447\u043d\u043e\u0441\u0442\u0456, \u044f\u043a\u0443 \u043c\u0430\u0432 \u0431\u0438 \u0432\u0438\u0440\u0456\u0448\u0443\u0432\u0430\u0442\u0438 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440 \u043f\u0435\u0440\u0435\u0434 \u043f\u0440\u043e\u0433\u043e\u043d\u043e\u043c.",
+        "description": "SEO-\u0441\u0442\u0440\u0430\u0442\u0435\u0433\u0456\u044f (XLSX) -> findings, \u043f\u0435\u0440\u0441\u0438\u0441\u0442\u043e\u0432\u0430\u043d\u043e. \u041c\u0430\u043f\u0456\u043d\u0433 \u043a\u043e\u043b\u043e\u043d\u043e\u043a \u0456\n\u043d\u0435\u0441\u0443\u0447\u0456\u0441\u0442\u044c \u0430\u0440\u043a\u0443\u0448\u0430 \u0432\u0438\u0437\u043d\u0430\u0447\u0430\u044e\u0442\u044c\u0441\u044f \u0441\u0430\u043c\u0438\u043c \u0440\u0438\u0434\u0435\u0440\u043e\u043c (\u00a72.3 task-53 \u043f\u043b\u0430\u043d\u0443).\n\n`sheet` (0+ query-\u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u0456\u0432) \u043e\u0431\u043c\u0435\u0436\u0443\u0454 \u043f\u0435\u0440\u0435\u0432\u0456\u0440\u043a\u0443 \u043e\u0431\u0440\u0430\u043d\u0438\u043c\u0438 \u0430\u0440\u043a\u0443\u0448\u0430\u043c\u0438 \u2014\n`None`/\u0432\u0456\u0434\u0441\u0443\u0442\u043d\u0456\u0439 \u043f\u0435\u0440\u0435\u0432\u0456\u0440\u044f\u0454 \u0432\u0441\u0456 \u043d\u0435\u0441\u0443\u0447\u0456 \u0430\u0440\u043a\u0443\u0448\u0456, \u0442\u0435 \u0441\u0430\u043c\u0435 \u043f\u043e\u0432\u043e\u0434\u0436\u0435\u043d\u043d\u044f, \u0449\u043e \u0434\u043e\ntask-87 (\u00a71.3). `cross_sheet=False` \u0440\u0430\u0445\u0443\u0454 \u0434\u0443\u0431\u043b\u0456/\u043a\u0430\u043d\u0456\u0431\u0430\u043b\u0456\u0437\u0430\u0446\u0456\u044e \u043b\u0438\u0448\u0435 \u0432\n\u043c\u0435\u0436\u0430\u0445 \u043a\u043e\u0436\u043d\u043e\u0433\u043e \u043e\u0431\u0440\u0430\u043d\u043e\u0433\u043e \u0430\u0440\u043a\u0443\u0448\u0430 \u043e\u043a\u0440\u0435\u043c\u043e.",
         "operationId": "check_strategy_api_v1_tools_strategy_check_check_post",
         "parameters": [
           {
@@ -26064,7 +26192,8 @@
               "default": "en-US",
               "enum": [
                 "en-US",
-                "en-GB"
+                "en-GB",
+                "sv-SE"
               ],
               "title": "Locale",
               "type": "string"
@@ -26104,6 +26233,35 @@
               ],
               "title": "Brand"
             }
+          },
+          {
+            "in": "query",
+            "name": "sheet",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sheet"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cross_sheet",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Cross Sheet",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -26129,6 +26287,56 @@
           }
         },
         "summary": "Check Strategy",
+        "tags": [
+          "content-qa"
+        ]
+      }
+    },
+    "/api/v1/tools/strategy-check/inspect": {
+      "post": {
+        "description": "\u041a\u0440\u043e\u043a 1 \u0432\u0438\u0431\u043e\u0440\u0443 \u0430\u0440\u043a\u0443\u0448\u0430 (task-87 \u00a71.3): \u0441\u0438\u0440\u0456 \u0431\u0430\u0439\u0442\u0438 \u0432, \u043f\u0435\u0440\u0435\u043b\u0456\u043a \u0430\u0440\u043a\u0443\u0448\u0456\u0432 \u0456\u0437\n\u043f\u0440\u0435\u0432'\u044e \u043d\u0430\u0437\u0430\u0434 \u2014 \u043d\u0456\u0447\u043e\u0433\u043e \u043d\u0435 \u043f\u0435\u0440\u0441\u0438\u0441\u0442\u0443\u0454, \u0442\u043e\u0439 \u0441\u0430\u043c\u0438\u0439 stateless \u0432\u0438\u0431\u0456\u0440, \u0449\u043e\n/check. \u0424\u0440\u043e\u043d\u0442 \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u043e \u043d\u0430\u0434\u0441\u0438\u043b\u0430\u0454 \u0446\u0456 \u0436 \u0431\u0430\u0439\u0442\u0438 \u0432 `/check` \u0440\u0430\u0437\u043e\u043c \u0437 \u043e\u0431\u0440\u0430\u043d\u0438\u043c\u0438\n`sheet`; \u0434\u0432\u043e\u043a\u0440\u0430\u0442\u043d\u0430 \u043f\u0435\u0440\u0435\u0434\u0430\u0447\u0430 \u226410 \u041c\u0411 \u0434\u0435\u0448\u0435\u0432\u0448\u0430 \u0437\u0430 \u0447\u0435\u0440\u043d\u0435\u0442\u043a\u043e\u0432\u0438\u0439 upload-\u0441\u0442\u043e\u0440\n(`_StoredUpload`, TTL, \u043f\u0440\u0438\u0431\u0438\u0440\u0430\u043d\u043d\u044f), \u044f\u043a\u0438\u0439 \u0442\u0443\u0442 \u043d\u0435 \u0432\u0438\u043f\u0440\u0430\u0432\u0434\u0430\u043d\u0438\u0439 \u043e\u0434\u043d\u0438\u043c\n\u0440\u0456\u0448\u0435\u043d\u043d\u044f\u043c \"\u044f\u043a\u0456 \u0430\u0440\u043a\u0443\u0448\u0456\".",
+        "operationId": "inspect_strategy_api_v1_tools_strategy_check_inspect_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "x_filename",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentQaInspectDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect Strategy",
         "tags": [
           "content-qa"
         ]

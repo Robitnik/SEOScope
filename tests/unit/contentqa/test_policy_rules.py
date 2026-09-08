@@ -116,3 +116,14 @@ def test_meta_title_duplicate_across_pages() -> None:
     doc = ContentDoc(source="s.xlsx", doc_type="strategy_xlsx", items=(a, b))
     findings = check_meta_duplicates(doc, Profile())
     assert any(f.check == "meta-title-duplicate" for f in findings)
+
+
+def test_meta_title_duplicate_scoped_to_sheet_when_cross_sheet_is_off() -> None:
+    title = "Residential Surveying Software for RICS Home Surveys and Reports"
+    a = ContentItem(ref="Q2!row3", title=title, sheet="Q2")
+    b = ContentItem(ref="Q3!row9", title=title, sheet="Q3")
+    doc = ContentDoc(source="s.xlsx", doc_type="strategy_xlsx", items=(a, b))
+    with_cross = check_meta_duplicates(doc, Profile(cross_sheet=True))
+    without_cross = check_meta_duplicates(doc, Profile(cross_sheet=False))
+    assert any(f.check == "meta-title-duplicate" for f in with_cross)
+    assert not any(f.check == "meta-title-duplicate" for f in without_cross)

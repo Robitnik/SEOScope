@@ -27,6 +27,9 @@ class ContentQaReportInput:
     skipped_sheets: Sequence[str]
     findings: Sequence[dict[str, Any]]
     severity_counts: dict[str, int]
+    # Стан аркушів (task-87 §1.3) — `None` для Framework Check (DOCX не має
+    # аркушів) і для будь-якого викликача, що ще не постачає його.
+    sheets: Sequence[dict[str, Any]] | None = None
 
 
 class ContentQaRepository:
@@ -43,6 +46,7 @@ class ContentQaRepository:
             skipped_sheets_json=list(data.skipped_sheets),
             findings_json=list(data.findings),
             severity_counts_json=dict(data.severity_counts),
+            sheets_json=list(data.sheets) if data.sheets is not None else None,
         )
         self._session.add(report)
         self._session.flush()

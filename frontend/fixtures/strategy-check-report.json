@@ -6,8 +6,13 @@
   "source_filename": "SEO_STRATEGY_Q3.xlsx",
   "item_count": 9,
   "created_at": "2026-08-21T09:00:00Z",
-  "profile": { "kind": "page", "intent": "commercial", "locale": "en-US", "brand_names": ["Acme"] },
+  "profile": { "kind": "page", "intent": "commercial", "locale": "en-US", "brand_names": ["Acme"], "sheets": null, "cross_sheet": true },
   "skipped_sheets": ["Structure v 2.0"],
+  "sheets": [
+    { "name": "Q3 Strategy", "state": "checked", "item_count": 7 },
+    { "name": "Blogs", "state": "checked", "item_count": 2 },
+    { "name": "Structure v 2.0", "state": "no_recognized_columns", "item_count": 0 }
+  ],
   "severity_counts": { "error": 8, "warn": 6, "info": 2 },
   "findings": [
     { "check": "meta-title-length", "severity": "error", "ref": "Q3 Strategy!row 3", "detail": "Title is 76 chars; ceiling is 60.", "value": "Building Surveying Software UK | Digital Reports and RICS Templates and More | Acme" },

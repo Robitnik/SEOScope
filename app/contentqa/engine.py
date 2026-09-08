@@ -19,6 +19,23 @@ def run_checks(doc: ContentDoc, profile: Profile | None = None) -> list[Finding]
     profile = profile or Profile()
     findings: list[Finding] = []
 
+    if profile.language != "en":
+        lexicon = profile.lexicon
+        if lexicon is not None and lexicon.disabled_lanes:
+            adjustments = "; ".join(lexicon.disabled_lanes)
+            findings.append(Finding(
+                "locale-rules-adjusted", "info", doc.source,
+                f"{lexicon.name} locale: some English-only lanes are disabled or "
+                f"replaced for this run — {adjustments}.",
+            ))
+        elif lexicon is None:
+            findings.append(Finding(
+                "locale-rules-adjusted", "info", doc.source,
+                f"No word lists for locale {profile.locale!r} yet — meta-length and "
+                f"structure checks still ran, but slop/filler/opener/voice lanes did not "
+                f"(app/contentqa/lexicon).",
+            ))
+
     for sheet in doc.skipped_sheets:
         findings.append(Finding(
             "sheet-skipped", "info", f"{doc.source}!{sheet}",

@@ -231,3 +231,32 @@ def test_url_duplicate_finding_carries_the_url() -> None:
     findings = check_cross_page(doc, Profile())
     hit = next(f for f in findings if f.check == "url-duplicate")
     assert hit.value == "https://example.com/pricing/"
+
+
+# ── task-87 §1.3: cross_sheet scoping ──────────────────────────────────────────
+
+
+def test_cross_sheet_true_finds_duplicate_url_across_sheets() -> None:
+    a = ContentItem(ref="Q2!row3", url="https://example.com/pricing/", sheet="Q2")
+    b = ContentItem(ref="Q3!row5", url="https://example.com/pricing/", sheet="Q3")
+    doc = ContentDoc(source="s.xlsx", doc_type="strategy_xlsx", items=(a, b))
+    findings = check_cross_page(doc, Profile(cross_sheet=True))
+    assert any(f.check == "url-duplicate" for f in findings)
+
+
+def test_cross_sheet_false_does_not_compare_across_sheets() -> None:
+    # Та сама сторінка в Q2- і Q3-стратегії того самого файлу — історія
+    # планування, не помилка (task-87 §1.3), коли оператор вимкнув порівняння.
+    a = ContentItem(ref="Q2!row3", url="https://example.com/pricing/", sheet="Q2")
+    b = ContentItem(ref="Q3!row5", url="https://example.com/pricing/", sheet="Q3")
+    doc = ContentDoc(source="s.xlsx", doc_type="strategy_xlsx", items=(a, b))
+    findings = check_cross_page(doc, Profile(cross_sheet=False))
+    assert not any(f.check == "url-duplicate" for f in findings)
+
+
+def test_cross_sheet_false_still_compares_within_the_same_sheet() -> None:
+    a = ContentItem(ref="Q3!row3", url="https://example.com/pricing/", sheet="Q3")
+    b = ContentItem(ref="Q3!row5", url="https://example.com/pricing/", sheet="Q3")
+    doc = ContentDoc(source="s.xlsx", doc_type="strategy_xlsx", items=(a, b))
+    findings = check_cross_page(doc, Profile(cross_sheet=False))
+    assert any(f.check == "url-duplicate" for f in findings)

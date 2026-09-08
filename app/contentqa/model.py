@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,26 @@ class ContentItem:
     external_links: tuple[str, ...] = ()
     body: str | None = None
     raw: dict[str, str] = field(default_factory=dict)
+    # Аркуш-джерело (XLSX) — `None` для DOCX (один документ = одна група).
+    # Адитивне поле (task-87 §1.3): скоуп крос-сторінкових перевірок
+    # (check_cross_page/check_meta_duplicates) групує за ним, коли
+    # `Profile.cross_sheet` вимкнено, замість парсити `ref` рядком.
+    sheet: str | None = None
+
+
+# Стан аркуша в результаті прогону (task-87 §1.3) — три різні речі, які
+# `skipped_sheets` (лише "немає title/description колонок") не розрізняв:
+# оператор або перевірив аркуш, або свідомо його не обрав, або в ньому
+# нема на чому перевіряти. `not_selected` — НЕ finding (це не дефект файлу),
+# а рядок у блоці Scope звіту.
+SheetState = Literal["checked", "not_selected", "no_recognized_columns"]
+
+
+@dataclass(frozen=True)
+class SheetInfo:
+    name: str
+    state: SheetState
+    item_count: int
 
 
 @dataclass(frozen=True)
@@ -35,3 +56,6 @@ class ContentDoc:
     doc_type: str  # "strategy_xlsx" | "framework_docx"
     items: tuple[ContentItem, ...]
     skipped_sheets: tuple[str, ...] = ()
+    # Стан усіх аркушів workbook (не лише обраних) — `()` для DOCX і для
+    # звітів, де вибір аркуша не застосовувався (усе одно "checked").
+    sheet_states: tuple[SheetInfo, ...] = ()
