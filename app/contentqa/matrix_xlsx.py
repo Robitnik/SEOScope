@@ -68,10 +68,37 @@ _ABSENT_FG = "999999"
 # read green/green/red, not red/red/red.
 _MISMATCH_FG = "CC0000"
 _MISMATCH_BG = "FDEAEA"
-_MISMATCH_BORDER = Border(left=Side(style="medium", color=_MISMATCH_FG))
 _MATCH_FG = "1E7E34"
 _MATCH_BG = "EAF7ED"
-_MATCH_BORDER = Border(left=Side(style="medium", color=_MATCH_FG))
+# Live feedback ("Покращ стиль та читабельність"): with `showGridLines =
+# False` and no border on untoned cells, plain fields (URL, absent cells,
+# not-toned H1...) had no visible boundary at all — only the colored left
+# edge on a toned cell hinted where one column ended and the next began.
+# A thin gray grid on every cell (data AND header) makes the sheet read as
+# an actual table again; toned cells keep their colored left edge, now
+# layered on top of the same thin gray on the other three sides instead of
+# replacing the border outright.
+_GRID_COLOR = "D9D9D9"
+_GRID_SIDE = Side(style="thin", color=_GRID_COLOR)
+_GRID_BORDER = Border(top=_GRID_SIDE, bottom=_GRID_SIDE, left=_GRID_SIDE, right=_GRID_SIDE)
+_MISMATCH_BORDER = Border(
+    top=_GRID_SIDE, bottom=_GRID_SIDE, right=_GRID_SIDE,
+    left=Side(style="medium", color=_MISMATCH_FG),
+)
+_MATCH_BORDER = Border(
+    top=_GRID_SIDE, bottom=_GRID_SIDE, right=_GRID_SIDE,
+    left=Side(style="medium", color=_MATCH_FG),
+)
+# A thicker divider above each page's title row separates one page's three
+# mini-tables from the next page's — otherwise the last (toned, colored)
+# data row of one page sits directly against the next page's header with
+# nothing but a one-row gap to signal "new group starts here" (live
+# feedback screenshot: the previous page's red-bordered row read as if it
+# bled into the next page's header).
+_PAGE_DIVIDER_SIDE = Side(style="medium", color=_HEADER_BG)
+_SOURCE_LABEL_BG = "F3F3F3"
+_TITLE_ROW_HEIGHT = 22
+_SUMMARY_ROW_HEIGHT = 16
 
 _FIELDS = ("url", "title", "description", "h1", "keywords", "links")
 _FIELD_LABELS = ("URL", "Title", "Description", "H1", "Keywords", "Outgoing links")
@@ -124,6 +151,7 @@ def _header_row(ws: Worksheet, row_index: int, labels: list[str]) -> None:
         cell = ws.cell(row_index, col_index, label)
         cell.font = Font(name="Calibri", bold=True, color=_HEADER_FG, size=11)
         cell.fill = _fill(_HEADER_BG)
+        cell.border = _GRID_BORDER
         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
 
@@ -151,28 +179,48 @@ def _cell_tone(verdict: MatrixFieldVerdictDTO, side: str) -> str | None:
 
 
 def _page_header(ws: Worksheet, row_index: int, row: MatrixRowDTO) -> int:
-    """URL/label + зведені вердикти шести полів в один рядок над трьома
-    міні-таблицями цієї сторінки — та сама інформація, що бейджі в шапці
-    групи на екрані (`renderMatrixVerdictBadges`)."""
-    title_cell = ws.cell(row_index, 1, row.label)
+    """URL/label + зведені вердикти шести полів над трьома міні-таблицями
+    цієї сторінки — та сама інформація, що бейджі в шапці групи на екрані
+    (`renderMatrixVerdictBadges`). Дві злиті на всю ширину клітинки (title
+    + summary), не одна колонка поруч з іншою (live feedback: сусідня
+    клітинка з summary-текстом обрізала довгий URL замість перенесення —
+    "Юрл не обрізай"), плюс потовщена верхня межа-роздільник між сторінками."""
+    title_row = row_index
+    ws.merge_cells(
+        start_row=title_row, start_column=1, end_row=title_row, end_column=_TOTAL_COLUMNS
+    )
+    title_cell = ws.cell(title_row, 1, row.label)
     title_cell.font = Font(name="Calibri", bold=True, size=13)
+    title_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    for col in range(1, _TOTAL_COLUMNS + 1):
+        cell = ws.cell(title_row, col)
+        cell.fill = _fill(_BLOCK_TITLE_BG)
+        cell.border = Border(top=_PAGE_DIVIDER_SIDE)
+    ws.row_dimensions[title_row].height = _TITLE_ROW_HEIGHT
+
+    summary_row = title_row + 1
+    ws.merge_cells(
+        start_row=summary_row, start_column=1, end_row=summary_row, end_column=_TOTAL_COLUMNS
+    )
     summary = "   ".join(
         f"{label}:{_VERDICT_SYMBOL[getattr(row.verdicts, field).state]}"
         for field, label in zip(_FIELDS, _FIELD_LABELS, strict=True)
     )
-    summary_cell = ws.cell(row_index, 2, summary)
+    summary_cell = ws.cell(summary_row, 1, summary)
     summary_cell.font = Font(italic=True, size=10, color=_ABSENT_FG)
+    summary_cell.alignment = Alignment(horizontal="left", vertical="center")
     for col in range(1, _TOTAL_COLUMNS + 1):
-        ws.cell(row_index, col).fill = _fill(_BLOCK_TITLE_BG)
-    return row_index + 1
+        ws.cell(summary_row, col).fill = _fill(_BLOCK_TITLE_BG)
+    ws.row_dimensions[summary_row].height = _SUMMARY_ROW_HEIGHT
+    return summary_row + 1
 
 
-def _tone_font_fill_border(tone: str | None) -> tuple[Font, PatternFill | None, Border | None]:
+def _tone_font_fill_border(tone: str | None) -> tuple[Font, PatternFill | None, Border]:
     if tone == "mismatch":
         return Font(bold=True, color=_MISMATCH_FG), _fill(_MISMATCH_BG), _MISMATCH_BORDER
     if tone == "match":
         return Font(bold=True, color=_MATCH_FG), _fill(_MATCH_BG), _MATCH_BORDER
-    return Font(), None, None
+    return Font(), None, _GRID_BORDER
 
 
 def _mini_table(
@@ -195,8 +243,12 @@ def _mini_table(
         return _cell_tone(getattr(verdicts, field), side)
 
     r = start_row
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_TOTAL_COLUMNS)
     label_cell = ws.cell(r, 1, title)
     label_cell.font = Font(bold=True, size=10, color=_ABSENT_FG)
+    label_cell.alignment = Alignment(horizontal="left", vertical="center")
+    for col in range(1, _TOTAL_COLUMNS + 1):
+        ws.cell(r, col).fill = _fill(_SOURCE_LABEL_BG)
     r += 1
 
     links_tone = tone_for("links")
@@ -211,12 +263,14 @@ def _mini_table(
         header_cell = ws.cell(r, col_index, label)
         header_cell.font = Font(name="Calibri", bold=True, size=11, color=header_fg)
         header_cell.fill = _fill(_HEADER_BG)
+        header_cell.border = _GRID_BORDER
         header_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
     r += 1
 
     if cells is None:
         note = ws.cell(r, 1, "— not in this run")
         note.font = Font(color=_ABSENT_FG, italic=True)
+        note.border = _GRID_BORDER
     else:
         for col_offset, field in enumerate(_SCALAR_FIELDS):
             cell_value = getattr(cells, field)
@@ -224,14 +278,16 @@ def _mini_table(
             cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
             tone = tone_for(field)
             font, fill, border = _tone_font_fill_border(tone)
+            cell.border = border
             if tone:
-                cell.font, cell.fill, cell.border = font, fill, border
+                cell.font, cell.fill = font, fill
             elif cell_value.state == "absent":
                 cell.font = Font(color=_ABSENT_FG, italic=True)
 
         links_cell = cells.links
         link_items = links_cell.items if links_cell.state == "value" else ()
         base_col = len(_SCALAR_FIELDS) + 1
+        link_font, link_fill, link_border = _tone_font_fill_border(links_tone)
         for i in range(_MAX_LINK_COLUMNS):
             col = base_col + i
             if i < len(link_items):
@@ -239,14 +295,14 @@ def _mini_table(
                 if i == _MAX_LINK_COLUMNS - 1 and len(link_items) > _MAX_LINK_COLUMNS:
                     text += f"  (+{len(link_items) - _MAX_LINK_COLUMNS} more)"
                 cell = ws.cell(r, col, text)
-                font, fill, border = _tone_font_fill_border(links_tone)
                 if links_tone:
-                    cell.font, cell.fill, cell.border = font, fill, border
+                    cell.font, cell.fill = link_font, link_fill
             elif i == 0 and links_cell.state == "absent":
                 cell = ws.cell(r, col, "— (no such column)")
                 cell.font = Font(color=_ABSENT_FG, italic=True)
             else:
                 cell = ws.cell(r, col, "")
+            cell.border = link_border
             cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
     ws.row_dimensions[r].height = _DATA_ROW_HEIGHT
     return r + 1

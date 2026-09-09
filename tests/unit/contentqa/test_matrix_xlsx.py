@@ -103,7 +103,10 @@ def test_page_header_summarizes_verdicts() -> None:
     ]
     data = build_matrix_xlsx(rows)
     ws = load_workbook(io.BytesIO(data))["Comparison"]
-    summary = ws.cell(1, 2).value
+    # Title (row 1) and summary (row 2) are each merged across the full
+    # row width now (live feedback: "Юрл не обрізай" — a long URL sharing
+    # its row with the summary text used to get clipped by Excel).
+    summary = ws.cell(2, 1).value
     assert "URL:✓" in summary
     assert "Title:✗" in summary
 
