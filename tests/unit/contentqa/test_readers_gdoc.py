@@ -8,7 +8,12 @@ inside NORMAL_TEXT paragraphs for Content headings.
 
 from __future__ import annotations
 
-from app.contentqa.readers.gdoc import read_copy_tab, read_framework_document, read_framework_tab
+from app.contentqa.readers.gdoc import (
+    read_copy_sections,
+    read_copy_tab,
+    read_framework_document,
+    read_framework_tab,
+)
 from app.integrations.google_api.docs_client import DocTab
 
 
@@ -188,6 +193,27 @@ def test_content_empty_tab_returns_none() -> None:
 def test_content_whitespace_only_tab_returns_none() -> None:
     tab = _tab("Content", [_para(""), _para("   \n")])
     assert read_copy_tab(tab, source="doc") is None
+
+
+def test_read_copy_sections_groups_prose_by_heading() -> None:
+    tab = _tab("Content", [
+        _para("<h1>Title</h1>"),
+        _para("Intro paragraph."),
+        _para("<h2>Section A</h2>"),
+        _para("Body of section A."),
+    ])
+    sections = read_copy_sections(tab)
+    assert len(sections) == 2
+    assert sections[0].level == "H1"
+    assert sections[0].heading == "Title"
+    assert sections[0].text == "Intro paragraph."
+    assert sections[1].level == "H2"
+    assert sections[1].text == "Body of section A."
+
+
+def test_read_copy_sections_empty_for_no_headings() -> None:
+    tab = _tab("Content", [_para("Just prose, no heading at all.")])
+    assert read_copy_sections(tab) == ()
 
 
 def test_content_first_h1_wins_if_multiple() -> None:

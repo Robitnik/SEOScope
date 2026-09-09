@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.contentqa.model import ContentDoc, ContentItem
+from app.contentqa.sections import ContentSection, chunk_into_sections
 from app.integrations.google_api.docs_client import DocTab
 
 _HEADING_LINE_RE = re.compile(r"^\s*(H[123])\s*:\s*(.+?)\s*$", re.IGNORECASE)
@@ -179,15 +180,15 @@ def read_framework_tab(tab: DocTab, *, source: str) -> ContentItem:
     )
 
 
-def read_copy_tab(tab: DocTab, *, source: str) -> ContentItem | None:
-    """Одна вкладка `Content` (готова проза) -> один `ContentItem` із
-    заповненим `body`. `None`, коли вкладка не має жодного непорожнього
-    абзацу — поріг "занадто коротка, щоб перевіряти" (task-90 §2.3) вирішує
-    викликач (`contentqa/package.py`), тут лише чесний факт "нічого нема"."""
-    headings: list[tuple[str, str]] = []
-    body_parts: list[str] = []
-    h1: str | None = None
-
+def _copy_paragraph_stream(tab: DocTab) -> list[tuple[str | None, str]]:
+    """Кожен непорожній абзац вкладки `Content` -> `(рівень, текст)`:
+    `рівень` заданий ("H1".."H4"), коли абзац сам є заголовком (літеральний
+    HTML-тег — основний живий шлях — або нативний стиль, запасний); `None`,
+    коли це проза. Спільний потік для `read_copy_tab` (плаский `body`+
+    `headings`) і `read_copy_sections` (`contentqa/sections.py:
+    chunk_into_sections`, task-90 §4.4) — один прохід по документу вирішує,
+    що є заголовком, обидва споживачі лише групують інакше."""
+    stream: list[tuple[str | None, str]] = []
     for el in tab.body_content:
         if "paragraph" not in el:
             continue
@@ -197,26 +198,32 @@ def read_copy_tab(tab: DocTab, *, source: str) -> ContentItem | None:
 
         html_match = _HTML_HEADING_RE.match(text)
         if html_match:
-            level = html_match.group(1)
-            heading_text = html_match.group(2).strip()
-            headings.append((f"H{level}", heading_text))
-            if level == "1" and h1 is None:
-                h1 = heading_text
+            stream.append((f"H{html_match.group(1)}", html_match.group(2).strip()))
             continue
 
         style = _paragraph_style(el)
         if style and style.startswith("HEADING_"):
             level = style.removeprefix("HEADING_")
             if level.isdigit() and 1 <= int(level) <= 4:
-                headings.append((f"H{level}", text))
-                if level == "1" and h1 is None:
-                    h1 = text
+                stream.append((f"H{level}", text))
                 continue
 
-        body_parts.append(text)
+        stream.append((None, text))
+    return stream
 
-    if not body_parts and not headings:
+
+def read_copy_tab(tab: DocTab, *, source: str) -> ContentItem | None:
+    """Одна вкладка `Content` (готова проза) -> один `ContentItem` із
+    заповненим `body`. `None`, коли вкладка не має жодного непорожнього
+    абзацу — поріг "занадто коротка, щоб перевіряти" (task-90 §2.3) вирішує
+    викликач (`contentqa/package.py`), тут лише чесний факт "нічого нема"."""
+    stream = _copy_paragraph_stream(tab)
+    if not stream:
         return None
+
+    headings = [(level, text) for level, text in stream if level is not None]
+    body_parts = [text for level, text in stream if level is None]
+    h1 = next((text for level, text in headings if level == "H1"), None)
 
     return ContentItem(
         ref=_tab_ref(source, tab, default_title="Content"),
@@ -225,6 +232,13 @@ def read_copy_tab(tab: DocTab, *, source: str) -> ContentItem | None:
         body="\n\n".join(body_parts) or None,
         raw={},
     )
+
+
+def read_copy_sections(tab: DocTab) -> tuple[ContentSection, ...]:
+    """Ті самі абзаци, що `read_copy_tab`, згруповані заголовок -> проза до
+    наступного заголовка (task-90 §4.4/§3 лейн J: Copy ↔ живий сайт,
+    порівняння секція-в-секцію, а не diff усієї сторінки)."""
+    return chunk_into_sections(_copy_paragraph_stream(tab))
 
 
 @dataclass(frozen=True)
