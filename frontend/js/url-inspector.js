@@ -19,8 +19,8 @@ import {
   getUrlInspector, runUrlInspectorLive, getUrlScreenshots, captureUrlScreenshots,
   getUrlInspectorGoogle, getUrlInspectorGoogleBreakdowns, getUrlInspectorRealtime,
   runUrlIndexStatus, isAbortError,
-} from "./api.js?v=20260909-t88c";
-import { replaceUrlInspectorAddress } from "./router.js?v=20260909-t88c";
+} from "./api.js?v=20260909-t88d";
+import { replaceUrlInspectorAddress } from "./router.js?v=20260909-t88d";
 import { escapeHtml, formatDateRange, formatFileSize, formatTimestamp, icon } from "./formatters.js?v=20260821-spin3";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
 

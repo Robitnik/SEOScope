@@ -93,8 +93,23 @@ const ACCOUNT_ROUTE = /^#\/account/;
 // Екран згоди OAuth (task-78): сюди Claude приводить браузер із /authorize.
 const OAUTH_CONSENT_ROUTE = /^#\/oauth\/consent/;
 
+// A hash that starts with `#/` names a route. Every nav link, back-link and
+// user-menu item in this app is written that way and is RELATIVE (`#/trends`),
+// so clicking one from a server-backed path address (`/url/…`,
+// `/archive/view/…`) changes only the hash and leaves the pathname in place.
+// Without this check the pathname matched first and the click did nothing at
+// all — the whole main menu was dead on those two pages. Reported live on
+// `/url/…`; the same defect was already there on `/archive/view/…` since
+// task-63, just far less visible because that page is opened far less often.
+//
+// The URL Inspector's own fragment (`#g=week&w=90d`) deliberately does NOT
+// start with `#/`, so view state and navigation intent never collide.
+function hashNamesRoute() {
+  return (location.hash || "").startsWith("#/");
+}
+
 export function parseRoute() {
-  const pathMatch = location.pathname.match(ARCHIVE_VIEW_PATH_RE);
+  const pathMatch = hashNamesRoute() ? null : location.pathname.match(ARCHIVE_VIEW_PATH_RE);
   if (pathMatch) {
     const [, snapshotId, ts, rawUrl] = pathMatch;
     let url = rawUrl;
@@ -107,7 +122,7 @@ export function parseRoute() {
     const query = new URLSearchParams({ snapshot: decodeURIComponent(snapshotId), url, ts });
     return { name: "archive-view", query };
   }
-  const urlPathMatch = location.pathname.match(URL_INSPECTOR_PATH_RE);
+  const urlPathMatch = hashNamesRoute() ? null : location.pathname.match(URL_INSPECTOR_PATH_RE);
   if (urlPathMatch) {
     // `location.pathname` is already percent-DECODED by the browser, so a
     // url written raw arrives raw and one written encoded arrives decoded —
@@ -591,7 +606,7 @@ async function activate() {
     allRoots.filter((el) => el !== urlInspectorRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     urlInspectorRoot?.removeAttribute("hidden");
-    const { initUrlInspectorPage } = await import("./url-inspector.js?v=20260909-t88c");
+    const { initUrlInspectorPage } = await import("./url-inspector.js?v=20260909-t88d");
     await initUrlInspectorPage(route.query);
   } else if (route.name === "client") {
     dashboardView?.setAttribute("hidden", "");
@@ -635,7 +650,22 @@ async function activate() {
 // (not here) — this check only ever READS it, so the first module
 // instance to load still runs everything in order, top to bottom.
 if (!window.__yovthRouterBooted) {
-  window.addEventListener("hashchange", () => location.reload());
+  window.addEventListener("hashchange", () => {
+    // Leaving a server-backed path address for a hash route: go to the hash
+    // route's OWN address (`/#/trends`) instead of reloading in place, so the
+    // address bar stops naming a page we are no longer on. Costs exactly one
+    // load, the same as the plain reload below — `location.replace` also
+    // avoids leaving the abandoned path in the back stack.
+    if (hashNamesRoute() && !isAppRootPath()) {
+      location.replace(`/${location.hash}`);
+      return;
+    }
+    location.reload();
+  });
+}
+
+function isAppRootPath() {
+  return location.pathname === "/" || location.pathname === "/index.html";
 }
 
 // URL Inspector header search (task-61) — global chrome, visible on every
