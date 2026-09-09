@@ -111,3 +111,95 @@ def test_missing_metric_is_none_not_zero(fake_google: FakeGoogle) -> None:
     assert rows[0].clicks == Decimal(4)
     assert rows[0].impressions is None
     assert rows[0].ctr is None
+
+
+# ── task-89 §3.2: `search_analytics` generalization ─────────────────────────
+def test_search_analytics_single_dimension(fake_google: FakeGoogle) -> None:
+    fake_google.on(
+        "searchAnalytics/query",
+        httpx.Response(
+            200,
+            json={"rows": [
+                {"keys": ["/blog/a"], "clicks": 5, "impressions": 50, "ctr": 0.1, "position": 3.0},
+                {"keys": ["/blog/b"], "clicks": 2, "impressions": 20, "ctr": 0.1, "position": 5.0},
+            ]},
+        ),
+    )
+    rows = GscClient(fake_google.session()).search_analytics(
+        SITE, START, END, dimensions=["page"]
+    )
+    assert [r.keys for r in rows] == [("/blog/a",), ("/blog/b",)]
+    assert rows[0].clicks == Decimal(5)
+    import json
+
+    body = json.loads(fake_google.requests[-1].content)
+    assert body["dimensions"] == ["page"]
+
+
+def test_search_analytics_two_dimensions(fake_google: FakeGoogle) -> None:
+    fake_google.on(
+        "searchAnalytics/query",
+        httpx.Response(
+            200,
+            json={"rows": [{"keys": ["/blog/a", "some query"], "clicks": 3, "impressions": 30,
+                            "ctr": 0.1, "position": 2.0}]},
+        ),
+    )
+    rows = GscClient(fake_google.session()).search_analytics(
+        SITE, START, END, dimensions=["page", "query"]
+    )
+    assert rows[0].keys == ("/blog/a", "some query")
+
+
+def test_search_analytics_dimensionless_total(fake_google: FakeGoogle) -> None:
+    """`dimensions=[]` (a bare period total, task-89 §3.4) returns one row
+    with an empty `keys` tuple — never crashes on the missing `keys` field."""
+    fake_google.on(
+        "searchAnalytics/query",
+        httpx.Response(
+            200,
+            json={"rows": [
+                {"clicks": 1736, "impressions": 281736, "ctr": 0.006, "position": 10.6}
+            ]},
+        ),
+    )
+    rows = GscClient(fake_google.session()).search_analytics(SITE, START, END, dimensions=[])
+    assert rows[0].keys == ()
+    assert rows[0].clicks == Decimal(1736)
+
+
+def test_search_analytics_max_rows_truncates_without_extra_page(
+    fake_google: FakeGoogle,
+) -> None:
+    """`max_rows` bounds the returned list; when the first page already has
+    more than `max_rows`, the generator is never asked for a second page
+    (task-89 §3.2 — the same trick GSC-dimension truncation detection
+    relies on to cost one API call, not two)."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(200, json={"rows": [_row(f"2026-08-0{i}") for i in range(1, 6)]})
+
+    fake_google.on("searchAnalytics/query", handler)
+    rows = GscClient(fake_google.session()).search_analytics(
+        SITE, START, END, dimensions=["date"], row_limit=5, max_rows=3
+    )
+    assert len(rows) == 3
+    assert call_count == 1
+
+
+def test_daily_search_analytics_still_works_via_search_analytics(
+    fake_google: FakeGoogle,
+) -> None:
+    """Regression: `daily_search_analytics` is now a thin wrapper over
+    `search_analytics` (task-89 §3.2) — task-83's callers/tests must see
+    zero behaviour change."""
+    fake_google.on(
+        "searchAnalytics/query",
+        httpx.Response(200, json={"rows": [_row("2026-08-01", clicks=7)]}),
+    )
+    rows = GscClient(fake_google.session()).daily_search_analytics(SITE, START, END)
+    assert rows[0].date == "2026-08-01"
+    assert rows[0].clicks == Decimal(7)

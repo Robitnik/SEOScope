@@ -1,5 +1,5 @@
 import { escapeHtml, icon } from "./formatters.js?v=20260821-spin3";
-import { formatUaNumber } from "./client-page.js?v=20260821-spin3";
+import { formatUaNumber } from "./client-page.js?v=20260909-t89";
 
 const DATASETS = {
   ga4_channels: { label: "Channels", dimension: "Channel", primary: "sessions" },
@@ -32,9 +32,17 @@ function valueMarkup(value, metric) {
   return formatUaNumber(value);
 }
 
-function kpiMarkup(summary) {
+function kpiMarkup(summary, dashboardSupportsThisPeriod) {
   const metrics = summary?.metrics || [];
   if (!metrics.length) {
+    // task-89 §6.2: quarter/year/custom aggregate already-stored history on
+    // this page (task-14) — the dashboard-card KPI snapshot this panel
+    // otherwise shows simply has no equivalent for those windows, not "not
+    // collected yet". Saying so plainly beats silence or a fabricated
+    // number; the chart and table below still show this period's real data.
+    if (dashboardSupportsThisPeriod === false) {
+      return `<div class="state-panel"><p><strong>KPI totals aren't available for this period.</strong><br>See the daily chart and table below for exact numbers.</p></div>`;
+    }
     return `<div class="state-panel"><p><strong>No GA4 KPI snapshot for this period.</strong><br>Run Reporting Ninja collection for this exact range.</p></div>`;
   }
   return `<div class="rn-kpi-grid">${metrics.map((metric) => {
@@ -186,9 +194,10 @@ function renderGbpChart(container, payload) {
 
 export function renderReportingNinjaPanel(container, {
   summary, daily, currentDataset, previousDataset, gbp, state, onChange,
+  dashboardSupportsThisPeriod = true,
 }) {
   container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Reporting Ninja · GA4</p><h2>Traffic and conversions</h2></div><span class="status-label status-${summary?.state || "unavailable"}">${escapeHtml(summary?.state || "no data")}</span></div>
-    ${kpiMarkup(summary)}
+    ${kpiMarkup(summary, dashboardSupportsThisPeriod)}
     <div class="rn-chart" id="rn-daily-chart"></div>
     <div id="rn-dataset-table">${datasetTable(currentDataset, previousDataset, state)}</div>
     ${gbpMarkup(gbp)}`;

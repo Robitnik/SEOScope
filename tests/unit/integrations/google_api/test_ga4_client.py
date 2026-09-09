@@ -97,6 +97,66 @@ def test_absent_day_stays_absent(fake_google: FakeGoogle) -> None:
     assert aug3.metrics["keyEvents"] == Decimal(0)
 
 
+# ── task-89 §3.3: `dimension_filter` and `limit` ────────────────────────────
+def test_dimension_filter_passed_through_verbatim(fake_google: FakeGoogle) -> None:
+    fake_google.on(":runReport", httpx.Response(200, json=_report([])))
+    dim_filter = {
+        "filter": {"fieldName": "eventName", "inListFilter": {"values": ["Phone", "Email"]}}
+    }
+    Ga4Client(fake_google.session()).run_report(
+        PROP, START, END, dimensions=["eventName"], metrics=["keyEvents"],
+        dimension_filter=dim_filter,
+    )
+    body = json.loads(fake_google.requests[-1].content)
+    assert body["dimensionFilter"] == dim_filter
+
+
+def test_no_dimension_filter_key_when_not_passed(fake_google: FakeGoogle) -> None:
+    fake_google.on(":runReport", httpx.Response(200, json=_report([])))
+    Ga4Client(fake_google.session()).run_report(
+        PROP, START, END, dimensions=["date"], metrics=["sessions"]
+    )
+    body = json.loads(fake_google.requests[-1].content)
+    assert "dimensionFilter" not in body
+
+
+def test_limit_bounds_total_rows_across_pages(
+    fake_google: FakeGoogle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`limit` caps the TOTAL row count the client hands back, independent of
+    the per-page `_PAGE_LIMIT` (task-89 §3.3) — mirrors
+    `_GA4_DATASETS[...]["limit"]` so a truncated Google API breakdown can
+    flag `Quality.truncated` at the same threshold the Reporting Ninja path
+    already uses."""
+    monkeypatch.setattr(ga4_module, "_PAGE_LIMIT", 3)
+    seen_offsets: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = json.loads(request.content)["offset"]
+        seen_offsets.append(offset)
+        page = [_grow(f"2026080{offset + i + 1}", "1", "1") for i in range(3)]
+        return httpx.Response(200, json=_report(page, row_count=10))
+
+    fake_google.on(":runReport", handler)
+    rows = Ga4Client(fake_google.session()).run_report(
+        PROP, START, END, dimensions=["date"], metrics=["sessions", "keyEvents"], limit=5,
+    )
+    assert len(rows) == 5
+    # Truncated mid-page (limit=5 falls inside the 2nd page of 3) — the next
+    # page must never be requested once the limit is already satisfied.
+    assert seen_offsets == [0, 3]
+
+
+def test_limit_none_is_unbounded_default(fake_google: FakeGoogle) -> None:
+    fake_google.on(
+        ":runReport", httpx.Response(200, json=_report([_grow("20260801", "1", "1")]))
+    )
+    rows = Ga4Client(fake_google.session()).run_report(
+        PROP, START, END, dimensions=["date"], metrics=["sessions", "keyEvents"]
+    )
+    assert len(rows) == 1
+
+
 def test_two_dimension_rows_carry_both(fake_google: FakeGoogle) -> None:
     fake_google.on(
         ":runReport",

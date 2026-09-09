@@ -14,6 +14,11 @@ from collections.abc import Mapping
 from typing import Any, Literal
 
 from app.core.config import Settings, get_settings
+from app.integrations.google_api.admin_client import (
+    Ga4AdminClient,
+    Ga4KeyEvent,
+    Ga4PropertyInfo,
+)
 from app.integrations.google_api.auth import (
     GoogleApiSession,
     GoogleAuth,
@@ -28,7 +33,7 @@ from app.integrations.google_api.errors import (
     GoogleApiRateLimitError,
 )
 from app.integrations.google_api.ga4_client import Ga4Client, Ga4Row
-from app.integrations.google_api.gsc_client import GscClient, GscDailyRow
+from app.integrations.google_api.gsc_client import GscClient, GscDailyRow, GscRow
 
 Transport = Literal["google_api", "reporting_ninja"]
 
@@ -39,7 +44,10 @@ _VALID: frozenset[str] = frozenset({GOOGLE_API, REPORTING_NINJA})
 __all__ = [
     "GOOGLE_API",
     "REPORTING_NINJA",
+    "Ga4AdminClient",
     "Ga4Client",
+    "Ga4KeyEvent",
+    "Ga4PropertyInfo",
     "Ga4Row",
     "GoogleApiAuthError",
     "GoogleApiConfigError",
@@ -50,6 +58,7 @@ __all__ = [
     "GoogleAuth",
     "GscClient",
     "GscDailyRow",
+    "GscRow",
     "Transport",
     "get_google_auth",
     "open_google_api_session",

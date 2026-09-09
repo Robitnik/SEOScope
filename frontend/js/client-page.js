@@ -7,7 +7,7 @@ import { escapeHtml, formatTimestamp, icon, initials, isTerminal, MONITOR_SEVERI
 import { createAnalyticsTab } from "./analytics-tabs.js?v=20260821-spin3";
 import { renderAlertsBlock } from "./alerts-block.js?v=20260821-spin3";
 import { renderChart, destroyChart } from "./charts.js?v=20260821-spin3";
-import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260821-spin3";
+import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260909-t89";
 import { watchJob } from "./sse.js?v=20260821-spin3";
 
 const PERIODS = [
@@ -1072,7 +1072,18 @@ async function loadReportingNinjaPeriodData() {
     limit: 500,
   };
   const definitionSort = current.ga4Dataset === "ga4_events" ? "events" : "sessions";
-  const dashboardPromise = current.period === "week" || current.period === "month"
+  // task-89 §6.2 fix: the dashboard-card KPI snapshot only ever exists for
+  // `week`/`month` — `quarter`/`year`/`custom` are computed by aggregating
+  // already-stored history straight on this page (task-14), and
+  // `GET /api/v1/dashboard` has no `custom_start`/`custom_end` at all, so it
+  // cannot answer for them. The bug this used to have: falling back to
+  // `current.reportingNinjaSummary` (the WEEK snapshot fetched once in
+  // `loadClient()`) silently relabeled last week's numbers as this period's
+  // KPI cards, with no indication anything was wrong. `summary` is now
+  // `null` for those periods — `kpiMarkup()` shows an honest "not available"
+  // state instead of a fabricated one (PLAN §12).
+  const dashboardSupportsThisPeriod = current.period === "week" || current.period === "month";
+  const dashboardPromise = dashboardSupportsThisPeriod
     ? getDashboard({ period: current.period, anchor: current.anchor || undefined, requestKey: "client-reporting-ninja" })
     : Promise.resolve(null);
   const [dashboard, daily, currentDataset, previousDataset, gbpDaily, gbpLocations, gbpSearchTerms, gbpReviews] = await Promise.all([
@@ -1086,9 +1097,12 @@ async function loadReportingNinjaPeriodData() {
     getReportingNinjaDataset(current.clientId, "gbp_reviews", { ...common, role: "current", sortBy: "reviews" }),
   ]);
   const card = dashboard?.clients?.find((item) => item.client_id === current.clientId);
-  const summary = card?.providers?.find((item) => item.provider === "reporting_ninja") || current.reportingNinjaSummary;
+  const summary = dashboardSupportsThisPeriod
+    ? card?.providers?.find((item) => item.provider === "reporting_ninja") || null
+    : null;
   return {
     summary, daily, currentDataset, previousDataset,
+    dashboardSupportsThisPeriod,
     gbp: { daily: gbpDaily, locations: gbpLocations, searchTerms: gbpSearchTerms, reviews: gbpReviews },
   };
 }

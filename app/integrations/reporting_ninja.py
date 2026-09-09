@@ -27,6 +27,7 @@ from typing import Any, cast
 from app.integrations.google_api import (
     GOOGLE_API,
     Ga4Client,
+    Ga4Row,
     GoogleApiConfigError,
     GoogleApiError,
     GoogleApiPermissionError,
@@ -142,6 +143,37 @@ _CHANNEL_METRIC_FIELDS: dict[str, str] = {
     "Organic Search": "conversions_organic",
     "Direct": "conversions_direct",
 }
+
+# ── task-89 §3.5: the GA4 KPI cards (`rn_*`), same channel dimension ────────
+_KPI_USERS_METRIC = "totalUsers"
+_KPI_CONVERSIONS_METRIC = _CHANNEL_CONVERSIONS_FIELD  # "keyEvents"
+_KPI_ORGANIC_CHANNEL = "organic search"  # matched case-insensitively, exact
+
+
+def _sum_exact_channel_kpi(
+    rows: list[Any], target_channel: str
+) -> tuple[Decimal | None, Decimal | None]:
+    """`(users, conversions)` summed over rows whose `_CHANNEL_DIMENSION`
+    EXACTLY matches `target_channel` (case-insensitive) — never a substring
+    match, so "Organic Search" never also absorbs "Organic
+    Social"/"Organic Shopping" (same rule task-84's `google_source.py`
+    documents for the report engine's organic/direct split). No matching row
+    at all -> `(None, None)`, never a fabricated zero (PLAN §12)."""
+    matched = [
+        row
+        for row in rows
+        if str(row.dimensions.get(_CHANNEL_DIMENSION, "")).strip().lower() == target_channel
+    ]
+    if not matched:
+        return None, None
+    users = sum(
+        (row.metrics.get(_KPI_USERS_METRIC) or Decimal(0) for row in matched), start=Decimal(0)
+    )
+    conversions = sum(
+        (row.metrics.get(_KPI_CONVERSIONS_METRIC) or Decimal(0) for row in matched),
+        start=Decimal(0),
+    )
+    return users, conversions
 
 
 def query_daily_channels(
@@ -420,6 +452,142 @@ class ReportingNinjaAdapter:
     def _collect(
         self, context: CollectionContext, emit: Callable[[ProgressEvent], None]
     ) -> CollectionResult:
+        # task-89 §3.5: the GA4 KPI cards (`rn_*`) get the same transport fork
+        # as the trends datasets (task-83) — same `resolve_transport()` call,
+        # same "never a silent fallback" rule.
+        if resolve_transport(context.integration_config) == GOOGLE_API:
+            return self._collect_google_api(context, emit)
+        return self._collect_reporting_ninja(context, emit)
+
+    def _collect_google_api(
+        self, context: CollectionContext, emit: Callable[[ProgressEvent], None]
+    ) -> CollectionResult:
+        """GA4 KPI totals via the GA4 Data API (task-89 §3.5), reusing the
+        SAME attribution model task-84's `app.reports.google_source` already
+        established for report generation — totals from a dimension-less
+        query, organic from an EXACT match on `firstUserDefaultChannelGroup`
+        (never a substring, or "Organic Social"/"Organic Shopping" leak in).
+        Re-implemented locally rather than imported: `app.reports.*` depends
+        on `app.integrations.*`, never the other way — importing across that
+        boundary would invert the dependency direction."""
+        cfg = context.integration_config
+        property_id = str(cfg.get("account_id") or "").strip()
+        observed_at = datetime.now(UTC)
+
+        if not property_id:
+            return CollectionResult(
+                provider=self.provider,
+                quality=Quality.unavailable,
+                observed_at=observed_at,
+                metrics=[],
+                warnings=["GA4: account_id (properties/<id>) not configured for this client."],
+                error_code="not_configured",
+            )
+        try:
+            session = open_google_api_session()
+        except GoogleApiConfigError as exc:
+            return CollectionResult(
+                provider=self.provider,
+                quality=Quality.unavailable,
+                observed_at=observed_at,
+                metrics=[],
+                warnings=[f"google_api transport selected but not configured: {exc}"],
+                error_code="not_configured",
+            )
+
+        warnings: list[str] = []
+        metrics: list[MetricValueResult] = []
+        completed = 0
+        tracker = PhaseTracker(self.provider, emit, "kpi")
+        tracker.begin("connect", message="Connecting to GA4 (Google API)")
+        with session:
+            ga4 = Ga4Client(session)
+            for step, (role, date_range) in enumerate(
+                (
+                    (PeriodRole.current, context.current),
+                    (PeriodRole.previous, context.previous),
+                ),
+                start=1,
+            ):
+                tracker.step(
+                    "fetch_" + role.value,
+                    completed=step, total=2,
+                    message=f"GA4 KPI snapshot · {role.value}",
+                )
+                try:
+                    totals = ga4.run_report(
+                        property_id, date_range.start, date_range.end,
+                        dimensions=[], metrics=[_KPI_USERS_METRIC, _KPI_CONVERSIONS_METRIC],
+                    )
+                    channel_rows = ga4.run_report(
+                        property_id, date_range.start, date_range.end,
+                        dimensions=[_CHANNEL_DIMENSION],
+                        metrics=[_KPI_USERS_METRIC, _KPI_CONVERSIONS_METRIC],
+                    )
+                except GoogleApiPermissionError as exc:
+                    return CollectionResult(
+                        provider=self.provider,
+                        quality=Quality.unavailable,
+                        observed_at=observed_at,
+                        metrics=metrics,
+                        warnings=[*warnings, f"GA4 access denied via google_api: {exc}"],
+                        error_code="not_configured",
+                    )
+                except GoogleApiError as exc:
+                    warnings.append(
+                        f"GA4 KPI via google_api failed for {role.value}: {type(exc).__name__}"
+                    )
+                    for catalog_key in _METRIC_KEY_MAP.values():
+                        metrics.append(_unavailable_metric(catalog_key, role, date_range))
+                    continue
+
+                total_row = totals[0] if totals else None
+                users = total_row.metrics.get(_KPI_USERS_METRIC) if total_row else None
+                conversions = total_row.metrics.get(_KPI_CONVERSIONS_METRIC) if total_row else None
+                organic_users, organic_conversions = _sum_exact_channel_kpi(
+                    channel_rows, _KPI_ORGANIC_CHANNEL
+                )
+                field_values = {
+                    "users": users,
+                    "organic_users": organic_users,
+                    "total_conversions": conversions,
+                    "organic_conversions": organic_conversions,
+                }
+                row_quality = Quality.complete if total_row is not None else Quality.unavailable
+                for field_key, catalog_key in _METRIC_KEY_MAP.items():
+                    value = field_values.get(field_key)
+                    metrics.append(
+                        MetricValueResult(
+                            metric_key=catalog_key,
+                            period_role=role,
+                            period_start=date_range.start,
+                            period_end=date_range.end,
+                            value_numeric=value,
+                            unit=CATALOG[catalog_key].unit,
+                            quality=row_quality if value is not None else Quality.unavailable,
+                        )
+                    )
+                completed += 1
+
+        tracker.done("kpi_complete", message="GA4 KPI snapshot ready via Google API")
+        if completed == 0:
+            quality = Quality.unavailable
+        elif completed < 2:
+            quality = Quality.partial
+        else:
+            quality = Quality.complete
+        return CollectionResult(
+            provider=self.provider,
+            quality=quality,
+            observed_at=observed_at,
+            metrics=metrics,
+            warnings=warnings,
+            provenance={"transport": GOOGLE_API, "integration": "ga4", "property": property_id},
+        )
+
+    def _collect_reporting_ninja(
+        self, context: CollectionContext, emit: Callable[[ProgressEvent], None]
+    ) -> CollectionResult:
         from seo_audit.clientreport.api_client import ReportingNinjaClient
         from seo_audit.dashboard.models import DateRange as SeoDateRange
         from seo_audit.dashboard.reporting_ninja import collect_ga4
@@ -476,12 +644,15 @@ class ReportingNinjaAdapter:
         context: CollectionContext,
         emit: Callable[[ProgressEvent], None],
     ) -> AnalyticsDatasetCollectionResult:
-        # task-83: `ga4_daily` and `ga4_daily_channels` — the two GA4 datasets
-        # that feed `#/trends` — can be read straight from the GA4 Data API
-        # (free) instead of Reporting Ninja (paid proxy). Everything else here
-        # (breakdowns, GBP) always stays on Reporting Ninja until task-84. The
-        # transport lives in `config_json["transport"]`; absent = today's
-        # behaviour, so nothing changes for anyone until a deliberate switch.
+        # task-83 (originally just `ga4_daily`/`ga4_daily_channels` for
+        # `#/trends`), generalized by task-89 §3.5 to all six `_GA4_DATASETS`
+        # entries: when this client's transport is `google_api`, every GA4
+        # dataset the client page reads is collected straight from the GA4
+        # Data API (free) instead of Reporting Ninja (paid proxy). GBP stays
+        # Reporting Ninja-only always — the Google token this project holds
+        # has no Business Profile scope (task-89 §0.15). The transport lives
+        # in `config_json["transport"]`; absent = today's behaviour, so
+        # nothing changes for anyone until a deliberate switch.
         trends_via_google = resolve_transport(context.integration_config) == GOOGLE_API
         rn_result = self._collect_datasets_reporting_ninja(
             context, emit, skip_trends_ga4=trends_via_google
@@ -505,13 +676,24 @@ class ReportingNinjaAdapter:
         context: CollectionContext,
         emit: Callable[[ProgressEvent], None],
     ) -> AnalyticsDatasetCollectionResult:
-        """`ga4_daily` + `ga4_daily_channels` via the GA4 Data API (task-83 §5).
+        """ALL six `_GA4_DATASETS` entries (`ga4_daily`, `ga4_channels`,
+        `ga4_landing_pages`, `ga4_events`, `ga4_devices`, `ga4_countries`)
+        PLUS the two-dimension `ga4_daily_channels` pivot, via the GA4 Data
+        API (task-83 §5 for `ga4_daily`/`ga4_daily_channels`; generalized to
+        the rest by task-89 §3.5, so the client page's breakdown table no
+        longer needs Reporting Ninja at all when this transport is selected).
 
-        Same row shape, `dataset_key`, `dimension_key='date'` and metric names
-        as the Reporting Ninja path — the ONLY difference is
-        `provenance.transport` (task-83 §2.3). Never a silent fallback to RN:
-        a missing token or denied property is `not_configured` with a warning
-        (§6.1.3)."""
+        Same row shape, `dataset_key`, `dimension_key` and metric names as
+        the Reporting Ninja path for every one of them — the ONLY difference
+        is `provenance.transport` (task-83 §2.3). Sort/cap/truncation mirrors
+        `_collect_datasets_reporting_ninja`'s `append_dataset` exactly (fetch
+        everything the API has, sort locally by `definition["sort"]`, cap at
+        `definition["limit"]`, `Quality.truncated` if anything was cut) — no
+        per-page `limit` passed to `Ga4Client.run_report`, so a client with
+        more landing pages than the cap still gets every row counted for the
+        truncation decision, same as RN's `max_rows=50000` client-side cap.
+        Never a silent fallback to RN: a missing token or denied property is
+        `not_configured` with a warning (§6.1.3)."""
         cfg = context.integration_config
         account_id = str(cfg.get("account_id") or "").strip()
         observed_at = datetime.now(UTC)
@@ -538,30 +720,115 @@ class ReportingNinjaAdapter:
         warnings: list[str] = []
         values: list[AnalyticsDatasetValueResult] = []
         completed = 0
+        # +1 dataset slot per period for the `ga4_daily_channels` pivot,
+        # same accounting the RN path uses for `channel_steps` (plan §2.4).
+        total_steps = (len(_GA4_DATASETS) + 1) * 2
+        step = 0
         tracker = PhaseTracker(self.provider, emit, "datasets")
-        tracker.begin("datasets", message="Collecting GA4 daily trend via Google API")
+        tracker.begin(
+            "datasets", message=f"Collecting {total_steps} GA4 datasets via Google API"
+        )
+
+        def append_api_dataset(
+            *,
+            dataset_key: str,
+            dimension_key: str,
+            role: PeriodRole,
+            period: DateRange,
+            rows: list[Ga4Row],
+            definition: dict[str, Any],
+        ) -> None:
+            nonlocal completed
+            normalized: list[tuple[str, dict[str, Decimal | None]]] = []
+            for row in rows:
+                dimension_value = str(row.dimensions.get(dimension_key) or "").strip()
+                if not dimension_value:
+                    continue
+                metrics: dict[str, Decimal | None] = {}
+                for canonical, ga4_field in definition["metrics"].items():
+                    value = row.metrics.get(ga4_field)
+                    if value is not None and canonical in _GA4_PERCENT_SCALED:
+                        value = value * Decimal(100)
+                    metrics[canonical] = value
+                normalized.append((dimension_value, metrics))
+            sort_key = definition["sort"]
+            if sort_key == "date":
+                normalized.sort(key=lambda item: item[0])
+            else:
+                normalized.sort(
+                    key=lambda item: item[1].get(sort_key) or Decimal(0), reverse=True
+                )
+            capped = normalized[: definition["limit"]]
+            truncated = len(normalized) > len(capped)
+            row_quality = Quality.truncated if truncated else Quality.complete
+            values.extend(
+                AnalyticsDatasetValueResult(
+                    dataset_key=dataset_key,
+                    dimension_key=dimension_key,
+                    dimension_value=dimension_value,
+                    period_role=role,
+                    period_start=period.start,
+                    period_end=period.end,
+                    metrics=metrics,
+                    quality=row_quality,
+                    rank=rank,
+                )
+                for rank, (dimension_value, metrics) in enumerate(capped, start=1)
+            )
+            completed += 1
+
         with session:
             ga4 = Ga4Client(session)
-            for step, (role, period) in enumerate(
-                (
-                    (PeriodRole.current, context.current),
-                    (PeriodRole.previous, context.previous),
-                ),
-                start=1,
+            for role, period in (
+                (PeriodRole.current, context.current),
+                (PeriodRole.previous, context.previous),
             ):
+                for dataset_key, definition in _GA4_DATASETS.items():
+                    step += 1
+                    dimension = definition["dimension"]
+                    tracker.step(
+                        f"fetch_{role.value}_{dataset_key}",
+                        completed=step,
+                        total=total_steps,
+                        message=(
+                            f"GA4 {_dataset_label(dataset_key)} · {role.value} · "
+                            f"{period.start} → {period.end}"
+                        ),
+                    )
+                    try:
+                        rows = ga4.run_report(
+                            account_id, period.start, period.end,
+                            dimensions=[dimension], metrics=list(definition["metrics"].values()),
+                        )
+                    except GoogleApiPermissionError as exc:
+                        return AnalyticsDatasetCollectionResult(
+                            provider=self.provider,
+                            quality=Quality.unavailable,
+                            observed_at=observed_at,
+                            rows=values,
+                            warnings=[*warnings, f"GA4 access denied via google_api: {exc}"],
+                            error_code="not_configured",
+                        )
+                    except GoogleApiError as exc:
+                        warnings.append(
+                            f"{dataset_key} via google_api failed for {role.value}: "
+                            f"{type(exc).__name__}"
+                        )
+                        continue
+                    append_api_dataset(
+                        dataset_key=dataset_key, dimension_key=dimension,
+                        role=role, period=period, rows=rows, definition=definition,
+                    )
+
+                # task-44: Organic/Direct Conversions — the same two-dimension
+                # pivot the RN path uses, its own branch (plan §2.4/§3.2).
+                step += 1
                 tracker.step(
-                    f"fetch_{role.value}_ga4_daily",
-                    completed=step,
-                    total=2,
-                    message=(
-                        f"GA4 daily trend · {role.value} · "
-                        f"{period.start} → {period.end}"
-                    ),
+                    f"fetch_{role.value}_ga4_daily_channels",
+                    completed=step, total=total_steps,
+                    message=f"GA4 daily channels · {role.value} · {period.start} → {period.end}",
                 )
                 try:
-                    daily = query_ga4_daily_via_google_api(
-                        ga4, account_id=account_id, start=period.start, end=period.end
-                    )
                     channels = query_ga4_daily_channels_via_google_api(
                         ga4, account_id=account_id, start=period.start, end=period.end
                     )
@@ -576,25 +843,10 @@ class ReportingNinjaAdapter:
                     )
                 except GoogleApiError as exc:
                     warnings.append(
-                        f"GA4 trend via google_api failed for {role.value}: {type(exc).__name__}"
+                        f"ga4_daily_channels via google_api failed for {role.value}: "
+                        f"{type(exc).__name__}"
                     )
                     continue
-
-                values.extend(
-                    AnalyticsDatasetValueResult(
-                        dataset_key="ga4_daily",
-                        dimension_key="date",
-                        dimension_value=day,
-                        period_role=role,
-                        period_start=period.start,
-                        period_end=period.end,
-                        metrics=metrics,
-                        quality=Quality.complete,
-                        rank=rank,
-                    )
-                    for rank, (day, metrics) in enumerate(daily, start=1)
-                )
-                completed += 1
                 values.extend(
                     AnalyticsDatasetValueResult(
                         dataset_key="ga4_daily_channels",
@@ -610,11 +862,11 @@ class ReportingNinjaAdapter:
                     for rank, (day, metrics) in enumerate(channels, start=1)
                 )
                 completed += 1
-        tracker.done("datasets_complete", message="GA4 daily trend collected via Google API")
+        tracker.done("datasets_complete", message="GA4 datasets collected via Google API")
 
         if completed == 0:
             quality = Quality.unavailable
-        elif completed < 4:
+        elif completed < total_steps:
             quality = Quality.partial
         else:
             quality = Quality.complete
@@ -627,7 +879,7 @@ class ReportingNinjaAdapter:
             provenance={
                 "transport": GOOGLE_API,
                 "integration": "ga4",
-                "datasets": ["ga4_daily", "ga4_daily_channels"],
+                "datasets": [*_GA4_DATASETS.keys(), "ga4_daily_channels"],
                 "property": account_id,
             },
         )
@@ -652,15 +904,14 @@ class ReportingNinjaAdapter:
         completed = 0
         truncated_any = False
 
-        # task-83: when `#/trends` is served by the GA4 Data API for this
-        # client, `ga4_daily`/`ga4_daily_channels` are collected there instead
-        # — skipped here so a day never has two rows (one per transport) in the
-        # same snapshot with an identical `created_at` (§0.5 tie-break).
-        active_ga4_datasets = {
-            key: definition
-            for key, definition in _GA4_DATASETS.items()
-            if not (skip_trends_ga4 and key == "ga4_daily")
-        }
+        # task-83 (originally just `ga4_daily`/`ga4_daily_channels`),
+        # generalized by task-89 §3.5 to ALL six `_GA4_DATASETS` entries: when
+        # this client's GA4 datasets are served by the Data API,
+        # `_collect_datasets_google_api_trends` now collects every one of
+        # them, so none is collected here too — skipped so a day/row never
+        # gets two versions (one per transport) in the same snapshot with an
+        # identical `created_at` (§0.5 tie-break).
+        active_ga4_datasets = {} if skip_trends_ga4 else dict(_GA4_DATASETS)
         collect_channels = not skip_trends_ga4
         channel_steps = 1 if collect_channels else 0
 

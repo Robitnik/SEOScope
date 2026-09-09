@@ -603,6 +603,10 @@ class AnalyticsDatasetResponseDTO(BaseModel):
     limit: int
     offset: int
     generated_at: datetime
+    # task-89 §5.2: which transport actually filled the matched snapshot
+    # (`"google_api"` | `"reporting_ninja"`, from `ProviderSnapshot.provenance_json`).
+    # `None` when no stored period matched — never guessed from `provider`.
+    transport: str | None = None
 
 
 class AhrefsIssueDTO(BaseModel):
@@ -713,6 +717,8 @@ class DimensionAnalyticsResponseDTO(BaseModel):
     limit: int
     offset: int
     generated_at: datetime
+    # task-89 §5.2: same as `AnalyticsDatasetResponseDTO.transport`.
+    transport: str | None = None
 
 
 # --- Alerts: pages/queries declining or rising ------------------------------

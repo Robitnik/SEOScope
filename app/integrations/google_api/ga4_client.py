@@ -19,10 +19,11 @@ its own `_GA4_DATASETS` / `_CHANNEL_METRIC_FIELDS` for that).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from app.integrations.google_api.auth import GoogleApiSession
 
@@ -50,35 +51,54 @@ class Ga4Client:
         *,
         dimensions: Sequence[str],
         metrics: Sequence[str],
+        dimension_filter: Mapping[str, Any] | None = None,
+        limit: int | None = None,
     ) -> list[Ga4Row]:
         """One `runReport`, paged by `offset`/`limit` to `rowCount`.
 
         A `date` dimension value is normalized from GA4's `YYYYMMDD` to
         `YYYY-MM-DD`. A day/combination the API does not return is simply
         absent — never synthesized as a zero row (PLAN §12).
-        """
+
+        `dimension_filter` is passed through verbatim as the API's own
+        `dimensionFilter` object (task-89 §3.3/§4.1 — e.g. an `inListFilter`
+        restricting `eventName` to a client's declared key events).
+
+        `limit` bounds the TOTAL rows this call returns (across pages),
+        independent of the per-page `_PAGE_LIMIT` — mirrors
+        `_GA4_DATASETS[...]["limit"]` in `reporting_ninja.py` so the Google
+        API path can flag `Quality.truncated` at the same threshold the RN
+        path already uses. `None` means unbounded (today's behaviour)."""
         path = f"{_GA4_API_BASE}/{property_id}:runReport"
         dim_names = list(dimensions)
         met_names = list(metrics)
         out: list[Ga4Row] = []
         offset = 0
         while True:
-            payload = self._session.post_json(
-                path,
-                {
-                    "dateRanges": [
-                        {"startDate": start.isoformat(), "endDate": end.isoformat()}
-                    ],
-                    "dimensions": [{"name": name} for name in dim_names],
-                    "metrics": [{"name": name} for name in met_names],
-                    "limit": _PAGE_LIMIT,
-                    "offset": offset,
-                },
-            )
+            body: dict[str, Any] = {
+                "dateRanges": [
+                    {"startDate": start.isoformat(), "endDate": end.isoformat()}
+                ],
+                "dimensions": [{"name": name} for name in dim_names],
+                "metrics": [{"name": name} for name in met_names],
+                "limit": _PAGE_LIMIT,
+                "offset": offset,
+            }
+            if dimension_filter is not None:
+                body["dimensionFilter"] = dimension_filter
+            payload = self._session.post_json(path, body)
             rows = payload.get("rows") or []
+            # `offset` for the NEXT page must track how many rows the API
+            # actually returned this page, never the (possibly `limit`-
+            # truncated) count appended below — otherwise a truncated page
+            # would desync the next request's offset from the API's own
+            # bookkeeping. Truncation only trims what we APPEND.
+            emit_rows = rows
+            if limit is not None and len(out) + len(rows) > limit:
+                emit_rows = rows[: max(0, limit - len(out))]
             header_dims = [h.get("name") for h in payload.get("dimensionHeaders") or []]
             header_mets = [h.get("name") for h in payload.get("metricHeaders") or []]
-            for row in rows:
+            for row in emit_rows:
                 dim_values = [d.get("value") for d in row.get("dimensionValues") or []]
                 met_values = [m.get("value") for m in row.get("metricValues") or []]
                 out.append(
@@ -99,6 +119,8 @@ class Ga4Client:
                 )
             offset += len(rows)
             row_count = _int(payload.get("rowCount"))
+            if limit is not None and len(out) >= limit:
+                return out
             if not rows or (row_count is not None and offset >= row_count):
                 return out
 

@@ -1392,6 +1392,17 @@
             "title": "Total Rows Available",
             "type": "integer"
           },
+          "transport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transport"
+          },
           "truncated": {
             "default": false,
             "title": "Truncated",
@@ -4740,6 +4751,17 @@
             "default": 0,
             "title": "Total Rows Available",
             "type": "integer"
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transport"
           },
           "truncated": {
             "default": false,
@@ -13494,6 +13516,958 @@
         "title": "UrlFindingDTO",
         "type": "object"
       },
+      "UrlGoogleBreakdownDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "dimensions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "row_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Limit"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleBreakdownRowDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "source": {
+            "enum": [
+              "gsc",
+              "ga4"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "source",
+          "dimensions",
+          "state"
+        ],
+        "title": "UrlGoogleBreakdownDTO",
+        "type": "object"
+      },
+      "UrlGoogleBreakdownRowDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keys",
+            "type": "array"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleMetricDTO"
+            },
+            "title": "Metrics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "title": "UrlGoogleBreakdownRowDTO",
+        "type": "object"
+      },
+      "UrlGoogleBreakdownsDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "breakdowns": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleBreakdownDTO"
+            },
+            "title": "Breakdowns",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "input_url": {
+            "title": "Input Url",
+            "type": "string"
+          },
+          "search_types": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleSearchTypeDTO"
+            },
+            "title": "Search Types",
+            "type": "array"
+          },
+          "transport": {
+            "enum": [
+              "google_api",
+              "reporting_ninja"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "window": {
+            "$ref": "#/components/schemas/UrlGoogleWindowDTO"
+          }
+        },
+        "required": [
+          "input_url",
+          "window",
+          "transport",
+          "generated_at"
+        ],
+        "title": "UrlGoogleBreakdownsDTO",
+        "type": "object"
+      },
+      "UrlGoogleCoreDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "cross_check": {
+            "$ref": "#/components/schemas/UrlGoogleCrossCheckDTO"
+          },
+          "ga4": {
+            "$ref": "#/components/schemas/UrlGoogleGa4DTO"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "gsc": {
+            "$ref": "#/components/schemas/UrlGoogleGscDTO"
+          },
+          "input_url": {
+            "title": "Input Url",
+            "type": "string"
+          },
+          "transport": {
+            "enum": [
+              "google_api",
+              "reporting_ninja"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "window": {
+            "$ref": "#/components/schemas/UrlGoogleWindowDTO"
+          }
+        },
+        "required": [
+          "input_url",
+          "window",
+          "transport",
+          "gsc",
+          "ga4",
+          "cross_check",
+          "generated_at"
+        ],
+        "title": "UrlGoogleCoreDTO",
+        "type": "object"
+      },
+      "UrlGoogleCrossCheckDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "ga4_clicks": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ga4 Clicks"
+          },
+          "ga4_impressions": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ga4 Impressions"
+          },
+          "ga4_position": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ga4 Position"
+          },
+          "gsc_clicks": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gsc Clicks"
+          },
+          "gsc_impressions": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gsc Impressions"
+          },
+          "gsc_position": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gsc Position"
+          },
+          "matches": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matches"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "UrlGoogleCrossCheckDTO",
+        "type": "object"
+      },
+      "UrlGoogleGa4DTO": {
+        "additionalProperties": false,
+        "properties": {
+          "key_event_names": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Key Event Names",
+            "type": "array"
+          },
+          "key_events": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleKeyEventDTO"
+            },
+            "title": "Key Events",
+            "type": "array"
+          },
+          "landing_totals": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleMetricDTO"
+            },
+            "title": "Landing Totals",
+            "type": "array"
+          },
+          "page_totals": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleMetricDTO"
+            },
+            "title": "Page Totals",
+            "type": "array"
+          },
+          "series": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/UrlGoogleSeriesDTO"
+            },
+            "default": {},
+            "title": "Series",
+            "type": "object"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "UrlGoogleGa4DTO",
+        "type": "object"
+      },
+      "UrlGoogleGscDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "first_incomplete_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Incomplete Date"
+          },
+          "queries": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleQueryDTO"
+            },
+            "title": "Queries",
+            "type": "array"
+          },
+          "queries_total": {
+            "default": 0,
+            "title": "Queries Total",
+            "type": "integer"
+          },
+          "queries_truncated": {
+            "default": false,
+            "title": "Queries Truncated",
+            "type": "boolean"
+          },
+          "series": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/UrlGoogleSeriesDTO"
+            },
+            "default": {},
+            "title": "Series",
+            "type": "object"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          },
+          "totals": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleMetricDTO"
+            },
+            "title": "Totals",
+            "type": "array"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "UrlGoogleGscDTO",
+        "type": "object"
+      },
+      "UrlGoogleKeyEventDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "event_count": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Count"
+          },
+          "key_events": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Events"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "UrlGoogleKeyEventDTO",
+        "type": "object"
+      },
+      "UrlGoogleMetricDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "count",
+              "ratio",
+              "position",
+              "seconds"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "metric",
+          "unit"
+        ],
+        "title": "UrlGoogleMetricDTO",
+        "type": "object"
+      },
+      "UrlGoogleQueryDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "clicks": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks"
+          },
+          "ctr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctr"
+          },
+          "impressions": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impressions"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "UrlGoogleQueryDTO",
+        "type": "object"
+      },
+      "UrlGoogleSearchTypeDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleMetricDTO"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "search_type": {
+            "title": "Search Type",
+            "type": "string"
+          },
+          "supports_queries": {
+            "default": true,
+            "title": "Supports Queries",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "search_type"
+        ],
+        "title": "UrlGoogleSearchTypeDTO",
+        "type": "object"
+      },
+      "UrlGoogleSeriesDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "bucket": {
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "title": "Bucket",
+            "type": "string"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "points": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlGoogleSeriesPointDTO"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "unit": {
+            "enum": [
+              "count",
+              "ratio",
+              "position",
+              "seconds"
+            ],
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "unit",
+          "bucket"
+        ],
+        "title": "UrlGoogleSeriesDTO",
+        "type": "object"
+      },
+      "UrlGoogleSeriesPointDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "period_days": {
+            "title": "Period Days",
+            "type": "integer"
+          },
+          "period_end": {
+            "format": "date",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "provisional": {
+            "default": false,
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "period_start",
+          "period_end",
+          "period_days"
+        ],
+        "title": "UrlGoogleSeriesPointDTO",
+        "type": "object"
+      },
+      "UrlGoogleWindowDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "at_gsc_history_edge": {
+            "default": false,
+            "title": "At Gsc History Edge",
+            "type": "boolean"
+          },
+          "bucket": {
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "title": "Bucket",
+            "type": "string"
+          },
+          "clamped_to_gsc_history": {
+            "default": false,
+            "title": "Clamped To Gsc History",
+            "type": "boolean"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "key": {
+            "enum": [
+              "28d",
+              "90d",
+              "12m",
+              "16m"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "requested_start": {
+            "format": "date",
+            "title": "Requested Start",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "start",
+          "end",
+          "days",
+          "bucket",
+          "requested_start"
+        ],
+        "title": "UrlGoogleWindowDTO",
+        "type": "object"
+      },
+      "UrlIndexStatusDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "canonical_mismatch": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Mismatch"
+          },
+          "coverage_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage State"
+          },
+          "crawled_as": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crawled As"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "google_canonical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Google Canonical"
+          },
+          "indexing_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexing State"
+          },
+          "input_url": {
+            "title": "Input Url",
+            "type": "string"
+          },
+          "inspection_result_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Result Link"
+          },
+          "last_crawl_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Crawl Time"
+          },
+          "mobile_usability_issues": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Mobile Usability Issues",
+            "type": "array"
+          },
+          "mobile_usability_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mobile Usability Verdict"
+          },
+          "page_fetch_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Fetch State"
+          },
+          "referring_urls": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Referring Urls",
+            "type": "array"
+          },
+          "rich_result_types": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlRichResultTypeDTO"
+            },
+            "title": "Rich Result Types",
+            "type": "array"
+          },
+          "rich_results_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rich Results Verdict"
+          },
+          "robots_txt_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robots Txt State"
+          },
+          "sitemap_membership": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sitemap Membership",
+            "type": "array"
+          },
+          "sitemaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlSitemapDTO"
+            },
+            "title": "Sitemaps",
+            "type": "array"
+          },
+          "sitemaps_state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          },
+          "user_canonical": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Canonical"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          }
+        },
+        "required": [
+          "state",
+          "input_url",
+          "sitemaps_state",
+          "generated_at"
+        ],
+        "title": "UrlIndexStatusDTO",
+        "type": "object"
+      },
+      "UrlIndexStatusRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "UrlIndexStatusRequest",
+        "type": "object"
+      },
       "UrlInspectorDTO": {
         "additionalProperties": false,
         "properties": {
@@ -14184,6 +15158,62 @@
         "title": "UrlMonitorPageVersionDTO",
         "type": "object"
       },
+      "UrlRealtimeDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "active_users": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Users"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "scope": {
+            "const": "property",
+            "default": "property",
+            "title": "Scope",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/UrlSourceStateDTO"
+          }
+        },
+        "required": [
+          "state",
+          "generated_at"
+        ],
+        "title": "UrlRealtimeDTO",
+        "type": "object"
+      },
+      "UrlRichResultTypeDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "title": "Items",
+            "type": "integer"
+          },
+          "rich_result_type": {
+            "title": "Rich Result Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rich_result_type",
+          "items"
+        ],
+        "title": "UrlRichResultTypeDTO",
+        "type": "object"
+      },
       "UrlScreenshotDTO": {
         "additionalProperties": false,
         "properties": {
@@ -14612,6 +15642,121 @@
           "is_brand"
         ],
         "title": "UrlSiteQueryDTO",
+        "type": "object"
+      },
+      "UrlSitemapContentDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "submitted": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "UrlSitemapContentDTO",
+        "type": "object"
+      },
+      "UrlSitemapDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "contents": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UrlSitemapContentDTO"
+            },
+            "title": "Contents",
+            "type": "array"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
+          },
+          "is_pending": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Pending"
+          },
+          "is_sitemaps_index": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Sitemaps Index"
+          },
+          "last_downloaded": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Downloaded"
+          },
+          "last_submitted": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Submitted"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "warnings": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warnings"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "UrlSitemapDTO",
         "type": "object"
       },
       "UrlSourceStateDTO": {
@@ -26513,6 +27658,292 @@
           }
         },
         "summary": "Get Url Inspector",
+        "tags": [
+          "url-inspector"
+        ]
+      }
+    },
+    "/api/v1/url-inspector/google": {
+      "get": {
+        "description": "Series, window totals, this page's real search queries, conversions by\nname, and the built-in GSC-vs-GA4 cross check.",
+        "operationId": "get_url_inspector_google_api_v1_url_inspector_google_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "maxLength": 2048,
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlGoogleCoreDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Url Inspector Google",
+        "tags": [
+          "url-inspector"
+        ]
+      }
+    },
+    "/api/v1/url-inspector/google/breakdowns": {
+      "get": {
+        "description": "Every dimension slice of this URL, plus its totals in each search type.",
+        "operationId": "get_url_inspector_google_breakdowns_api_v1_url_inspector_google_breakdowns_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "maxLength": 2048,
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlGoogleBreakdownsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Url Inspector Google Breakdowns",
+        "tags": [
+          "url-inspector"
+        ]
+      }
+    },
+    "/api/v1/url-inspector/google/realtime": {
+      "get": {
+        "description": "Active users right now. Property-wide, never page-scoped \u2014 GA4 Realtime\ntakes no page filter, and the DTO says so in `scope`.",
+        "operationId": "get_url_inspector_realtime_api_v1_url_inspector_google_realtime_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "maxLength": 2048,
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlRealtimeDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Url Inspector Realtime",
+        "tags": [
+          "url-inspector"
+        ]
+      }
+    },
+    "/api/v1/url-inspector/index-status": {
+      "post": {
+        "description": "Search Console's own answer to \"is this page indexed\": coverage state,\nlast crawl, robots.txt state, Google's chosen canonical, rich results.\n\nPOST rather than GET, and behind an explicit button in the UI: one call is\n~6.6s measured, and Google's own quota for it is per-day, not per-minute.",
+        "operationId": "post_url_inspector_index_status_api_v1_url_inspector_index_status_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UrlIndexStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UrlIndexStatusDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Url Inspector Index Status",
         "tags": [
           "url-inspector"
         ]

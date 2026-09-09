@@ -181,6 +181,138 @@ class GscAdapter:
     def _collect(
         self, context: CollectionContext, emit: Callable[[ProgressEvent], None]
     ) -> CollectionResult:
+        # task-89 §3.4: the aggregate KPI cards (`gsc_clicks`/`gsc_impressions`/
+        # `gsc_avg_position`) get the same transport fork as `_collect_datasets`
+        # (task-83) and `_collect_dimensions` (task-89) — same
+        # `resolve_transport()` call, same "never a silent fallback" rule.
+        if resolve_transport(context.integration_config) == GOOGLE_API:
+            return self._collect_google_api(context, emit)
+        return self._collect_reporting_ninja(context, emit)
+
+    def _collect_google_api(
+        self, context: CollectionContext, emit: Callable[[ProgressEvent], None]
+    ) -> CollectionResult:
+        """Aggregate KPI totals via the GSC Search Analytics API, `dimensions=[]`
+        (task-89 §3.4). Same catalog keys (`gsc_clicks`/`gsc_impressions`/
+        `gsc_avg_position`) as the Reporting Ninja path — `gsc_ctr` is never
+        emitted here either (module docstring); `app.metrics.normalize`
+        derives it downstream from clicks/impressions."""
+        cfg = context.integration_config
+        site_url = str(cfg.get("account_id") or "").strip()
+        observed_at = datetime.now(UTC)
+
+        if not site_url:
+            return CollectionResult(
+                provider=self.provider,
+                quality=Quality.unavailable,
+                observed_at=observed_at,
+                metrics=[],
+                warnings=[
+                    "GSC: account_id (sc-domain:… or a URL) not configured for this client."
+                ],
+                error_code="not_configured",
+            )
+        try:
+            session = open_google_api_session()
+        except GoogleApiConfigError as exc:
+            return CollectionResult(
+                provider=self.provider,
+                quality=Quality.unavailable,
+                observed_at=observed_at,
+                metrics=[],
+                warnings=[f"google_api transport selected but not configured: {exc}"],
+                error_code="not_configured",
+            )
+
+        warnings: list[str] = []
+        metrics: list[MetricValueResult] = []
+        completed = 0
+        data_through: date | None = None
+        tracker = PhaseTracker(self.provider, emit, "kpi")
+        tracker.begin("connect", message="Connecting to Search Console (Google API)")
+        with session:
+            client = GscClient(session)
+            for step, (role, date_range) in enumerate(
+                (
+                    (PeriodRole.current, context.current),
+                    (PeriodRole.previous, context.previous),
+                ),
+                start=1,
+            ):
+                tracker.step(
+                    "fetch_" + role.value,
+                    completed=step,
+                    total=2,
+                    message=f"Search Console totals · {role.value}",
+                )
+                try:
+                    rows = client.search_analytics(
+                        site_url, date_range.start, date_range.end,
+                        dimensions=[], search_type="web",
+                    )
+                except GoogleApiPermissionError as exc:
+                    return CollectionResult(
+                        provider=self.provider,
+                        quality=Quality.unavailable,
+                        observed_at=observed_at,
+                        metrics=metrics,
+                        warnings=[*warnings, f"GSC access denied via google_api: {exc}"],
+                        error_code="not_configured",
+                    )
+                except GoogleApiError as exc:
+                    warnings.append(
+                        f"GSC totals via google_api failed for {role.value}: "
+                        f"{type(exc).__name__}"
+                    )
+                    for catalog_key in _AGGREGATE_METRIC_KEY_MAP.values():
+                        metrics.append(_unavailable_metric(catalog_key, role, date_range))
+                    continue
+
+                row = rows[0] if rows else None
+                row_quality = Quality.complete if row is not None else Quality.unavailable
+                field_values = (
+                    {
+                        "clicks": row.clicks,
+                        "impressions": row.impressions,
+                        "avg_position": row.position,
+                    }
+                    if row is not None
+                    else {}
+                )
+                for field_key, catalog_key in _AGGREGATE_METRIC_KEY_MAP.items():
+                    metrics.append(
+                        MetricValueResult(
+                            metric_key=catalog_key,
+                            period_role=role,
+                            period_start=date_range.start,
+                            period_end=date_range.end,
+                            value_numeric=field_values.get(field_key),
+                            unit=CATALOG[catalog_key].unit,
+                            quality=row_quality,
+                        )
+                    )
+                completed += 1
+                if role == PeriodRole.current:
+                    data_through = _gsc_data_through(client, site_url, date_range)
+
+        tracker.done("kpi_complete", message="Search Console totals ready via Google API")
+        return CollectionResult(
+            provider=self.provider,
+            quality=_overall_quality(m.quality for m in metrics),
+            observed_at=observed_at,
+            data_through=data_through,
+            metrics=metrics,
+            warnings=warnings,
+            provenance={
+                "transport": GOOGLE_API,
+                "integration": "search_console",
+                "site_url": site_url,
+            },
+        )
+
+    def _collect_reporting_ninja(
+        self, context: CollectionContext, emit: Callable[[ProgressEvent], None]
+    ) -> CollectionResult:
         from seo_audit.clientreport.api_client import ReportingNinjaClient
         from seo_audit.dashboard.gsc import collect_gsc_aggregate
         from seo_audit.dashboard.models import DateRange as SeoDateRange
@@ -250,6 +382,145 @@ class GscAdapter:
                 warnings=[f"unexpected error: {type(exc).__name__}"],
                 error_code="adapter_error",
             )
+
+    def _collect_dimensions(
+        self, context: CollectionContext, emit: Callable[[ProgressEvent], None], *, top_n: int
+    ) -> DimensionCollectionResult:
+        # task-89 §3.4: same fork as the aggregate KPI and dataset methods.
+        if resolve_transport(context.integration_config) == GOOGLE_API:
+            return self._collect_dimensions_google_api(context, emit, top_n=top_n)
+        return self._collect_dimensions_reporting_ninja(context, emit, top_n=top_n)
+
+    def _collect_dimensions_google_api(
+        self, context: CollectionContext, emit: Callable[[ProgressEvent], None], *, top_n: int
+    ) -> DimensionCollectionResult:
+        """Pages/Queries via the GSC Search Analytics API (task-89 §3.4/§0.7).
+
+        Same row shape and `DimensionValueResult` fields as the Reporting
+        Ninja path. No `DIMENSION_OTHER_VALUE` rollup row here — that is a
+        Reporting Ninja-specific "everything past top-N" aggregate the API
+        has no equivalent for; truncation is disclosed via `Quality.truncated`
+        on every row of a cut page instead (same signal, no synthesized row)."""
+        cfg = context.integration_config
+        site_url = str(cfg.get("account_id") or "").strip()
+        observed_at = datetime.now(UTC)
+
+        if not site_url:
+            return DimensionCollectionResult(
+                provider=self.provider,
+                quality=Quality.unavailable,
+                observed_at=observed_at,
+                warnings=["GSC: account_id (sc-domain:… or a URL) not configured for this client."],
+                error_code="not_configured",
+            )
+        try:
+            session = open_google_api_session()
+        except GoogleApiConfigError as exc:
+            return DimensionCollectionResult(
+                provider=self.provider,
+                quality=Quality.unavailable,
+                observed_at=observed_at,
+                warnings=[f"google_api transport selected but not configured: {exc}"],
+                error_code="not_configured",
+            )
+
+        warnings: list[str] = []
+        rows: list[DimensionValueResult] = []
+        completed = 0
+        data_through: date | None = None
+        tracker = PhaseTracker(self.provider, emit, "dimensions")
+        tracker.begin(
+            "fetch_current_pages", message="Fetching Search Console pages and queries (Google API)"
+        )
+        stage_names = (
+            "fetch_current_pages",
+            "fetch_current_queries",
+            "fetch_previous_pages",
+            "fetch_previous_queries",
+        )
+        with session:
+            client = GscClient(session)
+            step = 0
+            for role, date_range in (
+                (PeriodRole.current, context.current),
+                (PeriodRole.previous, context.previous),
+            ):
+                for dimension in ("page", "query"):
+                    stage = stage_names[step]
+                    step += 1
+                    tracker.step(
+                        stage, completed=step, total=len(stage_names),
+                        message=f"Search Console {dimension}s · {role.value}",
+                    )
+                    try:
+                        # Fetch one row beyond `top_n` to detect truncation
+                        # without a second page request (task-89 §3.4).
+                        page_rows = client.search_analytics(
+                            site_url, date_range.start, date_range.end,
+                            dimensions=[dimension], search_type="web",
+                            row_limit=min(top_n + 1, 25000), max_rows=top_n + 1,
+                        )
+                    except GoogleApiPermissionError as exc:
+                        return DimensionCollectionResult(
+                            provider=self.provider,
+                            quality=Quality.unavailable,
+                            observed_at=observed_at,
+                            rows=rows,
+                            warnings=[*warnings, f"GSC access denied via google_api: {exc}"],
+                            error_code="not_configured",
+                        )
+                    except GoogleApiError as exc:
+                        warnings.append(
+                            f"GSC {dimension} via google_api failed for {role.value}: "
+                            f"{type(exc).__name__}"
+                        )
+                        continue
+                    truncated = len(page_rows) > top_n
+                    visible = page_rows[:top_n]
+                    row_quality = Quality.truncated if truncated else Quality.complete
+                    rows.extend(
+                        DimensionValueResult(
+                            dimension=dimension,
+                            dimension_value=row.keys[0] if row.keys else "",
+                            period_role=role,
+                            period_start=date_range.start,
+                            period_end=date_range.end,
+                            clicks=int(row.clicks) if row.clicks is not None else None,
+                            impressions=(
+                                int(row.impressions) if row.impressions is not None else None
+                            ),
+                            ctr=row.ctr,
+                            position=row.position,
+                            quality=row_quality,
+                            rank=rank,
+                        )
+                        for rank, row in enumerate(visible, start=1)
+                    )
+                    completed += 1
+                if role == PeriodRole.current:
+                    data_through = _gsc_data_through(client, site_url, date_range)
+
+        tracker.done("dimensions_complete", message="Pages and queries collected via Google API")
+
+        if completed == 0:
+            quality = Quality.unavailable
+        elif completed < len(stage_names):
+            quality = Quality.partial
+        else:
+            quality = Quality.complete
+        return DimensionCollectionResult(
+            provider=self.provider,
+            quality=quality,
+            observed_at=observed_at,
+            data_through=data_through,
+            rows=rows,
+            warnings=warnings,
+            provenance={
+                "transport": GOOGLE_API,
+                "integration": "search_console",
+                "site_url": site_url,
+            },
+        )
 
     def collect_datasets(
         self,
@@ -524,7 +795,7 @@ class GscAdapter:
             },
         )
 
-    def _collect_dimensions(
+    def _collect_dimensions_reporting_ninja(
         self, context: CollectionContext, emit: Callable[[ProgressEvent], None], *, top_n: int
     ) -> DimensionCollectionResult:
         from seo_audit.clientreport.api_client import ReportingNinjaClient
@@ -667,6 +938,20 @@ def _unavailable_metric(
         unit=CATALOG[catalog_key].unit,
         quality=Quality.unavailable,
     )
+
+
+def _gsc_data_through(client: GscClient, site_url: str, current: DateRange) -> date | None:
+    """The last day GSC actually returned data within the current period
+    (task-89 §3.4) — GSC has a real reporting lag (~2-3 days, measured live),
+    so this is never assumed to be `current.end`. `None` if the API returned
+    no rows for any day (never fabricated as "today")."""
+    try:
+        daily = client.daily_search_analytics(site_url, current.start, current.end)
+    except GoogleApiError:
+        return None
+    if not daily:
+        return None
+    return date.fromisoformat(daily[-1].date)
 
 
 def _overall_quality(qualities: Any) -> Quality:

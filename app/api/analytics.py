@@ -62,8 +62,30 @@ REPORTING_NINJA_DATASETS = frozenset(
         "gbp_locations",
         "gbp_search_terms",
         "gbp_reviews",
+        # task-89 §5.1: new datasets the direct Google API transport can
+        # surface that Reporting Ninja's REST proxy never carried — same
+        # endpoint/whitelist, since the row shape (dataset_key, dimension_key,
+        # metrics_json) is identical regardless of source.
+        "ga4_key_events",
+        "gsc_search_types",
+        "gsc_sitemaps",
     }
 )
+
+# task-89 §5.1: `AnalyticsDatasetRow` carries no `provider` filter in
+# `for_period()` (client_id + dataset_key + period is enough — see
+# `AnalyticsDatasetRepository.for_period`), so this endpoint's URL staying
+# `/reporting-ninja/{dataset_key}` never blocked adding GSC-native datasets
+# here. But the RESPONSE `provider` field must still name the real source
+# (CLAUDE.md: "provider/metric named identically everywhere") — a GSC
+# dataset reported as `reporting_ninja` would be a lie the UI repeats
+# verbatim. Every dataset not listed here is still `reporting_ninja`
+# (today's behaviour, unchanged).
+_GSC_NATIVE_DATASETS = frozenset({"gsc_search_types", "gsc_sitemaps"})
+
+
+def _dataset_provider(dataset_key: str) -> Provider:
+    return Provider.gsc if dataset_key in _GSC_NATIVE_DATASETS else Provider.reporting_ninja
 
 
 def _text_metric(row: AnalyticsDatasetRow, key: str) -> str:
@@ -250,7 +272,7 @@ async def _get_dimension_analytics(
 
     def _run(
         s: Session,
-    ) -> tuple[Client, list[GscDimensionMetric], int, date, date] | None:
+    ) -> tuple[Client, list[GscDimensionMetric], int, date, date, str | None] | None:
         client = ClientRepository(s).get(client_id)
         if client is None:
             return None
@@ -271,12 +293,21 @@ async def _get_dimension_analytics(
             limit=page.limit,
             offset=page.offset,
         )
-        return client, rows, total, periods.current.start, periods.current.end
+        # task-89 §5.2: same transport lookup as the reporting-ninja dataset
+        # endpoint — one snapshot per period, so the first row's snapshot
+        # speaks for the whole page.
+        transport: str | None = None
+        if rows:
+            snapshot = s.get(ProviderSnapshot, rows[0].snapshot_id)
+            if snapshot is not None:
+                raw_transport = snapshot.provenance_json.get("transport")
+                transport = str(raw_transport) if raw_transport else None
+        return client, rows, total, periods.current.start, periods.current.end, transport
 
     result = await session.run_sync(_run)
     if result is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
-    _client, rows, total, period_start, period_end = result
+    _client, rows, total, period_start, period_end, transport = result
 
     # Truncation is a property of the stored period, not of this response's
     # own page: even a page with zero truncated rows in it must still say so
@@ -294,6 +325,7 @@ async def _get_dimension_analytics(
         limit=page.limit,
         offset=page.offset,
         generated_at=datetime.now(UTC),
+        transport=transport,
     )
 
 
@@ -460,7 +492,7 @@ async def get_reporting_ninja_dataset(
 
     def _run(
         s: Session,
-    ) -> tuple[list[AnalyticsDatasetRow], int, date, date] | None:
+    ) -> tuple[list[AnalyticsDatasetRow], int, date, date, str | None] | None:
         client = ClientRepository(s).get(client_id)
         if client is None:
             return None
@@ -476,6 +508,15 @@ async def get_reporting_ninja_dataset(
         rows = AnalyticsDatasetRepository(s).for_period(
             client_id, dataset_key, date_range.start, date_range.end
         )
+        # task-89 §5.2: the matched snapshot's own transport, read straight
+        # off `provenance_json` — every row in one `for_period()` answer
+        # shares one `snapshot_id` (one collection, one transport).
+        transport: str | None = None
+        if rows:
+            snapshot = s.get(ProviderSnapshot, rows[0].snapshot_id)
+            if snapshot is not None:
+                raw_transport = snapshot.provenance_json.get("transport")
+                transport = str(raw_transport) if raw_transport else None
         if q:
             needle = q.strip().casefold()
             rows = [row for row in rows if needle in row.dimension_value.casefold()]
@@ -484,20 +525,24 @@ async def get_reporting_ninja_dataset(
             reverse=sort_by != "date",
         )
         total = len(rows)
-        return rows[page.offset : page.offset + page.limit], total, date_range.start, date_range.end
+        return (
+            rows[page.offset : page.offset + page.limit], total,
+            date_range.start, date_range.end, transport,
+        )
 
     result = await session.run_sync(_run)
     if result is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
-    rows, total, period_start, period_end = result
+    rows, total, period_start, period_end, transport = result
     return AnalyticsDatasetResponseDTO(
         client_id=client_id,
-        provider=Provider.reporting_ninja,
+        provider=_dataset_provider(dataset_key),
         dataset_key=dataset_key,
         dimension_key=rows[0].dimension_key if rows else None,
         period_role=PeriodRole(role),
         period_start=period_start if total else None,
         period_end=period_end if total else None,
+        transport=transport,
         rows=[
             AnalyticsDatasetRowDTO(
                 dimension_value=row.dimension_value,
