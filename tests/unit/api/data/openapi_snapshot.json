@@ -3495,6 +3495,102 @@
         "title": "CellStatus",
         "type": "string"
       },
+      "CheckPackageRequestDTO": {
+        "properties": {
+          "brand": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Brand",
+            "type": "array"
+          },
+          "check_published": {
+            "default": true,
+            "title": "Check Published",
+            "type": "boolean"
+          },
+          "check_site": {
+            "default": true,
+            "title": "Check Site",
+            "type": "boolean"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "cross_sheet": {
+            "default": true,
+            "title": "Cross Sheet",
+            "type": "boolean"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "frameworks": {
+            "items": {
+              "$ref": "#/components/schemas/FrameworkCandidateDTO"
+            },
+            "title": "Frameworks",
+            "type": "array"
+          },
+          "intent": {
+            "default": "commercial",
+            "enum": [
+              "commercial",
+              "informational",
+              "navigational"
+            ],
+            "title": "Intent",
+            "type": "string"
+          },
+          "kind": {
+            "default": "page",
+            "enum": [
+              "page",
+              "blog"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "locale": {
+            "default": "en-US",
+            "enum": [
+              "en-US",
+              "en-GB",
+              "sv-SE"
+            ],
+            "title": "Locale",
+            "type": "string"
+          },
+          "sheets": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheets"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "title": "CheckPackageRequestDTO",
+        "type": "object"
+      },
       "ClientCardDTO": {
         "properties": {
           "client_id": {
@@ -4200,6 +4296,191 @@
         "title": "ContentQaInspectDTO",
         "type": "object"
       },
+      "ContentQaPackageDTO": {
+        "properties": {
+          "aggregate_findings": {
+            "items": {
+              "$ref": "#/components/schemas/ContentQaFindingDTO"
+            },
+            "title": "Aggregate Findings",
+            "type": "array"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "framework_count": {
+            "title": "Framework Count",
+            "type": "integer"
+          },
+          "frameworks": {
+            "items": {
+              "$ref": "#/components/schemas/FrameworkOutcomeDTO"
+            },
+            "title": "Frameworks",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "severity_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Severity Counts",
+            "type": "object"
+          },
+          "sheets": {
+            "items": {
+              "$ref": "#/components/schemas/ContentQaSheetDTO"
+            },
+            "title": "Sheets",
+            "type": "array"
+          },
+          "source_kind": {
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          },
+          "strategy_findings": {
+            "items": {
+              "$ref": "#/components/schemas/ContentQaFindingDTO"
+            },
+            "title": "Strategy Findings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "source_kind",
+          "source_name",
+          "framework_count",
+          "created_at"
+        ],
+        "title": "ContentQaPackageDTO",
+        "type": "object"
+      },
+      "ContentQaPackageSummaryDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "framework_count": {
+            "title": "Framework Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "severity_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Severity Counts",
+            "type": "object"
+          },
+          "source_kind": {
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_kind",
+          "source_name",
+          "framework_count",
+          "created_at"
+        ],
+        "title": "ContentQaPackageSummaryDTO",
+        "type": "object"
+      },
+      "ContentQaPackagesPageDTO": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "packages": {
+            "items": {
+              "$ref": "#/components/schemas/ContentQaPackageSummaryDTO"
+            },
+            "title": "Packages",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "limit",
+          "offset",
+          "packages"
+        ],
+        "title": "ContentQaPackagesPageDTO",
+        "type": "object"
+      },
       "ContentQaProfileDTO": {
         "properties": {
           "brand_names": {
@@ -4627,6 +4908,40 @@
         "title": "CreateMyTokenResponse",
         "type": "object"
       },
+      "CrossCheckInfoDTO": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "state": {
+            "enum": [
+              "checked",
+              "not_checked",
+              "not_applicable"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "state"
+        ],
+        "title": "CrossCheckInfoDTO",
+        "type": "object"
+      },
       "DashboardResponse": {
         "properties": {
           "clients": {
@@ -4854,6 +5169,83 @@
         "title": "DimensionRowDTO",
         "type": "object"
       },
+      "DriveFileDTO": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_shared_drive": {
+            "default": false,
+            "title": "Is Shared Drive",
+            "type": "boolean"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "modified_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified Time"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "web_view_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Web View Link"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mime_type"
+        ],
+        "title": "DriveFileDTO",
+        "type": "object"
+      },
+      "DriveFilesPageDTO": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/DriveFileDTO"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "next_page_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Page Token"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "DriveFilesPageDTO",
+        "type": "object"
+      },
       "DuplicateClusterDTO": {
         "properties": {
           "check": {
@@ -4949,6 +5341,177 @@
         "title": "FindingDTO",
         "type": "object"
       },
+      "FrameworkCandidateDTO": {
+        "description": "\u041e\u0434\u0438\u043d \u0437\u043d\u0430\u0439\u0434\u0435\u043d\u0438\u0439 \u043a\u0430\u043d\u0434\u0438\u0434\u0430\u0442-\u0444\u0440\u0435\u0439\u043c\u0432\u043e\u0440\u043a (task-90 \u00a71.8/\u00a75 \u043a\u0440\u043e\u043a 2) \u2014 \u0437\n\u043f\u043e\u043c\u0456\u0447\u0435\u043d\u0438\u043c \u043f\u043e\u0445\u043e\u0434\u0436\u0435\u043d\u043d\u044f\u043c, \u0449\u043e\u0431 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440 \u0431\u0430\u0447\u0438\u0432, \u0437\u0432\u0456\u0434\u043a\u0438 \u0432\u0456\u043d \u0443\u0437\u044f\u0442\u0438\u0439.",
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "document_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Name"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "origin": {
+            "enum": [
+              "strategy_link",
+              "drive_search"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheet"
+          },
+          "strategy_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Ref"
+          }
+        },
+        "required": [
+          "document_id",
+          "origin"
+        ],
+        "title": "FrameworkCandidateDTO",
+        "type": "object"
+      },
+      "FrameworkOutcomeDTO": {
+        "description": "\u041e\u0434\u0438\u043d \u0444\u0440\u0435\u0439\u043c\u0432\u043e\u0440\u043a \u0443 \u043f\u0430\u043a\u0435\u0442\u0456 \u2014 \u043f\u043e\u0432\u043d\u0438\u0439 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442 (task-90 \u00a72.5/\u00a74.6):\nQA Frame + QA Copy + \u0442\u0440\u0438 \u0437\u0432\u0456\u0440\u043a\u0438, \u0443\u0441\u0456 findings \u0440\u0430\u0437\u043e\u043c, \u0431\u043e \u0437\u0432\u0456\u0442 \u043f\u0430\u043a\u0435\u0442\u0430\n\u043f\u043e\u043a\u0430\u0437\u0443\u0454 \u0457\u0445 \u0437\u0433\u0440\u0443\u043f\u043e\u0432\u0430\u043d\u043e \u043f\u043e \u043b\u0435\u0439\u043d\u0443, \u043d\u0435 \u043f\u043e \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0443.",
+        "properties": {
+          "copy_site_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrossCheckInfoDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "copy_tab_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Copy Tab Title"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ContentQaFindingDTO"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "frame_site_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrossCheckInfoDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "frame_strategy_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrossCheckInfoDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "frame_tab_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Tab Title"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "$ref": "#/components/schemas/FrameworkCandidateDTO"
+          },
+          "state": {
+            "enum": [
+              "checked",
+              "not_accessible",
+              "no_recognized_tabs"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "state"
+        ],
+        "title": "FrameworkOutcomeDTO",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -4981,6 +5544,19 @@
           "value"
         ],
         "title": "HealthPointDTO",
+        "type": "object"
+      },
+      "InspectPackageRequestDTO": {
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "title": "InspectPackageRequestDTO",
         "type": "object"
       },
       "IntegrationCandidateDTO": {
@@ -11697,6 +12273,43 @@
         "title": "ReportTypesDTO",
         "type": "object"
       },
+      "ResolveSourceDTO": {
+        "description": "\u041a\u0440\u043e\u043a 1 (task-90 \u00a75): \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f/id -> \u0444\u0430\u0439\u043b + \u0439\u043e\u0433\u043e \u0432\u0438\u0434. `kind` \u043a\u0430\u0436\u0435\n\u0444\u0440\u043e\u043d\u0442\u0443, \u0449\u043e \u043f\u043e\u043a\u0430\u0437\u0430\u0442\u0438 \u0434\u0430\u043b\u0456 \u2014 \u0432\u0438\u0431\u0456\u0440 \u0430\u0440\u043a\u0443\u0448\u0430 (spreadsheet/xlsx_blob) \u0447\u0438\n\u043f\u043e\u043c\u0438\u043b\u043a\u0443 (document/unsupported: \u0441\u0442\u0440\u0430\u0442\u0435\u0433\u0456\u044f \u043d\u0435 \u043c\u043e\u0436\u0435 \u0431\u0443\u0442\u0438 Google Doc).",
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/DriveFileDTO"
+          },
+          "kind": {
+            "enum": [
+              "spreadsheet",
+              "xlsx_blob",
+              "document",
+              "unsupported"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "kind"
+        ],
+        "title": "ResolveSourceDTO",
+        "type": "object"
+      },
+      "ResolveSourceRequestDTO": {
+        "properties": {
+          "url_or_id": {
+            "title": "Url Or Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url_or_id"
+        ],
+        "title": "ResolveSourceRequestDTO",
+        "type": "object"
+      },
       "ResolvedClientDTO": {
         "additionalProperties": false,
         "properties": {
@@ -12295,6 +12908,49 @@
         ],
         "title": "StageStatus",
         "type": "string"
+      },
+      "StrategyPackageInspectDTO": {
+        "description": "\u041a\u0440\u043e\u043a 2 (task-90 \u00a75): \u043f\u0440\u0435\u0432'\u044e \u0441\u0442\u0440\u0430\u0442\u0435\u0433\u0456\u0457 \u0431\u0435\u0437 \u043f\u043e\u0431\u0443\u0434\u043e\u0432\u0438 ContentDoc/\nfindings \u2014 \u0442\u043e\u0439 \u0441\u0430\u043c\u0438\u0439 stateless \u043f\u0440\u0438\u043d\u0446\u0438\u043f, \u0449\u043e `/strategy-check/inspect`.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/FrameworkCandidateDTO"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "sheets": {
+            "items": {
+              "$ref": "#/components/schemas/ContentQaSheetPreviewDTO"
+            },
+            "title": "Sheets",
+            "type": "array"
+          },
+          "source_file_id": {
+            "title": "Source File Id",
+            "type": "string"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          },
+          "suggested_sheets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Suggested Sheets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_name",
+          "source_file_id",
+          "sheets",
+          "suggested_sheets",
+          "candidates"
+        ],
+        "title": "StrategyPackageInspectDTO",
+        "type": "object"
       },
       "SyncJobAcceptedDTO": {
         "description": "`202 Accepted` body for `POST /sync-jobs`.",
@@ -27595,6 +28251,312 @@
         ]
       }
     },
+    "/api/v1/tools/strategy-package/check": {
+      "post": {
+        "description": "\u041a\u0440\u043e\u043a 3 (task-90 \u00a75): \u043f\u043e\u0432\u043d\u0438\u0439 \u043f\u0440\u043e\u0433\u0456\u043d \u2014 QA \u0441\u0442\u0440\u0430\u0442\u0435\u0433\u0456\u0457 + \u0432\u0441\u0456 \u043e\u0431\u0440\u0430\u043d\u0456\n\u0444\u0440\u0435\u0439\u043c\u0432\u043e\u0440\u043a\u0438 (\u043a\u043e\u0436\u0435\u043d: Frame QA + Copy QA + \u0442\u0440\u0438 \u0437\u0432\u0456\u0440\u043a\u0438), \u043f\u0435\u0440\u0441\u0438\u0441\u0442\u043e\u0432\u0430\u043d\u043e \u0432\n\u043e\u0434\u0438\u043d \u0440\u044f\u0434\u043e\u043a `content_qa_packages`.",
+        "operationId": "check_package_api_v1_tools_strategy_package_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckPackageRequestDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentQaPackageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Package",
+        "tags": [
+          "content-qa"
+        ]
+      }
+    },
+    "/api/v1/tools/strategy-package/drive/files": {
+      "get": {
+        "description": "\u041f\u0435\u0440\u0435\u0433\u043b\u044f\u0434/\u043f\u043e\u0448\u0443\u043a \u0414\u0438\u0441\u043a\u0430 (task-90 \u00a75) \u2014 \u0442\u0456\u043b\u044c\u043a\u0438 \u0441\u0442\u0440\u0430\u0442\u0435\u0433\u0456\u0457 \u0439 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0438, \u043d\u0435\n\u0432\u0435\u0441\u044c \u0414\u0438\u0441\u043a: \u0444\u0430\u0439\u043b\u0438, \u0437 \u044f\u043a\u0438\u043c\u0438 \u0446\u0435\u0439 \u0442\u0443\u043b \u0443\u0437\u0430\u0433\u0430\u043b\u0456 \u0432\u043c\u0456\u0454 \u0449\u043e\u0441\u044c \u0440\u043e\u0431\u0438\u0442\u0438.",
+        "operationId": "browse_drive_api_v1_tools_strategy_package_drive_files_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Page Token"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriveFilesPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Browse Drive",
+        "tags": [
+          "content-qa"
+        ]
+      }
+    },
+    "/api/v1/tools/strategy-package/inspect": {
+      "post": {
+        "description": "\u041a\u0440\u043e\u043a 2 (task-90 \u00a75): \u0430\u0440\u043a\u0443\u0448\u0456 \u0441\u0442\u0440\u0430\u0442\u0435\u0433\u0456\u0457 + \u0437\u043d\u0430\u0439\u0434\u0435\u043d\u0456 \u0444\u0440\u0435\u0439\u043c\u0432\u043e\u0440\u043a\u0438 \u2014\n\u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f \u0437\u0456 \u0441\u0442\u0440\u0430\u0442\u0435\u0433\u0456\u0457 (\u00a71.8, \u043e\u0441\u043d\u043e\u0432\u043d\u0435 \u0434\u0436\u0435\u0440\u0435\u043b\u043e) \u043f\u043b\u044e\u0441 \u0440\u0435\u0437\u0435\u0440\u0432\u043d\u0438\u0439 \u043f\u043e\u0448\u0443\u043a \u043f\u043e\n\u0414\u0438\u0441\u043a\u0443 \u0437\u0430 \u043f\u0440\u0435\u0444\u0456\u043a\u0441\u043e\u043c \u043a\u043b\u0456\u0454\u043d\u0442\u0430. \u041d\u0456\u0447\u043e\u0433\u043e \u043d\u0435 \u043f\u0435\u0440\u0441\u0438\u0441\u0442\u0443\u0454\u0442\u044c\u0441\u044f.",
+        "operationId": "inspect_package_api_v1_tools_strategy_package_inspect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectPackageRequestDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyPackageInspectDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect Package",
+        "tags": [
+          "content-qa"
+        ]
+      }
+    },
+    "/api/v1/tools/strategy-package/reports": {
+      "get": {
+        "operationId": "list_packages_api_v1_tools_strategy_package_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentQaPackagesPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Packages",
+        "tags": [
+          "content-qa"
+        ]
+      }
+    },
+    "/api/v1/tools/strategy-package/reports/{package_id}": {
+      "get": {
+        "operationId": "get_package_api_v1_tools_strategy_package_reports__package_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_id",
+            "required": true,
+            "schema": {
+              "title": "Package Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentQaPackageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Package",
+        "tags": [
+          "content-qa"
+        ]
+      }
+    },
+    "/api/v1/tools/strategy-package/resolve": {
+      "post": {
+        "description": "\u041a\u0440\u043e\u043a 1 (task-90 \u00a75): \u0432\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0435 \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f \u0447\u0438 id -> \u0444\u0430\u0439\u043b + \u0439\u043e\u0433\u043e \u0432\u0438\u0434.",
+        "operationId": "resolve_source_api_v1_tools_strategy_package_resolve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveSourceRequestDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolveSourceDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Source",
+        "tags": [
+          "content-qa"
+        ]
+      }
+    },
     "/api/v1/url-inspector": {
       "get": {
         "operationId": "get_url_inspector_api_v1_url_inspector_get",
@@ -28485,6 +29447,46 @@
         "summary": "Readyz",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/url/{url}": {
+      "get": {
+        "operationId": "url_inspector_shell_url__url__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Url Inspector Shell",
+        "tags": [
+          "url-inspector-view"
         ]
       }
     }

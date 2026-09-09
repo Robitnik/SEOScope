@@ -171,6 +171,13 @@ ROUTE_ACTIONS: dict[tuple[str, str], ActionSpec] = {
     ("POST", "/api/v1/tools/strategy-check/inspect"): ActionSpec("tool.strategy_check.inspect"),
     ("POST", "/api/v1/tools/strategy-check/check"): ActionSpec("tool.strategy_check.run"),
     ("POST", "/api/v1/tools/framework-check/check"): ActionSpec("tool.framework_check.run"),
+    ("POST", "/api/v1/tools/strategy-package/resolve"): ActionSpec(
+        "tool.strategy_package.resolve"
+    ),
+    ("POST", "/api/v1/tools/strategy-package/inspect"): ActionSpec(
+        "tool.strategy_package.inspect"
+    ),
+    ("POST", "/api/v1/tools/strategy-package/check"): ActionSpec("tool.strategy_package.run"),
     ("POST", "/api/v1/url-inspector/live"): ActionSpec("tool.url_inspector.live"),
     ("POST", "/api/v1/url-screenshots"): ActionSpec("tool.url_screenshots.capture"),
 }

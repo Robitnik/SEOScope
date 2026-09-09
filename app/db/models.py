@@ -660,6 +660,63 @@ class ContentQaReport(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
+class ContentQaPackage(Base):
+    """Один прогін Strategy Package Check (task-90): одна стратегія + N
+    фреймворків.
+
+    **Один рядок на весь пакет**, не N дочірніх `ContentQaReport` (свідоме
+    відхилення від першого чорновика цієї моделі): звіт пакета (task-90 §7)
+    показує вкладки Frame/Copy/Cross-checks **зведено по всіх фреймворках
+    одразу**, а не навігацію "один документ = одна сторінка" — тобто
+    фронту й так треба прочитати ВСІ фреймворки одним запитом, і дочірні
+    рядки дали б лише зайвий JOIN заради структури, якою ніхто не користується.
+    `frameworks_json` — список повних `FrameworkOutcome` (стан, findings
+    Frame+Copy+три звірки, назви вкладок) по кожному кандидату; `.ref`
+    усередині кожного finding уже несе назву документа, тож ідентифікація
+    не губиться.
+
+    `strategy_findings_json`/`aggregate_findings_json` — те, що не належить
+    жодному одному фреймворку: сама QA стратегії і крос-фреймворковий
+    `sync-strategy-row-no-frame` (task-90 §2.4). Immutable рядок, як і
+    `ContentQaReport`: повторний прогін створює новий пакет, не оновлює
+    старий.
+    """
+
+    __tablename__ = "content_qa_packages"
+    __table_args__ = (
+        Index("ix_content_qa_packages_created_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="SET NULL"), default=None
+    )
+    # "gsheet" | "xlsx_blob" — звідки прочитана сама стратегія (task-90 §5,
+    # `DriveFile.mime_type` розводить на кроці /resolve). Не плутати з
+    # `ContentQaReport.doc_type`, який розрізняє СТРАТЕГІЮ/ФРЕЙМВОРК/КОПІЮ.
+    source_kind: Mapped[str] = mapped_column(String(16))
+    source_file_id: Mapped[str | None] = mapped_column(String(128), default=None)
+    source_name: Mapped[str] = mapped_column(String(255))
+    profile_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    framework_count: Mapped[int] = mapped_column(Integer, default=0)
+    strategy_findings_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    # `sync-strategy-row-no-frame` та подібне — агрегатні знахідки, що
+    # бачать усі фреймворки пакета одразу (task-90 §2.4), тож не належать
+    # жодному одному `ContentQaReport`.
+    aggregate_findings_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    # Стан кожного кандидата-фреймворка (checked/not_accessible/
+    # no_recognized_tabs), звідки він узятий (strategy_link/drive_search) і
+    # зведені CrossCheckInfo трьох лейнів — усе, що потрібно блоку Scope у
+    # звіті, не перелазячи по N окремих `ContentQaReport` (task-90 §7).
+    frameworks_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    severity_counts_json: Mapped[dict[str, int]] = mapped_column(JSON, default=dict)
+    # Стан кожного аркуша стратегії (checked/not_selected/no_recognized_columns
+    # + item_count) — та сама трійка станів, що `ContentQaReport.sheets_json`
+    # (task-87 §1.3), для блоку Scope у звіті пакета.
+    sheets_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
 class RedirectCheck(Base):
     """Один прогін інструмента Redirect Checker (task-29).
 
