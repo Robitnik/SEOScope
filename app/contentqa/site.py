@@ -49,6 +49,11 @@ class LivePage:
     signals: PageSignals | None
     headings: tuple[tuple[str, str], ...]
     sections: tuple[ContentSection, ...]
+    # `X-Robots-Tag` — HTTP-заголовок, не з HTML, тому окремо від `signals`
+    # (task-90 §4.5): `crosscheck.py:check_frame_site`'s `site-noindex`
+    # потребує його поряд із `signals.meta_robots`, бо або з них може
+    # заборонити індексацію (`app.monitor.page.is_indexable`).
+    x_robots_tag: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -73,6 +78,7 @@ def fetch_page(
     return LivePage(
         url=url, status=result.status, error=None,
         signals=signals, headings=headings, sections=sections,
+        x_robots_tag=result.headers.get("X-Robots-Tag"),
     )
 
 
