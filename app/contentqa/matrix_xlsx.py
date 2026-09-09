@@ -101,12 +101,17 @@ def _fill(hex_color: str) -> PatternFill:
     return PatternFill("solid", fgColor=hex_color)
 
 
-def _cell_text(cell: MatrixCellDTO) -> str:
+_LENGTH_FIELDS = ("title", "description")
+
+
+def _cell_text(cell: MatrixCellDTO, field: str | None = None) -> str:
     if cell.state == "absent":
         return "— (no such column)"
     if cell.state == "empty":
         return ""
     if cell.text is not None:
+        if field in _LENGTH_FIELDS:
+            return f"{cell.text}\n({len(cell.text)} chars)"
         return cell.text
     shown = "; ".join(cell.items[:8])
     if len(cell.items) > 8:
@@ -215,7 +220,7 @@ def _mini_table(
     else:
         for col_offset, field in enumerate(_SCALAR_FIELDS):
             cell_value = getattr(cells, field)
-            cell = ws.cell(r, 1 + col_offset, _cell_text(cell_value))
+            cell = ws.cell(r, 1 + col_offset, _cell_text(cell_value, field))
             cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
             tone = tone_for(field)
             font, fill, border = _tone_font_fill_border(tone)

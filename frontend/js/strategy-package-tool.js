@@ -802,10 +802,22 @@ function renderComparisonTab(panel, pkg) {
   });
 }
 
-function renderMatrixCell(cell) {
+// Live feedback: title/description length matters on its own (SEO SERP
+// truncation) regardless of whether the field matches across sources —
+// show a character count under the two fields it's asked for, not every
+// scalar field.
+const MATRIX_LENGTH_FIELDS = new Set(["title", "description"]);
+
+function renderMatrixCell(cell, field) {
   if (cell.state === "absent") return `<span class="sp-matrix-cell sp-matrix-cell--absent">— no such column</span>`;
   if (cell.state === "empty") return `<span class="sp-matrix-cell sp-matrix-cell--empty">(empty)</span>`;
-  if (cell.text !== null && cell.text !== undefined) return escapeHtml(cell.text);
+  if (cell.text !== null && cell.text !== undefined) {
+    const text = escapeHtml(cell.text);
+    if (MATRIX_LENGTH_FIELDS.has(field)) {
+      return `${text}<span class="sp-matrix-cell__len">${cell.text.length} chars</span>`;
+    }
+    return text;
+  }
   const items = cell.items || [];
   const shown = items.slice(0, 4).map(escapeHtml).join("; ");
   return items.length > 4 ? `${shown} <span class="sp-matrix-cell--more">(+${items.length - 4} more)</span>` : shown;
@@ -875,7 +887,7 @@ function renderMatrixMiniTable(block, row) {
               ${cells
                 ? MATRIX_FIELDS.map((f) => {
                     const tone = toneFor(f);
-                    return `<td class="${tone ? `sp-matrix-cell--${tone}` : ""}">${renderMatrixCell(cells[f])}</td>`;
+                    return `<td class="${tone ? `sp-matrix-cell--${tone}` : ""}">${renderMatrixCell(cells[f], f)}</td>`;
                   }).join("")
                 : `<td colspan="${MATRIX_FIELDS.length}" class="sp-matrix-cell sp-matrix-cell--absent">— not in this run</td>`}
             </tr>

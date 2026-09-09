@@ -293,3 +293,30 @@ def test_outgoing_links_beyond_the_cap_note_a_remaining_count() -> None:
     data_row = strategy_title_row + 2
     last_link_col = 5 + 6  # 5 scalar columns + _MAX_LINK_COLUMNS
     assert "(+3 more)" in ws.cell(data_row, last_link_col).value
+
+
+def test_title_and_description_show_a_character_count() -> None:
+    """Live feedback ("Додай ще довжини тайтлу та дескріпшина"): SERP
+    truncation is a length problem independent of match/mismatch, so the
+    char count is appended regardless of verdict — but only for the two
+    fields it was asked for, not every scalar column (URL/H1 stay as-is)."""
+    rows = [
+        MatrixRowDTO(
+            key="r1", kind="matched", label="p1",
+            strategy=_cells(
+                url=MatrixCellDTO(state="value", text="https://a"),
+                title=MatrixCellDTO(state="value", text="Twelve chars"),
+                description=MatrixCellDTO(state="value", text="A description of 26 chars."),
+                h1=MatrixCellDTO(state="value", text="Heading"),
+            ),
+            framework=_cells(), site=_cells(), verdicts=_verdicts(),
+        ),
+    ]
+    data = build_matrix_xlsx(rows)
+    ws = load_workbook(io.BytesIO(data))["Comparison"]
+    strategy_title_row = _mini_table_titles(ws)["Strategy"]
+    data_row = strategy_title_row + 2
+    assert ws.cell(data_row, 2).value == "Twelve chars\n(12 chars)"
+    assert ws.cell(data_row, 3).value == "A description of 26 chars.\n(26 chars)"
+    assert ws.cell(data_row, 1).value == "https://a"
+    assert ws.cell(data_row, 4).value == "Heading"

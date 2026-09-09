@@ -140,6 +140,13 @@
 .sp-matrix-table th:nth-child(6), .sp-matrix-table td:nth-child(6) { width: 18%; }
 .sp-matrix-cell--absent, .sp-matrix-cell--empty { color: var(--ink-dim); font-style: italic; }
 .sp-matrix-cell--more { color: var(--ink-dim); }
+/* Character count under Title/Description — SERP truncation is a length
+   problem independent of whether the field matches across sources, so it
+   shows regardless of match/mismatch tone (never bold, never colored by
+   the parent cell's tone). */
+.sp-matrix-cell__len {
+  display: block; margin-top: 4px; font-size: 10px; font-weight: 400; color: var(--ink-dim);
+}
 /* Mismatched field: bold + red text + a left border on the cell itself —
    color is never the only signal (AGENTS.md §7), the weight change and
    the verdict badge in the page header carry the same information too.
