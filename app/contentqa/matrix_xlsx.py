@@ -181,10 +181,14 @@ def _cell_tone(verdict: MatrixFieldVerdictDTO, side: str) -> str | None:
 def _page_header(ws: Worksheet, row_index: int, row: MatrixRowDTO) -> int:
     """URL/label + зведені вердикти шести полів над трьома міні-таблицями
     цієї сторінки — та сама інформація, що бейджі в шапці групи на екрані
-    (`renderMatrixVerdictBadges`). Дві злиті на всю ширину клітинки (title
-    + summary), не одна колонка поруч з іншою (live feedback: сусідня
-    клітинка з summary-текстом обрізала довгий URL замість перенесення —
-    "Юрл не обрізай"), плюс потовщена верхня межа-роздільник між сторінками."""
+    (`renderMatrixVerdictBadges`). Title-рядок злитий на всю ширину, не
+    одна колонка поруч з summary (live feedback: сусідня клітинка з
+    summary-текстом обрізала довгий URL замість перенесення — "Юрл не
+    обрізай"). Summary-рядок — НЕ злитий: кожне поле у своїй клітинці,
+    бо одна клітинка має рівно один шрифт на весь текст — не можна
+    пофарбувати ✓ зеленим і ✗ червоним в одному спільному рядку
+    (live feedback: "галочки зелені. хрестики червоні"). Плюс потовщена
+    верхня межа-роздільник між сторінками."""
     title_row = row_index
     ws.merge_cells(
         start_row=title_row, start_column=1, end_row=title_row, end_column=_TOTAL_COLUMNS
@@ -198,17 +202,20 @@ def _page_header(ws: Worksheet, row_index: int, row: MatrixRowDTO) -> int:
         cell.border = Border(top=_PAGE_DIVIDER_SIDE)
     ws.row_dimensions[title_row].height = _TITLE_ROW_HEIGHT
 
+    # One cell per field (task-91 §6, live feedback: "галочки зелені.
+    # хрестики червоні") instead of one joined string — a single cell can
+    # only carry one font, so a match's ✓ and a mismatch's ✗ in the same
+    # string were forced to share one (muted gray) color. `_FIELDS` has
+    # exactly 6 entries, aligned one-to-one with the sheet's first 6
+    # columns (5 scalar fields + the "Outgoing links" column), so each
+    # badge lands directly above the column it summarizes.
     summary_row = title_row + 1
-    ws.merge_cells(
-        start_row=summary_row, start_column=1, end_row=summary_row, end_column=_TOTAL_COLUMNS
-    )
-    summary = "   ".join(
-        f"{label}:{_VERDICT_SYMBOL[getattr(row.verdicts, field).state]}"
-        for field, label in zip(_FIELDS, _FIELD_LABELS, strict=True)
-    )
-    summary_cell = ws.cell(summary_row, 1, summary)
-    summary_cell.font = Font(italic=True, size=10, color=_ABSENT_FG)
-    summary_cell.alignment = Alignment(horizontal="left", vertical="center")
+    summary_fg = {"match": _MATCH_FG, "mismatch": _MISMATCH_FG, "not_comparable": _ABSENT_FG}
+    for col_index, (field, label) in enumerate(zip(_FIELDS, _FIELD_LABELS, strict=True), start=1):
+        state = getattr(row.verdicts, field).state
+        badge_cell = ws.cell(summary_row, col_index, f"{label}: {_VERDICT_SYMBOL[state]}")
+        badge_cell.font = Font(bold=state != "not_comparable", size=10, color=summary_fg[state])
+        badge_cell.alignment = Alignment(horizontal="left", vertical="center")
     for col in range(1, _TOTAL_COLUMNS + 1):
         ws.cell(summary_row, col).fill = _fill(_BLOCK_TITLE_BG)
     ws.row_dimensions[summary_row].height = _SUMMARY_ROW_HEIGHT

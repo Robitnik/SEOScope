@@ -103,12 +103,22 @@ def test_page_header_summarizes_verdicts() -> None:
     ]
     data = build_matrix_xlsx(rows)
     ws = load_workbook(io.BytesIO(data))["Comparison"]
-    # Title (row 1) and summary (row 2) are each merged across the full
-    # row width now (live feedback: "Юрл не обрізай" — a long URL sharing
-    # its row with the summary text used to get clipped by Excel).
-    summary = ws.cell(2, 1).value
-    assert "URL:✓" in summary
-    assert "Title:✗" in summary
+    # Title (row 1) is merged across the full row width (live feedback:
+    # "Юрл не обрізай" — a long URL sharing its row with the summary text
+    # used to get clipped by Excel). Summary (row 2) is one cell per field
+    # — `_FIELDS` order is (url, title, description, h1, keywords, links)
+    # — so each verdict can carry its own color (live feedback: "галочки
+    # зелені. хрестики червоні", impossible in a single joined cell since
+    # one cell has exactly one font).
+    url_cell = ws.cell(2, 1)
+    title_cell = ws.cell(2, 2)
+    description_cell = ws.cell(2, 3)  # not_comparable by default -> muted, not colored
+    assert url_cell.value == "URL: ✓"
+    assert title_cell.value == "Title: ✗"
+    assert description_cell.value == "Description: —"
+    assert url_cell.font.color.rgb.endswith("1E7E34")
+    assert title_cell.font.color.rgb.endswith("CC0000")
+    assert description_cell.font.color.rgb.endswith("999999")
 
 
 def test_absent_cell_renders_the_no_such_column_marker() -> None:
