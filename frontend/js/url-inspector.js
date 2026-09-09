@@ -1524,6 +1524,22 @@ function renderChangeRow(change) {
 
 // --- Meta & copy -------------------------------------------------------------
 
+// Довжина title/description у символах — те, за чим оператор тягнеться
+// найчастіше, дивлячись на ці два поля. Показуємо ЛИШЕ число: чи вона
+// завелика, вже каже блок findings нижче, який проганяє ті самі правила
+// `app/pageinventory/qa.py`, що й портфельний Page Inventory (метаqa.py) — з
+// порогами з `app/contentqa/policy_bridge.py`. Прошити свої 60/160 тут
+// означало б завести другу, розбіжну думку про ту саму метрику.
+//
+// Рахуємо `Array.from(...)`, а не `.length`: у рядку `.length` рахує UTF-16
+// code units, тож емодзі чи пара сурогатів дали б завищене число саме там,
+// де оператор дивиться на межу.
+function withLength(value) {
+  if (!value) return "<em>Missing</em>";
+  const chars = Array.from(String(value)).length;
+  return `${escapeHtml(value)} <small class="url-inspector__len">${chars} chars</small>`;
+}
+
 function renderMeta(data) {
   const { meta: metaData } = data;
   const meta = SOURCE_STATE_META[metaData.state.state] || SOURCE_STATE_META.no_data;
@@ -1541,8 +1557,8 @@ function renderMeta(data) {
       <div class="url-inspector__table-scroll">
         <table class="metric-table url-inspector__facts">
           <tbody>
-            <tr><td>Title</td><td class="url-inspector__wrap">${metaData.title ? escapeHtml(metaData.title) : "<em>Missing</em>"}</td></tr>
-            <tr><td>Description</td><td class="url-inspector__wrap">${metaData.description ? escapeHtml(metaData.description) : "<em>Missing</em>"}</td></tr>
+            <tr><td>Title</td><td class="url-inspector__wrap">${withLength(metaData.title)}</td></tr>
+            <tr><td>Description</td><td class="url-inspector__wrap">${withLength(metaData.description)}</td></tr>
             <tr><td>H1</td><td class="url-inspector__wrap">${metaData.h1 ? escapeHtml(metaData.h1) : "<em>Missing</em>"}</td></tr>
             ${metaData.keywords.length ? `<tr><td>Keywords</td><td class="url-inspector__wrap">${metaData.keywords.map(escapeHtml).join(", ")}</td></tr>` : ""}
           </tbody>
@@ -1656,8 +1672,8 @@ function renderLiveResult() {
         <tbody>
           <tr><td>HTTP status</td><td>${result.http_status ?? "—"}</td></tr>
           <tr><td>Indexable</td><td>${formatBool(result.indexable)}</td></tr>
-          <tr><td>Title</td><td class="url-inspector__wrap">${s?.title ? escapeHtml(s.title) : "<em>Missing</em>"}</td></tr>
-          <tr><td>Description</td><td class="url-inspector__wrap">${s?.description ? escapeHtml(s.description) : "<em>Missing</em>"}</td></tr>
+          <tr><td>Title</td><td class="url-inspector__wrap">${withLength(s?.title)}</td></tr>
+          <tr><td>Description</td><td class="url-inspector__wrap">${withLength(s?.description)}</td></tr>
           <tr><td>H1</td><td class="url-inspector__wrap">${s?.h1 ? escapeHtml(s.h1) : "<em>Missing</em>"}</td></tr>
           <tr><td>Canonical</td><td class="url-inspector__wrap">${s?.canonical ? escapeHtml(s.canonical) : "—"}</td></tr>
           <tr><td>Meta robots</td><td>${s?.meta_robots ? escapeHtml(s.meta_robots) : "—"}</td></tr>

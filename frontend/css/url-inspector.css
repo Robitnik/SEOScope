@@ -719,3 +719,15 @@ td.url-inspector__wrap { white-space: normal; overflow-wrap: anywhere; text-alig
   color: var(--ink-muted);
   font-size: 11px;
 }
+
+/* Довжина title/description поруч зі значенням. Власний рядок, а не хвіст
+ * тексту: приліплена до кінця довгого опису цифра читається як частина
+ * опису. `--ink-muted`, не `--ink-dim` — останній провалює AA на дрібному
+ * тексті (виміряно в task-85). */
+.url-inspector__len {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

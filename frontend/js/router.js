@@ -546,7 +546,7 @@ async function activate() {
     allRoots.filter((el) => el !== urlInspectorRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     urlInspectorRoot?.removeAttribute("hidden");
-    const { initUrlInspectorPage } = await import("./url-inspector.js?v=20260909-t88");
+    const { initUrlInspectorPage } = await import("./url-inspector.js?v=20260909-t88b");
     await initUrlInspectorPage(route.query);
   } else if (route.name === "client") {
     dashboardView?.setAttribute("hidden", "");
