@@ -273,13 +273,17 @@ def test_rn_kpi_parity_between_transports(
                           "metricValues": [{"value": "800"}, {"value": "12"}]}],
                 "rowCount": 1,
             })
+        # task-89 §7.1: the KPI card's organic split is `sessionMedium` +
+        # substring "organic" (RN's own dashboard-card convention), NOT
+        # `firstUserDefaultChannelGroup` — that model belongs to task-84's
+        # report engine, a different feature.
         return httpx.Response(200, json={
-            "dimensionHeaders": [{"name": "firstUserDefaultChannelGroup"}],
+            "dimensionHeaders": [{"name": "sessionMedium"}],
             "metricHeaders": [{"name": "totalUsers"}, {"name": "keyEvents"}],
             "rows": [
-                {"dimensionValues": [{"value": "Organic Search"}],
+                {"dimensionValues": [{"value": "organic"}],
                  "metricValues": [{"value": "300"}, {"value": "5"}]},
-                {"dimensionValues": [{"value": "Direct"}],
+                {"dimensionValues": [{"value": "(none)"}],
                  "metricValues": [{"value": "400"}, {"value": "3"}]},
             ],
             "rowCount": 2,

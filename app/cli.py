@@ -11,7 +11,7 @@ import os
 import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.db.session import get_sync_sessionmaker
 from app.importers.ai_seo_tools import render_report, run_import
@@ -136,9 +136,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     compare_transports_cmd.add_argument(
         "--dataset",
-        choices=["gsc_daily", "ga4_daily", "ga4_daily_channels", "all"],
+        choices=[
+            "gsc_daily", "ga4_daily", "ga4_daily_channels",
+            # task-89 §7.1: the client-page surfaces beyond `#/trends`.
+            "gsc_kpi", "gsc_pages", "gsc_queries",
+            "ga4_kpi", "ga4_channels", "ga4_landing_pages",
+            "ga4_events", "ga4_devices", "ga4_countries",
+            "all",
+        ],
         default="all",
-        help="Which trends dataset to compare (default: all three)",
+        help="Which dataset to compare (default: all twelve)",
     )
     compare_transports_cmd.add_argument(
         "--end",
@@ -1701,12 +1708,21 @@ def _run_compare_transports(args: argparse.Namespace) -> int:
         repo = ClientRepository(session)
         gsc_int = repo.get_integration(client.id, Provider.gsc)
         rn_int = repo.get_integration(client.id, Provider.reporting_ninja)
+        client_id = client.id
         client_name = client.name
+        client_timezone = client.timezone
         gsc_cfg = dict(gsc_int.config_json or {}) if gsc_int else None
         rn_cfg = dict(rn_int.config_json or {}) if rn_int else None
 
+    from app.integrations.google_api.compare import DIMENSION_KEYED_DATASETS
+
     wanted = (
-        ["gsc_daily", "ga4_daily", "ga4_daily_channels"]
+        [
+            "gsc_daily", "ga4_daily", "ga4_daily_channels",
+            "gsc_kpi", "gsc_pages", "gsc_queries",
+            "ga4_kpi", "ga4_channels", "ga4_landing_pages",
+            "ga4_events", "ga4_devices", "ga4_countries",
+        ]
         if args.dataset == "all"
         else [args.dataset]
     )
@@ -1772,11 +1788,29 @@ def _run_compare_transports(args: argparse.Namespace) -> int:
             }
         return out
 
-    reports = []
+    reports: list[Any] = []
+    # The 5 GA4 breakdown datasets each come out of ONE call per transport
+    # (`_collect_datasets_{reporting_ninja,google_api_trends}` fetches all
+    # six `_GA4_DATASETS` + the channels pivot together) — cached here so
+    # `--dataset all` costs 2 calls for that group, not 10.
+    dataset_cache: dict[str, Any] = {}
     with ReportingNinjaClient() as rn, open_google_api_session() as gs:
         from app.integrations.google_api import Ga4Client, GscClient
 
         for dataset in wanted:
+            if dataset in DIMENSION_KEYED_DATASETS:
+                _compare_dimension_dataset(
+                    dataset,
+                    client_id=client_id,
+                    client_timezone=client_timezone,
+                    gsc_cfg=gsc_cfg,
+                    rn_cfg=rn_cfg,
+                    window_start=window_start,
+                    window_end=window_end,
+                    reports=reports,
+                    dataset_cache=dataset_cache,
+                )
+                continue
             try:
                 if dataset == "gsc_daily":
                     if not (gsc_cfg and gsc_cfg.get("account_id")):
@@ -1854,6 +1888,193 @@ def _run_compare_transports(args: argparse.Namespace) -> int:
     ok = all(report.passed for report in reports)
     print(f"\nGATE G2: {'PASS' if ok else 'FAIL'}")
     return 0 if ok else 1
+
+
+# task-89 §7.1: catalog/dataset key -> the canonical field name `TOLERANCES`
+# uses (compare.py). Aggregate KPIs collapse to ONE synthetic row keyed
+# `"total"` — there is exactly one value per metric per transport, the same
+# shape `compare_dimension_rows` already expects for a dimension row.
+_GSC_KPI_FIELDS = {
+    "gsc_clicks": "clicks", "gsc_impressions": "impressions", "gsc_avg_position": "avg_position",
+}
+_GA4_KPI_FIELDS = {
+    "rn_users": "users", "rn_organic_users": "organic_users",
+    "rn_total_conversions": "total_conversions", "rn_organic_conversions": "organic_conversions",
+}
+
+
+def _compare_dimension_dataset(
+    dataset: str,
+    *,
+    client_id: str,
+    client_timezone: str,
+    gsc_cfg: dict[str, Any] | None,
+    rn_cfg: dict[str, Any] | None,
+    window_start: date,
+    window_end: date,
+    reports: list[Any],
+    dataset_cache: dict[str, Any],
+) -> None:
+    """task-89 §7.1 GATE — the four client-page surfaces beyond `#/trends`:
+    GSC/GA4 KPI aggregates and GSC/GA4 dimension breakdowns. Forces BOTH
+    transports' PRIVATE collector methods directly (bypassing
+    `resolve_transport()`, which reads the client's own config) — a gate
+    needs both sides regardless of what is actually configured. Writes
+    NOTHING to the database, same invariant as `compare_series` (§7.2)."""
+    from decimal import Decimal
+
+    from app.integrations.google_api.compare import RowSeries, compare_dimension_rows
+    from app.integrations.gsc import GscAdapter
+    from app.integrations.reporting_ninja import ReportingNinjaAdapter
+    from app.schemas.adapter import CollectionContext, DateRange
+    from app.schemas.enums import ComparisonMode, PeriodKind, PeriodRole, Provider, SourceMode
+
+    window = DateRange(start=window_start, end=window_end)
+
+    def no_emit(_event: Any) -> None:
+        return None  # progress is not printed by this gate
+
+    def _ctx(provider: Provider, cfg: dict[str, Any]) -> CollectionContext:
+        return CollectionContext(
+            client_id=client_id, provider=provider, source_mode=SourceMode.api,
+            period_kind=PeriodKind.custom, comparison_mode=ComparisonMode.closed,
+            current=window, previous=window, timezone=client_timezone,
+            integration_config=cfg,
+        )
+
+    def _kpi_rows(metrics: list[Any], fields: dict[str, str]) -> RowSeries:
+        row: dict[str, Decimal | None] = {}
+        for metric in metrics:
+            if metric.period_role != PeriodRole.current:
+                continue
+            canonical = fields.get(metric.metric_key)
+            if canonical:
+                row[canonical] = metric.value_numeric
+        return {"total": row}
+
+    def _dimension_rows(
+        rows: list[Any], *, dimension_attr: str, wanted_value: str
+    ) -> RowSeries:
+        out: dict[str, dict[str, Decimal | None]] = {}
+        for r in rows:
+            if getattr(r, dimension_attr) != wanted_value:
+                continue
+            if r.period_role != PeriodRole.current:
+                continue
+            out[r.dimension_value] = {
+                "clicks": Decimal(r.clicks) if r.clicks is not None else None,
+                "impressions": Decimal(r.impressions) if r.impressions is not None else None,
+                "ctr": r.ctr, "position": r.position,
+            }
+        return out
+
+    def _dataset_rows(rows: list[Any], *, dataset_key: str) -> RowSeries:
+        out: dict[str, dict[str, Decimal | None]] = {}
+        for r in rows:
+            if r.dataset_key != dataset_key or r.period_role != PeriodRole.current:
+                continue
+            out[r.dimension_value] = dict(r.metrics)
+        return out
+
+    try:
+        if dataset == "gsc_kpi":
+            if not (gsc_cfg and gsc_cfg.get("account_id")):
+                print(f"\n[{dataset}] skipped — client has no GSC integration")
+                return
+            gsc_adapter = GscAdapter()
+            ctx = _ctx(Provider.gsc, gsc_cfg)
+            rows_a = _kpi_rows(
+                gsc_adapter._collect_reporting_ninja(ctx, no_emit).metrics, _GSC_KPI_FIELDS
+            )
+            rows_b = _kpi_rows(
+                gsc_adapter._collect_google_api(ctx, no_emit).metrics, _GSC_KPI_FIELDS
+            )
+        elif dataset in ("gsc_pages", "gsc_queries"):
+            if not (gsc_cfg and gsc_cfg.get("account_id")):
+                print(f"\n[{dataset}] skipped — client has no GSC integration")
+                return
+            wanted_dim = "page" if dataset == "gsc_pages" else "query"
+            gsc_adapter = GscAdapter()
+            ctx = _ctx(Provider.gsc, gsc_cfg)
+            rows_a = _dimension_rows(
+                gsc_adapter._collect_dimensions_reporting_ninja(ctx, no_emit, top_n=1000).rows,
+                dimension_attr="dimension", wanted_value=wanted_dim,
+            )
+            rows_b = _dimension_rows(
+                gsc_adapter._collect_dimensions_google_api(ctx, no_emit, top_n=1000).rows,
+                dimension_attr="dimension", wanted_value=wanted_dim,
+            )
+        elif dataset == "ga4_kpi":
+            if not (rn_cfg and rn_cfg.get("account_id")):
+                print(f"\n[{dataset}] skipped — client has no Reporting Ninja integration")
+                return
+            rn_adapter = ReportingNinjaAdapter()
+            ctx = _ctx(Provider.reporting_ninja, rn_cfg)
+            rows_a = _kpi_rows(
+                rn_adapter._collect_reporting_ninja(ctx, no_emit).metrics, _GA4_KPI_FIELDS
+            )
+            rows_b = _kpi_rows(
+                rn_adapter._collect_google_api(ctx, no_emit).metrics, _GA4_KPI_FIELDS
+            )
+        else:  # ga4_channels / ga4_landing_pages / ga4_events / ga4_devices / ga4_countries
+            if not (rn_cfg and rn_cfg.get("account_id")):
+                print(f"\n[{dataset}] skipped — client has no Reporting Ninja integration")
+                return
+            rn_adapter = ReportingNinjaAdapter()
+            ctx = _ctx(Provider.reporting_ninja, rn_cfg)
+            if "ga4_breakdown_rn_rows" not in dataset_cache:
+                dataset_cache["ga4_breakdown_rn_rows"] = (
+                    rn_adapter._collect_datasets_reporting_ninja(ctx, no_emit).rows
+                )
+            if "ga4_breakdown_ga_rows" not in dataset_cache:
+                dataset_cache["ga4_breakdown_ga_rows"] = (
+                    rn_adapter._collect_datasets_google_api_trends(ctx, no_emit).rows
+                )
+            rows_a = _dataset_rows(dataset_cache["ga4_breakdown_rn_rows"], dataset_key=dataset)
+            rows_b = _dataset_rows(dataset_cache["ga4_breakdown_ga_rows"], dataset_key=dataset)
+    except Exception as exc:  # noqa: BLE001 - one dataset's failure must not abort the gate
+        print(f"\n[{dataset}] FETCH FAILED — {type(exc).__name__}: {exc}")
+        return
+
+    report = compare_dimension_rows(
+        dataset, rows_a, rows_b, label_a="reporting_ninja", label_b="google_api"
+    )
+    _render_dimension_comparison(report)
+    reports.append(report)
+
+
+def _render_dimension_comparison(report: Any) -> None:
+    print(f"\n-- {report.dataset} ".ljust(72, "-"))
+    print(
+        f"keys compared: {report.keys_compared}   "
+        f"only in A: {len(report.keys_only_a)}   only in B: {len(report.keys_only_b)}"
+    )
+    if report.keys_only_a:
+        joined = ", ".join(report.keys_only_a[:10])
+        print(f"  only in reporting_ninja: {joined}")
+    if report.keys_only_b:
+        joined = ", ".join(report.keys_only_b[:10])
+        print(f"  only in google_api:      {joined}")
+    print(
+        f"  {'metric':<20} {'tol':>10} {'n':>5} {'fail':>5} "
+        f"{'max|d|':>16} {'med|d|':>14} {'max%':>9}"
+    )
+    for m in report.per_metric:
+        tol = "exact" if m.kind == "exact" else f"<={m.limit_pct}%"
+        maxrel = "-" if m.max_rel_pct is None else f"{m.max_rel_pct:.3f}"
+        flag = "  OK" if m.failures == 0 else "  FAIL"
+        print(
+            f"  {m.metric:<20} {tol:>10} {m.compared:>5} {m.failures:>5} "
+            f"{str(m.max_abs_diff):>16} {str(m.median_abs_diff):>14} {maxrel:>9}{flag}"
+        )
+    for d in report.failures[:200]:
+        rel = (
+            "-" if d.rel_pct is None
+            else ("inf" if not d.rel_pct.is_finite() else f"{d.rel_pct:.3f}")
+        )
+        ab = "-" if d.abs_diff is None else str(d.abs_diff)
+        note = f"   {d.note}" if d.note else ""
+        print(f"  {d.key:<40} {d.metric:<20} {str(d.a):>16} {str(d.b):>16} {ab:>16} {rel:>9}{note}")
 
 
 def _render_comparison(

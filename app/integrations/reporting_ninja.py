@@ -145,25 +145,36 @@ _CHANNEL_METRIC_FIELDS: dict[str, str] = {
     "Direct": "conversions_direct",
 }
 
-# ── task-89 §3.5: the GA4 KPI cards (`rn_*`), same channel dimension ────────
+# ── task-89 §3.5/§7.1: the GA4 KPI cards (`rn_users`/`rn_organic_users`/…) ──
 _KPI_USERS_METRIC = "totalUsers"
 _KPI_CONVERSIONS_METRIC = _CHANNEL_CONVERSIONS_FIELD  # "keyEvents"
-_KPI_ORGANIC_CHANNEL = "organic search"  # matched case-insensitively, exact
+# task-89 §7.1, found live via the compare-transports gate (HWELL, 30d
+# window): the KPI card's `organic_users`/`organic_conversions` do NOT use
+# `firstUserDefaultChannelGroup` + exact "Organic Search" — that is task-84's
+# `google_source.py` REPORT model, a deliberately different feature. The
+# live dashboard card (`seo_audit.clientreport.ga4_fetcher.fetch_ga4_period`,
+# its own docstring: "Strategy: one query per period with
+# dimension=sessionMedium") uses `sessionMedium` and a SUBSTRING match
+# (`"organic" in value.lower()`) — first cut was byte-for-byte wrong on this
+# stat by 1.7-3% (2027 vs 2062 users, 33 vs 34 conversions on a 30-day
+# window) despite `users`/`total_conversions` (unfiltered) matching exactly.
+# Fixed and reverified byte-for-byte: 2027/2027, 33/33.
+_KPI_MEDIUM_DIMENSION = "sessionMedium"
 
 
-def _sum_exact_channel_kpi(
-    rows: list[Any], target_channel: str
-) -> tuple[Decimal | None, Decimal | None]:
-    """`(users, conversions)` summed over rows whose `_CHANNEL_DIMENSION`
-    EXACTLY matches `target_channel` (case-insensitive) — never a substring
-    match, so "Organic Search" never also absorbs "Organic
-    Social"/"Organic Shopping" (same rule task-84's `google_source.py`
-    documents for the report engine's organic/direct split). No matching row
-    at all -> `(None, None)`, never a fabricated zero (PLAN §12)."""
+def _sum_organic_medium_kpi(rows: list[Any]) -> tuple[Decimal | None, Decimal | None]:
+    """`(users, conversions)` summed over rows whose `sessionMedium` value
+    CONTAINS "organic" (RN's own dashboard-card rule, not exact-match — a
+    real GA4 property's `sessionMedium` values seen live: `"organic"`,
+    `"(none)"`, `"referral"`, `"cpc"`; only `"organic"` itself has ever been
+    observed containing that substring here, but matching the RN source's
+    own `"organic" in v` rule verbatim is what makes this a true drop-in
+    replacement). No matching row at all -> `(None, None)`, never a
+    fabricated zero (PLAN §12)."""
     matched = [
         row
         for row in rows
-        if str(row.dimensions.get(_CHANNEL_DIMENSION, "")).strip().lower() == target_channel
+        if "organic" in str(row.dimensions.get(_KPI_MEDIUM_DIMENSION, "")).strip().lower()
     ]
     if not matched:
         return None, None
@@ -562,9 +573,9 @@ class ReportingNinjaAdapter:
                         property_id, date_range.start, date_range.end,
                         dimensions=[], metrics=[_KPI_USERS_METRIC, _KPI_CONVERSIONS_METRIC],
                     )
-                    channel_rows = ga4.run_report(
+                    medium_rows = ga4.run_report(
                         property_id, date_range.start, date_range.end,
-                        dimensions=[_CHANNEL_DIMENSION],
+                        dimensions=[_KPI_MEDIUM_DIMENSION],
                         metrics=[_KPI_USERS_METRIC, _KPI_CONVERSIONS_METRIC],
                     )
                 except GoogleApiPermissionError as exc:
@@ -587,9 +598,7 @@ class ReportingNinjaAdapter:
                 total_row = totals[0] if totals else None
                 users = total_row.metrics.get(_KPI_USERS_METRIC) if total_row else None
                 conversions = total_row.metrics.get(_KPI_CONVERSIONS_METRIC) if total_row else None
-                organic_users, organic_conversions = _sum_exact_channel_kpi(
-                    channel_rows, _KPI_ORGANIC_CHANNEL
-                )
+                organic_users, organic_conversions = _sum_organic_medium_kpi(medium_rows)
                 field_values = {
                     "users": users,
                     "organic_users": organic_users,
