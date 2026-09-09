@@ -24,6 +24,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api import register_router
@@ -31,6 +32,7 @@ from app.api.deps import PaginationDep, SessionDep
 from app.contentqa.crosscheck import CrossCheckInfo
 from app.contentqa.findings import Finding
 from app.contentqa.matrix import MatrixRow, build_matrix
+from app.contentqa.matrix_xlsx import build_matrix_xlsx
 from app.contentqa.model import ContentDoc
 from app.contentqa.package import FrameworkOutcome, FrameworkSource, run_package
 from app.contentqa.readers.gsheet import (
@@ -522,6 +524,32 @@ async def get_package(package_id: str, session: SessionDep) -> ContentQaPackageD
             detail=_error("package_not_found", f"No package with id {package_id!r}."),
         )
     return dto
+
+
+@router.get("/reports/{package_id}/matrix.xlsx", responses={404: {"model": ErrorDTO}})
+async def download_package_matrix_xlsx(package_id: str, session: SessionDep) -> StreamingResponse:
+    """Excel-експорт порівняльної матриці (task-91 §3.5) — читає вже
+    ПЕРСИСТОВАНУ матрицю з `content_qa_packages.matrix_json`, нічого не
+    перераховує заново."""
+
+    def _read(sync_session: Session) -> ContentQaPackage | None:
+        return ContentQaPackageRepository(sync_session).get_package(package_id)
+
+    package = await session.run_sync(_read)
+    if package is None:
+        raise HTTPException(
+            status_code=404,
+            detail=_error("package_not_found", f"No package with id {package_id!r}."),
+        )
+    matrix_rows = [MatrixRowDTO(**m) for m in (package.matrix_json or [])]
+    data = build_matrix_xlsx(matrix_rows)
+    safe_name = "".join(c if c.isalnum() else "_" for c in package.source_name).strip("_")
+    filename = f"{safe_name or package.id}_Comparison_Matrix.xlsx"
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 register_router(router)

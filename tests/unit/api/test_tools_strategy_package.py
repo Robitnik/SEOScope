@@ -4,7 +4,10 @@ Docs/Sheets API чи мережі."""
 
 from __future__ import annotations
 
+import io
 from typing import Any
+
+from openpyxl import load_workbook
 
 import app.api.tools_strategy_package as router_module
 from app.api.tools_strategy_package import _Clients
@@ -347,3 +350,33 @@ def test_check_document_source_gives_400(client: Any, monkeypatch: Any) -> None:
     )
     assert r.status_code == 400
     assert r.json()["detail"]["error_code"] == "unsupported_source"
+
+
+# ── /reports/{id}/matrix.xlsx (task-91 §3.5) ────────────────────────────────
+
+
+def test_matrix_xlsx_download_reads_the_persisted_matrix(client: Any, monkeypatch: Any) -> None:
+    _install_fake_clients(
+        monkeypatch,
+        files={STRATEGY_ID: _strategy_file(), FRAMEWORK_ID: _framework_file()},
+        grids={STRATEGY_ID: _strategy_grid()},
+        docs={FRAMEWORK_ID: _framework_tabs()},
+    )
+    checked = client.post("/api/v1/tools/strategy-package/check", json=_check_body())
+    package_id = checked.json()["id"]
+
+    r = client.get(f"/api/v1/tools/strategy-package/reports/{package_id}/matrix.xlsx")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "attachment" in r.headers["content-disposition"]
+    assert r.content[:2] == b"PK"
+    workbook = load_workbook(io.BytesIO(r.content))
+    assert workbook.sheetnames == ["Comparison", "Mismatches"]
+
+
+def test_matrix_xlsx_unknown_package_gives_404(client: Any) -> None:
+    r = client.get("/api/v1/tools/strategy-package/reports/does-not-exist/matrix.xlsx")
+    assert r.status_code == 404
+    assert r.json()["detail"]["error_code"] == "package_not_found"
