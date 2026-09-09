@@ -150,7 +150,9 @@ class GoogleApiSession:
         `403` splits into permission vs rate limit. Anything else raises
         `GoogleApiError` with a redacted message.
         """
-        return self._request("POST", url, body=body)
+        result = self._request("POST", url, body=body)
+        assert isinstance(result, dict)  # raw=False (default) always returns a dict
+        return result
 
     def get_json(
         self, url: str, *, params: dict[str, str] | None = None
@@ -164,7 +166,23 @@ class GoogleApiSession:
         GSC `sites/{site}/sitemaps`); both Search Analytics and the GA4 Data
         API are POST-only, so task-83 had no reason to need this.
         """
-        return self._request("GET", url, params=params)
+        result = self._request("GET", url, params=params)
+        assert isinstance(result, dict)  # raw=False (default) always returns a dict
+        return result
+
+    def get_bytes(self, url: str, *, params: dict[str, str] | None = None) -> bytes:
+        """GET `url`, return the raw response body — never parsed as JSON.
+
+        Added by task-90 for `drive/v3/files/{id}?alt=media` (downloading an
+        uploaded `.xlsx` blob from Drive). `get_json`/`_safe_json` would parse
+        a binary spreadsheet body as JSON, fail, and silently return `{}` —
+        looking like an empty-but-successful response instead of failing
+        loudly on a non-JSON payload. Same 401/403/429/5xx policy as the
+        other two verbs via the shared `_request`.
+        """
+        result = self._request("GET", url, params=params, raw=True)
+        assert isinstance(result, bytes)  # raw=True always returns bytes
+        return result
 
     def _request(
         self,
@@ -173,7 +191,8 @@ class GoogleApiSession:
         *,
         body: dict[str, Any] | None = None,
         params: dict[str, str] | None = None,
-    ) -> dict[str, Any]:
+        raw: bool = False,
+    ) -> dict[str, Any] | bytes:
         refreshed = False
         rate_attempts = 0
         server_retries = 0
@@ -198,7 +217,7 @@ class GoogleApiSession:
 
             status = response.status_code
             if status == 200:
-                return _safe_json(response)
+                return response.content if raw else _safe_json(response)
 
             if status == 401 and not refreshed:
                 refreshed = True

@@ -34,7 +34,14 @@ AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 SCOPES = (
     "https://www.googleapis.com/auth/webmasters.readonly "
-    "https://www.googleapis.com/auth/analytics.readonly"
+    "https://www.googleapis.com/auth/analytics.readonly "
+    # task-90: Drive/Docs/Sheets на читання. Один `drive.readonly` замість трьох
+    # вужчих (`documents.readonly`/`spreadsheets.readonly` + щось для переліку):
+    # перегляд Диска в UI — це `files.list`, а він не працює під вужчими, тож
+    # restricted scope усе одно потрібен, і три поверх нього дали б не менше
+    # прав, а лише довший рядок consent. Review Google не потрібен, бо audience
+    # застосунку — Internal (task-90 §1.2).
+    "https://www.googleapis.com/auth/drive.readonly"
 )
 REFRESH_KEY = "GOOGLE_API_REFRESH_TOKEN"
 ID_KEYS = ("google_api_client_id", "GOOGLE_API_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_ID")
