@@ -10,18 +10,28 @@ Drive/Docs API — DTO є в обох джерелах (щойно з `build_mat
 `asdict()`, і з БД як є), тоді як сирий dataclass має сенс лише одразу
 після `build_matrix()`.
 
-Малюнок користувача — чотири блоки одне під одним, кожен зі своїми шістьма
-колонками (URL/Title/Description/H1/Keywords/Outgoing links), кожен рядок
-блоку — одна сторінка матриці, у тому самому порядку в усіх чотирьох
-блоках, щоб рядок N будь-якого блоку відповідав тій самій сторінці:
+Групування — за сторінкою, не за джерелом (виправлено живо, task-91 §3.6,
+за прямим фідбеком оператора на першому чорновику: "10 URL = 30 таблиць",
+не 4 гігантські таблиці по 10 рядків кожна). Для кожної сторінки — заголовок
+із URL і зведеними вердиктами, а під ним три маленькі таблиці одна за одною,
+кожна з тим самим набором шести колонок (URL/Title/Description/H1/Keywords/
+Outgoing links):
 
-    Стратегія            [заголовок 6 колонок] [N рядків даних]
-    Фреймворк             [той самий заголовок] [N рядків даних]
-    Сайт                 [той самий заголовок] [N рядків даних]
-    Вердикт (галочка)     [той самий заголовок] [N рядків: ✓/✗/—]
+    https://example.com/page             URL:✓  Title:✗  Description:✗  …
+      Strategy   [заголовок 6 колонок] [1 рядок даних]
+      Framework  [той самий заголовок] [1 рядок даних]
+      Site       [той самий заголовок] [1 рядок даних]
 
-Плюс окремий аркуш `Mismatches` — лише рядки з хоч одним `mismatch`-полем,
-бо саме їх реально шукає оператор після великого прогону.
+    https://example.com/next-page        URL:✓  Title:✓  …
+      Strategy   …
+      Framework  …
+      Site       …
+
+Той самий порядок, що на екрані (`strategy-package-tool.js:renderMatrixPageGroup`)
+— оператор звіряє три таблиці однієї сторінки одним поглядом, не гортаючи
+через усі інші сторінки. Плюс окремий аркуш `Mismatches` — лише рядки з
+хоч одним `mismatch`-полем, бо саме їх реально шукає оператор після
+великого прогону.
 """
 
 from __future__ import annotations
@@ -45,7 +55,6 @@ _ABSENT_FG = "999999"
 
 _FIELDS = ("url", "title", "description", "h1", "keywords", "links")
 _FIELD_LABELS = ("URL", "Title", "Description", "H1", "Keywords", "Outgoing links")
-_LEAD_COLUMNS = ["Page"]
 
 
 def _fill(hex_color: str) -> PatternFill:
@@ -65,14 +74,6 @@ def _cell_text(cell: MatrixCellDTO) -> str:
     return shown
 
 
-def _block_title(ws: Worksheet, row_index: int, title: str, width: int) -> None:
-    cell = ws.cell(row_index, 1, title)
-    cell.font = Font(name="Calibri", bold=True, size=13)
-    cell.fill = _fill(_BLOCK_TITLE_BG)
-    for col in range(2, width + 1):
-        ws.cell(row_index, col).fill = _fill(_BLOCK_TITLE_BG)
-
-
 def _header_row(ws: Worksheet, row_index: int, labels: list[str]) -> None:
     for col_index, label in enumerate(labels, start=1):
         cell = ws.cell(row_index, col_index, label)
@@ -81,53 +82,55 @@ def _header_row(ws: Worksheet, row_index: int, labels: list[str]) -> None:
         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
 
-def _source_block(
-    ws: Worksheet, start_row: int, title: str, rows: list[MatrixRowDTO], side: str
-) -> int:
-    """Один блок (Strategy/Framework/Site) — заголовок блоку, заголовок
-    колонок, N рядків даних. `side` — "strategy"/"framework"/"site",
-    обирає, яке `MatrixSourceCellsDTO` показати (`None` -> рядки-заглушки з
-    "— (no such column)" для сторінок, де цього джерела взагалі нема)."""
-    labels = _LEAD_COLUMNS + list(_FIELD_LABELS)
-    _block_title(ws, start_row, title, len(labels))
-    _header_row(ws, start_row + 1, labels)
-    for offset, row in enumerate(rows):
-        r = start_row + 2 + offset
-        source: MatrixSourceCellsDTO | None = getattr(row, side)
-        ws.cell(r, 1, row.label)
-        if source is None:
-            for col_index in range(2, len(labels) + 1):
-                cell = ws.cell(r, col_index, "— (not in this run)")
-                cell.font = Font(color=_ABSENT_FG, italic=True)
-            continue
-        for col_offset, field in enumerate(_FIELDS):
-            cell_value = getattr(source, field)
-            cell = ws.cell(r, 2 + col_offset, _cell_text(cell_value))
-            if cell_value.state == "absent":
-                cell.font = Font(color=_ABSENT_FG, italic=True)
-            cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=False)
-    return start_row + 2 + len(rows)
-
-
 _VERDICT_SYMBOL = {"match": "✓", "mismatch": "✗", "not_comparable": "—"}
 _VERDICT_FILL = {
     "match": _VERDICT_MATCH, "mismatch": _VERDICT_MISMATCH, "not_comparable": _VERDICT_NA,
 }
+_MINI_TABLES: tuple[tuple[str, str], ...] = (
+    ("strategy", "Strategy"), ("framework", "Framework"), ("site", "Site"),
+)
 
 
-def _verdict_block(ws: Worksheet, start_row: int, rows: list[MatrixRowDTO]) -> int:
-    labels = _LEAD_COLUMNS + list(_FIELD_LABELS)
-    _block_title(ws, start_row, "Verdict", len(labels))
-    _header_row(ws, start_row + 1, labels)
-    for offset, row in enumerate(rows):
-        r = start_row + 2 + offset
-        ws.cell(r, 1, row.label)
+def _page_header(ws: Worksheet, row_index: int, row: MatrixRowDTO) -> int:
+    """URL/label + зведені вердикти шести полів в один рядок над трьома
+    міні-таблицями цієї сторінки — та сама інформація, що бейджі в шапці
+    групи на екрані (`renderMatrixVerdictBadges`)."""
+    title_cell = ws.cell(row_index, 1, row.label)
+    title_cell.font = Font(name="Calibri", bold=True, size=13)
+    summary = "   ".join(
+        f"{label}:{_VERDICT_SYMBOL[getattr(row.verdicts, field).state]}"
+        for field, label in zip(_FIELDS, _FIELD_LABELS, strict=True)
+    )
+    summary_cell = ws.cell(row_index, 2, summary)
+    summary_cell.font = Font(italic=True, size=10, color=_ABSENT_FG)
+    for col in range(1, len(_FIELD_LABELS) + 1):
+        ws.cell(row_index, col).fill = _fill(_BLOCK_TITLE_BG)
+    return row_index + 1
+
+
+def _mini_table(
+    ws: Worksheet, start_row: int, title: str, cells: MatrixSourceCellsDTO | None
+) -> int:
+    """Одна маленька таблиця — назва джерела, заголовок шести колонок,
+    один рядок даних. `cells=None` -> сторінка не мала цього джерела в
+    цьому прогоні (наприклад фреймворк без відповідного рядка стратегії)."""
+    r = start_row
+    label_cell = ws.cell(r, 1, title)
+    label_cell.font = Font(bold=True, size=10, color=_ABSENT_FG)
+    r += 1
+    _header_row(ws, r, list(_FIELD_LABELS))
+    r += 1
+    if cells is None:
+        note = ws.cell(r, 1, "— not in this run")
+        note.font = Font(color=_ABSENT_FG, italic=True)
+    else:
         for col_offset, field in enumerate(_FIELDS):
-            verdict = getattr(row.verdicts, field)
-            cell = ws.cell(r, 2 + col_offset, _VERDICT_SYMBOL[verdict.state])
-            cell.fill = _fill(_VERDICT_FILL[verdict.state])
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-    return start_row + 2 + len(rows)
+            cell_value = getattr(cells, field)
+            cell = ws.cell(r, 1 + col_offset, _cell_text(cell_value))
+            if cell_value.state == "absent":
+                cell.font = Font(color=_ABSENT_FG, italic=True)
+            cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=False)
+    return r + 1
 
 
 def _column_widths(ws: Worksheet) -> None:
@@ -138,15 +141,13 @@ def _column_widths(ws: Worksheet) -> None:
 
 def build_comparison_sheet(ws: Worksheet, rows: list[MatrixRowDTO]) -> None:
     r = 1
-    r = _source_block(ws, r, "Strategy", rows, "strategy")
-    r += 1
-    r = _source_block(ws, r, "Framework", rows, "framework")
-    r += 1
-    r = _source_block(ws, r, "Site", rows, "site")
-    r += 1
-    _verdict_block(ws, r, rows)
+    for row in rows:
+        r = _page_header(ws, r, row)
+        for side, title in _MINI_TABLES:
+            r = _mini_table(ws, r, title, getattr(row, side))
+        r += 1  # spacer between page groups
     _column_widths(ws)
-    ws.freeze_panes = "B1"
+    ws.freeze_panes = "A1"
 
 
 def build_mismatches_sheet(ws: Worksheet, rows: list[MatrixRowDTO]) -> None:

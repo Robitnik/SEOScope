@@ -59,7 +59,17 @@ def test_build_matrix_xlsx_produces_a_valid_workbook_with_two_sheets() -> None:
     assert workbook.sheetnames == ["Comparison", "Mismatches"]
 
 
-def test_comparison_sheet_has_four_blocks_with_matching_page_labels() -> None:
+def _mini_table_titles(ws, max_row: int = 30) -> dict[str, int]:
+    return {
+        ws.cell(r, 1).value: r for r in range(1, max_row)
+        if ws.cell(r, 1).value in ("Strategy", "Framework", "Site")
+    }
+
+
+def test_comparison_sheet_groups_by_page_three_mini_tables_in_a_row() -> None:
+    """task-91 §3.6, corrected live per direct operator feedback ("10 URLs
+    = 30 tables"): one page = Strategy/Framework/Site one after another,
+    not one giant table per source."""
     rows = [
         MatrixRowDTO(
             key="r1", kind="matched", label="https://example.com/a",
@@ -71,16 +81,31 @@ def test_comparison_sheet_has_four_blocks_with_matching_page_labels() -> None:
     ]
     data = build_matrix_xlsx(rows)
     ws = load_workbook(io.BytesIO(data))["Comparison"]
-    title_rows = {
-        ws.cell(r, 1).value: r for r in range(1, 20)
-        if ws.cell(r, 1).value in ("Strategy", "Framework", "Site", "Verdict")
-    }
-    assert list(title_rows) == ["Strategy", "Framework", "Site", "Verdict"]
-    # Every block's data row (2 rows below its title: title, header, data)
-    # names the same page — this is what lets an operator scan down the
-    # Page column of each block and correlate rows across sources.
-    page_labels = [ws.cell(title_row + 2, 1).value for title_row in title_rows.values()]
-    assert all(label == "https://example.com/a" for label in page_labels)
+    assert ws.cell(1, 1).value == "https://example.com/a"  # page header, row 1
+    title_rows = _mini_table_titles(ws)
+    assert list(title_rows) == ["Strategy", "Framework", "Site"]
+    # Each mini-table's data row (2 rows below its own title: title,
+    # header, data) carries this page's URL in its own URL column.
+    for title_row in title_rows.values():
+        assert ws.cell(title_row + 2, 1).value == "https://example.com/a"
+
+
+def test_page_header_summarizes_verdicts() -> None:
+    rows = [
+        MatrixRowDTO(
+            key="r1", kind="matched", label="p1",
+            strategy=_cells(), framework=_cells(), site=_cells(),
+            verdicts=_verdicts(
+                url=MatrixFieldVerdictDTO(state="match"),
+                title=MatrixFieldVerdictDTO(state="mismatch"),
+            ),
+        ),
+    ]
+    data = build_matrix_xlsx(rows)
+    ws = load_workbook(io.BytesIO(data))["Comparison"]
+    summary = ws.cell(1, 2).value
+    assert "URL:✓" in summary
+    assert "Title:✗" in summary
 
 
 def test_absent_cell_renders_the_no_such_column_marker() -> None:
@@ -93,8 +118,9 @@ def test_absent_cell_renders_the_no_such_column_marker() -> None:
     ]
     data = build_matrix_xlsx(rows)
     ws = load_workbook(io.BytesIO(data))["Comparison"]
-    # Strategy block: title(1) + header(2) + data(3) -> URL column is col 2.
-    assert ws.cell(3, 2).value == "— (no such column)"
+    strategy_title_row = _mini_table_titles(ws)["Strategy"]
+    # title row + header row + data row -> URL is the first data column.
+    assert ws.cell(strategy_title_row + 2, 1).value == "— (no such column)"
 
 
 def test_missing_source_side_renders_not_in_this_run() -> None:
@@ -107,33 +133,8 @@ def test_missing_source_side_renders_not_in_this_run() -> None:
     ]
     data = build_matrix_xlsx(rows)
     ws = load_workbook(io.BytesIO(data))["Comparison"]
-    # Framework block starts after Strategy's 1 title + 1 header + 1 data
-    # row, plus a blank spacer row.
-    framework_title_row = next(
-        r for r in range(1, 15) if ws.cell(r, 1).value == "Framework"
-    )
-    assert ws.cell(framework_title_row + 2, 2).value == "— (not in this run)"
-
-
-def test_verdict_block_shows_symbols_for_each_state() -> None:
-    rows = [
-        MatrixRowDTO(
-            key="r1", kind="matched", label="p1",
-            strategy=_cells(), framework=_cells(), site=_cells(),
-            verdicts=_verdicts(
-                url=MatrixFieldVerdictDTO(state="match"),
-                title=MatrixFieldVerdictDTO(state="mismatch"),
-                h1=MatrixFieldVerdictDTO(state="not_comparable"),
-            ),
-        ),
-    ]
-    data = build_matrix_xlsx(rows)
-    ws = load_workbook(io.BytesIO(data))["Comparison"]
-    verdict_title_row = next(r for r in range(1, 25) if ws.cell(r, 1).value == "Verdict")
-    data_row = verdict_title_row + 2
-    assert ws.cell(data_row, 2).value == "✓"  # url: match
-    assert ws.cell(data_row, 3).value == "✗"  # title: mismatch
-    assert ws.cell(data_row, 5).value == "—"  # h1: not_comparable
+    framework_title_row = _mini_table_titles(ws)["Framework"]
+    assert ws.cell(framework_title_row + 2, 1).value == "— not in this run"
 
 
 def test_mismatches_sheet_lists_only_mismatched_fields() -> None:

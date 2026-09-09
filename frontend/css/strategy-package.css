@@ -88,7 +88,46 @@
 .sp-toggles { display: grid; gap: 8px; margin: 4px 0 16px; }
 
 /* --- report: tabs --- */
-.sp-tablist { grid-template-columns: repeat(4, 1fr); margin-top: 4px; }
+.sp-tablist { grid-template-columns: repeat(5, 1fr); margin-top: 4px; }
+
+/* --- comparison tab (task-91 §3.6): grouped by page, three mini-tables
+   (Strategy/Framework/Site) one after another per page, so all three sit
+   in the same screenful — corrected live from an earlier per-source-block
+   layout per the operator's direct feedback ("10 URLs = 30 tables"). --- */
+.sp-matrix-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 18px;
+}
+.sp-matrix-toolbar__filter { margin: 0; }
+
+.sp-matrix-page { padding: 16px 0; border-top: 1px solid var(--line); }
+.sp-matrix-page:first-of-type { border-top: 0; padding-top: 0; }
+.sp-matrix-page__header {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 12px;
+}
+.sp-matrix-page__title { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.sp-matrix-page__verdicts { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.sp-matrix-verdict-badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--line);
+  font-size: 11px; color: var(--ink-muted); white-space: nowrap; cursor: default;
+}
+.sp-matrix-verdict-badge.sp-matrix-verdict--match { border-color: var(--success); color: var(--success); }
+.sp-matrix-verdict-badge.sp-matrix-verdict--mismatch { border-color: var(--danger); color: var(--danger); }
+.sp-matrix-verdict-badge.sp-matrix-verdict--na { color: var(--ink-dim); }
+
+.sp-matrix-mini { margin-bottom: 12px; }
+.sp-matrix-mini__title {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 4px; color: var(--ink-muted);
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+}
+/* Memory: table-scroll-contain-paint — a wide table in an overflow:auto
+   wrapper can still scroll the whole page in Chromium without `contain`. */
+.sp-matrix-scroll { contain: paint; }
+.sp-matrix-table th, .sp-matrix-table td { max-width: 260px; overflow-wrap: anywhere; vertical-align: top; }
+.sp-matrix-cell--absent, .sp-matrix-cell--empty { color: var(--ink-dim); font-style: italic; }
+.sp-matrix-cell--more { color: var(--ink-dim); }
 
 /* --- overview tab --- */
 .sp-fw-overview { display: grid; gap: 8px; }

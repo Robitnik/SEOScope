@@ -69,9 +69,50 @@ async function main() {
   await page.locator("#sp-submit").click();
   await page.locator("[data-testid=sp-report]").waitFor({ timeout: 60_000 });
 
-  // 6. The report shell: header, severity summary, four tabs, Overview active.
+  // 6. The report shell: header, severity summary, five tabs, Comparison
+  // active by default (task-91 §2.5 — the literal Strategy/Framework/Site
+  // table is the landing view). Grouped by PAGE (task-91 §3.6, corrected
+  // live per direct operator feedback): one page = three mini-tables
+  // (Strategy/Framework/Site) back to back, not one giant table per source.
   assert.match(await page.locator(".cq-report__file").innerText(), /SHB_SEO_STRATEGY/);
   assert.equal(await page.locator(".cq-summary__item").count(), 3, "error/warn/info severity summary renders");
+  assert.equal(await page.locator("#sp-tab-comparison").getAttribute("aria-selected"), "true");
+  await page.locator(".sp-matrix-page").first().waitFor({ timeout: 10_000 });
+  await page.screenshot({ path: path.join(screenshots, "tools-strategy-package-comparison-1440.png"), fullPage: true });
+
+  // 6a. Real data from the real SHB run: each page group has exactly three
+  // mini-tables in this order, the "no such column" fallback for the URL
+  // field strategy lacks entirely (task-91 §1.2), and real verdict badges.
+  const firstPage = page.locator(".sp-matrix-page").first();
+  const miniTitles = await firstPage.locator(".sp-matrix-mini__title").allInnerTexts();
+  assert.deepEqual(
+    miniTitles.map((t) => t.toLowerCase()),
+    ["strategy", "framework", "site"], // CSS text-transform:uppercase changes rendered case
+  );
+  assert.match(
+    await firstPage.locator(".sp-matrix-cell--absent").first().innerText(),
+    /no such column/i,
+    "SHB's strategy sheet has no URL column — the matrix says so honestly",
+  );
+  assert.ok(
+    await firstPage.locator(".sp-matrix-verdict-badge.sp-matrix-verdict--match").count() > 0,
+    "at least one field matches across sources",
+  );
+
+  // 6b. "Mismatches only" actually filters page groups, not just dims them.
+  const totalPages = await page.locator(".sp-matrix-page").count();
+  await page.locator("#sp-matrix-mismatches-only").check();
+  const filteredPages = await page.locator(".sp-matrix-page").count();
+  assert.ok(filteredPages < totalPages, "mismatches-only filter reduces the number of page groups");
+  await page.locator("#sp-matrix-mismatches-only").uncheck();
+
+  // 6c. Export to Excel points at the real download endpoint for this package.
+  const exportHref = await page.locator('a:has-text("Export to Excel")').getAttribute("href");
+  assert.match(exportHref, /\/matrix\.xlsx$/);
+
+  // 6d. Overview still works — the matrix is an addition, not a replacement.
+  await page.locator("#sp-tab-overview").click();
+  await page.locator(".sp-fw-overview").waitFor({ timeout: 10_000 });
   assert.equal(await page.locator("#sp-tab-overview").getAttribute("aria-selected"), "true");
   await page.screenshot({ path: path.join(screenshots, "tools-strategy-package-overview-1440.png"), fullPage: true });
 

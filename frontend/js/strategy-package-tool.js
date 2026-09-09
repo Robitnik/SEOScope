@@ -18,11 +18,12 @@
 import {
   browseStrategyPackageDrive, checkStrategyPackage, getDashboard, getStrategyPackageReport,
   getStrategyPackageReports, inspectStrategyPackage, resolveStrategyPackageSource,
-} from "./api.js?v=20260909-t90";
-import { buildToolsHash } from "./router.js?v=20260909-t90";
-import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260909-t90";
-import { panelSkeleton } from "./skeleton.js?v=20260909-t90";
-import { renderError, renderReport, wireReport } from "./content-qa-render.js?v=20260909-t90";
+  strategyPackageMatrixXlsxUrl,
+} from "./api.js?v=20260909-t91";
+import { buildToolsHash } from "./router.js?v=20260909-t91";
+import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260909-t91";
+import { panelSkeleton } from "./skeleton.js?v=20260909-t91";
+import { renderError, renderReport, wireReport } from "./content-qa-render.js?v=20260909-t91";
 
 const TOOL_KEY = "strategy-package";
 let root = null;
@@ -624,13 +625,20 @@ function renderPackageRow(pkg) {
 
 /* ------------------------------- Report view ----------------------------- */
 
-let activeTab = "overview";
+// task-91 §2.5: Comparison — the literal Strategy/Framework/Site/Verdict
+// table the operator asked for — is the default landing tab; Overview and
+// the findings-centric tabs (Strategy/Frameworks/Cross-checks) stay
+// alongside it, since the matrix shows six fields while the engine checks
+// dozens of rules the matrix cannot represent.
+let activeTab = "comparison";
 let activeFrameworkId = null;
 let currentPackage = null;
+let comparisonMismatchesOnly = false;
 
 async function renderReportView(packageId) {
-  activeTab = "overview";
+  activeTab = "comparison";
   activeFrameworkId = null;
+  comparisonMismatchesOnly = false;
   root.innerHTML = `
     <a class="back-link" href="${buildToolsHash(TOOL_KEY)}">${icon("arrow-left")}<span>All reports</span></a>
     <header class="tool-header">
@@ -675,7 +683,8 @@ function renderPackageShell(pkg) {
       </div>
       <ul class="cq-summary">${renderPackageSummary(pkg)}</ul>
       <div class="tablist sp-tablist" role="tablist" aria-label="Package report sections">
-        <button type="button" role="tab" id="sp-tab-overview" data-sp-tab="overview" aria-selected="true">${icon("layout-grid", "icon icon--tiny")}Overview</button>
+        <button type="button" role="tab" id="sp-tab-comparison" data-sp-tab="comparison" aria-selected="true">${icon("table", "icon icon--tiny")}Comparison</button>
+        <button type="button" role="tab" id="sp-tab-overview" data-sp-tab="overview" aria-selected="false">${icon("layout-grid", "icon icon--tiny")}Overview</button>
         <button type="button" role="tab" id="sp-tab-strategy" data-sp-tab="strategy" aria-selected="false">${icon("file-spreadsheet", "icon icon--tiny")}Strategy</button>
         <button type="button" role="tab" id="sp-tab-frameworks" data-sp-tab="frameworks" aria-selected="false">${icon("file-text", "icon icon--tiny")}Frameworks</button>
         <button type="button" role="tab" id="sp-tab-cross" data-sp-tab="cross" aria-selected="false">${icon("arrows-cross", "icon icon--tiny")}Cross-checks</button>
@@ -728,10 +737,122 @@ function toastLink() {
 
 function renderTabPanel(container, pkg) {
   const panel = container.querySelector("#sp-tabpanel");
+  if (activeTab === "comparison") { renderComparisonTab(panel, pkg); return; }
   if (activeTab === "overview") { panel.innerHTML = renderOverviewTab(pkg); wireOverviewTab(panel); return; }
   if (activeTab === "strategy") { renderStrategyTab(panel, pkg); return; }
   if (activeTab === "frameworks") { renderFrameworksTab(panel, pkg); return; }
   renderCrossTab(panel, pkg);
+}
+
+/* ----------------------------- Comparison tab ---------------------------- */
+/* Grouped by PAGE, not by source (task-91 §3.6, corrected live per the
+ * operator's direct feedback): for one URL, three tables run one after
+ * another — Strategy, Framework, Site — so all three sit in the same
+ * screenful and the eye compares down the column without scrolling past
+ * every other page first. 10 pages -> 10 groups of 3 tables (30 total),
+ * not 3 giant tables of 10 rows each (the first cut, corrected). Verdict
+ * is not a fourth table — it rides as inline badges on the group header,
+ * so the count stays exactly 3 tables per page as confirmed live. */
+
+const MATRIX_FIELDS = ["url", "title", "description", "h1", "keywords", "links"];
+const MATRIX_FIELD_LABELS = { url: "URL", title: "Title", description: "Description", h1: "H1", keywords: "Keywords", links: "Outgoing links" };
+const MATRIX_BLOCKS = [
+  { side: "strategy", title: "Strategy", icon: "file-spreadsheet" },
+  { side: "framework", title: "Framework", icon: "file-text" },
+  { side: "site", title: "Site", icon: "world" },
+];
+const MATRIX_VERDICT_META = {
+  match: { icon: "circle-check", cls: "sp-matrix-verdict--match", label: "match" },
+  mismatch: { icon: "alert-triangle", cls: "sp-matrix-verdict--mismatch", label: "mismatch" },
+  not_comparable: { icon: "circle-dashed", cls: "sp-matrix-verdict--na", label: "n/a" },
+};
+
+function matrixRowHasMismatch(row) {
+  return MATRIX_FIELDS.some((f) => row.verdicts[f].state === "mismatch");
+}
+
+function renderComparisonTab(panel, pkg) {
+  const allRows = pkg.matrix || [];
+  if (!allRows.length) {
+    panel.innerHTML = `
+      <p class="sp-browse__status">${icon("table-off", "icon icon--tiny")}
+        <span>This report predates the comparison table, or the strategy had no pages to compare.
+          Run the check again to get one.</span></p>`;
+    return;
+  }
+  const rows = comparisonMismatchesOnly ? allRows.filter(matrixRowHasMismatch) : allRows;
+  const mismatchCount = allRows.filter(matrixRowHasMismatch).length;
+
+  panel.innerHTML = `
+    <div class="sp-matrix-toolbar">
+      <label class="cq-sheet-picker__cross sp-matrix-toolbar__filter">
+        <input type="checkbox" id="sp-matrix-mismatches-only" ${comparisonMismatchesOnly ? "checked" : ""}>
+        <span>Mismatches only (${mismatchCount} of ${allRows.length} page${allRows.length === 1 ? "" : "s"})</span>
+      </label>
+      <a class="button button--quiet" href="${strategyPackageMatrixXlsxUrl(pkg.id)}">
+        ${icon("file-spreadsheet", "icon icon--tiny")}Export to Excel
+      </a>
+    </div>
+    ${rows.length ? rows.map(renderMatrixPageGroup).join("") : `
+      <p class="sp-browse__status">${icon("filter-x", "icon icon--tiny")}<span>No mismatches in this run.</span></p>`}`;
+
+  panel.querySelector("#sp-matrix-mismatches-only")?.addEventListener("change", (event) => {
+    comparisonMismatchesOnly = event.target.checked;
+    renderComparisonTab(panel, pkg);
+  });
+}
+
+function renderMatrixCell(cell) {
+  if (cell.state === "absent") return `<span class="sp-matrix-cell sp-matrix-cell--absent">— no such column</span>`;
+  if (cell.state === "empty") return `<span class="sp-matrix-cell sp-matrix-cell--empty">(empty)</span>`;
+  if (cell.text !== null && cell.text !== undefined) return escapeHtml(cell.text);
+  const items = cell.items || [];
+  const shown = items.slice(0, 4).map(escapeHtml).join("; ");
+  return items.length > 4 ? `${shown} <span class="sp-matrix-cell--more">(+${items.length - 4} more)</span>` : shown;
+}
+
+function renderMatrixVerdictBadges(verdicts) {
+  return MATRIX_FIELDS.map((f) => {
+    const v = verdicts[f];
+    const meta = MATRIX_VERDICT_META[v.state];
+    const title = v.detail ? `${MATRIX_FIELD_LABELS[f]}: ${v.detail}` : `${MATRIX_FIELD_LABELS[f]}: ${meta.label}`;
+    return `
+      <span class="sp-matrix-verdict-badge ${meta.cls}" title="${escapeHtml(title)}">
+        ${icon(meta.icon, "icon icon--tiny")}<span>${MATRIX_FIELD_LABELS[f]}</span>
+      </span>`;
+  }).join("");
+}
+
+function renderMatrixPageGroup(row) {
+  return `
+    <div class="sp-matrix-page">
+      <div class="sp-matrix-page__header">
+        <h3 class="sp-matrix-page__title">${escapeHtml(row.label)}</h3>
+        <div class="sp-matrix-page__verdicts">${renderMatrixVerdictBadges(row.verdicts)}</div>
+      </div>
+      ${MATRIX_BLOCKS.map((b) => renderMatrixMiniTable(b, row)).join("")}
+    </div>`;
+}
+
+function renderMatrixMiniTable(block, row) {
+  const cells = row[block.side];
+  return `
+    <div class="sp-matrix-mini">
+      <p class="sp-matrix-mini__title">${icon(block.icon, "icon icon--tiny")}${block.title}</p>
+      <div class="table-scroll sp-matrix-scroll">
+        <table class="tool-table sp-matrix-table">
+          <caption class="visually-hidden">${block.title} values for ${escapeHtml(row.label)}</caption>
+          <thead><tr>${MATRIX_FIELDS.map((f) => `<th scope="col">${MATRIX_FIELD_LABELS[f]}</th>`).join("")}</tr></thead>
+          <tbody>
+            <tr>
+              ${cells
+                ? MATRIX_FIELDS.map((f) => `<td>${renderMatrixCell(cells[f])}</td>`).join("")
+                : `<td colspan="${MATRIX_FIELDS.length}" class="sp-matrix-cell sp-matrix-cell--absent">— not in this run</td>`}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 function renderOverviewTab(pkg) {

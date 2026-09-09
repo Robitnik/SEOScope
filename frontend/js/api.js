@@ -2854,6 +2854,12 @@ export async function getStrategyPackageReport(id) {
   return request(`/tools/strategy-package/reports/${encodeURIComponent(id)}`, {}, `strategy-package-report-${id}`);
 }
 
+// task-91 §3.5/§3.6 — plain URL, consumed via `<a href>`; the server sends
+// `Content-Disposition: attachment`, the browser handles the download.
+export function strategyPackageMatrixXlsxUrl(id) {
+  return `${API_ROOT}/tools/strategy-package/reports/${encodeURIComponent(id)}/matrix.xlsx`;
+}
+
 // --- Monthly Performance table (task-54) --------------------------------------
 //
 // A read-mostly register, not a job: `GET` reads whatever is already stored
