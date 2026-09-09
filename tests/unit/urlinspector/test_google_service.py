@@ -249,6 +249,59 @@ class TestCrossCheck:
         )
         assert dto.matches is True
 
+    def test_one_impression_of_73030_is_not_a_disagreement(self):
+        # Живо на 3XE: 73 031 проти 73 030. Два шляхи агрегації Google
+        # округлюють по-різному; точна рівність тут дала б хибну тривогу на
+        # кожній другій сторінці.
+        dto = TestCrossCheck._run(
+            None,
+            {
+                "clicks": Decimal(7297),
+                "impressions": Decimal(73031),
+                "ctr": None,
+                "position": Decimal("3.4571072"),
+            },
+            {
+                "organicGoogleSearchClicks": Decimal(7297),
+                "organicGoogleSearchImpressions": Decimal(73030),
+                "organicGoogleSearchAveragePosition": Decimal("3.4571409"),
+            },
+        )
+        assert dto.matches is True
+
+    def test_a_broken_url_match_is_still_caught(self):
+        # Живо на SHB до розширення regex: питали один хост, рахували обидва —
+        # 15 372 проти 18 144, тобто 18 %. Саме це звірка існує щоб ловити.
+        dto = TestCrossCheck._run(
+            None,
+            {
+                "clicks": Decimal(15372),
+                "impressions": Decimal(303188),
+                "ctr": None,
+                "position": Decimal("6.54"),
+            },
+            {
+                "organicGoogleSearchClicks": Decimal(18144),
+                "organicGoogleSearchImpressions": Decimal(359316),
+                "organicGoogleSearchAveragePosition": Decimal("6.71"),
+            },
+        )
+        assert dto.matches is False
+
+    def test_tiny_pages_use_the_absolute_floor(self):
+        # 2 проти 3 кліків — 50 %, але одиниця різниці. Підлога в 1 не дає
+        # звірці кричати на сторінках, де будь-який відсоток менший за клік.
+        dto = TestCrossCheck._run(
+            None,
+            {"clicks": Decimal(2), "impressions": Decimal(40), "ctr": None, "position": Decimal(9)},
+            {
+                "organicGoogleSearchClicks": Decimal(3),
+                "organicGoogleSearchImpressions": Decimal(40),
+                "organicGoogleSearchAveragePosition": Decimal(9),
+            },
+        )
+        assert dto.matches is True
+
     def test_diverging_counts_do_not_match(self):
         dto = TestCrossCheck._run(
             None,

@@ -276,15 +276,41 @@ class GscUrlClient:
 
 
 def page_regex(url: str) -> str:
-    """RE2 для GSC, що ловить рівно цю сторінку в обох написаннях слеша.
+    """RE2 для GSC, що ловить рівно цю сторінку в усіх її написаннях.
 
-    Схема й хост беруться з `url` як є (GSC зберігає повний URL, і property
-    вже звужує нас до одного хоста), решта екранується. Регістрозалежний —
-    так само, як сам GSC.
+    Три осі, і кожна коштувала живого прогону:
+
+    1. **Кінцевий слеш** (§0.4) — `equals` без нього віддає синтетичний нуль,
+       тобто «даних немає» замість даних.
+    2. **`www.` проти голого хоста** — `sc-domain:` property покриває ОБИДВА,
+       і GSC зберігає той рядок, який реально показувався. Знайдено гейтом G2
+       на SHB: `equals` по `https://www.smashhouseburgers.com/` дав 15 372
+       кліки, тоді як GA4 на тій самій сторінці бачив 18 144 — різниця не в
+       даних, а в тому, що ми питали про один хост, а рахували обидва. Це та
+       сама нотація «однієї сторінки», що вже діє в `urlkey.lookup_variants`
+       для збережених даних; мати в одному модулі два різні визначення
+       «та сама сторінка» означало б два різні числа на одному екрані.
+    3. **`http` проти `https`** — з тієї ж причини: property покриває обидва,
+       а історія може містити старі http-рядки.
+
+    Схема й хост підставляються в регекс уже як альтернативи, решта URL
+    екранується (`re.escape`) — без цього точка в домені зробила б
+    `hearwellXservices.com` валідним матчем. RE2, регістрозалежний — як сам
+    GSC.
     """
     parts = urlsplit(url.strip())
-    without_slash = url.rstrip("/") if (parts.path or "/") != "/" else url
-    return f"^{re.escape(without_slash)}/?$"
+    host = (parts.hostname or "").lower()
+    bare = host[4:] if host.startswith("www.") else host
+    tail = url.split("://", 1)[1] if "://" in url else url
+    path_and_rest = tail[len(parts.netloc):] if tail.startswith(parts.netloc) else tail
+    # Кінцевий слеш зрізається ЗАВЖДИ, включно з коренем: далі його повертає
+    # `/?`, тож `https://x.com` і `https://x.com/` обидва матчаться. Раніше
+    # корінь лишав свій слеш і давав `com//?$` — подвійний слеш, який не
+    # ловив голий `https://x.com`.
+    path_and_rest = path_and_rest.rstrip("/")
+    port = f":{parts.port}" if parts.port else ""
+    host_alt = f"(?:www\\.)?{re.escape(bare)}{re.escape(port)}"
+    return f"^https?://{host_alt}{re.escape(path_and_rest)}/?$"
 
 
 def _metrics(raw: dict[str, Any]) -> GscMetrics:

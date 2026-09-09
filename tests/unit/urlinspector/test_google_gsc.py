@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -67,10 +68,30 @@ class TestPageRegex:
         for meta in ("a\\+b", "\\(c\\)"):
             assert meta in pattern
 
-    def test_root_path_keeps_its_slash(self):
-        # Домашня сторінка зберігається як `https://x.com/`, і зрізати цей
-        # слеш означало б перестати її знаходити.
-        assert page_regex("https://x.com/").startswith("^https://x\\.com/")
+    def test_root_path_matches_both_spellings(self):
+        # Домашня сторінка зберігається як `https://x.com/`; голий
+        # `https://x.com` теж мусить збігатися.
+        pattern = re.compile(page_regex("https://x.com/"))
+        assert pattern.match("https://x.com/")
+        assert pattern.match("https://x.com")
+        assert not pattern.match("https://x.com/a")
+
+    def test_www_and_bare_host_are_the_same_page(self):
+        # `sc-domain:` property покриває обидва написання, і GSC зберігає те,
+        # що реально показувалось. Знайдено гейтом G2 на SHB: питали про один
+        # хост, рахували обидва — 15 372 кліки проти 18 144 у GA4.
+        pattern = re.compile(page_regex("https://www.smashhouseburgers.com/"))
+        for candidate in (
+            "https://www.smashhouseburgers.com/",
+            "https://smashhouseburgers.com/",
+            "http://smashhouseburgers.com/",
+        ):
+            assert pattern.match(candidate), candidate
+
+    def test_a_different_domain_never_matches(self):
+        pattern = re.compile(page_regex("https://www.smashhouseburgers.com/"))
+        assert not pattern.match("https://smashhouseburgersXcom/")
+        assert not pattern.match("https://evil.com/?x=https://www.smashhouseburgers.com/")
 
 
 class TestSyntheticZeros:

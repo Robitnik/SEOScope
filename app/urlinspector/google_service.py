@@ -242,6 +242,21 @@ def inspect_url_google_core(
     )
 
 
+# Допуск звірки. 0.5 % — між «один показ із 73 030» (0.0014 %, шум) і
+# «15 372 проти 18 144» (18 %, зламаний матчинг), ближче до першого, тож
+# справжня поломка не проскочить. Підлога в одну одиницю потрібна для
+# сторінок із двома кліками, де будь-який відсоток менший за одиницю.
+_CROSS_CHECK_TOLERANCE = Decimal("0.005")
+_POSITION_TOLERANCE = Decimal("0.5")
+
+
+def _close_enough(left: Decimal | None, right: Decimal | None) -> bool:
+    if left is None or right is None:
+        return left is right
+    allowed = max(Decimal(1), max(abs(left), abs(right)) * _CROSS_CHECK_TOLERANCE)
+    return abs(left - right) <= allowed
+
+
 def _cross_check(
     gsc: UrlGoogleGscDTO,
     organic: dict[str, Decimal | None] | None,
@@ -249,10 +264,14 @@ def _cross_check(
 ) -> UrlGoogleCrossCheckDTO:
     """Google проти Google (§0.10).
 
-    Порівнюємо цілі клікі/покази точно, а позицію — з допуском 0.5, бо два
-    шляхи усереднюють її на різних рівнях агрегації. Живий прогін дав збіг до
-    значущої цифри, тож допуск тут — страховка від округлення, а не від
-    очікуваної розбіжності.
+    Питання, на яке відповідає ця звірка, — «чи не зламався НАШ матчинг URL»,
+    а не «чи однакові два числа до одиниці». Зламаний матчинг видно здалеку:
+    на SHB запит по одному хосту дав 15 372 кліки проти 18 144 у GA4 —
+    **18 %**. Округлення двох різних шляхів агрегації видно на 3XE: 73 031
+    показ проти 73 030 — **один**. Тому допуск відносний (`_CROSS_CHECK_
+    TOLERANCE`) з підлогою в одну одиницю: він ловить перше й мовчить про
+    друге. Точна рівність тут дала б хибну тривогу на кожній другій сторінці,
+    а тривога, якій не вірять, гірша за її відсутність.
     """
     totals = {item.metric: item.value for item in gsc.totals}
     gsc_clicks = totals.get("clicks")
@@ -279,9 +298,11 @@ def _cross_check(
     have_both = (gsc_impressions is not None) and (ga4_impressions is not None)
     matches: bool | None = None
     if have_both:
-        matches = gsc_clicks == ga4_clicks and gsc_impressions == ga4_impressions
+        matches = _close_enough(gsc_clicks, ga4_clicks) and _close_enough(
+            gsc_impressions, ga4_impressions
+        )
         if matches and gsc_position is not None and ga4_position is not None:
-            matches = abs(gsc_position - ga4_position) <= Decimal("0.5")
+            matches = abs(gsc_position - ga4_position) <= _POSITION_TOLERANCE
 
     return UrlGoogleCrossCheckDTO(
         state=UrlSourceStateDTO(

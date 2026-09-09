@@ -42,6 +42,7 @@ from functools import partial
 from typing import Any
 
 from app.integrations.google_api.auth import GoogleApiSession
+from app.integrations.google_api.errors import GoogleApiError
 from app.urlinspector.google.fanout import fanout
 
 _GA4_API_BASE = "https://analyticsdata.googleapis.com/v1beta"
@@ -157,17 +158,29 @@ class Ga4UrlClient:
         Живо збіглися з прямим GSC API до значущої цифри (3 / 47 / 9.5531948),
         тому розбіжність тут читається як «зламався наш матчинг URL», а не
         як «розійшлись дані».
+
+        ⚠️ Ці метрики існують ЛИШЕ у property, зв'язаному з Search Console.
+        Без лінку API відповідає `400 INVALID_ARGUMENT` — не «нуль рядків».
+        Це нормальний стан половини портфеля (виміряно гейтом G2: 2 клієнти
+        з 4), тому 400 тут — порожній результат, а не збій: інакше кожне
+        відкриття сторінки такого клієнта писало б у лог трейсбек і фарбувало
+        звірку в `failed`, хоча лагодити нічого не треба.
         """
         out: dict[str, Decimal | None] = dict.fromkeys(ORGANIC_SEARCH_METRICS)
         for batch in _batched(ORGANIC_SEARCH_METRICS, MAX_METRICS_PER_REQUEST):
-            rows = self._run(
-                start,
-                end,
-                dimensions=[ORGANIC_FIELD],
-                metrics=batch,
-                dimension_filter=self._in_list(ORGANIC_FIELD),
-                limit=len(self._variants) + 1,
-            )
+            try:
+                rows = self._run(
+                    start,
+                    end,
+                    dimensions=[ORGANIC_FIELD],
+                    metrics=batch,
+                    dimension_filter=self._in_list(ORGANIC_FIELD),
+                    limit=len(self._variants) + 1,
+                )
+            except GoogleApiError as exc:
+                if "400" in str(exc):
+                    return out
+                raise
             # Дименсія тут обов'язкова (без неї 400), тож рядків може бути
             # кілька — по одному на написання шляху. Складаємо кількісні,
             # а позицію/CTR лишаємо лише коли рядок один: усереднити їх
