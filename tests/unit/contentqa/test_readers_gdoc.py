@@ -237,6 +237,8 @@ def test_document_with_framework_and_content_tabs() -> None:
     assert resolved.frame_tab_title == "Framework"
     assert resolved.copy_tab_title == "Content"
     assert resolved.unnamed_single_tab is False
+    assert len(resolved.copy_sections) == 1
+    assert resolved.copy_sections[0].heading == "Title A"
 
 
 def test_document_with_only_framework_tab_has_no_copy() -> None:

@@ -254,6 +254,10 @@ class ResolvedTabs:
     frame_tab_title: str | None
     copy_tab_title: str | None
     unnamed_single_tab: bool  # документ мав рівно одну безіменну вкладку ("Tab 1")
+    # Ті самі абзаци, що дав `copy_doc.items[0].body`, згруповані по секціях
+    # (task-90 §4.6) — лейну J (`crosscheck.py:check_copy_site`) потрібен
+    # саме цей розріз, не плаский `body`. `()` коли `copy_doc is None`.
+    copy_sections: tuple[ContentSection, ...] = ()
 
 
 def read_framework_document(tabs: tuple[DocTab, ...], *, source: str) -> ResolvedTabs:
@@ -276,14 +280,17 @@ def read_framework_document(tabs: tuple[DocTab, ...], *, source: str) -> Resolve
         frame_doc = ContentDoc(source=source, doc_type="framework_gdoc", items=(item,))
 
     copy_doc = None
+    copy_sections: tuple[ContentSection, ...] = ()
     if copy_tab is not None:
         copy_item = read_copy_tab(copy_tab, source=source)
         if copy_item is not None:
             copy_doc = ContentDoc(source=source, doc_type="copy_gdoc", items=(copy_item,))
+            copy_sections = read_copy_sections(copy_tab)
 
     return ResolvedTabs(
         frame_doc=frame_doc, copy_doc=copy_doc,
         frame_tab_title=frame_tab.title if frame_tab is not None else None,
         copy_tab_title=copy_tab.title if copy_tab is not None else None,
         unnamed_single_tab=unnamed_single,
+        copy_sections=copy_sections,
     )
