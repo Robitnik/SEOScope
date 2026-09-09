@@ -1,0 +1,143 @@
+/* Strategy Package Check (task-90).
+ *
+ * Reuses `.cq-*` from content-qa.css wherever the shape is identical (sheet
+ * picker, findings panel, scope block, chips) — only source-picker, drive
+ * browser, framework picker, and cross-check badges are new here. Only
+ * existing tokens.css tokens, same discipline as content-qa.css/tools.css.
+ */
+
+/* --- step 1: source method + link/browse --- */
+.sp-method { display: inline-flex; border: 1px solid var(--line); margin-bottom: 14px; width: fit-content; }
+.sp-method__option {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 0;
+  background: var(--canvas-raised); color: var(--ink-muted); cursor: pointer;
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+}
+.sp-method__option + .sp-method__option { border-left: 1px solid var(--line); }
+.sp-method__option:hover { color: var(--ink); }
+.sp-method__option:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sp-method__option--active { background: var(--surface-strong); color: var(--ink); }
+
+.sp-source-body { display: grid; gap: 14px; margin-bottom: 18px; }
+.sp-link { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.sp-link .form-field { flex: 1 1 360px; margin: 0; }
+
+.sp-search {
+  display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; width: 100%; max-width: 420px;
+  border: 1px solid var(--line); background: var(--canvas-raised); margin-bottom: 10px;
+}
+.sp-search .icon { width: 14px; height: 14px; color: var(--ink-dim); flex: 0 0 auto; }
+.sp-search input { border: 0; background: none; color: var(--ink); font-size: 13px; width: 100%; padding: 0; }
+.sp-search input:focus { outline: none; }
+.sp-search:focus-within { border-color: var(--accent); }
+
+.sp-browse__status {
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 12px;
+  border: 1px solid var(--line); background: var(--canvas-raised); font-size: 12px; color: var(--ink-muted);
+}
+.sp-browse__status--error { border-left: 3px solid var(--warning); }
+.sp-browse__status .icon { color: var(--ink-dim); flex: 0 0 auto; }
+
+.sp-browse__list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; max-height: 320px; overflow-y: auto; }
+.sp-browse__item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+  background: var(--canvas-raised); color: var(--ink); cursor: pointer; text-align: left; font-size: 13px;
+}
+.sp-browse__item:hover { border-color: var(--line-accent); background: var(--surface-strong); }
+.sp-browse__item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sp-browse__item .icon { flex: 0 0 auto; color: var(--ink-dim); }
+.sp-browse__name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.sp-browse__badge {
+  flex: 0 0 auto; padding: 2px 7px; border: 1px solid var(--line); font-size: 10px; color: var(--ink-dim);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+
+/* --- resolved-file card --- */
+.sp-resolved__status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--ink-muted); }
+.sp-resolved {
+  display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; margin-top: 4px;
+  border: 1px solid var(--line); border-left: 3px solid var(--success); background: var(--canvas-raised);
+}
+.sp-resolved--bad { border-left-color: var(--danger); }
+.sp-resolved > .icon { width: 22px; height: 22px; color: var(--success); flex: 0 0 auto; margin-top: 2px; }
+.sp-resolved--bad > .icon { color: var(--danger); }
+.sp-resolved__body { display: grid; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.sp-resolved__body strong { color: var(--ink); overflow-wrap: anywhere; }
+.sp-resolved__body span { color: var(--ink-muted); font-size: 12px; }
+.sp-resolved__body a { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--accent); }
+.sp-resolved__error { display: flex; align-items: center; gap: 6px; margin: 4px 0 0; color: var(--danger); font-size: 12px; }
+.sp-resolved__error .icon { flex: 0 0 auto; }
+
+/* --- step 2: framework picker (sheet picker reuses .cq-sheet-picker*) --- */
+.sp-framework-picker {
+  margin: 14px 0 18px; padding: 12px 14px; border: 1px solid var(--line); background: var(--canvas-raised);
+}
+.sp-framework-picker__empty {
+  display: flex; align-items: flex-start; gap: 10px; margin: 14px 0 18px; padding: 12px 14px;
+  border: 1px solid var(--line); background: var(--canvas-raised); color: var(--ink-muted); font-size: 12px;
+}
+.sp-framework-picker__empty .icon { flex: 0 0 auto; margin-top: 1px; color: var(--ink-dim); }
+.sp-framework-picker__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.sp-framework-picker__head .cq-sheet-picker__label { margin: 0; }
+.sp-framework-picker__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 320px; overflow-y: auto; }
+.sp-framework-picker__list label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 400; margin: 0; cursor: pointer; }
+.sp-framework-picker__name { color: var(--ink); flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.sp-framework-picker__origin { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-dim); font-size: 11px; }
+
+/* --- step 3: profile toggles --- */
+.sp-toggles { display: grid; gap: 8px; margin: 4px 0 16px; }
+
+/* --- report: tabs --- */
+.sp-tablist { grid-template-columns: repeat(4, 1fr); margin-top: 4px; }
+
+/* --- overview tab --- */
+.sp-fw-overview { display: grid; gap: 8px; }
+.sp-fw-overview__list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.sp-fw-row { padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--line); background: var(--canvas-raised); }
+.sp-fw-row.sp-state--ok { border-left-color: var(--success); }
+.sp-fw-row.sp-state--bad { border-left-color: var(--danger); }
+.sp-fw-row.sp-state--warn { border-left-color: var(--warning); }
+.sp-fw-row__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sp-fw-row__head strong { color: var(--ink); flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.sp-fw-row__state { color: var(--ink-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.sp-fw-row__reason { margin: 6px 0 0; color: var(--ink-muted); font-size: 12px; }
+.sp-fw-row__cross { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+.sp-cross-teaser {
+  display: flex; align-items: center; gap: 8px; margin: 14px 0 0; padding: 10px 12px;
+  border: 1px solid var(--line); background: var(--canvas-raised); font-size: 12px; color: var(--ink-muted);
+}
+.sp-cross-teaser .icon { color: var(--info); flex: 0 0 auto; }
+
+/* --- cross-check badges, shared by overview rows, framework detail, cross table --- */
+.sp-cross-badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--line);
+  font-size: 11px; color: var(--ink-muted); white-space: nowrap;
+}
+.sp-cross--ok { border-color: var(--success); color: var(--success); }
+.sp-cross--warn { border-color: var(--warning); color: var(--warning); }
+.sp-cross--dim { color: var(--ink-dim); }
+
+/* --- frameworks tab --- */
+.sp-fw-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.sp-fw-chip.sp-state--ok { border-color: var(--success); }
+.sp-fw-chip.sp-state--bad { border-color: var(--danger); }
+.sp-fw-chip.sp-state--warn { border-color: var(--warning); }
+.sp-fw-detail__tabs { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; color: var(--ink-muted); font-size: 12px; }
+.sp-fw-detail__tabs .icon { color: var(--ink-dim); flex: 0 0 auto; }
+.sp-fw-detail__cross { margin-bottom: 16px; }
+
+/* --- cross-checks tab --- */
+.sp-cross-table-wrap { margin-bottom: 18px; }
+.sp-cross-table td, .sp-cross-table th { white-space: nowrap; }
+
+@media (max-width: 720px) {
+  /* `flex-basis: 360px` on `.sp-link .form-field` means "don't shrink below
+     360px wide" in the desktop row layout — stacked to a column here, that
+     same basis would apply to the main axis again, i.e. HEIGHT, and stretch
+     the field to a 360px-tall box. Reset it so height stays content-driven. */
+  .sp-link { flex-direction: column; align-items: stretch; }
+  .sp-link .form-field { flex-basis: auto; }
+  .sp-tablist { grid-template-columns: repeat(2, 1fr); }
+  .sp-framework-picker__head { align-items: flex-start; flex-direction: column; }
+}

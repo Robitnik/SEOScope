@@ -2813,6 +2813,47 @@ export async function getFrameworkReport(reportId) {
   );
 }
 
+// --- Strategy Package Check (task-90) ----------------------------------------
+//
+// One Drive link in, five-part QA out: strategy + every linked Framework's
+// Frame/Copy tabs + three cross-checks, one persisted `content_qa_packages`
+// row. JSON in/out throughout — unlike Strategy/Framework Check above, this
+// tool never receives file bytes from the operator; the source always lives
+// on Drive, and `/resolve`/`/inspect`/`/check` read it server-side via the
+// Google API. Plain `request()`, not `postContentQaBytes`.
+
+export async function resolveStrategyPackageSource(urlOrId) {
+  return request("/tools/strategy-package/resolve", {
+    method: "POST", body: JSON.stringify({ url_or_id: urlOrId }),
+  });
+}
+
+export async function browseStrategyPackageDrive({ q = "", pageToken, pageSize = 25 } = {}) {
+  const qs = new URLSearchParams();
+  if (q.trim()) qs.set("q", q.trim());
+  if (pageToken) qs.set("page_token", pageToken);
+  qs.set("page_size", String(pageSize));
+  return request(`/tools/strategy-package/drive/files?${qs.toString()}`, {}, "strategy-package-drive-files");
+}
+
+export async function inspectStrategyPackage(fileId) {
+  return request("/tools/strategy-package/inspect", {
+    method: "POST", body: JSON.stringify({ file_id: fileId }),
+  });
+}
+
+export async function checkStrategyPackage(payload) {
+  return request("/tools/strategy-package/check", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function getStrategyPackageReports() {
+  return request("/tools/strategy-package/reports", {}, "strategy-package-reports");
+}
+
+export async function getStrategyPackageReport(id) {
+  return request(`/tools/strategy-package/reports/${encodeURIComponent(id)}`, {}, `strategy-package-report-${id}`);
+}
+
 // --- Monthly Performance table (task-54) --------------------------------------
 //
 // A read-mostly register, not a job: `GET` reads whatever is already stored
