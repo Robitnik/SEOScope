@@ -245,7 +245,8 @@ export function buildArchiveCaptureHash(params = {}) {
 }
 
 // URL Inspector (task-61) — `params` always carries `u` (the URL being
-// inspected); `g` (granularity) is optional and persisted the same way.
+// inspected); `g` (granularity of the stored-data series) and `w` (the
+// direct-Google-API window, task-88) are optional and persisted the same way.
 export function buildUrlInspectorHash(params = {}) {
   return buildHash("#/url", params);
 }
@@ -545,7 +546,7 @@ async function activate() {
     allRoots.filter((el) => el !== urlInspectorRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     urlInspectorRoot?.removeAttribute("hidden");
-    const { initUrlInspectorPage } = await import("./url-inspector.js?v=20260905-t64");
+    const { initUrlInspectorPage } = await import("./url-inspector.js?v=20260909-t88");
     await initUrlInspectorPage(route.query);
   } else if (route.name === "client") {
     dashboardView?.setAttribute("hidden", "");

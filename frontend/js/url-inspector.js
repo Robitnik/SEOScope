@@ -4,13 +4,23 @@
 // timeline, Site Monitor state/changes, meta + copy QA, and an on-demand
 // live micro technical audit. See doc/dev/new/task-61-url-inspector.md.
 //
-// Two calls, deliberately not one (mirrors the backend split): stored data
-// renders immediately from `getUrlInspector`; the live check is a separate,
-// slow, opt-in `runUrlInspectorLive` the operator triggers explicitly.
+// Calls are split by MEASURED latency, mirroring the backend (task-88 §2.2):
+// stored data paints immediately from `getUrlInspector`; the direct Google
+// API waves (~0.9s core, ~0.8s breakdowns, ~0.5s realtime) follow and fill
+// the panels that need Google; the two genuinely slow round trips — the live
+// page fetch (~20s) and Search Console's URL Inspection (~6.6s) — are their
+// own opt-in buttons so they never hold up anything else.
+//
+// task-88 makes Google the PRIMARY source of this page's search analytics.
+// The stored Reporting Ninja series does not disappear: it stays as
+// "Stored collection history", because beyond Search Console's 16-month
+// ceiling it is the only source we have (§4, «чого Google API не дає»).
 import {
-  getUrlInspector, runUrlInspectorLive, getUrlScreenshots, captureUrlScreenshots, isAbortError,
-} from "./api.js?v=20260905-t64";
-import { replaceUrlInspectorHash } from "./router.js?v=20260905-t64";
+  getUrlInspector, runUrlInspectorLive, getUrlScreenshots, captureUrlScreenshots,
+  getUrlInspectorGoogle, getUrlInspectorGoogleBreakdowns, getUrlInspectorRealtime,
+  runUrlIndexStatus, isAbortError,
+} from "./api.js?v=20260909-t88";
+import { replaceUrlInspectorHash } from "./router.js?v=20260909-t88";
 import { escapeHtml, formatDateRange, formatFileSize, formatTimestamp, icon } from "./formatters.js?v=20260821-spin3";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
 
@@ -21,6 +31,86 @@ const GRANULARITIES = [
   { key: "month", label: "Monthly" },
   { key: "quarter", label: "Quarterly" },
 ];
+
+// Вікна прямого Google API (task-88 §2.3). Не те саме, що `GRANULARITIES`
+// нижче: ті описують гранулярність ЗБЕРЕЖЕНИХ періодів нерівної довжини,
+// ці — точний діапазон запиту, бакет якого ми обираємо самі.
+const WINDOWS = [
+  { key: "28d", label: "28 days" },
+  { key: "90d", label: "90 days" },
+  { key: "12m", label: "12 months" },
+  { key: "16m", label: "16 months" },
+];
+
+// Метрики Google-серії. Ключі — рівно ті, що приходять з API, без локальних
+// синонімів (CLAUDE.md: одна назва на одну річ скрізь).
+const GOOGLE_GSC_SERIES = [
+  { key: "clicks", label: "Clicks" },
+  { key: "impressions", label: "Impressions" },
+  { key: "ctr", label: "CTR" },
+  { key: "position", label: "Position" },
+];
+
+const GOOGLE_GA4_SERIES = [
+  { key: "sessions", label: "Sessions" },
+  { key: "totalUsers", label: "Users" },
+  { key: "screenPageViews", label: "Views" },
+  { key: "engagementRate", label: "Engagement rate" },
+  { key: "keyEvents", label: "Conversions" },
+];
+
+// Людські назви полів Google API. Усе, чого тут немає, показується власним
+// іменем з API — краще технічна назва, ніж вигадана.
+const METRIC_LABELS = {
+  clicks: "Clicks",
+  impressions: "Impressions",
+  ctr: "CTR",
+  position: "Avg. position",
+  sessions: "Sessions",
+  totalUsers: "Users",
+  newUsers: "New users",
+  activeUsers: "Active users",
+  engagedSessions: "Engaged sessions",
+  engagementRate: "Engagement rate",
+  bounceRate: "Bounce rate",
+  averageSessionDuration: "Avg. session",
+  userEngagementDuration: "Engagement time",
+  screenPageViews: "Views",
+  screenPageViewsPerSession: "Views / session",
+  keyEvents: "Conversions",
+  sessionKeyEventRate: "Conversion rate",
+  eventCount: "Events",
+  scrolledUsers: "Scrolled 90%",
+  active1DayUsers: "Active (1d)",
+  active7DayUsers: "Active (7d)",
+  active28DayUsers: "Active (28d)",
+};
+
+// Що показуємо тайлами, а що лишається в повній таблиці — тайли відповідають
+// на «як справи», таблиця на «а точно». Не більше 4-5 KPI на блок
+// (frontend/AGENTS.md §4).
+const GSC_TILE_METRICS = ["clicks", "impressions", "ctr", "position"];
+const GA4_LANDING_TILE_METRICS = ["sessions", "totalUsers", "keyEvents", "engagementRate"];
+const GA4_PAGE_TILE_METRICS = ["screenPageViews", "activeUsers", "userEngagementDuration", "eventCount"];
+
+const SEARCH_TYPE_LABELS = {
+  web: "Web",
+  image: "Images",
+  video: "Video",
+  news: "News",
+  discover: "Discover",
+  googleNews: "Google News",
+};
+
+// Вердикти URL Inspection API. `robotsTxtState`/`indexingState`, що НЕ
+// дозволяють індексацію, — це помилка, а не інформація: сторінка не може
+// потрапити в пошук.
+const INDEX_VERDICT_TONES = {
+  PASS: "ui-tone-success",
+  PARTIAL: "ui-tone-warning",
+  FAIL: "ui-tone-danger",
+  NEUTRAL: "ui-tone-dim",
+};
 
 const GSC_METRICS = [
   { key: "clicks", label: "Clicks" },
@@ -51,6 +141,9 @@ const SOURCE_STATE_META = {
 
 const SOURCE_LABELS = {
   gsc: "Search Console",
+  ga4: "GA4",
+  ga4_cross_check: "GSC↔GA4 check",
+  url_inspection: "Index status",
   reporting_ninja: "GA4",
   monitor: "Site Monitor",
   archive: "Web Archive",
@@ -73,28 +166,61 @@ const SEVERITY_META = {
 };
 
 const numberFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+// Частка `0..1` -> відсоток. `Intl` множить на 100 сам, тому значення НІКОЛИ
+// не множиться в коді — саме так виникає пастка ×100 (task-83 §7.3).
+const percentFormatter = new Intl.NumberFormat("en-US", {
+  style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 2,
+});
+const positionFormatter = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 1, maximumFractionDigits: 1,
+});
 const shortDay = new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short" });
 
-let current = null; // { url, granularity, gscMetric, ga4Metric }
+let current = null; // { url, granularity, window, gscMetric, ga4Metric, gMetricGsc, gMetricGa4 }
 let dto = null;
 let loadError = null;
 let loading = false;
 let requestToken = 0;
 let gscChart = null;
 let ga4Chart = null;
+let googleGscChart = null;
+let googleGa4Chart = null;
 let liveState = { loading: false, error: null, result: null, withSchema: false };
 let shotsState = { loading: false, error: null, result: null };
+// Кожна Google-хвиля має власний стан, а не спільний прапорець `loading`:
+// вони приходять у різний час, і одна невдала не має вдавати, що решта теж
+// не завантажилась (task-88 §2.5).
+let googleState = emptyAsyncState();
+let breakdownsState = emptyAsyncState();
+let indexState = emptyAsyncState();
+let realtimeState = emptyAsyncState();
+
+function emptyAsyncState() {
+  // `unavailable` окремо від `error`: 409 означає «у цього клієнта немає
+  // інтеграції з Google», і це стан панелі, а не збій, який треба лагодити.
+  return { loading: false, error: null, unavailable: null, result: null };
+}
 
 export async function initUrlInspectorPage(query) {
   const url = query.get("u") || "";
   const granularityParam = query.get("g");
   const granularity = GRANULARITIES.some((g) => g.key === granularityParam) ? granularityParam : "week";
-  current = { url, granularity, gscMetric: "clicks", ga4Metric: "sessions" };
+  const windowParam = query.get("w");
+  const win = WINDOWS.some((w) => w.key === windowParam) ? windowParam : "90d";
+  current = {
+    url, granularity, window: win,
+    gscMetric: "clicks", ga4Metric: "sessions",
+    gMetricGsc: "clicks", gMetricGa4: "sessions",
+  };
   dto = null;
   loadError = null;
   loading = false;
   liveState = { loading: false, error: null, result: null, withSchema: false };
   shotsState = { loading: false, error: null, result: null };
+  googleState = emptyAsyncState();
+  breakdownsState = emptyAsyncState();
+  indexState = emptyAsyncState();
+  realtimeState = emptyAsyncState();
   destroyCharts();
 
   if (!url) {
@@ -113,7 +239,10 @@ export async function initUrlInspectorPage(query) {
   // cache read runs alongside it (both fast/instant reads) — a genuine
   // capture never runs automatically (task-64 §5: ~20s, opt-in only).
   if (dto) {
-    const tasks = [loadCachedScreenshots()];
+    // Усі швидкі хвилі — паралельно. Index status тут НЕМА свідомо: 6.6 с
+    // на автозавантаженні означали б, що сторінка «думає» кожного разу,
+    // навіть коли оператор прийшов подивитись трафік (task-88 §0.5/§2.2).
+    const tasks = [loadCachedScreenshots(), loadGoogleCore(), loadBreakdowns(), loadRealtime()];
     if (!liveState.result && !liveState.loading) {
       tasks.push(runLiveCheck({ withSchema: false }));
     }
@@ -121,11 +250,76 @@ export async function initUrlInspectorPage(query) {
   }
 }
 
+// --- Google API waves ---------------------------------------------------------
+
+// Три однакові за формою завантажувачі, один хелпер: кожен тримає власний
+// токен запиту, щоб відповідь на старе вікно не перемалювала нове.
+async function loadAsync(state, fetcher, setter, { rerender }) {
+  const token = requestToken;
+  setter({ ...emptyAsyncState(), loading: true, result: state.result });
+  rerender();
+  try {
+    const result = await fetcher();
+    if (token !== requestToken) return;
+    setter({ ...emptyAsyncState(), result });
+  } catch (error) {
+    if (isAbortError(error) || token !== requestToken) return;
+    // 409 — «Google не підключений для цього клієнта». Це не помилка, яку
+    // оператор мусить лагодити, тому окреме поле й інший тон у UI.
+    if (error.status === 409) {
+      setter({ ...emptyAsyncState(), unavailable: error.message || "Google isn't connected for this client." });
+    } else {
+      setter({ ...emptyAsyncState(), error: error.message || "Could not reach Google." });
+    }
+  }
+  rerender();
+}
+
+async function loadGoogleCore() {
+  await loadAsync(
+    googleState,
+    () => getUrlInspectorGoogle(current.url, { window: current.window }),
+    (next) => { googleState = next; },
+    { rerender: renderGoogleSections },
+  );
+}
+
+async function loadBreakdowns() {
+  await loadAsync(
+    breakdownsState,
+    () => getUrlInspectorGoogleBreakdowns(current.url, { window: current.window }),
+    (next) => { breakdownsState = next; },
+    { rerender: renderBreakdownsInPlace },
+  );
+}
+
+async function loadRealtime() {
+  await loadAsync(
+    realtimeState,
+    () => getUrlInspectorRealtime(current.url),
+    (next) => { realtimeState = next; },
+    { rerender: renderRealtimeInPlace },
+  );
+}
+
+async function loadIndexStatus() {
+  await loadAsync(
+    indexState,
+    () => runUrlIndexStatus(current.url),
+    (next) => { indexState = next; },
+    { rerender: renderIndexStatusInPlace },
+  );
+}
+
 function destroyCharts() {
   gscChart?.destroy();
   ga4Chart?.destroy();
+  googleGscChart?.destroy();
+  googleGa4Chart?.destroy();
   gscChart = null;
   ga4Chart = null;
+  googleGscChart = null;
+  googleGa4Chart = null;
 }
 
 function emptyShell() {
@@ -203,8 +397,12 @@ function render() {
   // data-dense/wide panels (charts, tables, image gallery, timelines); the
   // sidebar holds compact reference cards, sticky so they stay visible
   // while the main column scrolls (task-64 §4).
+  // Порядок — за питаннями оператора, від найчастішого до найрідшого:
+  // Google-панелі попереду, збережена історія збору позаду (вона потрібна
+  // або як фолбек, або за межею 16 місяців), локальні джерела далі.
   body.innerHTML = `
     <div class="url-inspector__main">
+      ${googleSectionShells()}
       ${renderSearchAnalytics(dto)}
       ${renderKeywords(dto)}
       ${renderScreenshots(dto)}
@@ -212,6 +410,9 @@ function render() {
       ${renderMonitor(dto)}
     </div>
     <aside class="url-inspector__sidebar">
+      <section class="url-inspector__section" id="ui-index-status" aria-labelledby="ui-index-heading">
+        ${renderIndexStatus()}
+      </section>
       ${renderLive()}
       ${renderMeta(dto)}
       ${renderTechAudit(dto)}
@@ -221,6 +422,10 @@ function render() {
     renderGscChart();
     renderGa4Chart();
   });
+  // Google-хвилі могли вже приїхати (перемикання метрики перемальовує все) —
+  // заповнюємо їх одразу, інакше готові дані зникли б до наступного запиту.
+  renderGoogleSections();
+  renderBreakdownsInPlace();
 }
 
 // --- header: identity + coverage strip --------------------------------------
@@ -269,13 +474,14 @@ function renderSearchAnalytics(data) {
   return `
     <section class="url-inspector__section" aria-labelledby="ui-sa-heading">
       <div class="url-inspector__section-head">
-        <h2 id="ui-sa-heading">Search analytics</h2>
+        <h2 id="ui-sa-heading">Stored collection history</h2>
         <div class="url-inspector__granularity" role="group" aria-label="Chart granularity">
           ${GRANULARITIES.map((g) => `
             <button type="button" data-action="granularity" data-value="${g.key}" aria-pressed="${current.granularity === g.key}">${g.label}</button>
           `).join("")}
         </div>
       </div>
+      <p class="url-inspector__note">What our own collection stored for this URL, period by period. Windows overlap and vary in length because they follow when collection ran, and rows Reporting Ninja truncated to its top-N are marked as unknown rather than zero. Kept because it reaches further back than Search Console's 16 months — for anything inside that window, the Google panels above are exact.</p>
       ${renderSeriesBlock({
         id: "gsc", title: "Search Console", state: sa.gsc, series: sa.gsc_series,
         metrics: GSC_METRICS, selected: current.gscMetric,
@@ -424,6 +630,688 @@ function renderGa4Chart() {
     type: "line",
     data: { labels: chartLabels(points), datasets: [chartDataset(points)] },
     options: chartOptions(points),
+  });
+}
+
+
+// --- Google API panels (task-88) ----------------------------------------------
+//
+// Порядок секцій відповідає порядку питань оператора, а не порядку джерел:
+// «скільки трафіку» -> «за якими запитами» -> «що люди робили» -> «хто вони».
+// Стан індексації живе в сайдбарі поряд із живою перевіркою — це довідка про
+// сторінку, а не метрика.
+
+function googleSectionShells() {
+  return `
+    <section class="url-inspector__section" id="ui-google-search" aria-labelledby="ui-gsearch-heading" aria-busy="true">
+      ${sectionSkeleton({ label: "Search Console data for this URL", rows: 2, columns: 4, chart: true })}
+    </section>
+    <section class="url-inspector__section" id="ui-google-queries" aria-labelledby="ui-gqueries-heading" aria-busy="true">
+      ${sectionSkeleton({ label: "this page's search queries", rows: 4, columns: 4 })}
+    </section>
+    <section class="url-inspector__section" id="ui-google-traffic" aria-labelledby="ui-gtraffic-heading" aria-busy="true">
+      ${sectionSkeleton({ label: "GA4 data for this URL", rows: 2, columns: 4, chart: true })}
+    </section>
+    <section class="url-inspector__section" id="ui-google-breakdowns" aria-labelledby="ui-gbreak-heading" aria-busy="true">
+      ${sectionSkeleton({ label: "audience breakdowns", rows: 4, columns: 3 })}
+    </section>`;
+}
+
+function renderGoogleSections() {
+  const searchEl = root?.querySelector("#ui-google-search");
+  const queriesEl = root?.querySelector("#ui-google-queries");
+  const trafficEl = root?.querySelector("#ui-google-traffic");
+  if (!searchEl || !queriesEl || !trafficEl) return;
+
+  if (googleState.loading && !googleState.result) return;
+  for (const el of [searchEl, queriesEl, trafficEl]) el.removeAttribute("aria-busy");
+
+  searchEl.innerHTML = renderGoogleSearch();
+  queriesEl.innerHTML = renderGoogleQueries();
+  trafficEl.innerHTML = renderGoogleTraffic();
+  requestAnimationFrame(() => {
+    renderGoogleGscChart();
+    renderGoogleGa4Chart();
+  });
+}
+
+// Спільна плашка для всіх Google-панелей: розрізняє «не підключено»,
+// «не завантажилось» і «ще вантажиться» — три різні відповіді, які легко
+// злити в одне безлике «немає даних» (frontend/AGENTS.md §6).
+function asyncPanel(state, { loadingText }) {
+  if (state.loading && !state.result) {
+    return `<div class="state-panel state-panel--compact">${icon("loader-2", "icon icon--spin")}<p>${escapeHtml(loadingText)}</p></div>`;
+  }
+  if (state.unavailable) {
+    return `<div class="state-panel state-panel--compact ui-tone-dim">${icon("plug-off")}<p>${escapeHtml(state.unavailable)}</p></div>`;
+  }
+  if (state.error) {
+    return `<div class="state-panel state-panel--compact ui-tone-danger">${icon("alert-triangle")}<p>${escapeHtml(state.error)}</p></div>`;
+  }
+  return null;
+}
+
+function sourceBadge(transport) {
+  return transport === "google_api"
+    ? `<span class="url-inspector__badge ui-tone-success" title="This client's transport is set to the direct Google API">${icon("brand-google", "icon icon--tiny")}<span>Direct from Google</span></span>`
+    : `<span class="url-inspector__badge ui-tone-dim" title="Collection for this client still runs through Reporting Ninja; the panels below are read live from Google either way">${icon("cloud", "icon icon--tiny")}<span>Collection via Reporting Ninja</span></span>`;
+}
+
+function windowPicker() {
+  return `
+    <div class="url-inspector__granularity" role="group" aria-label="Google API window">
+      ${WINDOWS.map((w) => `
+        <button type="button" data-action="window" data-value="${w.key}" aria-pressed="${current.window === w.key}">${w.label}</button>
+      `).join("")}
+    </div>`;
+}
+
+function windowNote(win) {
+  if (!win) return "";
+  const range = formatDateRange(win.start, win.end);
+  const edge = win.at_gsc_history_edge
+    ? ` Search Console keeps about 16 months, so an empty left edge here may be that limit rather than no traffic.`
+    : "";
+  const clamped = win.clamped_to_gsc_history
+    ? ` Asked from ${escapeHtml(win.requested_start)}, Search Console only serves from ${escapeHtml(win.start)}.`
+    : "";
+  return `<p class="url-inspector__note">${escapeHtml(range)} · ${win.days} days · ${escapeHtml(win.bucket)} buckets.${edge}${clamped}</p>`;
+}
+
+// --- Google: Search Console ----------------------------------------------------
+
+function renderGoogleSearch() {
+  const head = `
+    <div class="url-inspector__section-head">
+      <h2 id="ui-gsearch-heading">Search performance</h2>
+      ${windowPicker()}
+    </div>`;
+  const panel = asyncPanel(googleState, { loadingText: "Asking Search Console about this URL…" });
+  if (panel) return `${head}${panel}`;
+
+  const data = googleState.result;
+  if (!data) return `${head}`;
+  const gsc = data.gsc;
+  const stateMeta = SOURCE_STATE_META[gsc.state.state] || SOURCE_STATE_META.no_data;
+
+  if (gsc.state.state !== "has_data") {
+    return `
+      ${head}
+      <div class="url-inspector__source-line">${sourceBadge(data.transport)}</div>
+      ${windowNote(data.window)}
+      <div class="state-panel state-panel--compact ${stateMeta.tone}">
+        ${icon(stateMeta.icon)}<p>${escapeHtml(gsc.state.detail || stateMeta.label)}</p>
+      </div>`;
+  }
+
+  const series = gsc.series[current.gMetricGsc];
+  const provisional = (series?.points || []).some((point) => point.provisional);
+
+  return `
+    ${head}
+    <div class="url-inspector__source-line">
+      ${sourceBadge(data.transport)}
+      ${renderCrossCheck(data.cross_check)}
+    </div>
+    ${windowNote(data.window)}
+    ${renderMetricTiles(gsc.totals, GSC_TILE_METRICS)}
+    <div class="url-inspector__series-head">
+      <h3>Trend</h3>
+      <div class="url-inspector__metric-picker" role="group" aria-label="Search Console metric">
+        ${GOOGLE_GSC_SERIES.map((m) => `
+          <button type="button" data-action="g-metric" data-series="gsc" data-value="${m.key}" aria-pressed="${current.gMetricGsc === m.key}">${m.label}</button>
+        `).join("")}
+      </div>
+    </div>
+    ${(series?.points || []).length === 0
+      ? `<div class="state-panel state-panel--compact"><div>${icon("cloud-off")}</div><p>No days with impressions in this window.</p></div>`
+      : `
+        <div class="chart-wrap url-inspector__chart-wrap">
+          <canvas id="ui-g-gsc-canvas" role="img" aria-label="Chart of ${escapeHtml(metricLabel(current.gMetricGsc))} for this URL"></canvas>
+        </div>
+        ${provisional ? `<p class="url-inspector__note">Buckets marked provisional include days Google has not finished counting${gsc.first_incomplete_date ? ` (from ${escapeHtml(gsc.first_incomplete_date)})` : ""}.</p>` : ""}`}
+`;
+}
+
+// Найдешевша й найсильніша перевірка здоров'я на цій сторінці: ті самі
+// кліки/покази двома незалежними шляхами Google (task-88 §0.10). Розбіжність
+// означає, що зламався НАШ матчинг URL, а не що розійшлись дані.
+function renderCrossCheck(check) {
+  if (!check || check.matches === null || check.matches === undefined) return "";
+  return check.matches
+    ? `<span class="url-inspector__badge ui-tone-success" title="Search Console API and GA4's own Search Console metrics return the same clicks and impressions for this URL">${icon("circle-check", "icon icon--tiny")}<span>GSC ↔ GA4 agree</span></span>`
+    : `<span class="url-inspector__badge ui-tone-warning" title="Search Console API: ${escapeHtml(String(check.gsc_clicks ?? "—"))} clicks / ${escapeHtml(String(check.gsc_impressions ?? "—"))} impressions. GA4's own Search Console metrics: ${escapeHtml(String(check.ga4_clicks ?? "—"))} / ${escapeHtml(String(check.ga4_impressions ?? "—"))}. A gap points at URL matching, not at the data.">${icon("alert-triangle", "icon icon--tiny")}<span>GSC ↔ GA4 disagree</span></span>`;
+}
+
+// --- Google: page queries ------------------------------------------------------
+
+function renderGoogleQueries() {
+  const head = `
+    <div class="url-inspector__section-head">
+      <h2 id="ui-gqueries-heading">Page queries</h2>
+      ${googleState.result?.gsc?.queries_total
+        ? `<span class="url-inspector__count">${googleState.result.gsc.queries_total} ${googleState.result.gsc.queries_total === 1 ? "query" : "queries"}</span>`
+        : ""}
+    </div>
+    <p class="url-inspector__note">Search Console's own queries <strong>for this page</strong> — clicks, impressions, CTR and average position. Not a text match against the page's content.</p>`;
+  const panel = asyncPanel(googleState, { loadingText: "Asking Search Console for this page's queries…" });
+  if (panel) return `${head}${panel}`;
+
+  const gsc = googleState.result?.gsc;
+  const rows = gsc?.queries || [];
+  if (!rows.length) {
+    const meta = SOURCE_STATE_META[gsc?.state?.state || "no_data"] || SOURCE_STATE_META.no_data;
+    return `
+      ${head}
+      <div class="state-panel state-panel--compact ${meta.tone}">
+        ${icon(meta.icon)}<p>Search Console recorded no queries for this page in this window.</p>
+      </div>`;
+  }
+
+  return `
+    ${head}
+    <div class="url-inspector__query-filter">
+      <label class="url-inspector__field">
+        <span class="url-inspector__field-label">Filter queries</span>
+        <input type="search" id="ui-query-filter" placeholder="Type to filter…" autocomplete="off">
+      </label>
+    </div>
+    <div class="url-inspector__table-scroll">
+      <table class="metric-table url-inspector__series-table" id="ui-query-table">
+        <thead>
+          <tr><th>Query</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr data-query="${escapeHtml(row.query.toLowerCase())}">
+              <td class="url-inspector__wrap">${escapeHtml(row.query)}</td>
+              <td>${formatMetricValue("count", row.clicks)}</td>
+              <td>${formatMetricValue("count", row.impressions)}</td>
+              <td>${formatMetricValue("ratio", row.ctr)}</td>
+              <td>${formatMetricValue("position", row.position)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${gsc.queries_truncated
+      ? `<p class="url-inspector__note">Showing the top ${rows.length} of ${gsc.queries_total} queries by clicks.</p>`
+      : ""}`;
+}
+
+// --- Google: GA4 traffic -------------------------------------------------------
+
+function renderGoogleTraffic() {
+  const head = `
+    <div class="url-inspector__section-head">
+      <h2 id="ui-gtraffic-heading">Traffic &amp; behaviour</h2>
+      <span id="ui-realtime">${renderRealtime()}</span>
+    </div>`;
+  const panel = asyncPanel(googleState, { loadingText: "Asking GA4 about this URL…" });
+  if (panel) return `${head}${panel}`;
+
+  const ga4 = googleState.result?.ga4;
+  if (!ga4) return head;
+  const meta = SOURCE_STATE_META[ga4.state.state] || SOURCE_STATE_META.no_data;
+  if (ga4.state.state !== "has_data") {
+    return `
+      ${head}
+      <div class="state-panel state-panel--compact ${meta.tone}">
+        ${icon(meta.icon)}<p>${escapeHtml(ga4.state.detail || meta.label)}</p>
+      </div>`;
+  }
+
+  const series = ga4.series[current.gMetricGa4];
+  return `
+    ${head}
+    <h3>Sessions that entered here</h3>
+    <p class="url-inspector__note">GA4's <code>landingPage</code> scope: visits that <strong>started</strong> on this page. Conversions are counted here, because a conversion belongs to a session, not to a page.</p>
+    ${renderMetricTiles(ga4.landing_totals, GA4_LANDING_TILE_METRICS)}
+    <h3>Views of this page</h3>
+    <p class="url-inspector__note">GA4's <code>pagePath</code> scope: everything that happened on this page, wherever the visit began. Different question, different number — neither is more correct.</p>
+    ${renderMetricTiles(ga4.page_totals, GA4_PAGE_TILE_METRICS)}
+    ${renderKeyEvents(ga4)}
+    <div class="url-inspector__series-head">
+      <h3>Trend</h3>
+      <div class="url-inspector__metric-picker" role="group" aria-label="GA4 metric">
+        ${GOOGLE_GA4_SERIES.map((m) => `
+          <button type="button" data-action="g-metric" data-series="ga4" data-value="${m.key}" aria-pressed="${current.gMetricGa4 === m.key}">${m.label}</button>
+        `).join("")}
+      </div>
+    </div>
+    ${(series?.points || []).length === 0
+      ? `<div class="state-panel state-panel--compact"><div>${icon("cloud-off")}</div><p>No days with GA4 data in this window.</p></div>`
+      : `<div class="chart-wrap url-inspector__chart-wrap">
+          <canvas id="ui-g-ga4-canvas" role="img" aria-label="Chart of ${escapeHtml(metricLabel(current.gMetricGa4))} for this URL"></canvas>
+        </div>`}
+    ${renderGa4FullTotals(ga4)}`;
+}
+
+function renderKeyEvents(ga4) {
+  const rows = ga4.key_events || [];
+  const configured = ga4.key_event_names || [];
+  const configuredNote = configured.length
+    ? `<p class="url-inspector__note">Conversions configured in this GA4 property: ${configured.map(escapeHtml).join(", ")}. Only the ones that actually fired on this page are listed — GA4 returns no row for an event that never happened, so a missing name is "no data", not a zero.</p>`
+    : "";
+  if (!rows.length) {
+    return `
+      <h3>Conversions</h3>
+      ${configuredNote}
+      <div class="state-panel state-panel--compact ui-tone-dim">${icon("cloud-off")}<p>No conversions recorded for this page in this window.</p></div>`;
+  }
+  return `
+    <h3>Conversions</h3>
+    ${configuredNote}
+    <div class="url-inspector__table-scroll">
+      <table class="metric-table url-inspector__series-table">
+        <thead><tr><th>Event</th><th>Conversions</th><th>Events</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td class="url-inspector__wrap">${escapeHtml(row.name)}</td>
+              <td>${formatMetricValue("count", row.key_events)}</td>
+              <td>${formatMetricValue("count", row.event_count)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// Повний набір landing-метрик таблицею — тайлів на 15 полів було б забагато
+// (frontend/AGENTS.md §4: 3-4 KPI на блок), а викидати їх шкода: саме тут
+// живуть bounce rate, тривалість сесії й активні за 1/7/28 днів.
+function renderGa4FullTotals(ga4) {
+  const rows = (ga4.landing_totals || []).filter((m) => !GA4_LANDING_TILE_METRICS.includes(m.metric));
+  if (!rows.length) return "";
+  return `
+    <h3>All session metrics</h3>
+    <div class="url-inspector__table-scroll">
+      <table class="metric-table url-inspector__series-table">
+        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+        <tbody>
+          ${rows.map((m) => `
+            <tr>
+              <td class="url-inspector__wrap">${escapeHtml(metricLabel(m.metric))}</td>
+              <td class="${m.value === null ? "metric-null" : ""}">${formatMetricValue(m.unit, m.value)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function renderRealtime() {
+  if (realtimeState.loading && !realtimeState.result) return "";
+  const result = realtimeState.result;
+  if (!result || result.active_users === null || result.active_users === undefined) return "";
+  const count = numberFormatter.format(Number(result.active_users));
+  return `<span class="url-inspector__badge ui-tone-accent" title="GA4 Realtime has no page filter, so this counts the whole property, not this page">${icon("activity", "icon icon--tiny")}<span>${count} active on site now</span></span>`;
+}
+
+function renderRealtimeInPlace() {
+  const el = root?.querySelector("#ui-realtime");
+  if (el) el.innerHTML = renderRealtime();
+}
+
+// --- Google: breakdowns --------------------------------------------------------
+
+function renderBreakdownsInPlace() {
+  const el = root?.querySelector("#ui-google-breakdowns");
+  if (!el) return;
+  if (breakdownsState.loading && !breakdownsState.result) return;
+  el.removeAttribute("aria-busy");
+  el.innerHTML = renderBreakdowns();
+}
+
+function renderBreakdowns() {
+  const head = `
+    <div class="url-inspector__section-head">
+      <h2 id="ui-gbreak-heading">Audience &amp; discovery</h2>
+    </div>`;
+  const panel = asyncPanel(breakdownsState, { loadingText: "Asking Google for this URL's breakdowns…" });
+  if (panel) return `${head}${panel}`;
+
+  const data = breakdownsState.result;
+  if (!data) return head;
+  const cards = (data.breakdowns || []).map(renderBreakdownCard).join("");
+  return `
+    ${head}
+    ${renderSearchTypeStrip(data.search_types || [])}
+    <h3>Who arrived and from where</h3>
+    <div class="url-inspector__breakdowns">${cards}</div>`;
+}
+
+function renderBreakdownCard(breakdown) {
+  const meta = SOURCE_STATE_META[breakdown.state.state] || SOURCE_STATE_META.no_data;
+  const sourceTag = breakdown.source === "gsc" ? "Search Console" : "GA4";
+  const scopeTag = breakdown.scope ? ` · <code>${escapeHtml(breakdown.scope)}</code>` : "";
+  if (breakdown.state.state !== "has_data") {
+    return `
+      <div class="url-inspector__breakdown">
+        <h3>${escapeHtml(breakdown.label)}</h3>
+        <p class="url-inspector__breakdown-meta">${escapeHtml(sourceTag)}${scopeTag}</p>
+        <div class="state-panel state-panel--compact ${meta.tone}">
+          ${icon(meta.icon, "icon icon--tiny")}<p>${escapeHtml(breakdown.state.detail || meta.label)}</p>
+        </div>
+        ${breakdown.note ? `<p class="url-inspector__note">${escapeHtml(breakdown.note)}</p>` : ""}
+      </div>`;
+  }
+  const metrics = breakdown.rows[0]?.metrics || [];
+  return `
+    <div class="url-inspector__breakdown">
+      <h3>${escapeHtml(breakdown.label)}</h3>
+      <p class="url-inspector__breakdown-meta">${escapeHtml(sourceTag)}${scopeTag}</p>
+      <div class="url-inspector__table-scroll">
+        <table class="metric-table url-inspector__series-table">
+          <thead>
+            <tr>
+              <th>${breakdown.dimensions.map((d) => escapeHtml(dimensionLabel(d))).join(" / ")}</th>
+              ${metrics.map((m) => `<th>${escapeHtml(metricLabel(m.metric))}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${breakdown.rows.map((row) => `
+              <tr>
+                <td class="url-inspector__wrap">${escapeHtml(row.keys.map((k) => k || "(not set)").join(" / "))}</td>
+                ${row.metrics.map((m) => `<td class="${m.value === null ? "metric-null" : ""}">${formatMetricValue(m.unit, m.value)}</td>`).join("")}
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      ${breakdown.truncated ? `<p class="url-inspector__note">Truncated at ${breakdown.row_limit} rows.</p>` : ""}
+      ${breakdown.note ? `<p class="url-inspector__note">${escapeHtml(breakdown.note)}</p>` : ""}
+    </div>`;
+}
+
+// Типи пошуку одним рядком, а не карткою на кожен: п'ять із шести майже
+// завжди порожні, і п'ять порожніх карток витіснили б із екрана те, що є.
+// Порожній тип лишається видимим — «сторінки немає в Картинках» це відповідь.
+function renderSearchTypeStrip(types) {
+  if (!types.length) return "";
+  return `
+    <h3>Where this page appears in Google</h3>
+    <p class="url-inspector__note">Search Console counts each surface separately. A surface with no rows means this page does not appear there — that is an answer, so it stays visible instead of disappearing.</p>
+    <div class="url-inspector__types" aria-label="Impressions by search type">
+      ${types.map((type) => {
+        const values = Object.fromEntries(type.metrics.map((m) => [m.metric, m.value]));
+        const empty = values.impressions === null || values.impressions === undefined;
+        return `
+          <div class="url-inspector__type ${empty ? "url-inspector__type--empty" : ""}">
+            <span class="url-inspector__type-label">${escapeHtml(SEARCH_TYPE_LABELS[type.search_type] || type.search_type)}</span>
+            <span class="url-inspector__type-value">${empty ? "—" : `${formatMetricValue("count", values.impressions)} impr.`}</span>
+            <span class="url-inspector__type-sub">${empty ? "not shown here" : `${formatMetricValue("count", values.clicks)} clicks`}</span>
+          </div>`;
+      }).join("")}
+    </div>`;
+}
+
+// --- Google: index status (sidebar) --------------------------------------------
+
+function renderIndexStatus() {
+  const busy = indexState.loading;
+  const head = `
+    <div class="url-inspector__section-head">
+      <h2 id="ui-index-heading">Index status</h2>
+      <button type="button" class="button button--quiet button--small" data-action="check-index" ${busy ? "disabled" : ""}>
+        ${icon(busy ? "loader-2" : "search", busy ? "icon icon--tiny icon--spin" : "icon icon--tiny")}
+        <span>${busy ? "Checking…" : indexState.result ? "Recheck" : "Check now"}</span>
+      </button>
+    </div>
+    <div id="ui-index-body">${renderIndexBody()}</div>`;
+  return head;
+}
+
+function renderIndexBody() {
+  if (indexState.loading) {
+    return `<p class="url-inspector__note">Asking Search Console's URL Inspection API — this one takes about 7 seconds.</p>`;
+  }
+  const panel = asyncPanel(indexState, { loadingText: "Checking…" });
+  if (panel) return panel;
+  const data = indexState.result;
+  if (!data) {
+    return `<p class="url-inspector__note">Search Console's own answer to "is this page indexed": coverage state, last crawl, robots.txt, the canonical Google picked, and rich results. Not fetched automatically — it costs ~7s per URL and Google's quota for it is daily.</p>`;
+  }
+
+  const rows = [
+    ["Verdict", data.verdict, INDEX_VERDICT_TONES[data.verdict || ""] || ""],
+    ["Coverage", data.coverage_state, ""],
+    ["Indexing", data.indexing_state, data.indexing_state && data.indexing_state !== "INDEXING_ALLOWED" ? "ui-tone-danger" : ""],
+    ["robots.txt", data.robots_txt_state, data.robots_txt_state && data.robots_txt_state !== "ALLOWED" ? "ui-tone-danger" : ""],
+    ["Fetch", data.page_fetch_state, data.page_fetch_state && data.page_fetch_state !== "SUCCESSFUL" ? "ui-tone-warning" : ""],
+    ["Crawled as", data.crawled_as, ""],
+    ["Last crawl", data.last_crawl_time ? formatTimestamp(data.last_crawl_time) : null, ""],
+    ["Mobile usability", data.mobile_usability_verdict, ""],
+    ["Rich results", data.rich_results_verdict, ""],
+  ];
+
+  return `
+    <dl class="url-inspector__kv">
+      ${rows.map(([label, value, tone]) => `
+        <dt>${escapeHtml(label)}</dt>
+        <dd class="${value === null || value === undefined ? "metric-null" : escapeHtml(tone)}">${value === null || value === undefined ? "Google didn't say" : escapeHtml(String(value))}</dd>
+      `).join("")}
+    </dl>
+    ${renderCanonicalBlock(data)}
+    ${data.rich_result_types?.length
+      ? `<p class="url-inspector__note"><strong>Detected:</strong> ${data.rich_result_types.map((r) => `${escapeHtml(r.rich_result_type)} (${r.items})`).join(", ")}</p>`
+      : ""}
+    ${data.mobile_usability_issues?.length
+      ? `<ul class="url-inspector__issues">${data.mobile_usability_issues.map((issue) => `<li>${escapeHtml(issue)}</li>`).join("")}</ul>`
+      : ""}
+    ${data.referring_urls?.length
+      ? `<h3>Internal links Google knows</h3>
+         <ul class="url-inspector__links">${data.referring_urls.map((link) => `<li><a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link)}</a></li>`).join("")}</ul>`
+      : ""}
+    ${renderSitemapsBlock(data)}
+    ${data.inspection_result_link
+      ? `<p class="url-inspector__note"><a href="${escapeHtml(data.inspection_result_link)}" target="_blank" rel="noopener noreferrer">Open in Search Console</a></p>`
+      : ""}`;
+}
+
+function renderCanonicalBlock(data) {
+  if (data.canonical_mismatch === null || data.canonical_mismatch === undefined) {
+    return `<p class="url-inspector__note metric-null">Canonical: Google didn't report both sides, so this is unknown — not a match.</p>`;
+  }
+  if (!data.canonical_mismatch) {
+    return `<p class="url-inspector__note"><span class="url-inspector__badge ui-tone-success">${icon("circle-check", "icon icon--tiny")}<span>Canonical agrees</span></span></p>`;
+  }
+  return `
+    <div class="state-panel state-panel--compact ui-tone-warning">
+      ${icon("alert-triangle")}
+      <div>
+        <p><strong>Google picked a different canonical.</strong></p>
+        <p>Google: <span translate="no">${escapeHtml(data.google_canonical || "—")}</span></p>
+        <p>Page declares: <span translate="no">${escapeHtml(data.user_canonical || "—")}</span></p>
+      </div>
+    </div>`;
+}
+
+function renderSitemapsBlock(data) {
+  const state = data.sitemaps_state;
+  if (!state) return "";
+  if (state.state !== "has_data") {
+    const meta = SOURCE_STATE_META[state.state] || SOURCE_STATE_META.no_data;
+    return `<p class="url-inspector__note ${escapeHtml(meta.tone)}">Sitemaps: ${escapeHtml(state.detail || meta.label)}</p>`;
+  }
+  return `
+    <h3>Sitemaps</h3>
+    ${data.sitemap_membership?.length
+      ? `<p class="url-inspector__note">This URL is listed in: ${data.sitemap_membership.map(escapeHtml).join(", ")}</p>`
+      : ""}
+    <ul class="url-inspector__links">
+      ${data.sitemaps.map((sitemap) => `
+        <li>
+          <span translate="no">${escapeHtml(sitemap.path)}</span>
+          <small>${sitemap.contents.map((c) => `${escapeHtml(c.type)}: ${c.submitted === null ? "—" : numberFormatter.format(c.submitted)} submitted`).join(" · ")}
+          ${sitemap.errors ? ` · <span class="ui-tone-danger">${sitemap.errors} errors</span>` : ""}
+          ${sitemap.warnings ? ` · <span class="ui-tone-warning">${sitemap.warnings} warnings</span>` : ""}
+          ${sitemap.last_downloaded ? ` · read ${escapeHtml(formatTimestamp(sitemap.last_downloaded))}` : ""}</small>
+        </li>`).join("")}
+    </ul>
+    <p class="url-inspector__note">Search Console's API no longer reports how many of those were indexed, so that number is deliberately absent rather than shown as zero.</p>`;
+}
+
+function renderIndexStatusInPlace() {
+  const button = root?.querySelector('[data-action="check-index"]');
+  if (button) {
+    button.disabled = indexState.loading;
+    button.innerHTML = `
+      ${icon(indexState.loading ? "loader-2" : "search", indexState.loading ? "icon icon--tiny icon--spin" : "icon icon--tiny")}
+      <span>${indexState.loading ? "Checking…" : indexState.result ? "Recheck" : "Check now"}</span>`;
+  }
+  const body = root?.querySelector("#ui-index-body");
+  if (body) body.innerHTML = renderIndexBody();
+}
+
+// --- Google: shared bits -------------------------------------------------------
+
+function renderMetricTiles(metrics, keys) {
+  const byKey = Object.fromEntries((metrics || []).map((m) => [m.metric, m]));
+  const tiles = keys.map((key) => byKey[key]).filter(Boolean);
+  if (!tiles.length) return "";
+  return `
+    <div class="url-inspector__tiles">
+      ${tiles.map((m) => `
+        <div class="url-inspector__tile">
+          <span class="url-inspector__tile-label">${escapeHtml(metricLabel(m.metric))}</span>
+          <strong class="url-inspector__tile-value ${m.value === null ? "metric-null" : ""}">${formatMetricValue(m.unit, m.value)}</strong>
+        </div>`).join("")}
+    </div>`;
+}
+
+function metricLabel(key) {
+  return METRIC_LABELS[key] || key;
+}
+
+function dimensionLabel(key) {
+  const labels = {
+    device: "Device",
+    country: "Country",
+    query: "Query",
+    searchAppearance: "Appearance",
+    date: "Date",
+    sessionDefaultChannelGroup: "Channel",
+    firstUserDefaultChannelGroup: "First-touch channel",
+    sessionSourceMedium: "Source / medium",
+    deviceCategory: "Device",
+    city: "City",
+    languageCode: "Language",
+    newVsReturning: "Visitor",
+    pageTitle: "Title",
+    eventName: "Event",
+    pagePath: "Page",
+  };
+  return labels[key] || key;
+}
+
+// Одиниця вирішує формат, а не сама метрика: частка `0..1` під `count`
+// намалювала б «CTR 0.06», а секунди — «694» без одиниці (task-88 units.py).
+function formatMetricValue(unit, value) {
+  if (value === null || value === undefined) return "—";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "—";
+  if (unit === "ratio") return `${percentFormatter.format(num)}`;
+  if (unit === "position") return positionFormatter.format(num);
+  if (unit === "seconds") return formatDuration(num);
+  return numberFormatter.format(num);
+}
+
+function formatDuration(seconds) {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  if (minutes < 60) return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function googleChartLabels(points) {
+  return points.map((point) => {
+    const start = new Date(`${point.period_start}T12:00:00`);
+    const end = new Date(`${point.period_end}T12:00:00`);
+    if (point.period_start === point.period_end) return shortDay.format(start);
+    return `${start.getDate()}–${shortDay.format(end)}`;
+  });
+}
+
+function googleChartOptions(points, unit) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? false : undefined,
+    interaction: { intersect: false, mode: "index" },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => {
+            const point = points[ctx.dataIndex];
+            const text = formatMetricValue(unit, point.value);
+            return point.provisional ? `${text} (provisional)` : text;
+          },
+          afterLabel: (ctx) => formatDateRange(points[ctx.dataIndex].period_start, points[ctx.dataIndex].period_end),
+        },
+      },
+    },
+    scales: {
+      x: { grid: { color: "#2a2a2a" }, ticks: { color: "#aaa6a0", maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+      // Позиція: менша = краща, тому вісь перевернута. Без цього графік
+      // «зростає» саме тоді, коли сторінка падає (PLAN §12: напрямок
+      // «краще» задає метрика, не знак числа).
+      y: {
+        reverse: unit === "position",
+        grid: { color: "#2a2a2a" },
+        ticks: {
+          color: "#aaa6a0",
+          // Chart.js за замовчуванням форматує підписи локаллю БРАУЗЕРА, і
+          // на не-англійській машині вісь малює «0,9» посеред англомовного
+          // UI. Формат мусить бути той самий, що в тайлах і таблицях —
+          // одна метрика форматується однаково скрізь (AGENTS.md §5).
+          callback: (value) => formatMetricValue(unit, value),
+        },
+      },
+    },
+  };
+}
+
+function googleChartDataset(points) {
+  return {
+    borderColor: "#ff4a17",
+    backgroundColor: "#ff4a17",
+    borderWidth: 2,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    // Провізорні точки — порожнім колом: значення справжнє, але доба ще не
+    // закрита, і малювати його як повноцінне означало б показати «падіння»,
+    // якого нема.
+    pointStyle: points.map((point) => (point.provisional ? "circle" : "circle")),
+    pointBackgroundColor: points.map((point) => (point.provisional ? "#0e0e0e" : "#ff4a17")),
+    spanGaps: false,
+    data: points.map((point) => (point.value === null ? null : Number(point.value))),
+  };
+}
+
+function renderGoogleGscChart() {
+  googleGscChart?.destroy();
+  googleGscChart = null;
+  const canvas = root?.querySelector("#ui-g-gsc-canvas");
+  const series = googleState.result?.gsc?.series?.[current.gMetricGsc];
+  if (!canvas || !series?.points?.length || !window.Chart) return;
+  googleGscChart = new window.Chart(canvas, {
+    type: "line",
+    data: { labels: googleChartLabels(series.points), datasets: [googleChartDataset(series.points)] },
+    options: googleChartOptions(series.points, series.unit),
+  });
+}
+
+function renderGoogleGa4Chart() {
+  googleGa4Chart?.destroy();
+  googleGa4Chart = null;
+  const canvas = root?.querySelector("#ui-g-ga4-canvas");
+  const series = googleState.result?.ga4?.series?.[current.gMetricGa4];
+  if (!canvas || !series?.points?.length || !window.Chart) return;
+  googleGa4Chart = new window.Chart(canvas, {
+    type: "line",
+    data: { labels: googleChartLabels(series.points), datasets: [googleChartDataset(series.points)] },
+    options: googleChartOptions(series.points, series.unit),
   });
 }
 
@@ -863,6 +1751,30 @@ function wireControls() {
       return;
     }
 
+    const windowButton = event.target.closest('[data-action="window"]');
+    if (windowButton) {
+      current.window = windowButton.dataset.value;
+      replaceUrlInspectorHash({ u: current.url, g: current.granularity, w: current.window });
+      // Перемальовуємо ті самі секції в стан завантаження й тягнемо обидві
+      // швидкі хвилі заново — вікно змінює і серію, і кожен зріз.
+      await Promise.all([loadGoogleCore(), loadBreakdowns()]);
+      return;
+    }
+
+    const googleMetricButton = event.target.closest('[data-action="g-metric"]');
+    if (googleMetricButton) {
+      const seriesId = googleMetricButton.dataset.series;
+      if (seriesId === "gsc") current.gMetricGsc = googleMetricButton.dataset.value;
+      if (seriesId === "ga4") current.gMetricGa4 = googleMetricButton.dataset.value;
+      renderGoogleSections();
+      return;
+    }
+
+    if (event.target.closest('[data-action="check-index"]')) {
+      await loadIndexStatus();
+      return;
+    }
+
     const metricButton = event.target.closest('[data-action="metric"]');
     if (metricButton) {
       const seriesId = metricButton.dataset.series;
@@ -900,6 +1812,19 @@ function wireControls() {
     // backdrop area — closing on it is the expected click-outside-to-close.
     if (event.target.id === "ui-shot-dialog") {
       event.target.close();
+    }
+  });
+
+  // Фільтр таблиці запитів — чисто клієнтський: усі рядки вже в DOM, і
+  // ходити за ними в Google на кожну літеру означало б палити квоту заради
+  // того, що браузер робить безкоштовно.
+  root.addEventListener("input", (event) => {
+    const input = event.target.closest("#ui-query-filter");
+    if (!input) return;
+    const needle = input.value.trim().toLowerCase();
+    const rows = root.querySelectorAll("#ui-query-table tbody tr");
+    for (const row of rows) {
+      row.hidden = needle !== "" && !(row.dataset.query || "").includes(needle);
     }
   });
 

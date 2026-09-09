@@ -3078,6 +3078,47 @@ export async function runUrlInspectorLive(url, { withSchema = false } = {}) {
   );
 }
 
+// Direct Google API panels (task-88) — three more calls, split by MEASURED
+// latency rather than by topic, so each group paints as soon as its own
+// budget allows instead of every panel waiting for the slowest:
+//
+//   /url-inspector/google             0.9-1.1s  series, page queries, conversions
+//   /url-inspector/google/breakdowns  0.8s      every dimension slice
+//   /url-inspector/google/realtime    0.5s      active users right now
+//   /url-inspector/index-status       6.8s      URL Inspection API — opt-in only
+//
+// A 409 here means "this client has no Google integration", not a failure:
+// the caller turns it into that panel's own `not_configured` state and keeps
+// the rest of the page. Request keys stay explicit named purposes so
+// switching the window cancels the previous fetch instead of racing it.
+
+export async function getUrlInspectorGoogle(url, { window: win } = {}) {
+  const params = new URLSearchParams({ url });
+  if (win) params.set("window", win);
+  return request(`/url-inspector/google?${params}`, {}, "url-inspector-google");
+}
+
+export async function getUrlInspectorGoogleBreakdowns(url, { window: win } = {}) {
+  const params = new URLSearchParams({ url });
+  if (win) params.set("window", win);
+  return request(
+    `/url-inspector/google/breakdowns?${params}`, {}, "url-inspector-google-breakdowns",
+  );
+}
+
+export async function getUrlInspectorRealtime(url) {
+  const params = new URLSearchParams({ url });
+  return request(`/url-inspector/google/realtime?${params}`, {}, "url-inspector-realtime");
+}
+
+export async function runUrlIndexStatus(url) {
+  return request(
+    "/url-inspector/index-status",
+    { method: "POST", body: JSON.stringify({ url }) },
+    "url-inspector-index-status",
+  );
+}
+
 // Type-ahead while the operator types in the header search field — client
 // homepage suggestions before a site resolves, that site's own sitemap
 // pages once it does. `requestKey` is per-call (not a fixed constant) so a
