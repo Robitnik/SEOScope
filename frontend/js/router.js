@@ -47,8 +47,28 @@ const ARCHIVE_CAPTURE_ROUTE = /^#\/archive\/capture/;
 const ARCHIVE_ROUTE = /^#\/archive/;
 // URL Inspector (task-61): reached from the header search field on every
 // route, not a nav tab — top-level, no client-id segment, same shape as
-// Trends/Monitor/Archive above. The URL being inspected lives in `u=`.
+// Trends/Monitor/Archive above.
+//
+// Its real address is a server-backed PATH, not a hash (task-88 follow-up,
+// same move `ARCHIVE_VIEW_PATH_RE` made): `/url/<the url being inspected>`,
+// raw, not percent-encoded. `.+` is greedy because the inspected url has
+// slashes of its own. Matched against `location.pathname` BEFORE any hash
+// parsing, since a browser landing on this path carries whatever hash the
+// PREVIOUS page happened to leave behind.
+//
+// The two view options (`g` granularity, `w` window) live in the FRAGMENT,
+// not the query: a `?` on this address belongs to the INSPECTED url — some
+// clients' real pages are query-string pages (LAXTON's `?taxonomy=…`) — and
+// one rule with no exceptions beats two rules that look alike.
+//
+// The old `#/url?u=…` hash still RESOLVES here, so existing links and
+// bookmarks keep working; `url-inspector.js` rewrites the address to the
+// path form on load, exactly as `archive-viewer.js` canonicalizes its own.
+// Nothing WRITES that shape any more, and there is deliberately no builder
+// left for it — an exported `buildUrlInspectorHash` would be a standing
+// invitation to reintroduce the address we just moved away from.
 const URL_INSPECTOR_ROUTE = /^#\/url(?:$|[/?])/;
+const URL_INSPECTOR_PATH_RE = /^\/url\/(.+)$/;
 // Адмінка користувачів (task-71) — верхньорівнева сторінка, доступна лише
 // адміну. Справжня межа безпеки лишається на сервері (403 на
 // `/api/v1/admin/*` для будь-кого, хто не адмін, незалежно від фронта) —
@@ -86,6 +106,20 @@ export function parseRoute() {
     }
     const query = new URLSearchParams({ snapshot: decodeURIComponent(snapshotId), url, ts });
     return { name: "archive-view", query };
+  }
+  const urlPathMatch = location.pathname.match(URL_INSPECTOR_PATH_RE);
+  if (urlPathMatch) {
+    // `location.pathname` is already percent-DECODED by the browser, so a
+    // url written raw arrives raw and one written encoded arrives decoded —
+    // both land on the same value without a second decode pass here (a
+    // second one would corrupt a url whose own path legitimately contains
+    // `%2F`).
+    const inspected = `${urlPathMatch[1]}${location.search}`;
+    // Fragment carries the view options; it is `#g=week&w=90d`, with no
+    // `#/route?` prefix, so it is parsed whole rather than split on `?`.
+    const params = new URLSearchParams((location.hash || "").slice(1));
+    params.set("u", inspected);
+    return { name: "url-inspector", query: params };
   }
   const hash = location.hash || "";
   const query = new URLSearchParams(hash.split("?")[1] || "");
@@ -244,17 +278,28 @@ export function buildArchiveCaptureHash(params = {}) {
   return buildHash("#/archive/capture", params);
 }
 
-// URL Inspector (task-61) — `params` always carries `u` (the URL being
-// inspected); `g` (granularity of the stored-data series) and `w` (the
-// direct-Google-API window, task-88) are optional and persisted the same way.
-export function buildUrlInspectorHash(params = {}) {
-  return buildHash("#/url", params);
+// URL Inspector (task-61 + task-88 follow-up). The inspected url identifies
+// the page and goes in the PATH, raw; `g`/`w` are view state and go in the
+// fragment. See the URL_INSPECTOR_PATH_RE comment for why the split is that
+// way round and not the obvious one.
+export function buildUrlInspectorPath(url, params = {}) {
+  const options = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") options.set(key, value);
+  }
+  const fragment = options.toString();
+  // The url is placed verbatim: it already IS a url, and percent-encoding it
+  // would only make the address unreadable in a chat message — the one place
+  // these links actually get shared.
+  return `/url/${url}${fragment ? `#${fragment}` : ""}`;
 }
 
-export function replaceUrlInspectorHash(params) {
-  history.replaceState(
-    null, "", `${location.pathname}${location.search}${buildUrlInspectorHash(params)}`
-  );
+// Persists view state without a history entry per click, and — when the page
+// was reached through the legacy hash — upgrades the address to the path form
+// in the same call. `replaceState` never fires `hashchange`, so this cannot
+// loop back into the listener that reloads on navigation.
+export function replaceUrlInspectorAddress({ u, ...options }) {
+  history.replaceState(null, "", buildUrlInspectorPath(u, options));
 }
 
 // Reports (task-43) — portfolio history (like Trends/Monitor) and one run's
@@ -546,14 +591,14 @@ async function activate() {
     allRoots.filter((el) => el !== urlInspectorRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     urlInspectorRoot?.removeAttribute("hidden");
-    const { initUrlInspectorPage } = await import("./url-inspector.js?v=20260909-t88b");
+    const { initUrlInspectorPage } = await import("./url-inspector.js?v=20260909-t88c");
     await initUrlInspectorPage(route.query);
   } else if (route.name === "client") {
     dashboardView?.setAttribute("hidden", "");
     allRoots.filter((el) => el !== clientRoot).forEach((el) => el?.setAttribute("hidden", ""));
     dashboardChrome.forEach((el) => el?.setAttribute("hidden", ""));
     clientRoot?.removeAttribute("hidden");
-    const { initClientPage } = await import("./client-page.js?v=20260909-t89");
+    const { initClientPage } = await import("./client-page.js?v=20260909-t89c");
     initClientPage(route.clientId, route.query);
   } else {
     allRoots.forEach((el) => el?.setAttribute("hidden", ""));
@@ -723,7 +768,10 @@ function initUrlSearch() {
     if (error) error.textContent = "";
     pushUrlSearchHistory(raw);
     closeList();
-    location.hash = buildUrlInspectorHash({ u: raw });
+    // A real path change, so a real navigation — which costs exactly what
+    // today's hash navigation already costs: this app reloads on every
+    // `hashchange` anyway (see the listener above).
+    location.assign(buildUrlInspectorPath(raw));
   }
 
   form.addEventListener("submit", (event) => {

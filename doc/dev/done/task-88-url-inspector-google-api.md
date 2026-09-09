@@ -531,7 +531,8 @@ docker compose exec api poetry run ruff check app/urlinspector tests/unit/urlins
 docker compose exec api poetry run mypy app                              # чисто, 327 файлів
 ```
 
-**Живо в UI** — `http://localhost:6524/#/url?u=https%3A%2F%2Fhearwellservices.com%2Fabout-us%2Fjessica-m-frankel%2F`:
+**Живо в UI** — `http://localhost:6524/url/https://hearwellservices.com/about-us/jessica-m-frankel/`
+(адреса стала реальним шляхом замість хеша — див. окремий комміт нижче за текстом):
 
 - вгорі має бути **Search performance** з перемикачем вікна (28 days / 90 days / 12 months / 16 months), тайлами (Clicks 3 · Impressions 39 · CTR 7.69% · Avg. position 8.9) і бейджем `GSC ↔ GA4 AGREE`;
 - **Page queries** — реальні запити сторінки; на блоговій сторінці (`/blog/hearing-aid-dome-size-chart-tips-for-the-right-fit/`) має бути «493 queries» і рядок «Showing the top 200 of 493»;

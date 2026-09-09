@@ -19,8 +19,8 @@ import {
   getUrlInspector, runUrlInspectorLive, getUrlScreenshots, captureUrlScreenshots,
   getUrlInspectorGoogle, getUrlInspectorGoogleBreakdowns, getUrlInspectorRealtime,
   runUrlIndexStatus, isAbortError,
-} from "./api.js?v=20260909-t88";
-import { replaceUrlInspectorHash } from "./router.js?v=20260909-t88";
+} from "./api.js?v=20260909-t88c";
+import { replaceUrlInspectorAddress } from "./router.js?v=20260909-t88c";
 import { escapeHtml, formatDateRange, formatFileSize, formatTimestamp, icon } from "./formatters.js?v=20260821-spin3";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
 
@@ -230,6 +230,12 @@ export async function initUrlInspectorPage(query) {
 
   root.innerHTML = shell();
   wireControls();
+  // Прийшли старим хешем `#/url?u=…`? Переписуємо адресу на канонічний шлях,
+  // не додаючи запису в історію — той самий крок, що робить
+  // `archive-viewer.js` для свого маршруту. Посилання з чатів і закладки
+  // лишаються робочими, але адреса в рядку стає тією, якою її варто
+  // копіювати далі.
+  replaceUrlInspectorAddress({ u: url, g: granularity, w: win });
   await load();
   // Runs once per URL, right after the stored data is in — the operator
   // asked for the live check to happen automatically rather than wait for
@@ -1760,7 +1766,7 @@ function wireControls() {
     const granularityButton = event.target.closest('[data-action="granularity"]');
     if (granularityButton) {
       current.granularity = granularityButton.dataset.value;
-      replaceUrlInspectorHash({ u: current.url, g: current.granularity });
+      replaceUrlInspectorAddress({ u: current.url, g: current.granularity, w: current.window });
       root.querySelector("#ui-header")?.setAttribute("aria-busy", "true");
       root.querySelector("#ui-body")?.setAttribute("aria-busy", "true");
       await load();
@@ -1770,7 +1776,7 @@ function wireControls() {
     const windowButton = event.target.closest('[data-action="window"]');
     if (windowButton) {
       current.window = windowButton.dataset.value;
-      replaceUrlInspectorHash({ u: current.url, g: current.granularity, w: current.window });
+      replaceUrlInspectorAddress({ u: current.url, g: current.granularity, w: current.window });
       // Перемальовуємо ті самі секції в стан завантаження й тягнемо обидві
       // швидкі хвилі заново — вікно змінює і серію, і кожен зріз.
       await Promise.all([loadGoogleCore(), loadBreakdowns()]);
