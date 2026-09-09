@@ -9,7 +9,8 @@
 // A pure render module (AGENTS §12: fetching/normalizing stay in
 // `client-page.js`'s loader, this file only turns a `MonthlyTableDTO` into
 // markup and wires its own controls) — same shape as
-// `reporting-ninja-panel.js::renderReportingNinjaPanel`.
+// `ga4-panel.js::renderGa4Panel` (renamed from `reporting-ninja-panel.js`
+// by task-89 §6.1).
 import { escapeHtml, formatTimestamp, icon, statusIcon } from "./formatters.js?v=20260821-spin3";
 
 const _countFormatter = new Intl.NumberFormat("en-US", { useGrouping: false });

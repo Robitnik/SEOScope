@@ -34,7 +34,7 @@ def _row(value: str, *, clicks=10, impressions=100, quality=Quality.complete, ra
     )
 
 
-def _seed(db, *, slug: str = "acme", rows=None, truncated=False):
+def _seed(db, *, slug: str = "acme", rows=None, truncated=False, provenance=None):
     clients = ClientRepository(db)
     client = clients.create(
         name="Acme", slug=slug, domain=f"{slug}.com", timezone="America/New_York"
@@ -53,6 +53,7 @@ def _seed(db, *, slug: str = "acme", rows=None, truncated=False):
         source_mode=SourceMode.browser,
         observed_at=datetime.now(UTC),
         quality=Quality.truncated if truncated else Quality.complete,
+        **({"provenance": provenance} if provenance is not None else {}),
     )
     periods = resolve_periods(
         PeriodKind.week, ANCHOR, tz=client.timezone, mode=ComparisonMode.closed
@@ -80,6 +81,19 @@ def test_page_analytics_returns_rows_sorted_by_clicks(client, db):
     assert [r["dimension_value"] for r in body["rows"]] == ["/b", "/a"]
     assert body["total_rows_available"] == 2
     assert body["truncated"] is False
+
+
+def test_page_analytics_transport_reads_nested_dimensions_shape(client, db):
+    """The page/query endpoints are always CURRENT-role (no `role` param),
+    whose snapshot nests dimension info under `"dimensions"`
+    (`app/jobs/runner.py`) — task-89 §5.2."""
+    client_id, _periods = _seed(
+        db, rows=[_row("/a", clicks=5)],
+        provenance={"dimensions": {"attempted": True, "transport": "google_api"}},
+    )
+    response = client.get(f"/api/v1/clients/{client_id}/analytics/pages?anchor=2026-01-12")
+    assert response.status_code == 200
+    assert response.json()["transport"] == "google_api"
 
 
 def test_query_analytics_scoped_separately_from_pages(client, db):
@@ -241,6 +255,123 @@ def test_reporting_ninja_dataset_supports_sort_search_and_previous_role(client, 
     assert body["period_start"] == periods.previous.start.isoformat()
     assert body["rows"][0]["dimension_value"] == "Organic Search"
     assert body["rows"][0]["metrics"]["sessions"] == "50"
+
+
+# ── task-89 §5.2: `transport` — two provenance shapes, both must resolve ────
+def test_reporting_ninja_dataset_transport_current_role_nested_shape(client, db):
+    """A `current`-role snapshot is the shared KPI snapshot: its provenance
+    nests dataset info under `"analytics_datasets"` (`app/jobs/runner.py`)."""
+    clients = ClientRepository(db)
+    created = clients.create(
+        name="Nested Transport", slug="nested-transport", domain="nested.example.com",
+        timezone="America/New_York",
+    )
+    job = JobRepository(db).create_run(
+        client_ids=[created.id], providers=[Provider.reporting_ninja],
+        period_kind=PeriodKind.week, comparison_mode=ComparisonMode.closed,
+        anchor_date=date(2026, 1, 12),
+    )[0]
+    periods = resolve_periods(
+        PeriodKind.week, ANCHOR, tz=created.timezone, mode=ComparisonMode.closed
+    )
+    snapshot = SnapshotRepository(db).create_immutable(
+        job_id=job.id, client_id=created.id, provider=Provider.reporting_ninja,
+        source_mode=SourceMode.api, observed_at=datetime.now(UTC), quality=Quality.complete,
+        provenance={"analytics_datasets": {"attempted": True, "transport": "google_api"}},
+    )
+    AnalyticsDatasetRepository(db).bulk_insert(
+        snapshot_id=snapshot.id, client_id=created.id, provider=Provider.reporting_ninja,
+        period_start=periods.current.start, period_end=periods.current.end,
+        rows=[AnalyticsDatasetRowInput(
+            dataset_key="ga4_daily", dimension_key="date", dimension_value="2026-01-10",
+            metrics={"sessions": Decimal(10)}, quality=Quality.complete, rank=1,
+        )],
+    )
+    db.commit()
+
+    response = client.get(
+        f"/api/v1/clients/{created.id}/analytics/reporting-ninja/ga4_daily",
+        params={"anchor": "2026-01-12", "role": "current"},
+    )
+    assert response.status_code == 200
+    assert response.json()["transport"] == "google_api"
+
+
+def test_reporting_ninja_dataset_transport_previous_role_flat_shape(client, db):
+    """A `previous`-role snapshot is created separately, with a FLAT
+    provenance (no `"analytics_datasets"` wrapper) — `app/jobs/runner.py`."""
+    clients = ClientRepository(db)
+    created = clients.create(
+        name="Flat Transport", slug="flat-transport", domain="flat.example.com",
+        timezone="America/New_York",
+    )
+    job = JobRepository(db).create_run(
+        client_ids=[created.id], providers=[Provider.reporting_ninja],
+        period_kind=PeriodKind.week, comparison_mode=ComparisonMode.closed,
+        anchor_date=date(2026, 1, 12),
+    )[0]
+    periods = resolve_periods(
+        PeriodKind.week, ANCHOR, tz=created.timezone, mode=ComparisonMode.closed
+    )
+    snapshot = SnapshotRepository(db).create_immutable(
+        job_id=job.id, client_id=created.id, provider=Provider.reporting_ninja,
+        source_mode=SourceMode.api, observed_at=datetime.now(UTC), quality=Quality.complete,
+        provenance={"dataset": "analytics_datasets", "period_role": "previous",
+                    "transport": "google_api"},
+    )
+    AnalyticsDatasetRepository(db).bulk_insert(
+        snapshot_id=snapshot.id, client_id=created.id, provider=Provider.reporting_ninja,
+        period_start=periods.previous.start, period_end=periods.previous.end,
+        rows=[AnalyticsDatasetRowInput(
+            dataset_key="ga4_daily", dimension_key="date", dimension_value="2026-01-03",
+            metrics={"sessions": Decimal(8)}, quality=Quality.complete, rank=1,
+        )],
+    )
+    db.commit()
+
+    response = client.get(
+        f"/api/v1/clients/{created.id}/analytics/reporting-ninja/ga4_daily",
+        params={"anchor": "2026-01-12", "role": "previous"},
+    )
+    assert response.status_code == 200
+    assert response.json()["transport"] == "google_api"
+
+
+def test_reporting_ninja_dataset_transport_absent_is_none(client, db):
+    """No `transport` key anywhere in provenance -> `None`, never guessed."""
+    clients = ClientRepository(db)
+    created = clients.create(
+        name="No Transport", slug="no-transport", domain="none.example.com",
+        timezone="America/New_York",
+    )
+    job = JobRepository(db).create_run(
+        client_ids=[created.id], providers=[Provider.reporting_ninja],
+        period_kind=PeriodKind.week, comparison_mode=ComparisonMode.closed,
+        anchor_date=date(2026, 1, 12),
+    )[0]
+    periods = resolve_periods(
+        PeriodKind.week, ANCHOR, tz=created.timezone, mode=ComparisonMode.closed
+    )
+    snapshot = SnapshotRepository(db).create_immutable(
+        job_id=job.id, client_id=created.id, provider=Provider.reporting_ninja,
+        source_mode=SourceMode.api, observed_at=datetime.now(UTC), quality=Quality.complete,
+    )
+    AnalyticsDatasetRepository(db).bulk_insert(
+        snapshot_id=snapshot.id, client_id=created.id, provider=Provider.reporting_ninja,
+        period_start=periods.current.start, period_end=periods.current.end,
+        rows=[AnalyticsDatasetRowInput(
+            dataset_key="ga4_daily", dimension_key="date", dimension_value="2026-01-10",
+            metrics={"sessions": Decimal(10)}, quality=Quality.complete, rank=1,
+        )],
+    )
+    db.commit()
+
+    response = client.get(
+        f"/api/v1/clients/{created.id}/analytics/reporting-ninja/ga4_daily",
+        params={"anchor": "2026-01-12", "role": "current"},
+    )
+    assert response.status_code == 200
+    assert response.json()["transport"] is None
 
 
 def test_gsc_daily_dataset_returns_exact_period_date_series(client, db):

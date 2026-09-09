@@ -1,5 +1,5 @@
 import { escapeHtml, icon } from "./formatters.js?v=20260821-spin3";
-import { formatUaNumber } from "./client-page.js?v=20260909-t89";
+import { formatUaNumber } from "./client-page.js?v=20260909-t89c";
 
 const DATASETS = {
   ga4_channels: { label: "Channels", dimension: "Channel", primary: "sessions" },
@@ -17,11 +17,26 @@ const METRIC_LABELS = {
 let dailyChart = null;
 let gbpChart = null;
 
-export function destroyReportingNinjaChart() {
+export function destroyGa4Chart() {
   dailyChart?.destroy();
   dailyChart = null;
   gbpChart?.destroy();
   gbpChart = null;
+}
+
+// task-89 §6.1: the eyebrow and every empty-state message used to name
+// "Reporting Ninja" unconditionally — true before the transport cutover
+// (task-83/89), a lie afterward. The API now echoes which transport
+// actually filled the matched snapshot (`AnalyticsDatasetResponseDTO
+// .transport`, read from `ProviderSnapshot.provenance_json`); `transport`
+// here is that value, `undefined`/`null`/`"reporting_ninja"` all meaning
+// "still Reporting Ninja" (today's reality for most cells pre-cutover).
+function ga4SourceLabel(transport) {
+  return transport === "google_api" ? "Google Analytics 4" : "Reporting Ninja · GA4";
+}
+
+function collectionVerb(transport) {
+  return transport === "google_api" ? "the next Google Analytics collection" : "the next Reporting Ninja collection";
 }
 
 function valueMarkup(value, metric) {
@@ -43,7 +58,7 @@ function kpiMarkup(summary, dashboardSupportsThisPeriod) {
     if (dashboardSupportsThisPeriod === false) {
       return `<div class="state-panel"><p><strong>KPI totals aren't available for this period.</strong><br>See the daily chart and table below for exact numbers.</p></div>`;
     }
-    return `<div class="state-panel"><p><strong>No GA4 KPI snapshot for this period.</strong><br>Run Reporting Ninja collection for this exact range.</p></div>`;
+    return `<div class="state-panel"><p><strong>No GA4 KPI snapshot for this period.</strong><br>Run a collection for this exact range.</p></div>`;
   }
   return `<div class="rn-kpi-grid">${metrics.map((metric) => {
     const delta = metric.delta_pct === null ? null : Number(metric.delta_pct);
@@ -56,11 +71,11 @@ function kpiMarkup(summary, dashboardSupportsThisPeriod) {
   }).join("")}</div>`;
 }
 
-function renderDailyChart(container, payload) {
-  destroyReportingNinjaChart();
+function renderDailyChart(container, payload, transport) {
+  destroyGa4Chart();
   const rows = payload?.rows || [];
   if (!rows.length) {
-    container.innerHTML = `<div class="state-panel"><p><strong>No daily GA4 series yet.</strong><br>It will appear after the next Reporting Ninja collection.</p></div>`;
+    container.innerHTML = `<div class="state-panel"><p><strong>No daily GA4 series yet.</strong><br>It will appear after ${collectionVerb(transport)}.</p></div>`;
     return;
   }
   const totals = (key) => rows.reduce((sum, row) => sum + Number(row.metrics?.[key] || 0), 0);
@@ -99,7 +114,7 @@ function renderDailyChart(container, payload) {
   });
 }
 
-function datasetTable(currentPayload, previousPayload, state) {
+function datasetTable(currentPayload, previousPayload, state, transport) {
   const definition = DATASETS[state.ga4Dataset];
   const previous = new Map((previousPayload?.rows || []).map((row) => [row.dimension_value, row]));
   const query = state.ga4Search.trim().toLocaleLowerCase("en-US");
@@ -113,7 +128,7 @@ function datasetTable(currentPayload, previousPayload, state) {
     <label class="search-field"><span class="visually-hidden">Search ${definition.label}</span>${icon("search")}<input id="rn-search" type="search" placeholder="Search ${definition.label.toLocaleLowerCase("en-US")}" value="${escapeHtml(state.ga4Search)}"></label>
   </div>`;
   if (!currentPayload?.period_start) {
-    return `${toolbar}<div class="state-panel"><p><strong>No ${definition.label.toLocaleLowerCase("en-US")} for this period.</strong><br>Collect Reporting Ninja to populate this dataset.</p></div>`;
+    return `${toolbar}<div class="state-panel"><p><strong>No ${definition.label.toLocaleLowerCase("en-US")} for this period.</strong><br>Run ${collectionVerb(transport)} to populate this dataset.</p></div>`;
   }
   if (!visible.length) {
     return `${toolbar}<div class="state-panel"><p><strong>No matching rows.</strong></p></div>`;
@@ -134,6 +149,10 @@ function sumRows(rows, key) {
   return (rows || []).reduce((sum, row) => sum + Number(row.metrics?.[key] || 0), 0);
 }
 
+// task-89 §6.3: unlike GA4/GSC, Business Profile has no direct-Google-API
+// path at all (no `business.manage` scope on this project's token) — this
+// eyebrow's "Reporting Ninja" is not a temporary label to swap on cutover,
+// it is the only accurate answer for as long as this section exists.
 function gbpMarkup(gbp) {
   const locations = gbp?.locations?.rows || [];
   const searchTerms = gbp?.searchTerms?.rows || [];
@@ -192,16 +211,16 @@ function renderGbpChart(container, payload) {
   });
 }
 
-export function renderReportingNinjaPanel(container, {
+export function renderGa4Panel(container, {
   summary, daily, currentDataset, previousDataset, gbp, state, onChange,
-  dashboardSupportsThisPeriod = true,
+  dashboardSupportsThisPeriod = true, transport,
 }) {
-  container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Reporting Ninja · GA4</p><h2>Traffic and conversions</h2></div><span class="status-label status-${summary?.state || "unavailable"}">${escapeHtml(summary?.state || "no data")}</span></div>
+  container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">${escapeHtml(ga4SourceLabel(transport))}</p><h2>Traffic and conversions</h2></div><span class="status-label status-${summary?.state || "unavailable"}">${escapeHtml(summary?.state || "no data")}</span></div>
     ${kpiMarkup(summary, dashboardSupportsThisPeriod)}
     <div class="rn-chart" id="rn-daily-chart"></div>
-    <div id="rn-dataset-table">${datasetTable(currentDataset, previousDataset, state)}</div>
+    <div id="rn-dataset-table">${datasetTable(currentDataset, previousDataset, state, transport)}</div>
     ${gbpMarkup(gbp)}`;
-  renderDailyChart(container.querySelector("#rn-daily-chart"), daily);
+  renderDailyChart(container.querySelector("#rn-daily-chart"), daily, transport);
   renderGbpChart(container.querySelector("#rn-gbp-chart"), gbp?.daily);
   container.querySelector("#rn-dataset")?.addEventListener("change", (event) => onChange({ ga4Dataset: event.target.value, ga4Search: "" }));
   let timer = null;
@@ -212,7 +231,7 @@ export function renderReportingNinjaPanel(container, {
   });
 }
 
-export function renderReportingNinjaError(container, message) {
-  destroyReportingNinjaChart();
-  container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">Reporting Ninja · GA4</p><h2>Traffic and conversions</h2></div></div><div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Failed to load GA4 analytics.</strong><br>${escapeHtml(message)}</p></div>`;
+export function renderGa4Error(container, message, transport) {
+  destroyGa4Chart();
+  container.innerHTML = `<div class="section-heading"><div><p class="eyebrow">${escapeHtml(ga4SourceLabel(transport))}</p><h2>Traffic and conversions</h2></div></div><div class="state-panel state-failed">${icon("wifi-off")}<p><strong>Failed to load GA4 analytics.</strong><br>${escapeHtml(message)}</p></div>`;
 }

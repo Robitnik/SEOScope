@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import Session
@@ -86,6 +86,23 @@ _GSC_NATIVE_DATASETS = frozenset({"gsc_search_types", "gsc_sitemaps"})
 
 def _dataset_provider(dataset_key: str) -> Provider:
     return Provider.gsc if dataset_key in _GSC_NATIVE_DATASETS else Provider.reporting_ninja
+
+
+def _snapshot_transport(provenance_json: dict[str, Any], nested_key: str) -> str | None:
+    """The transport that filled a snapshot's dataset/dimension rows
+    (task-89 §5.2) — found live while wiring this in: a `current`-role
+    snapshot is the shared KPI snapshot, whose provenance nests
+    dataset/dimension info under `nested_key` (`"analytics_datasets"` or
+    `"dimensions"`, `app/jobs/runner.py`); a `previous`-role snapshot is its
+    OWN, separately created snapshot whose provenance is flat instead — both
+    shapes are tried here rather than assuming one."""
+    nested = provenance_json.get(nested_key)
+    if isinstance(nested, dict):
+        value = nested.get("transport")
+        if value:
+            return str(value)
+    value = provenance_json.get("transport")
+    return str(value) if value else None
 
 
 def _text_metric(row: AnalyticsDatasetRow, key: str) -> str:
@@ -295,13 +312,15 @@ async def _get_dimension_analytics(
         )
         # task-89 §5.2: same transport lookup as the reporting-ninja dataset
         # endpoint — one snapshot per period, so the first row's snapshot
-        # speaks for the whole page.
+        # speaks for the whole page. This endpoint is always the CURRENT
+        # role (`_get_dimension_analytics` has no `role` param), whose
+        # provenance nests dimension info under `"dimensions"`
+        # (`app/jobs/runner.py`) — see `_snapshot_transport`.
         transport: str | None = None
         if rows:
             snapshot = s.get(ProviderSnapshot, rows[0].snapshot_id)
             if snapshot is not None:
-                raw_transport = snapshot.provenance_json.get("transport")
-                transport = str(raw_transport) if raw_transport else None
+                transport = _snapshot_transport(snapshot.provenance_json, "dimensions")
         return client, rows, total, periods.current.start, periods.current.end, transport
 
     result = await session.run_sync(_run)
@@ -510,13 +529,14 @@ async def get_reporting_ninja_dataset(
         )
         # task-89 §5.2: the matched snapshot's own transport, read straight
         # off `provenance_json` — every row in one `for_period()` answer
-        # shares one `snapshot_id` (one collection, one transport).
+        # shares one `snapshot_id` (one collection, one transport). `role`
+        # (current/previous) picks a DIFFERENT snapshot with a DIFFERENT
+        # provenance shape (`app/jobs/runner.py`) — see `_snapshot_transport`.
         transport: str | None = None
         if rows:
             snapshot = s.get(ProviderSnapshot, rows[0].snapshot_id)
             if snapshot is not None:
-                raw_transport = snapshot.provenance_json.get("transport")
-                transport = str(raw_transport) if raw_transport else None
+                transport = _snapshot_transport(snapshot.provenance_json, "analytics_datasets")
         if q:
             needle = q.strip().casefold()
             rows = [row for row in rows if needle in row.dimension_value.casefold()]

@@ -7,7 +7,7 @@ import { escapeHtml, formatTimestamp, icon, initials, isTerminal, MONITOR_SEVERI
 import { createAnalyticsTab } from "./analytics-tabs.js?v=20260821-spin3";
 import { renderAlertsBlock } from "./alerts-block.js?v=20260821-spin3";
 import { renderChart, destroyChart } from "./charts.js?v=20260821-spin3";
-import { destroyReportingNinjaChart, renderReportingNinjaError, renderReportingNinjaPanel } from "./reporting-ninja-panel.js?v=20260909-t89";
+import { destroyGa4Chart, renderGa4Error, renderGa4Panel } from "./ga4-panel.js?v=20260909-t89b";
 import { watchJob } from "./sse.js?v=20260821-spin3";
 
 const PERIODS = [
@@ -153,7 +153,7 @@ export async function initClientPage(clientId, query) {
   monthlyTable = null;
   pageInventorySummary = null;
   destroyChart();
-  destroyReportingNinjaChart();
+  destroyGa4Chart();
   current = { clientId, ...paramsFromQuery(query) };
   root.innerHTML = shell();
   analyticsTab = createAnalyticsTab({
@@ -239,12 +239,12 @@ function shell() {
       <section class="audit-section" id="cp-audit" aria-label="Technical SEO audit" aria-live="polite" aria-busy="true">
         ${sectionSkeleton({ label: "the technical audit", kpis: 4, rows: 5, columns: 3 })}
       </section>
-      <section class="rn-section" id="cp-reporting-ninja" aria-label="Reporting Ninja and GA4 analytics" aria-live="polite" aria-busy="true">
+      <section class="rn-section" id="cp-reporting-ninja" aria-label="GA4 analytics" aria-live="polite" aria-busy="true">
         ${sectionSkeleton({ label: "analytics", kpis: 4, chart: true, rows: 4, columns: 3 })}
       </section>
       <div id="cp-gsc-content">
       <section class="analytics-tabs" aria-label="Page and query analytics">
-        <div class="section-heading"><div><p class="eyebrow">Reporting Ninja · Search Console</p><h2>Organic search detail</h2></div></div>
+        <div class="section-heading"><div><p class="eyebrow" id="cp-gsc-eyebrow">Reporting Ninja · Search Console</p><h2>Organic search detail</h2></div></div>
         <div class="tablist" role="tablist" aria-label="Data breakdown">
           <button type="button" role="tab" id="cp-tab-page" aria-controls="cp-tabpanel" aria-selected="${String(current.tab === "page")}">${icon("file-text")}Pages</button>
           <button type="button" role="tab" id="cp-tab-query" aria-controls="cp-tabpanel" aria-selected="${String(current.tab === "query")}">${icon("search")}Queries</button>
@@ -739,11 +739,20 @@ async function loadPeriodData({ allowAutoLive = true } = {}) {
 
     analyticsTab.setData(rowsCurrent, rowsPrevious);
     analyticsTab.render();
+    // task-89 §6.1: same "say the real source" rule as the GA4 panel —
+    // `rowsCurrent.transport` (task-89 §5.2) names whichever transport
+    // actually filled this exact matched period.
+    const gscEyebrow = document.querySelector("#cp-gsc-eyebrow");
+    if (gscEyebrow) {
+      gscEyebrow.textContent = rowsCurrent?.transport === "google_api"
+        ? "Google Search Console"
+        : "Reporting Ninja · Search Console";
+    }
     renderAlertsBlock(document.querySelector("#cp-alerts"), alerts);
     settle("#cp-alerts");
     renderChart(document.querySelector("#cp-chart"), chart, current.period);
     if (ga4?.error) {
-      renderReportingNinjaError(document.querySelector("#cp-reporting-ninja"), ga4.error.message);
+      renderGa4Error(document.querySelector("#cp-reporting-ninja"), ga4.error.message, ga4?.transport);
     } else {
       renderGa4Data(ga4);
     }
@@ -1103,12 +1112,18 @@ async function loadReportingNinjaPeriodData() {
   return {
     summary, daily, currentDataset, previousDataset,
     dashboardSupportsThisPeriod,
+    // task-89 §6.1: `daily` (`ga4_daily`) is the panel's primary dataset —
+    // its own `transport` (from `AnalyticsDatasetResponseDTO`, task-89 §5.2)
+    // stands for the whole "Traffic and conversions" section, so the
+    // eyebrow/empty-state copy can say where THIS render's numbers actually
+    // came from instead of hardcoding "Reporting Ninja".
+    transport: daily?.transport,
     gbp: { daily: gbpDaily, locations: gbpLocations, searchTerms: gbpSearchTerms, reviews: gbpReviews },
   };
 }
 
 function renderGa4Data(data) {
-  renderReportingNinjaPanel(document.querySelector("#cp-reporting-ninja"), {
+  renderGa4Panel(document.querySelector("#cp-reporting-ninja"), {
     ...data,
     state: current,
     onChange(patch, options = { reload: true }) {
