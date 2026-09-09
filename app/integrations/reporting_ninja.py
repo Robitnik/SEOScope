@@ -26,6 +26,7 @@ from typing import Any, cast
 
 from app.integrations.google_api import (
     GOOGLE_API,
+    Ga4AdminClient,
     Ga4Client,
     Ga4Row,
     GoogleApiConfigError,
@@ -318,6 +319,48 @@ def query_ga4_daily_channels_via_google_api(
             },
         )
         for day in sorted(seen_days)
+    ]
+
+
+def _derive_ga4_key_events(
+    rows: list[Ga4Row], *, definition: dict[str, Any], role: PeriodRole, period: DateRange
+) -> list[AnalyticsDatasetValueResult]:
+    """`ga4_key_events` (task-89 §4.1) — the SAME `eventName` rows
+    `ga4_events` already fetched (`definition` is `_GA4_DATASETS["ga4_events"]`),
+    filtered to events with a real (non-`None`, non-zero) conversion count
+    and re-sorted by it. This is a different LENS on data already in hand,
+    never a second API call — `Total Conversions 100` becomes `Phone 29 /
+    purchase 20 / Email 9 / Insurance Form 1`, not a guess."""
+    conversions_field = definition["metrics"].get("conversions")
+    if conversions_field is None:
+        return []
+    ranked: list[tuple[str, dict[str, Decimal | None]]] = []
+    for row in rows:
+        name = str(row.dimensions.get(definition["dimension"]) or "").strip()
+        if not name:
+            continue
+        conversions = row.metrics.get(conversions_field)
+        if not conversions:  # None or 0 -> not a key event for this row
+            continue
+        metrics = {
+            canonical: row.metrics.get(ga4_field)
+            for canonical, ga4_field in definition["metrics"].items()
+        }
+        ranked.append((name, metrics))
+    ranked.sort(key=lambda item: item[1].get("conversions") or Decimal(0), reverse=True)
+    return [
+        AnalyticsDatasetValueResult(
+            dataset_key="ga4_key_events",
+            dimension_key=definition["dimension"],
+            dimension_value=name,
+            period_role=role,
+            period_start=period.start,
+            period_end=period.end,
+            metrics=metrics,
+            quality=Quality.complete,
+            rank=rank,
+        )
+        for rank, (name, metrics) in enumerate(ranked, start=1)
     ]
 
 
@@ -720,6 +763,7 @@ class ReportingNinjaAdapter:
         warnings: list[str] = []
         values: list[AnalyticsDatasetValueResult] = []
         completed = 0
+        key_events_datasets: list[str] = []
         # +1 dataset slot per period for the `ga4_daily_channels` pivot,
         # same accounting the RN path uses for `channel_steps` (plan §2.4).
         total_steps = (len(_GA4_DATASETS) + 1) * 2
@@ -819,6 +863,17 @@ class ReportingNinjaAdapter:
                         dataset_key=dataset_key, dimension_key=dimension,
                         role=role, period=period, rows=rows, definition=definition,
                     )
+                    # task-89 §4.1: `ga4_key_events` — the SAME `eventName`
+                    # rows `ga4_events` just fetched, filtered to events with
+                    # a real conversion count and re-sorted by it. Zero extra
+                    # API calls: a different lens on data already in hand.
+                    if dataset_key == "ga4_events":
+                        key_event_values = _derive_ga4_key_events(
+                            rows, definition=definition, role=role, period=period
+                        )
+                        if key_event_values:
+                            values.extend(key_event_values)
+                            key_events_datasets.append("ga4_key_events")
 
                 # task-44: Organic/Direct Conversions — the same two-dimension
                 # pivot the RN path uses, its own branch (plan §2.4/§3.2).
@@ -862,6 +917,24 @@ class ReportingNinjaAdapter:
                     for rank, (day, metrics) in enumerate(channels, start=1)
                 )
                 completed += 1
+
+            # task-89 §4.2: GA4 Admin API — property configuration, once per
+            # collection (not per role/dataset: this is not period data).
+            # A failure here is a warning, never a reason to lose the GA4
+            # datasets already collected above.
+            try:
+                property_info = Ga4AdminClient(session).property_info(account_id)
+            except GoogleApiError as exc:
+                warnings.append(
+                    f"GA4 Admin property info via google_api failed: {type(exc).__name__}"
+                )
+            else:
+                if property_info.time_zone and property_info.time_zone != context.timezone:
+                    warnings.append(
+                        f"GA4 property timezone ({property_info.time_zone}) differs from "
+                        f"this client's configured timezone ({context.timezone}) — daily "
+                        "buckets in GA4 rows are cut in the PROPERTY's timezone, not ours."
+                    )
         tracker.done("datasets_complete", message="GA4 datasets collected via Google API")
 
         if completed == 0:
@@ -879,7 +952,10 @@ class ReportingNinjaAdapter:
             provenance={
                 "transport": GOOGLE_API,
                 "integration": "ga4",
-                "datasets": [*_GA4_DATASETS.keys(), "ga4_daily_channels"],
+                "datasets": [
+                    *_GA4_DATASETS.keys(), "ga4_daily_channels",
+                    *dict.fromkeys(key_events_datasets),
+                ],
                 "property": account_id,
             },
         )
@@ -1274,7 +1350,19 @@ class ReportingNinjaAdapter:
         expected = (len(active_ga4_datasets) + channel_steps) * 2
         if cfg.get("gbp_locations"):
             expected += 7
-        if completed == 0:
+        if expected == 0:
+            # task-89 §3.5: `skip_trends_ga4=True` (transport=google_api) can
+            # leave this call with NOTHING assigned to it at all — every GA4
+            # dataset is collected by `_collect_datasets_google_api_trends`
+            # instead, and there is no GBP to fetch either. `completed == 0`
+            # here means "correctly did nothing", not "tried and failed", so
+            # it must never read as `unavailable` — `_merge_dataset_results`'
+            # worst-of-both-sides quality would otherwise drag a fully
+            # successful google_api collection down to `unavailable` (found
+            # live while generalizing the skip from `ga4_daily` alone to all
+            # six datasets).
+            quality = Quality.complete
+        elif completed == 0:
             quality = Quality.unavailable
         elif completed < expected:
             quality = Quality.partial

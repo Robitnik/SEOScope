@@ -45,6 +45,27 @@ class GscDailyRow:
 
 
 @dataclass(frozen=True)
+class SitemapEntry:
+    """One submitted sitemap, `GET .../sitemaps` (task-89 §4.5) — account
+    state, not a date-range metric: no `type`/dimensions to request, no
+    pagination (a site rarely has more than a handful of sitemaps).
+
+    `last_downloaded`/`last_submitted` are the API's own ISO-8601 strings,
+    kept raw here; the caller decides how to store them (task-89 turns them
+    into Unix-epoch `Decimal`s, since `AnalyticsDatasetValueResult.metrics`
+    is numeric-first everywhere else)."""
+
+    path: str
+    is_pending: bool
+    errors: int
+    warnings: int
+    last_downloaded: str | None
+    last_submitted: str | None
+    # {"web": (submitted, indexed), "image": (submitted, indexed), ...}
+    contents: dict[str, tuple[int | None, int | None]]
+
+
+@dataclass(frozen=True)
 class GscRow:
     """One row of an arbitrary-dimension Search Analytics query (task-89
     §3.2) — `keys[i]` lines up positionally with the `dimensions` the caller
@@ -170,6 +191,32 @@ class GscClient:
                 return
             start_row += row_limit
 
+    def sitemaps(self, site_url: str) -> list[SitemapEntry]:
+        """`GET .../sitemaps` — every sitemap submitted for this property
+        (task-89 §4.5). One GET, no pagination (see `SitemapEntry`)."""
+        path = f"{_GSC_API_BASE}/sites/{quote(site_url, safe='')}/sitemaps"
+        payload = self._session.get_json(path)
+        out: list[SitemapEntry] = []
+        for raw in payload.get("sitemap") or []:
+            contents: dict[str, tuple[int | None, int | None]] = {}
+            for item in raw.get("contents") or []:
+                content_type = str(item.get("type") or "").strip()
+                if not content_type:
+                    continue
+                contents[content_type] = (_int(item.get("submitted")), _int(item.get("indexed")))
+            out.append(
+                SitemapEntry(
+                    path=str(raw.get("path") or ""),
+                    is_pending=bool(raw.get("isPending", False)),
+                    errors=_int(raw.get("errors")) or 0,
+                    warnings=_int(raw.get("warnings")) or 0,
+                    last_downloaded=raw.get("lastDownloaded"),
+                    last_submitted=raw.get("lastSubmitted"),
+                    contents=contents,
+                )
+            )
+        return out
+
 
 def _num(value: object) -> Decimal | None:
     if value is None or value == "":
@@ -177,4 +224,13 @@ def _num(value: object) -> Decimal | None:
     try:
         return Decimal(str(value))
     except (InvalidOperation, ValueError):
+        return None
+
+
+def _int(value: object) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
         return None

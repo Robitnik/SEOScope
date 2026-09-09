@@ -33,7 +33,7 @@ from app.integrations.google_api.errors import (
     GoogleApiRateLimitError,
 )
 from app.integrations.google_api.ga4_client import Ga4Client, Ga4Row
-from app.integrations.google_api.gsc_client import GscClient, GscDailyRow, GscRow
+from app.integrations.google_api.gsc_client import GscClient, GscDailyRow, GscRow, SitemapEntry
 
 Transport = Literal["google_api", "reporting_ninja"]
 
@@ -59,6 +59,7 @@ __all__ = [
     "GscClient",
     "GscDailyRow",
     "GscRow",
+    "SitemapEntry",
     "Transport",
     "get_google_auth",
     "open_google_api_session",

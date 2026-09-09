@@ -44,6 +44,7 @@ from app.integrations.google_api import (
     GoogleApiError,
     GoogleApiPermissionError,
     GscClient,
+    SitemapEntry,
     open_google_api_session,
     resolve_transport,
 )
@@ -652,6 +653,23 @@ class GscAdapter:
                     for rank, row in enumerate(rows, start=1)
                 )
                 completed += 1
+
+            # task-89 §4.5: sitemap state — account-level, not date-ranged,
+            # so it is fetched once (not per role) and tagged under the
+            # current period the way every other GSC dataset is. A failure
+            # here is a warning, never a reason to lose `gsc_daily` (the
+            # primary dataset this method exists for).
+            sitemap_datasets: list[str] = []
+            try:
+                sitemap_values = _map_sitemaps(
+                    client.sitemaps(site_url), context.current
+                )
+            except GoogleApiError as exc:
+                warnings.append(f"GSC sitemaps via google_api failed: {type(exc).__name__}")
+            else:
+                values.extend(sitemap_values)
+                if sitemap_values:
+                    sitemap_datasets = ["gsc_sitemaps"]
         tracker.done(
             "datasets_complete", message="Search Console daily trend collected via Google API"
         )
@@ -671,7 +689,7 @@ class GscAdapter:
             provenance={
                 "transport": "google_api",
                 "integration": "search_console",
-                "datasets": ["gsc_daily"],
+                "datasets": ["gsc_daily", *sitemap_datasets],
                 "site_url": site_url,
             },
         )
@@ -952,6 +970,64 @@ def _gsc_data_through(client: GscClient, site_url: str, current: DateRange) -> d
     if not daily:
         return None
     return date.fromisoformat(daily[-1].date)
+
+
+def _epoch(value: str | None) -> Decimal | None:
+    """An API ISO-8601 timestamp -> Unix epoch seconds, so a "days ago" or
+    an actual date can be derived downstream without decaying the moment the
+    row is persisted (task-89 §4.5) — never re-serialized as a relative
+    string that would go stale between collections."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return Decimal(int(parsed.timestamp()))
+
+
+def _map_sitemaps(
+    entries: list[SitemapEntry], current: DateRange
+) -> list[AnalyticsDatasetValueResult]:
+    """`SitemapEntry` -> dataset rows (task-89 §4.5). Numeric-only metrics —
+    `AnalyticsDatasetRowDTO` in the API layer coerces every metric value to
+    `Decimal`, so text fields (the path itself, submission dates) live in
+    `dimension_value`/epoch seconds rather than as a raw string metric."""
+    return [
+        AnalyticsDatasetValueResult(
+            dataset_key="gsc_sitemaps",
+            dimension_key="sitemap_path",
+            dimension_value=entry.path,
+            period_role=PeriodRole.current,
+            period_start=current.start,
+            period_end=current.end,
+            metrics={
+                "errors": Decimal(entry.errors),
+                "warnings": Decimal(entry.warnings),
+                "is_pending": Decimal(1) if entry.is_pending else Decimal(0),
+                "last_downloaded_epoch": _epoch(entry.last_downloaded),
+                "last_submitted_epoch": _epoch(entry.last_submitted),
+                "submitted_web": (
+                    Decimal(entry.contents["web"][0])
+                    if "web" in entry.contents and entry.contents["web"][0] is not None
+                    else None
+                ),
+                "indexed_web": (
+                    Decimal(entry.contents["web"][1])
+                    if "web" in entry.contents and entry.contents["web"][1] is not None
+                    else None
+                ),
+                "submitted_image": (
+                    Decimal(entry.contents["image"][0])
+                    if "image" in entry.contents and entry.contents["image"][0] is not None
+                    else None
+                ),
+            },
+            quality=Quality.complete,
+            rank=rank,
+        )
+        for rank, entry in enumerate(entries, start=1)
+    ]
 
 
 def _overall_quality(qualities: Any) -> Quality:

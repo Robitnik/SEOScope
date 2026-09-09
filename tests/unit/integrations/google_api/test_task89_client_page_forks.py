@@ -428,3 +428,206 @@ def test_ga4_breakdown_datasets_parity_and_percent_scaling(
         "ga4_daily", "ga4_channels", "ga4_landing_pages", "ga4_events",
         "ga4_devices", "ga4_countries", "ga4_daily_channels",
     }
+
+
+# ── §4.5 GSC sitemaps, folded into `collect_datasets()` ─────────────────────
+def test_gsc_sitemaps_folded_into_dataset_collection(
+    monkeypatch: pytest.MonkeyPatch, fake_google: FakeGoogle
+) -> None:
+    def gsc_handler(request: httpx.Request) -> httpx.Response:
+        if "sitemaps" in str(request.url):
+            return httpx.Response(200, json={"sitemap": [{
+                "path": "https://example.com/sitemap.xml",
+                "isPending": False, "errors": "0", "warnings": "1",
+                "lastDownloaded": "2026-09-08T01:40:34.202Z",
+                "contents": [{"type": "web", "submitted": "248", "indexed": "0"}],
+            }]})
+        start = json.loads(request.content)["startDate"]
+        return httpx.Response(
+            200, json={"rows": [{"keys": [start], "clicks": 5, "impressions": 50}]}
+        )
+
+    fake_google.on("googleapis.com", gsc_handler)
+    session = fake_google.session()
+    monkeypatch.setattr(
+        "app.integrations.gsc.open_google_api_session", lambda *_a, **_k: session
+    )
+    result = gsc_adapter.GscAdapter().collect_datasets(
+        _ctx(Provider.gsc, "sc-domain:example.com", "google_api"), lambda _e: None
+    )
+    sitemap_rows = [r for r in result.rows if r.dataset_key == "gsc_sitemaps"]
+    assert len(sitemap_rows) == 1
+    row = sitemap_rows[0]
+    assert row.dimension_value == "https://example.com/sitemap.xml"
+    assert row.metrics["errors"] == Decimal(0)
+    assert row.metrics["warnings"] == Decimal(1)
+    assert row.metrics["submitted_web"] == Decimal(248)
+    assert row.metrics["last_downloaded_epoch"] is not None
+    assert "gsc_sitemaps" in result.provenance["datasets"]
+    # a sitemap failure never costs the (more important) gsc_daily series
+    assert any(r.dataset_key == "gsc_daily" for r in result.rows)
+
+
+def test_gsc_sitemaps_failure_is_a_warning_not_a_lost_daily_series(
+    monkeypatch: pytest.MonkeyPatch, fake_google: FakeGoogle, no_sleep: list[float]
+) -> None:
+    def gsc_handler(request: httpx.Request) -> httpx.Response:
+        if "sitemaps" in str(request.url):
+            return httpx.Response(500, json={"error": {"message": "boom"}})
+        start = json.loads(request.content)["startDate"]
+        return httpx.Response(
+            200, json={"rows": [{"keys": [start], "clicks": 5, "impressions": 50}]}
+        )
+
+    fake_google.on("googleapis.com", gsc_handler)
+    session = fake_google.session()
+    monkeypatch.setattr(
+        "app.integrations.gsc.open_google_api_session", lambda *_a, **_k: session
+    )
+    result = gsc_adapter.GscAdapter().collect_datasets(
+        _ctx(Provider.gsc, "sc-domain:example.com", "google_api"), lambda _e: None
+    )
+    assert not any(r.dataset_key == "gsc_sitemaps" for r in result.rows)
+    assert any("sitemaps" in w for w in result.warnings)
+    assert any(r.dataset_key == "gsc_daily" for r in result.rows)
+    assert result.quality == Quality.complete
+
+
+# ── §4.1 GA4 key events, derived from ga4_events — zero extra API calls ─────
+def test_ga4_key_events_derived_from_ga4_events(
+    monkeypatch: pytest.MonkeyPatch, fake_google: FakeGoogle
+) -> None:
+    runreport_calls = {"count": 0}
+
+    def ga4_report(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        dims = [d["name"] for d in body["dimensions"]]
+        runreport_calls["count"] += 1
+        if dims == ["eventName"]:
+            rows = [
+                ("Phone", "29", "29", "17"),
+                ("purchase", "20", "20", "19"),
+                ("Email", "9", "9", "8"),
+                ("page_view", "9712", "0", "6084"),  # not a key event
+            ]
+            return httpx.Response(200, json={
+                "dimensionHeaders": [{"name": "eventName"}],
+                "metricHeaders": [{"name": m["name"]} for m in body["metrics"]],
+                "rows": [
+                    {"dimensionValues": [{"value": name}],
+                     "metricValues": [{"value": v} for v in (events, conv, users)]}
+                    for name, events, conv, users in rows
+                ],
+                "rowCount": len(rows),
+            })
+        return httpx.Response(200, json={
+            "dimensionHeaders": [{"name": d} for d in dims],
+            "metricHeaders": [{"name": m["name"]} for m in body["metrics"]],
+            "rows": [], "rowCount": 0,
+        })
+
+    fake_google.on(":runReport", ga4_report)
+    fake_google.on("analyticsadmin.googleapis.com", httpx.Response(200, json={
+        "name": "properties/1", "timeZone": "America/New_York",
+    }))
+    session = fake_google.session()
+    monkeypatch.setattr(
+        "app.integrations.reporting_ninja.open_google_api_session", lambda *_a, **_k: session
+    )
+    result = rn_adapter.ReportingNinjaAdapter().collect_datasets(
+        _ctx(Provider.reporting_ninja, "properties/1", "google_api"), lambda _e: None
+    )
+
+    key_events = [r for r in result.rows if r.dataset_key == "ga4_key_events"
+                  and r.period_role.value == "current"]
+    assert [r.dimension_value for r in key_events] == ["Phone", "purchase", "Email"]
+    assert key_events[0].metrics["conversions"] == Decimal(29)
+    assert key_events[0].metrics["events"] == Decimal(29)
+    assert key_events[0].metrics["users"] == Decimal(17)
+    # page_view (0 conversions) never appears as a "key event"
+    assert not any(r.dimension_value == "page_view" for r in key_events)
+    assert "ga4_key_events" in result.provenance["datasets"]
+    # exactly one :runReport call per (role, dataset) slot — ga4_key_events
+    # is derived, not queried: (6 datasets + 1 channels pivot) * 2 periods
+    assert runreport_calls["count"] == 14
+
+
+def test_ga4_key_events_absent_when_no_conversions(
+    monkeypatch: pytest.MonkeyPatch, fake_google: FakeGoogle
+) -> None:
+    def ga4_report(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        return httpx.Response(200, json={
+            "dimensionHeaders": [{"name": d["name"]} for d in body["dimensions"]],
+            "metricHeaders": [{"name": m["name"]} for m in body["metrics"]],
+            "rows": [], "rowCount": 0,
+        })
+
+    fake_google.on(":runReport", ga4_report)
+    fake_google.on("analyticsadmin.googleapis.com", httpx.Response(200, json={
+        "name": "properties/1", "timeZone": "America/New_York",
+    }))
+    session = fake_google.session()
+    monkeypatch.setattr(
+        "app.integrations.reporting_ninja.open_google_api_session", lambda *_a, **_k: session
+    )
+    result = rn_adapter.ReportingNinjaAdapter().collect_datasets(
+        _ctx(Provider.reporting_ninja, "properties/1", "google_api"), lambda _e: None
+    )
+    assert not any(r.dataset_key == "ga4_key_events" for r in result.rows)
+    assert "ga4_key_events" not in result.provenance["datasets"]
+
+
+# ── §4.2 GA4 Admin API — timezone mismatch warning ───────────────────────────
+def test_ga4_admin_timezone_mismatch_warns(
+    monkeypatch: pytest.MonkeyPatch, fake_google: FakeGoogle
+) -> None:
+    def ga4_report(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        return httpx.Response(200, json={
+            "dimensionHeaders": [{"name": d["name"]} for d in body["dimensions"]],
+            "metricHeaders": [{"name": m["name"]} for m in body["metrics"]],
+            "rows": [], "rowCount": 0,
+        })
+
+    fake_google.on(":runReport", ga4_report)
+    fake_google.on("analyticsadmin.googleapis.com", httpx.Response(200, json={
+        "name": "properties/1", "timeZone": "America/Los_Angeles",
+    }))
+    session = fake_google.session()
+    monkeypatch.setattr(
+        "app.integrations.reporting_ninja.open_google_api_session", lambda *_a, **_k: session
+    )
+    # _ctx() sets timezone="America/New_York" — mismatched on purpose.
+    result = rn_adapter.ReportingNinjaAdapter().collect_datasets(
+        _ctx(Provider.reporting_ninja, "properties/1", "google_api"), lambda _e: None
+    )
+    assert any("timezone" in w.lower() for w in result.warnings)
+    assert any("America/Los_Angeles" in w for w in result.warnings)
+    # a timezone mismatch is informational only — never downgrades quality
+    assert result.quality == Quality.complete
+
+
+def test_ga4_admin_matching_timezone_is_silent(
+    monkeypatch: pytest.MonkeyPatch, fake_google: FakeGoogle
+) -> None:
+    def ga4_report(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        return httpx.Response(200, json={
+            "dimensionHeaders": [{"name": d["name"]} for d in body["dimensions"]],
+            "metricHeaders": [{"name": m["name"]} for m in body["metrics"]],
+            "rows": [], "rowCount": 0,
+        })
+
+    fake_google.on(":runReport", ga4_report)
+    fake_google.on("analyticsadmin.googleapis.com", httpx.Response(200, json={
+        "name": "properties/1", "timeZone": "America/New_York",
+    }))
+    session = fake_google.session()
+    monkeypatch.setattr(
+        "app.integrations.reporting_ninja.open_google_api_session", lambda *_a, **_k: session
+    )
+    result = rn_adapter.ReportingNinjaAdapter().collect_datasets(
+        _ctx(Provider.reporting_ninja, "properties/1", "google_api"), lambda _e: None
+    )
+    assert not any("timezone" in w.lower() for w in result.warnings)

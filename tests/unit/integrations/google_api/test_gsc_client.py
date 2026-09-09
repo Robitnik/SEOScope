@@ -203,3 +203,51 @@ def test_daily_search_analytics_still_works_via_search_analytics(
     rows = GscClient(fake_google.session()).daily_search_analytics(SITE, START, END)
     assert rows[0].date == "2026-08-01"
     assert rows[0].clicks == Decimal(7)
+
+
+# ── task-89 §4.5: `sitemaps()` ───────────────────────────────────────────────
+def test_sitemaps_maps_fields_and_contents(fake_google: FakeGoogle) -> None:
+    fake_google.on(
+        "sites/sc-domain%3Aexample.com/sitemaps",
+        httpx.Response(200, json={"sitemap": [{
+            "path": "https://example.com/sitemap_index.xml",
+            "lastSubmitted": "2025-02-18T06:15:31.796Z",
+            "isPending": False,
+            "lastDownloaded": "2026-09-08T01:40:34.202Z",
+            "warnings": "1",
+            "errors": "0",
+            "contents": [
+                {"type": "web", "submitted": "248", "indexed": "0"},
+                {"type": "image", "submitted": "515", "indexed": "0"},
+            ],
+        }]}),
+    )
+    entries = GscClient(fake_google.session()).sitemaps(SITE)
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.path == "https://example.com/sitemap_index.xml"
+    assert entry.is_pending is False
+    assert entry.errors == 0
+    assert entry.warnings == 1
+    assert entry.contents["web"] == (248, 0)
+    assert entry.contents["image"] == (515, 0)
+
+
+def test_sitemaps_uses_get_not_post(fake_google: FakeGoogle) -> None:
+    fake_google.on("sitemaps", httpx.Response(200, json={"sitemap": []}))
+    GscClient(fake_google.session()).sitemaps(SITE)
+    assert fake_google.requests[-1].method == "GET"
+
+
+def test_sitemaps_empty_list_is_valid(fake_google: FakeGoogle) -> None:
+    fake_google.on("sitemaps", httpx.Response(200, json={}))
+    assert GscClient(fake_google.session()).sitemaps(SITE) == []
+
+
+def test_sitemaps_permission_denied_propagates(fake_google: FakeGoogle) -> None:
+    fake_google.on(
+        "sitemaps",
+        httpx.Response(403, json={"error": {"status": "PERMISSION_DENIED", "message": "no"}}),
+    )
+    with pytest.raises(GoogleApiPermissionError):
+        GscClient(fake_google.session()).sitemaps(SITE)
