@@ -32,7 +32,13 @@ _ALIASES: dict[str, str] = {
     "title": "title", "meta title": "title", "title tag": "title", "meta page title": "title",
     "description": "description", "meta description": "description",
     "h1": "h1",
-    "url": "url", "page url": "url",
+    # "New URL" — жива пастка (task-91, знайдено фідбеком оператора):
+    # SHB_SEO_STRATEGY_082626's `Q3-Q4 2026 Strategy` аркуш МАЄ колонку URL,
+    # просто названу "New URL" (пост-міграційна назва сторінки), яку жоден
+    # з наявних аліасів не покривав — "SHB не має колонки URL" було
+    # хибним висновком (task-90 §1.2/task-91 §1.2), симптомом саме цього
+    # пропуску в _ALIASES, не властивістю файлу.
+    "url": "url", "page url": "url", "new url": "url",
     "page": "page_name", "pages": "page_name", "page name": "page_name",
     "article topic": "page_name",
     "intent": "intent",

@@ -297,6 +297,40 @@ def test_scalar_verdict_mismatch_on_real_title_drift() -> None:
     assert result.state == "mismatch"
 
 
+def test_scalar_verdict_flags_only_the_true_outlier() -> None:
+    # Live feedback: Strategy and Framework agree, only Site drifted —
+    # only "site" should be named an outlier, not strategy/framework too.
+    cells = {
+        "strategy": Cell(state="value", text="Same Title"),
+        "framework": Cell(state="value", text="Same Title"),
+        "site": Cell(state="value", text="Different Title"),
+    }
+    result = _scalar_verdict(cells)
+    assert result.state == "mismatch"
+    assert result.outlier_sources == ("site",)
+
+
+def test_scalar_verdict_two_way_disagreement_flags_both_sources() -> None:
+    # No majority to side with when exactly two sources disagree 1-vs-1.
+    cells = {
+        "framework": Cell(state="value", text="A"),
+        "site": Cell(state="value", text="B"),
+    }
+    result = _scalar_verdict(cells)
+    assert result.state == "mismatch"
+    assert set(result.outlier_sources) == {"framework", "site"}
+
+
+def test_scalar_verdict_match_has_no_outliers() -> None:
+    cells = {
+        "strategy": Cell(state="value", text="Same"),
+        "framework": Cell(state="value", text="Same"),
+    }
+    result = _scalar_verdict(cells)
+    assert result.state == "match"
+    assert result.outlier_sources == ()
+
+
 def test_scalar_verdict_url_uses_inspector_key_not_plain_text() -> None:
     cells = {
         "strategy": Cell(state="value", text="https://example.com/a/"),

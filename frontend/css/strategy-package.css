@@ -125,9 +125,37 @@
 /* Memory: table-scroll-contain-paint — a wide table in an overflow:auto
    wrapper can still scroll the whole page in Chromium without `contain`. */
 .sp-matrix-scroll { contain: paint; }
-.sp-matrix-table th, .sp-matrix-table td { max-width: 260px; overflow-wrap: anywhere; vertical-align: top; }
+/* Fixed, identical column widths across all three mini-tables of a page
+   (and across pages) — without `table-layout: fixed` each `<table>` sizes
+   its own columns from its own content, so the same field lands at a
+   different width in Strategy vs Framework vs Site and nothing lines up
+   for a vertical scan (live feedback: "розмір клітинок зроби однаковий"). */
+.sp-matrix-table { table-layout: fixed; width: 100%; }
+.sp-matrix-table th, .sp-matrix-table td { overflow-wrap: anywhere; vertical-align: top; }
+.sp-matrix-table th:nth-child(1), .sp-matrix-table td:nth-child(1) { width: 13%; }
+.sp-matrix-table th:nth-child(2), .sp-matrix-table td:nth-child(2) { width: 16%; }
+.sp-matrix-table th:nth-child(3), .sp-matrix-table td:nth-child(3) { width: 22%; }
+.sp-matrix-table th:nth-child(4), .sp-matrix-table td:nth-child(4) { width: 14%; }
+.sp-matrix-table th:nth-child(5), .sp-matrix-table td:nth-child(5) { width: 17%; }
+.sp-matrix-table th:nth-child(6), .sp-matrix-table td:nth-child(6) { width: 18%; }
 .sp-matrix-cell--absent, .sp-matrix-cell--empty { color: var(--ink-dim); font-style: italic; }
 .sp-matrix-cell--more { color: var(--ink-dim); }
+/* Mismatched field: bold + red text + a left border on the cell itself —
+   color is never the only signal (AGENTS.md §7), the weight change and
+   the verdict badge in the page header carry the same information too.
+   Matching field: same treatment in green — live feedback: when Strategy
+   and Framework agree and only Site differs, the two that agree read
+   green, only the odd one out reads red (task-91 §3.6). */
+.sp-matrix-table td.sp-matrix-cell--mismatch {
+  color: var(--danger); font-weight: 700; background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-left: 3px solid var(--danger);
+}
+.sp-matrix-table td.sp-matrix-cell--match {
+  color: var(--success); font-weight: 700; background: color-mix(in srgb, var(--success) 10%, transparent);
+  border-left: 3px solid var(--success);
+}
+.sp-matrix-table th.sp-matrix-th--mismatch { color: var(--danger); }
+.sp-matrix-table th.sp-matrix-th--match { color: var(--success); }
 
 /* --- overview tab --- */
 .sp-fw-overview { display: grid; gap: 8px; }

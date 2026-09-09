@@ -81,18 +81,24 @@ async function main() {
   await page.screenshot({ path: path.join(screenshots, "tools-strategy-package-comparison-1440.png"), fullPage: true });
 
   // 6a. Real data from the real SHB run: each page group has exactly three
-  // mini-tables in this order, the "no such column" fallback for the URL
-  // field strategy lacks entirely (task-91 §1.2), and real verdict badges.
+  // mini-tables in this order. The strategy sheet's URL column is
+  // literally named "New URL" (a live alias bug found and fixed via
+  // direct operator feedback — task-91 tabular.py `_ALIASES`) and must
+  // now resolve to a real, matching URL, not a false "no such column".
   const firstPage = page.locator(".sp-matrix-page").first();
   const miniTitles = await firstPage.locator(".sp-matrix-mini__title").allInnerTexts();
   assert.deepEqual(
     miniTitles.map((t) => t.toLowerCase()),
     ["strategy", "framework", "site"], // CSS text-transform:uppercase changes rendered case
   );
+  assert.equal(
+    await firstPage.locator(".sp-matrix-cell--absent").count(), 0,
+    "SHB's 'New URL' column is now recognized — nothing on this page should read absent",
+  );
   assert.match(
-    await firstPage.locator(".sp-matrix-cell--absent").first().innerText(),
-    /no such column/i,
-    "SHB's strategy sheet has no URL column — the matrix says so honestly",
+    await firstPage.locator(".sp-matrix-mini").first().locator("tbody td").first().innerText(),
+    /^https:\/\/www\.smashhouseburgers\.com/,
+    "Strategy's URL cell shows the real recognized value, not a fallback",
   );
   assert.ok(
     await firstPage.locator(".sp-matrix-verdict-badge.sp-matrix-verdict--match").count() > 0,

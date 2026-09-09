@@ -39,11 +39,17 @@ from __future__ import annotations
 import io
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from app.schemas.strategy_package import MatrixCellDTO, MatrixRowDTO, MatrixSourceCellsDTO
+from app.schemas.strategy_package import (
+    MatrixCellDTO,
+    MatrixFieldVerdictDTO,
+    MatrixRowDTO,
+    MatrixRowVerdictsDTO,
+    MatrixSourceCellsDTO,
+)
 
 _HEADER_BG = "434343"
 _HEADER_FG = "FFFFFF"
@@ -52,9 +58,43 @@ _VERDICT_MATCH = "D9EAD3"
 _VERDICT_MISMATCH = "F4CCCC"
 _VERDICT_NA = "EFEFEF"
 _ABSENT_FG = "999999"
+# Live feedback ("Файл дуже важко читабельний"): mismatched fields need
+# the SAME bold-red flag Comparison tab cells get on screen
+# (`.sp-matrix-cell--mismatch`), not just the header's ✓/✗ summary line —
+# otherwise the operator has to cross-reference the summary against six
+# plain-looking columns by hand. Green mirrors it for sources that AGREE
+# on a field that still has a mismatch somewhere (task-91 §3.6, live
+# feedback): Strategy+Framework agreeing while only Site drifts should
+# read green/green/red, not red/red/red.
+_MISMATCH_FG = "CC0000"
+_MISMATCH_BG = "FDEAEA"
+_MISMATCH_BORDER = Border(left=Side(style="medium", color=_MISMATCH_FG))
+_MATCH_FG = "1E7E34"
+_MATCH_BG = "EAF7ED"
+_MATCH_BORDER = Border(left=Side(style="medium", color=_MATCH_FG))
 
 _FIELDS = ("url", "title", "description", "h1", "keywords", "links")
 _FIELD_LABELS = ("URL", "Title", "Description", "H1", "Keywords", "Outgoing links")
+
+# Live feedback: one packed "Outgoing links" cell (semicolon-joined, most
+# of it invisible behind Excel's own row clipping) is unreadable — split
+# into its own sub-column per link instead. Scalar fields keep one column
+# each. Link columns beyond `_MAX_LINK_COLUMNS` collapse into a "(+N more)"
+# note on the last one, same cap `_cell_text` already used for the single-
+# cell display.
+_SCALAR_FIELDS = ("url", "title", "description", "h1", "keywords")
+_SCALAR_LABELS = ("URL", "Title", "Description", "H1", "Keywords")
+_MAX_LINK_COLUMNS = 6
+_LINK_COLUMN_LABELS = tuple(f"Link {i + 1}" for i in range(_MAX_LINK_COLUMNS))
+_ALL_LABELS = _SCALAR_LABELS + _LINK_COLUMN_LABELS
+_TOTAL_COLUMNS = len(_ALL_LABELS)
+# Character widths tuned to each field's typical content (task-91 §3.5,
+# corrected live twice: the original list had 7 entries for what was then
+# a 6-column table — one column short of the dropped "Page" lead column,
+# silently shifting every column — and columns/rows were later widened
+# again live for readability after the "Outgoing links" split).
+_COLUMN_WIDTHS = (32, 30, 44, 30, 34) + (30,) * _MAX_LINK_COLUMNS
+_DATA_ROW_HEIGHT = 70
 
 
 def _fill(hex_color: str) -> PatternFill:
@@ -91,6 +131,20 @@ _MINI_TABLES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _cell_tone(verdict: MatrixFieldVerdictDTO, side: str) -> str | None:
+    """Mirrors `strategy-package-tool.js:matrixCellTone` — `outlier_sources`
+    (task-91 §3.6) says which source(s) actually drifted; keywords/links
+    verdicts don't compute per-source outliers (different claim-vs-confirm
+    shape), so a mismatch there still flags every source, same as before."""
+    if verdict.state == "match":
+        return "match"
+    if verdict.state == "mismatch":
+        if verdict.outlier_sources:
+            return "mismatch" if side in verdict.outlier_sources else "match"
+        return "mismatch"
+    return None
+
+
 def _page_header(ws: Worksheet, row_index: int, row: MatrixRowDTO) -> int:
     """URL/label + зведені вердикти шести полів в один рядок над трьома
     міні-таблицями цієї сторінки — та сама інформація, що бейджі в шапці
@@ -103,39 +157,98 @@ def _page_header(ws: Worksheet, row_index: int, row: MatrixRowDTO) -> int:
     )
     summary_cell = ws.cell(row_index, 2, summary)
     summary_cell.font = Font(italic=True, size=10, color=_ABSENT_FG)
-    for col in range(1, len(_FIELD_LABELS) + 1):
+    for col in range(1, _TOTAL_COLUMNS + 1):
         ws.cell(row_index, col).fill = _fill(_BLOCK_TITLE_BG)
     return row_index + 1
 
 
+def _tone_font_fill_border(tone: str | None) -> tuple[Font, PatternFill | None, Border | None]:
+    if tone == "mismatch":
+        return Font(bold=True, color=_MISMATCH_FG), _fill(_MISMATCH_BG), _MISMATCH_BORDER
+    if tone == "match":
+        return Font(bold=True, color=_MATCH_FG), _fill(_MATCH_BG), _MATCH_BORDER
+    return Font(), None, None
+
+
 def _mini_table(
-    ws: Worksheet, start_row: int, title: str, cells: MatrixSourceCellsDTO | None
+    ws: Worksheet, start_row: int, side: str, title: str,
+    cells: MatrixSourceCellsDTO | None, verdicts: MatrixRowVerdictsDTO,
 ) -> int:
-    """Одна маленька таблиця — назва джерела, заголовок шести колонок,
+    """Одна маленька таблиця — назва джерела, заголовок колонок (5
+    скалярних полів + до `_MAX_LINK_COLUMNS` окремих підколонок-посилань),
     один рядок даних. `cells=None` -> сторінка не мала цього джерела в
-    цьому прогоні (наприклад фреймворк без відповідного рядка стратегії)."""
+    цьому прогоні (наприклад фреймворк без відповідного рядка стратегії).
+    `side` ("strategy"/"framework"/"site") вирішує, чи ЦЕ джерело — той
+    самий "outlier", що відрізняється (червоний), чи один із тих, що
+    погоджуються між собою (зелений) — `_cell_tone()`. Кожна підколонка
+    посилання успадковує тон усього поля `links` — самих посилань
+    попарно не звіряємо, лише факт "поле розходиться десь"."""
+
+    def tone_for(field: str) -> str | None:
+        if cells is None or getattr(cells, field).state != "value":
+            return None
+        return _cell_tone(getattr(verdicts, field), side)
+
     r = start_row
     label_cell = ws.cell(r, 1, title)
     label_cell.font = Font(bold=True, size=10, color=_ABSENT_FG)
     r += 1
-    _header_row(ws, r, list(_FIELD_LABELS))
+
+    links_tone = tone_for("links")
+    for col_index, label in enumerate(_ALL_LABELS, start=1):
+        is_link_col = col_index > len(_SCALAR_FIELDS)
+        tone = links_tone if is_link_col else tone_for(_SCALAR_FIELDS[col_index - 1])
+        header_fg = _HEADER_FG
+        if tone == "mismatch":
+            header_fg = _MISMATCH_FG
+        elif tone == "match":
+            header_fg = _MATCH_FG
+        header_cell = ws.cell(r, col_index, label)
+        header_cell.font = Font(name="Calibri", bold=True, size=11, color=header_fg)
+        header_cell.fill = _fill(_HEADER_BG)
+        header_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
     r += 1
+
     if cells is None:
         note = ws.cell(r, 1, "— not in this run")
         note.font = Font(color=_ABSENT_FG, italic=True)
     else:
-        for col_offset, field in enumerate(_FIELDS):
+        for col_offset, field in enumerate(_SCALAR_FIELDS):
             cell_value = getattr(cells, field)
             cell = ws.cell(r, 1 + col_offset, _cell_text(cell_value))
-            if cell_value.state == "absent":
+            cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+            tone = tone_for(field)
+            font, fill, border = _tone_font_fill_border(tone)
+            if tone:
+                cell.font, cell.fill, cell.border = font, fill, border
+            elif cell_value.state == "absent":
                 cell.font = Font(color=_ABSENT_FG, italic=True)
-            cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=False)
+
+        links_cell = cells.links
+        link_items = links_cell.items if links_cell.state == "value" else ()
+        base_col = len(_SCALAR_FIELDS) + 1
+        for i in range(_MAX_LINK_COLUMNS):
+            col = base_col + i
+            if i < len(link_items):
+                text = link_items[i]
+                if i == _MAX_LINK_COLUMNS - 1 and len(link_items) > _MAX_LINK_COLUMNS:
+                    text += f"  (+{len(link_items) - _MAX_LINK_COLUMNS} more)"
+                cell = ws.cell(r, col, text)
+                font, fill, border = _tone_font_fill_border(links_tone)
+                if links_tone:
+                    cell.font, cell.fill, cell.border = font, fill, border
+            elif i == 0 and links_cell.state == "absent":
+                cell = ws.cell(r, col, "— (no such column)")
+                cell.font = Font(color=_ABSENT_FG, italic=True)
+            else:
+                cell = ws.cell(r, col, "")
+            cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    ws.row_dimensions[r].height = _DATA_ROW_HEIGHT
     return r + 1
 
 
 def _column_widths(ws: Worksheet) -> None:
-    widths = [30, 34, 28, 40, 20, 24, 40]
-    for col_index, width in enumerate(widths, start=1):
+    for col_index, width in enumerate(_COLUMN_WIDTHS, start=1):
         ws.column_dimensions[get_column_letter(col_index)].width = width
 
 
@@ -144,10 +257,11 @@ def build_comparison_sheet(ws: Worksheet, rows: list[MatrixRowDTO]) -> None:
     for row in rows:
         r = _page_header(ws, r, row)
         for side, title in _MINI_TABLES:
-            r = _mini_table(ws, r, title, getattr(row, side))
+            r = _mini_table(ws, r, side, title, getattr(row, side), row.verdicts)
         r += 1  # spacer between page groups
     _column_widths(ws)
     ws.freeze_panes = "A1"
+    ws.sheet_view.showGridLines = False
 
 
 def build_mismatches_sheet(ws: Worksheet, rows: list[MatrixRowDTO]) -> None:

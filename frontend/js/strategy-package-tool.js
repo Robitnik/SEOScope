@@ -834,19 +834,49 @@ function renderMatrixPageGroup(row) {
     </div>`;
 }
 
+// Live feedback: a mismatch must flag only the source that actually
+// drifted, not every source that happens to carry a value. When Strategy
+// and Framework agree and only Site differs, Strategy/Framework read
+// green (they agree with each other/each other's source), only Site red.
+// `outlier_sources` (task-91 §3.6) carries which source(s) are the odd
+// one out for scalar fields (url/title/description/h1); keywords/links
+// verdicts don't compute per-source outliers (different claim-vs-confirm
+// shape), so a mismatch there still flags every source, same as before.
+function matrixCellTone(verdict, side) {
+  if (verdict.state === "match") return "match";
+  if (verdict.state === "mismatch") {
+    const outliers = verdict.outlier_sources || [];
+    if (outliers.length > 0) return outliers.includes(side) ? "mismatch" : "match";
+    return "mismatch";
+  }
+  return null;
+}
+
 function renderMatrixMiniTable(block, row) {
   const cells = row[block.side];
+  // Only a cell that actually HAS a value can be the agreeing/outlier side
+  // of a comparison — an empty/absent cell contributed nothing to the
+  // verdict, coloring it red or green would claim an opinion it never had.
+  const toneFor = (f) => (cells && cells[f].state === "value" ? matrixCellTone(row.verdicts[f], block.side) : null);
   return `
     <div class="sp-matrix-mini">
       <p class="sp-matrix-mini__title">${icon(block.icon, "icon icon--tiny")}${block.title}</p>
       <div class="table-scroll sp-matrix-scroll">
         <table class="tool-table sp-matrix-table">
           <caption class="visually-hidden">${block.title} values for ${escapeHtml(row.label)}</caption>
-          <thead><tr>${MATRIX_FIELDS.map((f) => `<th scope="col">${MATRIX_FIELD_LABELS[f]}</th>`).join("")}</tr></thead>
+          <thead><tr>
+            ${MATRIX_FIELDS.map((f) => {
+              const tone = toneFor(f);
+              return `<th scope="col" class="${tone ? `sp-matrix-th--${tone}` : ""}">${MATRIX_FIELD_LABELS[f]}</th>`;
+            }).join("")}
+          </tr></thead>
           <tbody>
             <tr>
               ${cells
-                ? MATRIX_FIELDS.map((f) => `<td>${renderMatrixCell(cells[f])}</td>`).join("")
+                ? MATRIX_FIELDS.map((f) => {
+                    const tone = toneFor(f);
+                    return `<td class="${tone ? `sp-matrix-cell--${tone}` : ""}">${renderMatrixCell(cells[f])}</td>`;
+                  }).join("")
                 : `<td colspan="${MATRIX_FIELDS.length}" class="sp-matrix-cell sp-matrix-cell--absent">— not in this run</td>`}
             </tr>
           </tbody>

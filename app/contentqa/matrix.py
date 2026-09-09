@@ -85,6 +85,13 @@ class SourceCells:
 class FieldVerdict:
     state: Verdict
     detail: str | None = None
+    # Live feedback (task-91 §3.6): a "mismatch" must say WHICH source is
+    # the odd one out, not paint all three sources red — when Strategy and
+    # Framework agree and only Site differs, Strategy/Framework should read
+    # green (they agree with each other), only Site red. Names of sources
+    # ("strategy"/"framework"/"site") whose value is not shared by any
+    # other source with a value; `()` for "match"/"not_comparable" states.
+    outlier_sources: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -309,7 +316,19 @@ def _scalar_verdict(cells: dict[str, Cell], *, url: bool = False) -> FieldVerdic
     distinct = {v for _, v in known}
     if len(distinct) == 1:
         return FieldVerdict("match", detail=f"{len(known)} sources agree")
-    return FieldVerdict("mismatch", detail="; ".join(f"{s}: {v}" for s, v in known))
+    # Live feedback: don't paint every source red — only the one(s) whose
+    # value nobody else shares. Strategy+Framework agreeing while only Site
+    # drifted is the common real case (§1.7); both should read green, only
+    # Site red. A value shared by exactly one source (count == 1) is an
+    # outlier; with 2 sources disagreeing 1-vs-1, both are outliers (no
+    # majority to side with) — same for 3-way all-different (1-vs-1-vs-1).
+    value_counts: dict[str, int] = {}
+    for _, v in known:
+        value_counts[v] = value_counts.get(v, 0) + 1
+    outliers = tuple(src for src, v in known if value_counts[v] == 1)
+    return FieldVerdict(
+        "mismatch", detail="; ".join(f"{s}: {v}" for s, v in known), outlier_sources=outliers,
+    )
 
 
 def _keyword_verdict(

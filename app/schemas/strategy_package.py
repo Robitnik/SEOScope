@@ -134,6 +134,11 @@ class MatrixSourceCellsDTO(BaseModel):
 class MatrixFieldVerdictDTO(BaseModel):
     state: MatrixVerdict
     detail: str | None = None
+    # Which source(s) ("strategy"/"framework"/"site") are the odd one out
+    # on a mismatch — `()` for match/not_comparable. Lets the UI/Excel
+    # highlight only the drifting source red, not every source that has a
+    # value (task-91 §3.6, live feedback).
+    outlier_sources: list[str] = Field(default_factory=list)
 
 
 class MatrixRowVerdictsDTO(BaseModel):
