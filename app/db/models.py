@@ -714,6 +714,13 @@ class ContentQaPackage(Base):
     # + item_count) — та сама трійка станів, що `ContentQaReport.sheets_json`
     # (task-87 §1.3), для блоку Scope у звіті пакета.
     sheets_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    # Матриця Стратегія/Фреймворк/Сайт/Вердикт (task-91 §2.2) — список
+    # `MatrixRowDTO`. Nullable, той самий патерн, що `ContentQaReport.
+    # sheets_json` (task-87): `NULL` на пакетах, прогнаних до task-91 —
+    # API читає це як `[]` (`app/api/tools_strategy_package.py`), фронт
+    # показує чесний "ця версія звіту ще не має порівняльної таблиці", не
+    # вгадує заднім числом (CLAUDE.md).
+    matrix_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 

@@ -255,6 +255,32 @@ def test_check_persists_and_returns_package(client: Any, monkeypatch: Any) -> No
     # Home title/H1 match between Frame and the strategy row -> zero drift.
     assert not any(f["check"] == "sync-title-drift" for f in outcome["findings"])
     assert "id" in body
+    # task-91: comparison matrix rides along on the same /check response —
+    # one matched row (the framework's strategy row + its Frame values).
+    assert len(body["matrix"]) == 1
+    row = body["matrix"][0]
+    assert row["kind"] == "matched"
+    assert row["strategy"]["title"]["state"] == "value"
+    # The fixture's Framework table only recognizes an H1 field (no Title/
+    # Description) — the matrix must say so honestly (absent, not a false
+    # "value" or a silently-dropped column).
+    assert row["framework"]["title"]["state"] == "absent"
+    assert row["framework"]["h1"]["state"] == "value"
+    assert row["verdicts"]["h1"]["state"] == "match"
+
+
+def test_check_with_no_frameworks_still_has_a_strategy_only_matrix_row(
+    client: Any, monkeypatch: Any
+) -> None:
+    _install_fake_clients(
+        monkeypatch, files={STRATEGY_ID: _strategy_file()}, grids={STRATEGY_ID: _strategy_grid()},
+    )
+    r = client.post("/api/v1/tools/strategy-package/check", json=_check_body(frameworks=[]))
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["matrix"]) == 1
+    assert body["matrix"][0]["kind"] == "strategy_only"
+    assert body["matrix"][0]["framework"] is None
 
 
 def test_check_with_no_frameworks_still_checks_strategy(client: Any, monkeypatch: Any) -> None:
@@ -287,6 +313,8 @@ def test_check_then_list_then_get(client: Any, monkeypatch: Any) -> None:
     assert detail.status_code == 200
     assert detail.json()["id"] == package_id
     assert len(detail.json()["frameworks"]) == 1
+    # The matrix survives the persist/retrieve round trip through JSON.
+    assert len(detail.json()["matrix"]) == 1
 
 
 def test_get_unknown_package_gives_404(client: Any) -> None:

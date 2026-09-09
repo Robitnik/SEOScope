@@ -250,6 +250,34 @@ def test_run_framework_wires_up_site_comparison(monkeypatch: pytest.MonkeyPatch)
     assert outcome.frame_site_info is not None
     assert outcome.frame_site_info.state == "checked"
     assert any(f.check == "site-h1-drift" for f in outcome.findings)
+    # task-91 §2.2: the raw values, not just findings about them, must
+    # survive on the outcome — the comparison matrix reads these directly.
+    assert outcome.frame_item is not None
+    assert outcome.frame_item.url == "https://example.com/a"
+    assert outcome.site_page is not None
+    assert outcome.site_page.signals is not None
+    assert outcome.site_page.signals.title == "Live Title"
+
+
+def test_frame_item_and_site_page_are_none_without_a_frame_tab() -> None:
+    tabs = (_tab("Content", [_table((["Title"], ["Copy title"]))]),)
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(source, docs_client=docs_client, **_common_kwargs())
+    assert outcome.frame_item is None
+    assert outcome.site_page is None
+
+
+def test_site_page_stays_none_when_check_site_is_off() -> None:
+    tabs = (_tab("Framework", [_table((["URL"], ["https://example.com/a"]))]),)
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=False, check_published=False,
+    )
+    assert outcome.frame_item is not None  # Frame tab was still read and QA'd
+    assert outcome.site_page is None  # but the live site was never fetched
 
 
 def test_package_module_default_runner_is_run_framework() -> None:

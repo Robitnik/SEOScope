@@ -19,7 +19,7 @@ inspect` → `/check` (task-87): нічого не персистується, �
 from __future__ import annotations
 
 import collections
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -30,6 +30,7 @@ from app.api import register_router
 from app.api.deps import PaginationDep, SessionDep
 from app.contentqa.crosscheck import CrossCheckInfo
 from app.contentqa.findings import Finding
+from app.contentqa.matrix import MatrixRow, build_matrix
 from app.contentqa.model import ContentDoc
 from app.contentqa.package import FrameworkOutcome, FrameworkSource, run_package
 from app.contentqa.readers.gsheet import (
@@ -74,6 +75,7 @@ from app.schemas.strategy_package import (
     FrameworkCandidateDTO,
     FrameworkOutcomeDTO,
     InspectPackageRequestDTO,
+    MatrixRowDTO,
     ResolveSourceDTO,
     ResolveSourceRequestDTO,
     StrategyPackageInspectDTO,
@@ -367,6 +369,14 @@ def _sheet_state_dicts(sheet_states: tuple[Any, ...]) -> list[dict[str, object]]
     return [{"name": s.name, "state": s.state, "item_count": s.item_count} for s in sheet_states]
 
 
+def _matrix_row_dicts(rows: list[MatrixRow]) -> list[dict[str, Any]]:
+    """`MatrixRow`/`Cell`/`SourceCells`/`FieldVerdict`/`RowVerdicts` are
+    plain nested dataclasses whose field names already match
+    `MatrixRowDTO` field-for-field (task-91 §2.2) — `asdict()` gives exact
+    JSON-storable dicts without a second hand-written mapping to drift."""
+    return [asdict(row) for row in rows]
+
+
 def _client_name(sync_session: Session, client_id: str | None) -> str | None:
     if not client_id:
         return None
@@ -395,6 +405,8 @@ def _package_detail_dto(
         aggregate_findings=[ContentQaFindingDTO(**f) for f in package.aggregate_findings_json],
         frameworks=[FrameworkOutcomeDTO(**f) for f in package.frameworks_json],
         sheets=[ContentQaSheetDTO(**s) for s in package.sheets_json],
+        # `matrix_json IS NULL` для пакетів до task-91 -> `[]`, не додумуємо.
+        matrix=[MatrixRowDTO(**m) for m in (package.matrix_json or [])],
     )
 
 
@@ -433,13 +445,16 @@ async def check_package(body: CheckPackageRequestDTO, session: SessionDep) -> Co
     ]
     profile = _build_profile(body)
 
-    def _run() -> Any:
-        return run_package(
+    def _run() -> tuple[Any, list[MatrixRow]]:
+        result = run_package(
             strategy, sources, docs_client=clients.docs, profile=profile,
             check_site=body.check_site, check_published=body.check_published,
         )
+        # Чиста функція над тим, що run_package уже прочитав (task-91
+        # §2.2) — рахується в тому самому потоці, окремого I/O нема.
+        return result, build_matrix(strategy, result.frameworks)
 
-    result = await run_in_threadpool(_run)
+    result, matrix_rows = await run_in_threadpool(_run)
 
     def _persist(sync_session: Session) -> ContentQaPackageDTO:
         client_name = _client_name(sync_session, body.client_id)
@@ -462,6 +477,7 @@ async def check_package(body: CheckPackageRequestDTO, session: SessionDep) -> Co
             frameworks=[_framework_outcome_dict(o) for o in result.frameworks],
             severity_counts=dict(collections.Counter(all_severities)),
             sheets=_sheet_state_dicts(strategy.sheet_states),
+            matrix=_matrix_row_dicts(matrix_rows),
         ))
         return _package_detail_dto(package, client_name=client_name)
 

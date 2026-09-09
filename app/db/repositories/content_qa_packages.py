@@ -30,6 +30,7 @@ class ContentQaPackageInput:
     frameworks: Sequence[dict[str, Any]]
     severity_counts: dict[str, int]
     sheets: Sequence[dict[str, Any]] = ()
+    matrix: Sequence[dict[str, Any]] = ()
 
 
 class ContentQaPackageRepository:
@@ -49,6 +50,7 @@ class ContentQaPackageRepository:
             frameworks_json=list(data.frameworks),
             severity_counts_json=dict(data.severity_counts),
             sheets_json=list(data.sheets),
+            matrix_json=list(data.matrix),
         )
         self._session.add(package)
         self._session.flush()

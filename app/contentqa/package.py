@@ -38,7 +38,7 @@ from app.contentqa.findings import Finding
 from app.contentqa.model import ContentDoc, ContentItem
 from app.contentqa.readers.gdoc import read_framework_document
 from app.contentqa.rules import Profile
-from app.contentqa.site import fetch_page
+from app.contentqa.site import LivePage, fetch_page
 from app.integrations.google_api.docs_client import DocsClient
 from app.monitor.fetcher import FetchStats
 from app.tools.http_safety import HostThrottle
@@ -87,6 +87,13 @@ class FrameworkOutcome:
     frame_site_info: CrossCheckInfo | None = None
     copy_site_info: CrossCheckInfo | None = None
     matched_strategy_key: str | None = None
+    # task-91 §2.2: findings above say WHAT is wrong; the comparison matrix
+    # needs the raw values themselves (url/title/description/h1/keywords/
+    # links) — discarded after building findings until now. Both `None`
+    # when there is no Frame tab / `check_site=False` / the fetch failed;
+    # `matrix.py` treats that the same as any other "nothing to compare".
+    frame_item: ContentItem | None = None
+    site_page: LivePage | None = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +144,7 @@ def run_framework(
     frame_site_info: CrossCheckInfo | None = None
     copy_site_info: CrossCheckInfo | None = None
     matched_key: str | None = None
+    site_page: LivePage | None = None
 
     if resolved.unnamed_single_tab:
         findings.append(Finding(
@@ -173,15 +181,15 @@ def run_framework(
 
     if check_site and resolved.frame_doc is not None and frame_item is not None and frame_item.url:
         frame_doc = resolved.frame_doc  # локальна прив'язка — вужче звуження типу для mypy
-        page = fetch_page(frame_item.url, throttle=throttle, stats=stats)
-        site_findings, frame_site_info = check_frame_site(frame_doc, page)
+        site_page = fetch_page(frame_item.url, throttle=throttle, stats=stats)
+        site_findings, frame_site_info = check_frame_site(frame_doc, site_page)
         findings.extend(site_findings)
 
         copy_doc = resolved.copy_doc
         copy_publishable = copy_doc is not None and not copy_too_short and resolved.copy_sections
         if check_published and copy_publishable and copy_doc is not None:
             copy_findings, copy_site_info = check_copy_site(
-                resolved.copy_sections, copy_ref=copy_doc.items[0].ref, site=page
+                resolved.copy_sections, copy_ref=copy_doc.items[0].ref, site=site_page
             )
             findings.extend(copy_findings)
 
@@ -191,6 +199,7 @@ def run_framework(
         findings=findings,
         frame_strategy_info=frame_strategy_info, frame_site_info=frame_site_info,
         copy_site_info=copy_site_info, matched_strategy_key=matched_key,
+        frame_item=frame_item, site_page=site_page,
     )
 
 

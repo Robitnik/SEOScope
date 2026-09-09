@@ -132,3 +132,102 @@ def test_malformed_html_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> None:
     html = b"<html><body><h1>Unclosed <h2>Nested badly</body>"
     page = _run(monkeypatch, html)
     assert page.ok is True  # parser failures are swallowed, not fatal
+
+
+# ── outgoing links (task-91 §1.3/§2.4) ────────────────────────────────────
+
+
+def test_links_split_internal_vs_external(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = b"""
+    <html><body>
+      <p><a href="/menu/">Our menu</a></p>
+      <p><a href="https://example.com/catering/">Catering</a></p>
+      <p><a href="https://www.example.com/locations/">Locations</a></p>
+      <p><a href="https://facebook.com/example">Facebook</a></p>
+    </body></html>
+    """
+    page = _run(monkeypatch, html)
+    assert page.internal_links == (
+        "Our menu → /menu/", "Catering → /catering/", "Locations → /locations/",
+    )
+    assert page.external_links == ("Facebook → /example",)
+
+
+def test_relative_links_are_absolutized_against_final_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = b'<html><body><a href="../about">About</a></body></html>'
+
+    # final_url differs from requested (redirect) — resolution must use final_url.
+    def fetch(url, *, throttle, stats, timeout):
+        stats.requests_made += 1
+        return FetchResult(
+            requested_url=url, final_url="https://example.com/blog/post/",
+            status=200, hop_count=1,
+            headers={"Content-Type": "text/html; charset=utf-8"}, body=html,
+            truncated_body=False, elapsed_ms=5, error=None,
+        )
+    monkeypatch.setattr(site_module, "fetch", fetch)
+    page = fetch_page(URL, throttle=HostThrottle(), stats=FetchStats())
+    assert page.internal_links == ("About → /blog/about",)
+
+
+def test_fragment_javascript_and_mailto_links_are_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = b"""
+    <html><body>
+      <a href="#section">Jump</a>
+      <a href="javascript:void(0)">Do nothing</a>
+      <a href="mailto:hi@example.com">Email us</a>
+      <a href="tel:+15551234567">Call us</a>
+      <a href="/real-page/">Real page</a>
+    </body></html>
+    """
+    page = _run(monkeypatch, html)
+    assert page.internal_links == ("Real page → /real-page/",)
+    assert page.external_links == ()
+
+
+def test_duplicate_link_targets_are_deduplicated(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = b"""
+    <html><body>
+      <a href="/menu/">Menu</a>
+      <a href="/menu/">See our menu</a>
+      <a href="/menu/#specials">Specials</a>
+    </body></html>
+    """
+    page = _run(monkeypatch, html)
+    assert page.internal_links == ("Menu → /menu/",)
+
+
+def test_nav_and_footer_links_are_included_unlike_headings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deliberately the OPPOSITE rule from headings (task-91 §3.3, a real
+    bug found and fixed by live verification on SHB): a Framework claiming
+    "links to /locations/" was reported as "missing from the live site"
+    even though the link was genuinely present, only inside a `<nav>`
+    location-switcher widget. A clickable link is a real link regardless
+    of which tag wraps it — only headings represent "authored page
+    structure" and stay excluded."""
+    html = b"""
+    <html><body>
+      <nav><a href="/about/">About</a></nav>
+      <p><a href="/real-content-link/">Real link</a></p>
+      <footer><a href="/privacy/">Privacy</a></footer>
+    </body></html>
+    """
+    page = _run(monkeypatch, html)
+    assert page.internal_links == (
+        "About → /about/", "Real link → /real-content-link/", "Privacy → /privacy/",
+    )
+
+
+def test_link_with_no_anchor_text_falls_back_to_the_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = b'<html><body><a href="/icon-only/"><svg></svg></a></body></html>'
+    page = _run(monkeypatch, html)
+    assert page.internal_links == ("https://example.com/icon-only/",)
+
+
+def test_blocked_fetch_gives_empty_links(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch(status=403, error="blocked", body=b""))
+    page = fetch_page(URL, throttle=HostThrottle(), stats=FetchStats())
+    assert page.internal_links == ()
+    assert page.external_links == ()

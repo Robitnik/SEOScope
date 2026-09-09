@@ -35,6 +35,11 @@ SourceKind = Literal["spreadsheet", "xlsx_blob", "document", "unsupported"]
 FrameworkOrigin = Literal["strategy_link", "drive_search"]
 FrameworkState = Literal["checked", "not_accessible", "no_recognized_tabs"]
 CrossCheckState = Literal["checked", "not_checked", "not_applicable"]
+# task-91 §2.2: три стани клітинки/вердикту — той самий інваріант PLAN §12
+# (`None` ≠ `""`), піднятий на рівень порівняльної таблиці.
+MatrixCellState = Literal["value", "empty", "absent"]
+MatrixVerdict = Literal["match", "mismatch", "not_comparable"]
+MatrixRowKind = Literal["matched", "strategy_only", "framework_only"]
 
 
 class DriveFileDTO(BaseModel):
@@ -107,6 +112,54 @@ class FrameworkOutcomeDTO(BaseModel):
     copy_site_info: CrossCheckInfoDTO | None = None
 
 
+class MatrixCellDTO(BaseModel):
+    """Одна клітинка матриці (task-91 §2.2). `text` — скалярні поля (url/
+    title/description/h1), `items` — множинні (keywords/links). Рівно один
+    непорожній, коли `state == "value"`."""
+
+    state: MatrixCellState
+    text: str | None = None
+    items: list[str] = Field(default_factory=list)
+
+
+class MatrixSourceCellsDTO(BaseModel):
+    url: MatrixCellDTO
+    title: MatrixCellDTO
+    description: MatrixCellDTO
+    h1: MatrixCellDTO
+    keywords: MatrixCellDTO
+    links: MatrixCellDTO
+
+
+class MatrixFieldVerdictDTO(BaseModel):
+    state: MatrixVerdict
+    detail: str | None = None
+
+
+class MatrixRowVerdictsDTO(BaseModel):
+    url: MatrixFieldVerdictDTO
+    title: MatrixFieldVerdictDTO
+    description: MatrixFieldVerdictDTO
+    h1: MatrixFieldVerdictDTO
+    keywords: MatrixFieldVerdictDTO
+    links: MatrixFieldVerdictDTO
+
+
+class MatrixRowDTO(BaseModel):
+    """Один рядок матриці = одна сторінка (task-91 §2.1). `strategy`/
+    `framework`/`site` — `None`, коли та сторона рядка взагалі не існує
+    (`kind="strategy_only"` не має `framework`/`site`, `kind=
+    "framework_only"` не має `strategy`)."""
+
+    key: str
+    kind: MatrixRowKind
+    label: str
+    strategy: MatrixSourceCellsDTO | None = None
+    framework: MatrixSourceCellsDTO | None = None
+    site: MatrixSourceCellsDTO | None = None
+    verdicts: MatrixRowVerdictsDTO
+
+
 class ContentQaPackageSummaryDTO(BaseModel):
     id: str
     client_id: str | None = None
@@ -123,6 +176,9 @@ class ContentQaPackageDTO(ContentQaPackageSummaryDTO):
     strategy_findings: list[ContentQaFindingDTO] = Field(default_factory=list)
     aggregate_findings: list[ContentQaFindingDTO] = Field(default_factory=list)
     frameworks: list[FrameworkOutcomeDTO] = Field(default_factory=list)
+    # `[]` на пакетах, прогнаних до task-91 (`matrix_json IS NULL` у БД) —
+    # чесний "порівняльної таблиці ще нема", не вигаданий заднім числом.
+    matrix: list[MatrixRowDTO] = Field(default_factory=list)
 
 
 class ContentQaPackagesPageDTO(BaseModel):
