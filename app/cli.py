@@ -1926,10 +1926,17 @@ def _compare_dimension_dataset(
     from app.integrations.google_api.compare import RowSeries, compare_dimension_rows
     from app.integrations.gsc import GscAdapter
     from app.integrations.reporting_ninja import ReportingNinjaAdapter
+    from app.metrics.portfolio import GA4_LAG_DAYS, GSC_LAG_DAYS
     from app.schemas.adapter import CollectionContext, DateRange
     from app.schemas.enums import ComparisonMode, PeriodKind, PeriodRole, Provider, SourceMode
 
-    window = DateRange(start=window_start, end=window_end)
+    # A dimension row's aggregate value sums every day in the window, so the
+    # window's tail is exactly as unsettled as `ga4_daily`/`gsc_daily` — found
+    # live on SHB (§7.1 correction, see compare.py). Shrink the fetch window
+    # the same way the date-series branch does, before either transport sees it.
+    lag = GSC_LAG_DAYS if dataset in ("gsc_kpi", "gsc_pages", "gsc_queries") else GA4_LAG_DAYS
+    effective_end = max(window_start, window_end - timedelta(days=lag))
+    window = DateRange(start=window_start, end=effective_end)
 
     def no_emit(_event: Any) -> None:
         return None  # progress is not printed by this gate
@@ -2037,14 +2044,14 @@ def _compare_dimension_dataset(
         return
 
     report = compare_dimension_rows(
-        dataset, rows_a, rows_b, label_a="reporting_ninja", label_b="google_api"
+        dataset, rows_a, rows_b, label_a="reporting_ninja", label_b="google_api", lag_days=lag
     )
     _render_dimension_comparison(report)
     reports.append(report)
 
 
 def _render_dimension_comparison(report: Any) -> None:
-    print(f"\n-- {report.dataset} ".ljust(72, "-"))
+    print(f"\n-- {report.dataset}  (lag {report.lag_days}d excluded) ".ljust(72, "-"))
     print(
         f"keys compared: {report.keys_compared}   "
         f"only in A: {len(report.keys_only_a)}   only in B: {len(report.keys_only_b)}"

@@ -114,10 +114,17 @@ TOLERANCES: dict[str, dict[str, MetricTolerance]] = {
     },
 }
 
-# task-89 §7.1: dimension-keyed datasets never share a "lag window" concept
-# with date-keyed ones (a page/channel row is either in this period's answer
-# or it is not — there is no settling period to exclude), so their gate has
-# no `lag_days` at all.
+# task-89 §7.1 correction (found live on SHB, 2026-09-09): a dimension row's
+# PRESENCE has no settling period — it is either in this period's answer or
+# it is not. But its aggregate VALUE is a sum across every day in the window,
+# and the tail days of that window are exactly as unsettled as they are for
+# `ga4_daily`/`gsc_daily`. `ga4_landing_pages`/`ga4_events` failed `exact`
+# tolerance by ±1 on SHB (a higher-volume client than HWELL, where this gate
+# was first proven) purely from that lag — not a real transport mismatch.
+# The caller (`_compare_dimension_dataset`) now shrinks the *fetch window*
+# by `GSC_LAG_DAYS`/`GA4_LAG_DAYS` before calling here, so this module still
+# does not need a `lag_days` filter of its own — `lag_days` below is display
+# metadata only, showing what the caller already excluded.
 DIMENSION_KEYED_DATASETS: frozenset[str] = frozenset({
     "gsc_kpi", "ga4_kpi", "gsc_pages", "gsc_queries",
     "ga4_channels", "ga4_landing_pages", "ga4_events", "ga4_devices", "ga4_countries",
@@ -308,6 +315,7 @@ class DimensionComparisonReport:
     keys_only_b: list[str]
     failures: list[RowDiff] = field(default_factory=list)
     per_metric: list[MetricSummary] = field(default_factory=list)
+    lag_days: int = 0
 
     @property
     def passed(self) -> bool:
@@ -321,6 +329,7 @@ def compare_dimension_rows(
     *,
     label_a: str,
     label_b: str,
+    lag_days: int = 0,
 ) -> DimensionComparisonReport:
     """Compare two dimension-keyed row sets — GSC pages/queries, GA4
     breakdown datasets, or a single-row KPI aggregate (task-89 §7.1).
@@ -328,10 +337,12 @@ def compare_dimension_rows(
     Same tolerance discipline as `compare_series` (exact for integer counts,
     a small relative tolerance for derived/estimated metrics), but keyed by
     `dimension_value` (page URL, query text, channel name, or a synthetic
-    `"total"` key for the KPI aggregates) instead of `date`, and with no lag
-    window: a dimension row is either in this exact period's answer on both
-    sides or it is not — there is no "still settling" concept for it the way
-    a day near `today` has (§0.7/task-83 §7.4).
+    `"total"` key for the KPI aggregates) instead of `date`.
+
+    `lag_days` is display-only here: a row's presence has no settling period,
+    but its aggregate value sums every day in the fetch window, so the
+    caller must already have shrunk that window by the lag before calling —
+    see the module-level note above `DIMENSION_KEYED_DATASETS`.
     """
     tolerances = TOLERANCES[dataset]
     a_keys = set(rows_a)
@@ -403,6 +414,7 @@ def compare_dimension_rows(
         dataset=dataset,
         label_a=label_a,
         label_b=label_b,
+        lag_days=lag_days,
         keys_compared=len(common),
         keys_only_a=sorted(a_keys - b_keys),
         keys_only_b=sorted(b_keys - a_keys),

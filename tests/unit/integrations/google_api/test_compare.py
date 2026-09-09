@@ -164,6 +164,23 @@ def test_dimension_rows_none_on_one_side_only_is_a_failure() -> None:
     assert "only in" in report.failures[0].note
 
 
+def test_dimension_rows_lag_days_is_display_only_and_defaults_to_zero() -> None:
+    """`lag_days` does not filter anything here — the caller must already
+    have shrunk the fetch window (task-89 §7.1 correction, found live on
+    SHB: an aggregate over an unshrunk window disagreed by exactly the
+    still-settling tail day's count, same class of bug `ga4_daily`'s
+    `lag_days` already guards against)."""
+    a = {"/blog/a": {"clicks": Decimal(10)}}
+    b = {"/blog/a": {"clicks": Decimal(10)}}
+    default_report = compare_dimension_rows("gsc_pages", a, b, label_a="rn", label_b="ga")
+    assert default_report.lag_days == 0
+    tagged_report = compare_dimension_rows(
+        "gsc_pages", a, b, label_a="rn", label_b="ga", lag_days=3
+    )
+    assert tagged_report.lag_days == 3
+    assert tagged_report.passed
+
+
 # ── task-89 §7.1 regression: both sides exactly 0 on a relative metric ─────
 def test_both_zero_relative_metric_is_a_pass_not_a_failure() -> None:
     """`ctr == 0` on both sides (a real page with 0 clicks and 0 impressions
