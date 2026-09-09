@@ -150,14 +150,42 @@ class GoogleApiSession:
         `403` splits into permission vs rate limit. Anything else raises
         `GoogleApiError` with a redacted message.
         """
+        return self._request("POST", url, body=body)
+
+    def get_json(
+        self, url: str, *, params: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        """GET `url`, return the parsed response object.
+
+        Same retry/error-mapping policy as `post_json` — the two share
+        `_request` so the policy can never drift between verbs. Added by
+        task-88 for the read-only GET endpoints its panels need (GA4
+        `properties/{id}/metadata` for the property's own key-event names,
+        GSC `sites/{site}/sitemaps`); both Search Analytics and the GA4 Data
+        API are POST-only, so task-83 had no reason to need this.
+        """
+        return self._request("GET", url, params=params)
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        body: dict[str, Any] | None = None,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         refreshed = False
         rate_attempts = 0
         server_retries = 0
         while True:
             token = self._auth.access_token(force_refresh=refreshed)
             try:
-                response = self._http.post(
-                    url, json=body, headers={"Authorization": f"Bearer {token}"}
+                response = self._http.request(
+                    method,
+                    url,
+                    json=body,
+                    params=params,
+                    headers={"Authorization": f"Bearer {token}"},
                 )
             except httpx.HTTPError as exc:
                 if server_retries < _SERVER_ERROR_RETRIES:

@@ -644,6 +644,18 @@ class Settings(BaseSettings):
     # `not_configured` з явним warning, НІКОЛИ не тихий фолбек на RN.
     google_api_default_transport: str = "reporting_ninja"
 
+    # ── URL Inspector напряму з Google API (task-88) ──────────────────────
+    # Скільки запитів до Google панель `#/url` пускає одночасно. Виміряно
+    # (task-88 §0.6): вісім запитів послідовно — 6.2 с, ті самі вісім у вісім
+    # потоків — 0.4-1.6 с. Стеля тут не наша, а Google'ова (GSC 1200
+    # запитів/хв на property), і від неї ми на три порядки далеко: одне
+    # відкриття сторінки — це десятки запитів, не тисячі.
+    url_inspector_google_workers: int = 8
+    # Скільки рядків дименсії `query` доїжджає до фронта. Одна сторінка
+    # блогу цього портфеля має 692 запити (§0.2); повна кількість завжди
+    # їде окремим полем, щоб "показано N із M" було видно словами.
+    url_inspector_query_cap: int = 200
+
 
     @model_validator(mode="after")
     def validate_cloud_credentials(self) -> Self:

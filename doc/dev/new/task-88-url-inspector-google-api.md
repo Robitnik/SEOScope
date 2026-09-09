@@ -195,17 +195,28 @@ GSC із фільтром по `page` і дименсією `date` віддає 
 
 Обидва нулі мовчазні. Якщо не рахувати вікно самостійно, оператор побачить «no data» там, де правильна відповідь — «за межею історії GSC».
 
-### §0.8 Несумісності GA4, знайдені бісекцією (кожна дає 400 INVALID_ARGUMENT)
+### §0.8 Ліміти й несумісності GA4 (кожна дає той самий непрозорий 400 INVALID_ARGUMENT)
+
+**⚠️ Перше вимірювання цієї секції було помилковим і виправлене бісекцією.** Початково запит із 11 метриками під фільтром `landingPagePlusQueryString` падав, і це прочиталось як «дименсія несумісна з набором метрик». Насправді причина інша й куди прозаїчніша — **жорсткі ліміти на розмір запиту**:
+
+| Ліміт `runReport` | Виміряно |
+|---|---|
+| Метрик на запит | **10 — OK, 11 — 400** |
+| Дименсій на запит | **8 — OK, 9 — 400** |
+
+Тобто повний набір landing-метрик (15 полів) фізично не влазить в один запит і мусить різатись на пачки по ≤10. Жодної несумісності «дименсія × метрика» там не було: окремо перевірено **28 метрик по одній** під фільтром `landingPage` — усі 28 сумісні (`sessions`, `totalUsers`, `newUsers`, `activeUsers`, `engagedSessions`, `engagementRate`, `bounceRate`, `averageSessionDuration`, `userEngagementDuration`, `screenPageViews`, `screenPageViewsPerSession/PerUser`, `keyEvents`, `sessionKeyEventRate`, `userKeyEventRate`, `eventCount`, `eventsPerSession`, `eventCountPerUser`, `scrolledUsers`, `sessionsPerUser`, `active1/7/28DayUsers`, e-commerce-набір). E-commerce і `scrolledUsers` віддають `None`, не `0` — чесна відсутність, нічого підміняти не треба.
+
+Справжні несумісності, що лишились після поправки:
 
 | Що | Працює | Не працює |
 |---|---|---|
-| `organicGoogleSearchClicks/Impressions/AveragePosition/ClickThroughRate` | лише з дименсією `landingPagePlusQueryString` **самою** | без дименсій; з `landingPage`; з `date` + `landingPagePlusQueryString` |
-| Іменовані key events | `keyEvents:Phone`, `keyEvents:Email`, `keyEvents:purchase` | `keyEvents:Contact Us`, `keyEvents:Insurance Form` — **пробіл у назві** валить запит |
+| `organicGoogleSearchClicks/Impressions/AveragePosition/ClickThroughRate` | з `landingPagePlusQueryString` самою; з `date` самою | **без дименсій**; з `landingPage`; з `date` + `landingPagePlusQueryString` разом |
+| Іменовані key events | `keyEvents:Phone`, `keyEvents:Email`, `keyEvents:purchase` | `keyEvents:Contact Us`, `keyEvents:Insurance Form` — **пробіл у назві валить запит**, і `%20` не рятує |
 | `keyEvents` | з фільтром по `landingPage` → `1` | з фільтром по `pagePath` → `None` (конверсія не page-scoped) |
 
-Окремо перевірено весь набір метрик під фільтром `landingPage` — **28 із 28 сумісні** (`sessions`, `totalUsers`, `newUsers`, `activeUsers`, `engagedSessions`, `engagementRate`, `bounceRate`, `averageSessionDuration`, `userEngagementDuration`, `screenPageViews`, `screenPageViewsPerSession/PerUser`, `keyEvents`, `sessionKeyEventRate`, `userKeyEventRate`, `eventCount`, `eventsPerSession`, `eventCountPerUser`, `scrolledUsers`, `sessionsPerUser`, `active1/7/28DayUsers`, e-commerce-набір). E-commerce і `scrolledUsers` віддають `None`, не `0` — чесна відсутність, нічого підміняти не треба.
+**Обхід для назв із пробілом** (перевірено — запит валідний): дименсія `eventName` + метрика `keyEvents` під `andGroup` із `landingPage`-фільтром і `inListFilter` за назвами подій. Дає ті самі числа для будь-якої назви, включно з пробілами, одним запитом на всі конверсії замість запиту на назву. Тому реалізація бере **лише** цей шлях, а `keyEvents:<name>` не використовує взагалі — інакше набір конверсій клієнта тихо різався б за наявністю пробілу.
 
-`properties/{id}:checkCompatibility` працює (без `compatibilityFilter`), але з фільтром `INCOMPATIBLE` + `landingPage` сам падає на 400 — як інструмент авто-перевірки ненадійний, тому список сумісності зафіксований тестом (§7.3), а не запитом у рантаймі.
+`properties/{id}:checkCompatibility` працює (без `compatibilityFilter`), але з фільтром `INCOMPATIBLE` + `landingPage` сам падає на 400 — як інструмент авто-перевірки ненадійний, тому список сумісності зафіксований тестом (§8), а не запитом у рантаймі.
 
 ### §0.9 Метадані property: що взагалі доступно
 
@@ -334,6 +345,10 @@ def in_list(field, url):  # ga4_landing_variants дає ["/a", "/a/"]
 
 `engagementRate` — частка `0..1`, у БД лежить відсоток; **не змішувати** (та сама пастка ×100, що в task-83 §7.3).
 
+⚠️ **≤10 метрик і ≤8 дименсій на запит** (§0.8). Повний набір landing-метрик — 15 полів, тож він ріжеться на дві пачки, і `_batched` мусить бути єдиною точкою, через яку метрики їдуть у запит: набір, що доріс до 11-ї метрики повз цю функцію, впаде непрозорим 400 уже в проді, а не в тесті.
+
+⚠️ **Конверсії за назвою — тільки через дименсію `eventName`** (§0.8), ніколи через `keyEvents:<name>`: назва з пробілом валить запит, і клієнт із конверсією `Contact Us` тихо втратив би саме її.
+
 ### §3.3 URL Inspection
 
 `POST https://searchconsole.googleapis.com/v1/urlInspection/index:inspect` з `{inspectionUrl, siteUrl, languageCode:"en-US"}`. Квота за документацією — 2000/добу і 600/хв на property; наш профіль (одна перевірка на клік оператора) від неї далеко, але кнопка мусить бути кнопкою, не автозапуском.
@@ -395,11 +410,16 @@ def in_list(field, url):  # ga4_landing_variants дає ["/a", "/a/"]
 
 ---
 
-## §5. Рекомендований обсяг
+## §5. Обсяг
 
-**У цій тасці (ядро + те, що приходить майже безкоштовно в тих самих запитах):** 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 15, 16, 17, 18, 19, 20, 24.
+**Рішення користувача (2026-09-09): усі 30 позицій §4 у цій тасці.** Первісна рекомендація плану була вужчою (17 позицій ядра, решта — follow-up); користувач розширив обсяг до повної таблиці.
 
-**Follow-up:** 13, 14, 21, 22, 23, 25, 26, 27, 28, 29, 30 — кожен додає окремий запит або окрему панель без нової механіки.
+Наслідки для реалізації, які це тягне за собою:
+
+- **Запитів на завантаження стає більше за виміряні 8** (§0.6). Тому Google-панель ділиться на **три хвилі**, а не одну: `core` (серія + тотали + запити + канал + конверсії), `breakdowns` (пристрій/країна/місто/мова/джерело/нові-повторні/події/title/типи пошуку/searchAppearance), `slow` (URL Inspection 6.6 с, realtime, sitemaps). Хвилі 2 і 3 — ліниві, за розкриттям секції або кнопкою, щоб перший екран лишився в межах піводини секунди.
+- **Порожні позиції мусять лишатись видимими як порожні.** На цьому портфелі `image`/`video`/`news`/`discover`-пошук, `searchAppearance` і `scrolledUsers` дають нуль рядків. Це валідна відповідь Google, і панель має казати «no data in this search type», а не зникати — інакше оператор не відрізнить «немає» від «не запитували» (PLAN §12).
+- **Sitemap-позиція (23) вимагає `get_json`** у `auth.py` — тобто адитивний дотик до owned path task-83 стає обов'язковим, не опційним (§3.4).
+- **Realtime (28) має власний бюджет** і не кешується разом з рештою: його значення істинне лише в момент запиту.
 
 ---
 
