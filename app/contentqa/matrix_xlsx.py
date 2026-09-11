@@ -202,6 +202,10 @@ def _page_header(ws: Worksheet, row_index: int, row: MatrixRowDTO) -> int:
     )
     title_cell = ws.cell(title_row, 1, row.label)
     title_cell.font = Font(name="Calibri", bold=True, size=13)
+    if row.label.startswith(("http://", "https://")):
+        # Same as the per-page Copy sheets: a URL in the header is a link,
+        # not just text (live feedback round on the Excel export).
+        _link_cell(title_cell, row.label, bold=True, size=13)
     title_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
     for col in range(1, _TOTAL_COLUMNS + 1):
         cell = ws.cell(title_row, col)
@@ -226,7 +230,28 @@ def _page_header(ws: Worksheet, row_index: int, row: MatrixRowDTO) -> int:
     for col in range(1, _TOTAL_COLUMNS + 1):
         ws.cell(summary_row, col).fill = _fill(_BLOCK_TITLE_BG)
     ws.row_dimensions[summary_row].height = _SUMMARY_ROW_HEIGHT
-    return summary_row + 1
+    next_row = summary_row + 1
+
+    # Live feedback («додати посилання на фрейм» у першому аркуші): third
+    # header line pointing at the framework's Google Doc — same
+    # `Framework: <name>` -> link line the per-page Copy sheets carry, so
+    # the two exports read the same. `strategy_only` rows have no
+    # framework and get no line (not an empty one).
+    if row.framework_document_id:
+        ws.merge_cells(
+            start_row=next_row, start_column=1, end_row=next_row, end_column=_TOTAL_COLUMNS
+        )
+        doc_cell = ws.cell(
+            next_row, 1,
+            f"Framework: {row.framework_document_name or row.framework_document_id}",
+        )
+        _link_cell(doc_cell, _gdoc_link(row.framework_document_id), size=10)
+        doc_cell.alignment = Alignment(horizontal="left", vertical="center")
+        for col in range(1, _TOTAL_COLUMNS + 1):
+            ws.cell(next_row, col).fill = _fill(_BLOCK_TITLE_BG)
+        ws.row_dimensions[next_row].height = _SUMMARY_ROW_HEIGHT
+        next_row += 1
+    return next_row
 
 
 def _tone_font_fill_border(tone: str | None) -> tuple[Font, PatternFill | None, Border]:

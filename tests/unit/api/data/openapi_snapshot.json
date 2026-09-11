@@ -6532,6 +6532,28 @@
               }
             ]
           },
+          "framework_document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Framework Document Id"
+          },
+          "framework_document_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Framework Document Name"
+          },
           "key": {
             "title": "Key",
             "type": "string"

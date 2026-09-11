@@ -479,3 +479,16 @@ NODE_PATH=/tmp/yovth-e2e/node_modules BASE_URL=http://127.0.0.1:6524 \
 
 **Перевірено живо:** нові прогони EFFYS і LAXTON через `/check` →
 `/matrix.xlsx`, плюс експорт пакета, персистованого ДО `page_url`.
+
+## Раунд live-фідбеку №2 (2026-09-11) — лінк на фрейм у `Comparison`
+
+«Треба ще першу вкладку змінити, додати посилання на фрейм.» `MatrixRow`
+не ніс id документа — додано адитивні `framework_document_id`/
+`framework_document_name` (`matrix.py` → `MatrixRowDTO` → `matrix_json`;
+`None` для `strategy_only` і для матриць до цього поля). У шапці кожної
+сторінки `Comparison` — третій рядок `Framework: <назва>` → лінк на
+Google Doc (той самий рядок, що в Copy-аркушах), URL сторінки в рядку 1
+теж став клікабельним. Перевірено живо: EFFYS — 34 сторінки в матриці,
+4 з фреймом отримали лінк, 30 `strategy_only` — ні (порожнього рядка не
+малюється). Тести: `test_matrix_xlsx.py` +1, `test_matrix.py` +1.
+`matrix.py` — файл task-91, зміна суто адитивна.

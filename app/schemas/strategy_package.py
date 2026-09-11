@@ -240,6 +240,10 @@ class MatrixRowDTO(BaseModel):
     framework: MatrixSourceCellsDTO | None = None
     site: MatrixSourceCellsDTO | None = None
     verdicts: MatrixRowVerdictsDTO
+    # Google Doc фреймворка за цим рядком — для лінка в Excel `Comparison`
+    # (live feedback). `None` для `strategy_only` і для матриць до цього поля.
+    framework_document_id: str | None = None
+    framework_document_name: str | None = None
 
 
 class ContentQaPackageSummaryDTO(BaseModel):

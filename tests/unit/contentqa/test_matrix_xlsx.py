@@ -126,6 +126,35 @@ def test_page_header_summarizes_verdicts() -> None:
     assert description_cell.font.color.rgb.endswith("999999")
 
 
+def test_page_header_links_the_framework_document() -> None:
+    """Live feedback («додати посилання на фрейм» у Comparison): a third
+    header line `Framework: <name>` -> Google Doc, same line the per-page
+    Copy sheets carry. A `strategy_only` row has no framework and gets no
+    line at all — its first mini-table starts right after the summary."""
+    rows = [
+        MatrixRowDTO(
+            key="r1", kind="matched", label="https://example.com/a",
+            strategy=_cells(), framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            framework_document_id="doc123", framework_document_name="EFFYS_PAGE_FRAMEWORK_A",
+        ),
+        MatrixRowDTO(
+            key="r2", kind="strategy_only", label="Sheet!row 9",
+            strategy=_cells(), framework=None, site=None, verdicts=_verdicts(),
+        ),
+    ]
+    ws = load_workbook(io.BytesIO(build_matrix_xlsx(rows)))["Comparison"]
+    assert ws.cell(1, 1).hyperlink.target == "https://example.com/a"  # URL title is a link
+    link_cell = ws.cell(3, 1)
+    assert link_cell.value == "Framework: EFFYS_PAGE_FRAMEWORK_A"
+    assert link_cell.hyperlink.target == "https://docs.google.com/document/d/doc123/edit"
+    assert ws.cell(4, 1).value == "Strategy"  # first mini-table follows the link line
+    # second page (strategy_only): title, summary, then straight to "Strategy"
+    second_title = next(
+        r for r in range(5, ws.max_row + 1) if ws.cell(r, 1).value == "Sheet!row 9"
+    )
+    assert ws.cell(second_title + 2, 1).value == "Strategy"
+
+
 def test_absent_cell_renders_the_no_such_column_marker() -> None:
     rows = [
         MatrixRowDTO(

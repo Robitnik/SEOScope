@@ -120,6 +120,12 @@ class MatrixRow:
     framework: SourceCells | None
     site: SourceCells | None
     verdicts: RowVerdicts
+    # Google Doc за цим рядком (live feedback на Excel: «додати посилання на
+    # фрейм» у Comparison). `None` для `strategy_only` (фреймворка нема) і
+    # для матриць, персистованих до цього поля — не вгадується заднім
+    # числом.
+    framework_document_id: str | None = None
+    framework_document_name: str | None = None
 
 
 # ── нормалізатори (task-91 §1.4-1.6/§2.3) ──────────────────────────────────
@@ -494,6 +500,8 @@ def build_matrix(strategy: ContentDoc, outcomes: list[FrameworkOutcome]) -> list
                     framework_item=framework_item,
                     site_page=outcome.site_page,
                 ),
+                framework_document_id=outcome.source.document_id,
+                framework_document_name=outcome.source.document_name,
             )
         )
 

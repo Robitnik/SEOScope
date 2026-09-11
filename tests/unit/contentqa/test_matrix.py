@@ -453,3 +453,27 @@ def test_build_matrix_skips_not_accessible_frameworks() -> None:
     rows = build_matrix(strategy, [outcome])
     assert len(rows) == 1
     assert rows[0].kind == "strategy_only"
+
+
+def test_matrix_row_carries_the_framework_document_for_the_excel_link() -> None:
+    """Live feedback (Comparison Excel needs a link to the framework doc):
+    `build_matrix` copies the outcome's document id/name onto the row;
+    `strategy_only` rows have none."""
+    from app.contentqa.matrix import build_matrix
+    from app.contentqa.model import ContentDoc, ContentItem
+    from app.contentqa.package import FrameworkOutcome, FrameworkSource
+
+    frame_item = ContentItem(ref="Doc › Framework", url="https://example.com/a", title="T")
+    outcome = FrameworkOutcome(
+        source=FrameworkSource(
+            document_id="doc123", document_name="EFFYS_PAGE_FRAMEWORK_A", origin="drive_search",
+        ),
+        state="checked", frame_item=frame_item,
+    )
+    orphan = ContentItem(ref="Sheet!row 9", url="https://example.com/orphan", title="O")
+    strategy = ContentDoc(source="s", doc_type="strategy_gsheet", items=(orphan,))
+    rows = build_matrix(strategy, [outcome])
+    by_kind = {r.kind: r for r in rows}
+    assert by_kind["framework_only"].framework_document_id == "doc123"
+    assert by_kind["framework_only"].framework_document_name == "EFFYS_PAGE_FRAMEWORK_A"
+    assert by_kind["strategy_only"].framework_document_id is None
