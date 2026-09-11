@@ -373,7 +373,7 @@ def test_matrix_xlsx_download_reads_the_persisted_matrix(client: Any, monkeypatc
     assert "attachment" in r.headers["content-disposition"]
     assert r.content[:2] == b"PK"
     workbook = load_workbook(io.BytesIO(r.content))
-    assert workbook.sheetnames == ["Comparison", "Mismatches"]
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
 
 
 def test_matrix_xlsx_unknown_package_gives_404(client: Any) -> None:
