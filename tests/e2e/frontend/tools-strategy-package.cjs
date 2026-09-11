@@ -135,6 +135,29 @@ async function main() {
   assert.ok(crossBadgeCount > 0, "framework detail shows either cross-check badges or a not-checked reason");
   await page.screenshot({ path: path.join(screenshots, "tools-strategy-package-frameworks-1440.png"), fullPage: true });
 
+  // 8a. Copy tab (task-92): lane K's sentence-by-sentence Copy<->site
+  // table — either real data (a copy tab + URL existed on the selected
+  // framework) or an honest empty state, never a crash. The selected
+  // framework is whichever the picker's "first" candidate happens to be,
+  // so this stays state-agnostic rather than asserting specific rows.
+  await page.locator("#sp-tab-copy").click();
+  await page.locator(".sp-copy-group, .sp-browse__status").first().waitFor({ timeout: 15_000 });
+  assert.equal(await page.locator("#sp-tab-copy").getAttribute("aria-selected"), "true");
+  const copyGroupCount = await page.locator(".sp-copy-group").count();
+  if (copyGroupCount > 0) {
+    // Toolbar toggles actually change the row count, not just visual dimming.
+    const onlyDiffCount = await page.locator(".sp-copy-table tbody tr").count();
+    await page.locator("#sp-copy-only-diff").uncheck();
+    await page.locator(".sp-copy-table, .sp-copy-tab__state, .sp-copy-tab__empty").first().waitFor();
+    const allRowsCount = await page.locator(".sp-copy-table tbody tr").count();
+    assert.ok(
+      allRowsCount >= onlyDiffCount,
+      "unchecking 'Only differences' never shows FEWER rows than the filtered view",
+    );
+    await page.locator("#sp-copy-only-diff").check();
+  }
+  await page.screenshot({ path: path.join(screenshots, "tools-strategy-package-copy-1440.png"), fullPage: true });
+
   // 9. Cross-checks tab: the per-framework coverage table + aggregate findings panel.
   await page.locator("#sp-tab-cross").click();
   await page.locator(".sp-cross-table, .cq-clean, #sp-tabpanel .cq-summary").first().waitFor({ timeout: 10_000 });

@@ -231,3 +231,81 @@ def test_blocked_fetch_gives_empty_links(monkeypatch: pytest.MonkeyPatch) -> Non
     page = fetch_page(URL, throttle=HostThrottle(), stats=FetchStats())
     assert page.internal_links == ()
     assert page.external_links == ()
+
+
+# ── task-92 §1.4/§2.2: block-level potok + lang, independent second pass ────
+
+
+def test_blocks_keep_paragraph_boundaries_headings_and_sections_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`blocks` must NOT collapse into `headings`/`sections`' run-on
+    string (task-92 DoD #8: lanes I/J and task-91's matrix must see the
+    exact same `headings`/`sections` as before)."""
+    html = b"""
+    <html><body>
+      <h1>Title</h1>
+      <p>First paragraph.</p>
+      <p>Second paragraph.</p>
+    </body></html>
+    """
+    page = _run(monkeypatch, html)
+    assert [b.text for b in page.blocks] == ["Title", "First paragraph.", "Second paragraph."]
+    assert page.blocks[0].kind == "heading" and page.blocks[0].level == "H1"
+    assert page.blocks[1].kind == "para"
+    # Unaffected legacy fields — same shape as before this task.
+    assert page.headings == (("H1", "Title"),)
+    assert len(page.sections) == 1
+    assert page.sections[0].text == "First paragraph. Second paragraph."
+
+
+def test_blocks_split_bullet_list_items_separately(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Live defect this fixes: nine `<li>` bullets used to collapse into
+    ONE `sections` string; `blocks` keeps each `<li>` as its own item."""
+    html = b"""
+    <html><body>
+      <h2>Specifications</h2>
+      <ul><li>Real-time EVP scanning</li><li>Built-in speaker</li></ul>
+    </body></html>
+    """
+    page = _run(monkeypatch, html)
+    items = [b for b in page.blocks if b.kind == "item"]
+    assert [b.text for b in items] == ["Real-time EVP scanning", "Built-in speaker"]
+
+
+def test_blocks_br_tag_is_a_block_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = b"<html><body><p>Line one<br>Line two</p></body></html>"
+    page = _run(monkeypatch, html)
+    assert [b.text for b in page.blocks] == ["Line one", "Line two"]
+
+
+def test_blocks_exclude_head_title_and_nav(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Live defect this fixes: without excluding `<title>`, the first row
+    of the sentence-level comparison table was
+    `"... Café UWS Skip to content"` (EFFYS, every page)."""
+    html = b"""
+    <html><head><title>Site Title Skip to content</title></head>
+      <body><nav><p>Nav text</p></nav><p>Real body text.</p></body>
+    </html>
+    """
+    page = _run(monkeypatch, html)
+    assert [b.text for b in page.blocks] == ["Real body text."]
+
+
+def test_blocks_empty_on_unreachable_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch(status=403, error="blocked", body=b""))
+    page = fetch_page(URL, throttle=HostThrottle(), stats=FetchStats())
+    assert page.blocks == ()
+    assert page.lang is None
+
+
+def test_lang_is_extracted_from_html_tag(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = b'<html lang="sv-SE"><body><h1>Hej</h1></body></html>'
+    page = _run(monkeypatch, html)
+    assert page.lang == "sv-SE"
+
+
+def test_lang_is_none_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = b"<html><body><h1>Hi</h1></body></html>"
+    page = _run(monkeypatch, html)
+    assert page.lang is None

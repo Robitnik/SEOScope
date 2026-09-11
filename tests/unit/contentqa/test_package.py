@@ -288,3 +288,154 @@ def test_package_module_default_runner_is_run_framework() -> None:
     assert inspect.signature(package_module.run_package).parameters["framework_runner"].default is (
         package_module.run_framework
     )
+
+
+# ── task-92 §2.5: lane K — Copy ↔ site, one CopyTabResult per copy tab ──────
+
+
+def _fake_fetch_factory(html: bytes, *, status: int = 200, error: str | None = None):
+    from app.monitor.fetcher import FetchResult
+
+    def _fake_fetch(url: str, *, throttle: HostThrottle, stats: FetchStats, timeout: float = 20.0):
+        return FetchResult(
+            requested_url=url, final_url=url, status=status, hop_count=0,
+            headers={"Content-Type": "text/html"}, body=html if error is None else None,
+            truncated_body=False, elapsed_ms=1, error=error,
+        )
+    return _fake_fetch
+
+
+def test_language_hint_matches_known_language_words() -> None:
+    from app.contentqa.package import _language_hint
+
+    assert _language_hint("English Content") == "en"
+    assert _language_hint("Swedish Content") == "sv"
+    assert _language_hint("SAPHNY_COPY_WEBSITE_CLIENT_HOMEPAGE") is None
+    assert _language_hint("Content") is None
+
+
+def test_copy_diffs_populated_for_a_finished_copy_tab(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = b"<html><body><h1>Title</h1><p>Real prose sentence here.</p></body></html>"
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch_factory(html))
+    tabs = (
+        _tab("Framework", [_table((["URL"], ["https://example.com/a"]))]),
+        _tab("Content", [_para("<h1>Title</h1>"), _para("Real prose sentence here.")]),
+    )
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=True, check_published=True,
+    )
+    assert len(outcome.copy_diffs) == 1
+    diff = outcome.copy_diffs[0]
+    assert diff.tab_title == "Content"
+    assert diff.role == "primary"
+    assert diff.state == "checked"
+    assert diff.stats.match >= 1
+
+
+def test_copy_diffs_no_url_when_framework_has_no_url() -> None:
+    """task-92 §1.10/DoD #7: a framework with no URL anywhere (blog
+    frameworks) must report `no_url` on each copy tab, not skip lane K
+    silently and not show an empty table."""
+    tabs = (
+        _tab("Framework", [_table((["H1"], ["Title"]))]),  # no URL row at all
+        _tab("Content", [_para("<h1>Title</h1>"), _para("Real prose sentence here.")]),
+    )
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=True, check_published=True,
+    )
+    assert len(outcome.copy_diffs) == 1
+    assert outcome.copy_diffs[0].state == "no_url"
+
+
+def test_copy_diffs_not_checked_when_site_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch_factory(b"", status=403, error="blocked"))
+    tabs = (
+        _tab("Framework", [_table((["URL"], ["https://example.com/a"]))]),
+        _tab("Content", [_para("<h1>Title</h1>"), _para("Real prose sentence here.")]),
+    )
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=True, check_published=True,
+    )
+    assert outcome.copy_diffs[0].state == "not_checked"
+    assert outcome.copy_diffs[0].reason == "blocked"
+
+
+def test_copy_diffs_empty_when_check_published_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = b"<html><body><h1>Title</h1><p>Real prose sentence here.</p></body></html>"
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch_factory(html))
+    tabs = (
+        _tab("Framework", [_table((["URL"], ["https://example.com/a"]))]),
+        _tab("Content", [_para("<h1>Title</h1>"), _para("Real prose sentence here.")]),
+    )
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=True, check_published=False,
+    )
+    assert outcome.copy_diffs == ()
+
+
+def test_copy_diffs_role_selection_by_coverage_not_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LAXTON shape (task-92 §1.8/§2.5): two language variants on one
+    document — the one with HIGHER coverage against the live site must
+    win `role="primary"`, regardless of which tab comes first."""
+    html = (
+        b'<html lang="sv-SE"><body><h1>Spirit Box</h1>'
+        b"<p>Svensk text om produkten.</p></body></html>"
+    )
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch_factory(html))
+    tabs = (
+        _tab("Framework", [_table((["URL"], ["https://laxton.se/p"]))]),
+        _tab("English Content", [
+            _para("<h1>Spirit Box</h1>"), _para("Completely different English body."),
+        ]),
+        _tab("Swedish Content", [
+            _para("<h1>Spirit Box</h1>"), _para("Svensk text om produkten."),
+        ]),
+    )
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=True, check_published=True,
+    )
+    by_title = {d.tab_title: d for d in outcome.copy_diffs}
+    assert by_title["Swedish Content"].role == "primary"
+    assert by_title["English Content"].role == "secondary"
+
+
+def test_copy_diffs_wrong_language_with_no_matching_page_is_not_applicable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """task-92 §1.8/§2.5: an English-language tab compared against a
+    Swedish-only site with near-zero coverage reads as "no published page
+    in this language", not a wall of false "missing" findings."""
+    html = (
+        b'<html lang="sv-SE"><body><h1>Andekontakt</h1>'
+        b"<p>Helt annan svensk text.</p></body></html>"
+    )
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch_factory(html))
+    tabs = (
+        _tab("Framework", [_table((["URL"], ["https://laxton.se/en/p"]))]),
+        _tab("English Content", [
+            _para("<h1>Spirit Box</h1>"), _para("Nothing in common with the page."),
+        ]),
+    )
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=True, check_published=True,
+    )
+    assert outcome.copy_diffs[0].state == "not_applicable"
+    assert outcome.copy_diffs[0].reason == "No published page in this language."

@@ -9,6 +9,7 @@ inside NORMAL_TEXT paragraphs for Content headings.
 from __future__ import annotations
 
 from app.contentqa.readers.gdoc import (
+    copy_tab_blocks,
     read_copy_sections,
     read_copy_tab,
     read_framework_document,
@@ -17,11 +18,17 @@ from app.contentqa.readers.gdoc import (
 from app.integrations.google_api.docs_client import DocTab
 
 
-def _para(text: str, style: str | None = None) -> dict[str, object]:
+def _para(text: str, style: str | None = None, *, bullet: bool = False) -> dict[str, object]:
     style_block: dict[str, object] = {"namedStyleType": style} if style else {}
-    return {
-        "paragraph": {"paragraphStyle": style_block, "elements": [{"textRun": {"content": text}}]}
+    paragraph: dict[str, object] = {
+        "paragraphStyle": style_block, "elements": [{"textRun": {"content": text}}]
     }
+    if bullet:
+        # Live shape: a non-empty `Bullet` object — `bool({})` is `False`,
+        # so a fixture using `{}` would silently fail to exercise the
+        # bullet path (task-92 §1.3).
+        paragraph["bullet"] = {"listId": "kix.list", "nestingLevel": 0}
+    return {"paragraph": paragraph}
 
 
 def _table(*rows: tuple[list[str], list[str]]) -> dict[str, object]:
@@ -304,3 +311,204 @@ def test_child_tab_ref_includes_path() -> None:
     item = read_copy_tab(tab, source="MyDoc")
     assert item is not None
     assert item.ref == "MyDoc › Page A › Content"
+
+
+# ── task-92 §1.1: broadened Copy-tab recognition ─────────────────────────────
+
+
+def test_copy_tab_recognized_by_word_boundary_substring() -> None:
+    """Live: 49/96 real copy tabs are named things `_COPY_TAB_NAMES`'
+    exact-match set never covers — "English Content"/"Swedish Content"
+    (LAXTON) among them."""
+    tabs = (
+        _tab("Framework", [_table((["H1"], ["Title A"]))]),
+        _tab("English Content", [_para("<h1>Title A</h1>"), _para("Body prose.")]),
+    )
+    resolved = read_framework_document(tabs, source="doc")
+    assert resolved.copy_doc is not None
+    assert resolved.copy_tab_title == "English Content"
+    assert [t.title for t in resolved.all_copy_tabs] == ["English Content"]
+
+
+def test_copy_tab_recognized_by_underscored_client_name() -> None:
+    """Live: `SAPHNY_COPY_WEBSITE_CLIENT_HOMEPAGE_031224` — underscores must
+    fold to spaces before the word-boundary check, or `\\bcopy\\b` never
+    fires inside an all-underscore name."""
+    tabs = (
+        _tab("Framework", [_table((["H1"], ["Title A"]))]),
+        _tab(
+            "SAPHNY_COPY_WEBSITE_CLIENT_HOMEPAGE_031224",
+            [_para("<h1>Title A</h1>"), _para("Body prose.")],
+        ),
+    )
+    resolved = read_framework_document(tabs, source="doc")
+    assert resolved.copy_doc is not None
+
+
+def test_copy_tab_recognized_structurally_when_bare_and_unnamed() -> None:
+    """Live: EFFYS FAQ — the copy tab is literally "Tab 2", no name at
+    all. Zero recognized table fields + real content is copy-like
+    regardless of name."""
+    tabs = (
+        _tab("Framework", [_table((["H1"], ["Title A"]))]),
+        _tab("Tab 2", [_para("<h1>FAQ</h1>"), _para("Answer body long enough to count.")]),
+    )
+    resolved = read_framework_document(tabs, source="doc")
+    assert resolved.copy_doc is not None
+    assert resolved.copy_tab_title == "Tab 2"
+
+
+def test_trivial_unnamed_tab_is_not_a_phantom_copy_tab() -> None:
+    """A stray short note must not become a fake Copy tab just because it
+    has zero table fields (task-92 §1.1 `_MIN_COPY_CANDIDATE_CHARS`)."""
+    tabs = (
+        _tab("Framework", [_table((["H1"], ["Title A"]))]),
+        _tab("Notes", [_para("TBD")]),
+    )
+    resolved = read_framework_document(tabs, source="doc")
+    assert resolved.copy_doc is None
+    assert resolved.all_copy_tabs == ()
+
+
+def test_lone_website_copy_tab_is_copy_not_framework() -> None:
+    """Live defect (task-92 §1.1): 19 documents are a SINGLE tab of
+    finished copy whose title IS the document name ("Brandons Donuts
+    Website Copy"). The pre-task-92 single-tab fallback silently read
+    every lone unnamed tab as Framework — must now check for recognized
+    brief fields first."""
+    tabs = (_tab("Brandons Donuts Website Copy", [_para("<h1>Donuts</h1>"), _para("Body.")]),)
+    resolved = read_framework_document(tabs, source="doc")
+    assert resolved.frame_doc is None
+    assert resolved.copy_doc is not None
+    assert resolved.unnamed_single_tab is False
+
+
+def test_lone_tab_with_fields_is_still_framework() -> None:
+    """The single-tab fallback must still read a real brief as Framework
+    when it DOES carry recognized fields — the fix above must not flip
+    every lone tab to Copy."""
+    tabs = (_tab("Tab 1", [_table((["H1"], ["Title A"]))]),)
+    resolved = read_framework_document(tabs, source="doc")
+    assert resolved.frame_doc is not None
+    assert resolved.unnamed_single_tab is True
+
+
+def test_frame_tab_matched_by_content_when_unnamed_among_others() -> None:
+    """Live defect (task-92 §1.1, 6 documents including several EFFYS
+    location pages): a multi-tab document's Framework tab is sometimes
+    ALSO left unnamed ("Tab 1") alongside a named "Content"/"Tab 2" — the
+    exact-name check and the single-tab fallback both miss it, silently
+    disabling this task's own lane K (no URL to fetch)."""
+    tabs = (
+        _tab("Tab 1", [_table((["H1"], ["Title A"]), (["URL"], ["https://example.com/p"]))]),
+        _tab("Content", [_para("<h1>Title A</h1>"), _para("Body prose.")]),
+    )
+    resolved = read_framework_document(tabs, source="doc")
+    assert resolved.frame_doc is not None
+    assert resolved.frame_tab_title == "Tab 1"
+    assert resolved.frame_matched_by_content is True
+    assert resolved.copy_doc is not None
+
+
+def test_all_copy_tabs_lists_every_language_variant() -> None:
+    """LAXTON shape: Framework + English Content + Swedish Content on one
+    document — `all_copy_tabs` must carry BOTH, not just the first found
+    by name (task-92 §1.8/§2.5, role selection needs every candidate)."""
+    tabs = (
+        _tab("Framework", [_table((["H1"], ["Spirit Box"]))]),
+        _tab("English Content", [_para("<h1>Spirit Box</h1>"), _para("English body.")]),
+        _tab("Swedish Content", [_para("<h1>Spirit Box</h1>"), _para("Svensk text.")]),
+    )
+    resolved = read_framework_document(tabs, source="doc")
+    assert [t.title for t in resolved.all_copy_tabs] == ["English Content", "Swedish Content"]
+
+
+def test_all_copy_tabs_excludes_the_frame_tab_itself() -> None:
+    tabs = (_tab("Framework", [_table((["H1"], ["X"]))]),)
+    resolved = read_framework_document(tabs, source="doc")
+    assert resolved.all_copy_tabs == ()
+
+
+# ── task-92 §1.3/§2.2: copy_tab_blocks — block-level stream for copydiff ────
+
+
+def test_copy_tab_blocks_splits_soft_line_breaks_into_separate_items() -> None:
+    """Live defect: `\\x0b`-joined bullet lines inside one paragraph must
+    become separate blocks, not one run-on sentence."""
+    text = "Real-time EVP scanning\x0bBuilt-in speaker\x0bRed display backlight"
+    tab = _tab("Content", [_para(text, bullet=True)])
+    blocks = copy_tab_blocks(tab)
+    assert [b.text for b in blocks] == [
+        "Real-time EVP scanning", "Built-in speaker", "Red display backlight",
+    ]
+    assert all(b.kind == "item" for b in blocks)
+
+
+def test_copy_tab_blocks_bullet_paragraph_is_an_item_not_split_by_style() -> None:
+    tab = _tab("Content", [_para("Just one bullet line.", bullet=True)])
+    (block,) = copy_tab_blocks(tab)
+    assert block.kind == "item"
+
+
+def test_copy_tab_blocks_recognizes_html_heading_without_closing_tag() -> None:
+    """Live (EFFYS COLUMBUS_AVE): `<h2>Effy's Café & Patisserie: Columbus
+    Ave` with no `</h2>` at all — Docs lets a copywriter forget the close,
+    the paragraph still reads as a heading."""
+    tab = _tab("Content", [_para("<h2>Effy's Café & Patisserie: Columbus Ave")])
+    (block,) = copy_tab_blocks(tab)
+    assert block.kind == "heading"
+    assert block.level == "H2"
+    assert block.text == "Effy's Café & Patisserie: Columbus Ave"
+
+
+def test_copy_tab_blocks_recognizes_bare_heading_label() -> None:
+    tab = _tab("Content", [_para("H1: Effy's Café Columbus Ave")])
+    (block,) = copy_tab_blocks(tab)
+    assert block.kind == "heading"
+    assert block.level == "H1"
+    assert block.text == "Effy's Café Columbus Ave"
+
+
+def test_copy_tab_blocks_strips_editor_marker_and_flags_it() -> None:
+    tab = _tab("Content", [_para("Position and content unchanged: [KEEP]")])
+    (block,) = copy_tab_blocks(tab)
+    assert block.kind == "para"
+    assert block.text == "Position and content unchanged:"
+    assert block.has_marker is True
+
+
+def test_copy_tab_blocks_extended_marker_form_is_recognized() -> None:
+    """Live (3XE): `[KEEP heading and form]`, not just the bare keyword."""
+    tab = _tab("Content", [_para("Ladies Free Friday [KEEP heading and form]")])
+    (block,) = copy_tab_blocks(tab)
+    assert block.has_marker is True
+    assert block.text == "Ladies Free Friday"
+
+
+def test_copy_tab_blocks_bracketed_aside_is_a_directive() -> None:
+    tab = _tab("Content", [
+        _para("[IMAGE SECTION: Full-width hero background image]"),
+        _para("Real prose sentence here."),
+    ])
+    blocks = copy_tab_blocks(tab)
+    assert blocks[0].kind == "directive"
+    assert blocks[1].kind == "para"
+
+
+def test_copy_tab_blocks_labelled_directive_line_is_excluded() -> None:
+    tab = _tab("Content", [_para("Breadcrumbs: Home / Locations / Effy's Café UWS")])
+    (block,) = copy_tab_blocks(tab)
+    assert block.kind == "directive"
+
+
+def test_copy_tab_blocks_rule_line_is_a_directive() -> None:
+    tab = _tab("Content", [_para("_______________________________")])
+    (block,) = copy_tab_blocks(tab)
+    assert block.kind == "directive"
+
+
+def test_copy_tab_blocks_plain_prose_is_a_para() -> None:
+    tab = _tab("Content", [_para("Effy's offers outdoor seating, weather permitting.")])
+    (block,) = copy_tab_blocks(tab)
+    assert block.kind == "para"
+    assert block.has_marker is False

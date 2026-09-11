@@ -364,6 +364,12 @@ def _framework_outcome_dict(outcome: FrameworkOutcome) -> dict[str, Any]:
         "frame_strategy_info": _crosscheck_info_dict(outcome.frame_strategy_info),
         "frame_site_info": _crosscheck_info_dict(outcome.frame_site_info),
         "copy_site_info": _crosscheck_info_dict(outcome.copy_site_info),
+        # Лейн K (task-92) — `CopyTabResult`'s fields already match
+        # `CopyTabResultDTO` field-for-field (same trick as
+        # `_matrix_row_dicts`), so `asdict()` needs no hand-written
+        # mapping. Lives inline in `frameworks_json`, not a new column —
+        # this blob is already persisted per-framework.
+        "copy_diffs": [asdict(cd) for cd in outcome.copy_diffs],
     }
 
 
@@ -528,9 +534,10 @@ async def get_package(package_id: str, session: SessionDep) -> ContentQaPackageD
 
 @router.get("/reports/{package_id}/matrix.xlsx", responses={404: {"model": ErrorDTO}})
 async def download_package_matrix_xlsx(package_id: str, session: SessionDep) -> StreamingResponse:
-    """Excel-експорт порівняльної матриці (task-91 §3.5) — читає вже
-    ПЕРСИСТОВАНУ матрицю з `content_qa_packages.matrix_json`, нічого не
-    перераховує заново."""
+    """Excel-експорт порівняльної матриці (task-91 §3.5) + аркуш Copy
+    (task-92 §2.6) — читає вже ПЕРСИСТОВАНУ матрицю з `content_qa_
+    packages.matrix_json` і `copy_diffs` з уже персистованого
+    `frameworks_json`, нічого не перераховує заново."""
 
     def _read(sync_session: Session) -> ContentQaPackage | None:
         return ContentQaPackageRepository(sync_session).get_package(package_id)
@@ -542,7 +549,8 @@ async def download_package_matrix_xlsx(package_id: str, session: SessionDep) -> 
             detail=_error("package_not_found", f"No package with id {package_id!r}."),
         )
     matrix_rows = [MatrixRowDTO(**m) for m in (package.matrix_json or [])]
-    data = build_matrix_xlsx(matrix_rows)
+    frameworks = [FrameworkOutcomeDTO(**f) for f in package.frameworks_json]
+    data = build_matrix_xlsx(matrix_rows, frameworks=frameworks)
     safe_name = "".join(c if c.isalnum() else "_" for c in package.source_name).strip("_")
     filename = f"{safe_name or package.id}_Comparison_Matrix.xlsx"
     return StreamingResponse(

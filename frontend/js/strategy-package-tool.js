@@ -634,11 +634,19 @@ let activeTab = "comparison";
 let activeFrameworkId = null;
 let currentPackage = null;
 let comparisonMismatchesOnly = false;
+// task-92 §2.7: "Only differences" defaults ON — a fully-matched sentence
+// is not what the operator opened this tab to read; "Show site-only
+// sentences" defaults OFF — a catalog/menu page can dump hundreds of
+// "extra" rows (EFFYS menu measured 239) that swamp the real diff.
+let copyOnlyDifferences = true;
+let copyShowExtra = false;
 
 async function renderReportView(packageId) {
   activeTab = "comparison";
   activeFrameworkId = null;
   comparisonMismatchesOnly = false;
+  copyOnlyDifferences = true;
+  copyShowExtra = false;
   root.innerHTML = `
     <a class="back-link" href="${buildToolsHash(TOOL_KEY)}">${icon("arrow-left")}<span>All reports</span></a>
     <header class="tool-header">
@@ -687,6 +695,7 @@ function renderPackageShell(pkg) {
         <button type="button" role="tab" id="sp-tab-overview" data-sp-tab="overview" aria-selected="false">${icon("layout-grid", "icon icon--tiny")}Overview</button>
         <button type="button" role="tab" id="sp-tab-strategy" data-sp-tab="strategy" aria-selected="false">${icon("file-spreadsheet", "icon icon--tiny")}Strategy</button>
         <button type="button" role="tab" id="sp-tab-frameworks" data-sp-tab="frameworks" aria-selected="false">${icon("file-text", "icon icon--tiny")}Frameworks</button>
+        <button type="button" role="tab" id="sp-tab-copy" data-sp-tab="copy" aria-selected="false">${icon("align-left", "icon icon--tiny")}Copy</button>
         <button type="button" role="tab" id="sp-tab-cross" data-sp-tab="cross" aria-selected="false">${icon("arrows-cross", "icon icon--tiny")}Cross-checks</button>
       </div>
       <div id="sp-tabpanel" role="tabpanel"></div>
@@ -741,6 +750,7 @@ function renderTabPanel(container, pkg) {
   if (activeTab === "overview") { panel.innerHTML = renderOverviewTab(pkg); wireOverviewTab(panel); return; }
   if (activeTab === "strategy") { renderStrategyTab(panel, pkg); return; }
   if (activeTab === "frameworks") { renderFrameworksTab(panel, pkg); return; }
+  if (activeTab === "copy") { renderCopyTab(panel, pkg); return; }
   renderCrossTab(panel, pkg);
 }
 
@@ -1070,6 +1080,186 @@ function renderCrossTab(panel, pkg) {
     ${renderCrossStateTable(pkg)}
     <div id="sp-cross-report">${renderReport(report)}</div>`;
   wireReport(panel.querySelector("#sp-cross-report"), report);
+}
+
+/* -------------------------------- Copy tab -------------------------------- */
+/* task-92 §2.7: lane K's own view — one sentence per row, three columns
+ * (Copy / Site / Verdict), grouped by page (framework document), then by
+ * copy tab (primary expanded, secondary — a second language variant,
+ * task-92 §1.8 — collapsed by default), then by section. Distinct from
+ * Comparison: that tab compares six METAfields per page; this one compares
+ * the actual prose, sentence by sentence. */
+
+const COPY_TAB_STATE_META = {
+  no_url: { icon: "link-off", cls: "sp-cross--dim", label: "No URL to compare" },
+  not_checked: { icon: "alert-circle", cls: "sp-cross--warn", label: "Site not checked" },
+  not_applicable: { icon: "flag-off", cls: "sp-cross--dim", label: "Not applicable" },
+};
+// Short badge labels — the "on live page" empty cell already says what
+// "missing"/"extra" mean; `title` carries the fuller description, kept
+// separate so the visible badge stays narrow enough not to wrap awkwardly
+// in the Verdict column's fixed 16% width at phone widths.
+const COPY_ROW_STATE_META = {
+  match: { icon: "circle-check", cls: "sp-copy-row--match", label: "Match", title: "Matches the live page" },
+  changed: { icon: "alert-triangle", cls: "sp-copy-row--changed", label: "Changed", title: "Differs from the live page" },
+  missing: { icon: "circle-x", cls: "sp-copy-row--missing", label: "Missing", title: "Not found on the live page" },
+  extra: { icon: "circle-dashed", cls: "sp-copy-row--extra", label: "Extra", title: "On the live page but not in the Copy tab" },
+};
+
+function copyFrameworksWithDiffs(pkg) {
+  return (pkg.frameworks || []).filter((o) => o.copy_diffs && o.copy_diffs.length);
+}
+
+function renderCopyTab(panel, pkg) {
+  const frameworks = copyFrameworksWithDiffs(pkg);
+  if (!frameworks.length) {
+    panel.innerHTML = `
+      <p class="sp-browse__status">${icon("align-left", "icon icon--tiny")}
+        <span>No copy tab was found and compared against a live site in this run. This report may
+          predate task-92, or none of its frameworks had both a Copy tab and a URL.</span></p>`;
+    return;
+  }
+  panel.innerHTML = `
+    <div class="sp-matrix-toolbar sp-copy-toolbar">
+      <label class="cq-sheet-picker__cross sp-matrix-toolbar__filter">
+        <input type="checkbox" id="sp-copy-only-diff" ${copyOnlyDifferences ? "checked" : ""}>
+        <span>Only differences</span>
+      </label>
+      <label class="cq-sheet-picker__cross sp-matrix-toolbar__filter">
+        <input type="checkbox" id="sp-copy-show-extra" ${copyShowExtra ? "checked" : ""}>
+        <span>Show site-only sentences</span>
+      </label>
+      <a class="button button--quiet" href="${strategyPackageMatrixXlsxUrl(pkg.id)}">
+        ${icon("file-spreadsheet", "icon icon--tiny")}Export to Excel
+      </a>
+    </div>
+    ${frameworks.map(renderCopyFrameworkGroup).join("")}`;
+
+  panel.querySelector("#sp-copy-only-diff").addEventListener("change", (event) => {
+    copyOnlyDifferences = event.target.checked;
+    renderCopyTab(panel, pkg);
+  });
+  panel.querySelector("#sp-copy-show-extra").addEventListener("change", (event) => {
+    copyShowExtra = event.target.checked;
+    renderCopyTab(panel, pkg);
+  });
+}
+
+function renderCopyFrameworkGroup(outcome) {
+  const name = outcome.source.document_name || outcome.source.document_id;
+  const tabs = [...outcome.copy_diffs].sort((a, b) => (b.role === "primary") - (a.role === "primary"));
+  return `
+    <div class="sp-copy-group">
+      <h3 class="sp-copy-group__title">${escapeHtml(name)}</h3>
+      ${tabs.map((tab) => renderCopyTabBlock(tab)).join("")}
+    </div>`;
+}
+
+function renderCopyTabBlock(tab) {
+  const body = tab.state === "checked" ? renderCopyTabTable(tab) : renderCopyTabState(tab);
+  const block = `
+    <div class="sp-copy-tab">
+      ${renderCopyTabHeader(tab)}
+      ${body}
+    </div>`;
+  // Secondary variants (a second language on the same document, task-92
+  // §1.8) start collapsed — the primary already tells the operator which
+  // one matches the live site; the other is there to inspect on demand,
+  // not to compete for attention.
+  if (tab.role === "secondary") {
+    return `
+      <details class="sp-copy-secondary">
+        <summary>${escapeHtml(tab.tab_title)} — ${tab.language_hint ? tab.language_hint.toUpperCase() : "secondary"}
+          (${Math.round(tab.stats.coverage * 100)}% found on site)</summary>
+        ${block}
+      </details>`;
+  }
+  return block;
+}
+
+function renderCopyTabHeader(tab) {
+  const badges = [];
+  if (tab.role === "secondary") {
+    badges.push(`<span class="sp-copy-badge">${icon("language", "icon icon--tiny")}${escapeHtml(tab.language_hint || "secondary")}</span>`);
+  }
+  if (tab.genre === "edit_brief") {
+    badges.push(`<span class="sp-copy-badge sp-copy-badge--warn" title="Contains editor markers like [KEEP]/[EDIT] — this is instructions for a developer, not finished page copy. 'Missing' rows here are expected, not defects.">${icon("note", "icon icon--tiny")}Edit brief</span>`);
+  }
+  if (tab.state === "checked") {
+    badges.push(`<span class="sp-copy-badge">${icon("percentage", "icon icon--tiny")}${Math.round(tab.stats.coverage * 100)}% found on site</span>`);
+  }
+  return `
+    <div class="sp-copy-tab__header">
+      <strong>${escapeHtml(tab.tab_title)}</strong>
+      ${badges.join("")}
+    </div>`;
+}
+
+function renderCopyTabState(tab) {
+  const meta = COPY_TAB_STATE_META[tab.state] || COPY_TAB_STATE_META.not_checked;
+  return `
+    <p class="sp-cross-badge ${meta.cls} sp-copy-tab__state" title="${escapeHtml(tab.reason || meta.label)}">
+      ${icon(meta.icon, "icon icon--tiny")}<span>${meta.label}${tab.reason ? ` — ${escapeHtml(tab.reason)}` : ""}</span>
+    </p>`;
+}
+
+function renderCopyDiffSpan(text, parts, side) {
+  if (!parts || !parts.length) return escapeHtml(text || "");
+  return parts
+    .map((part) => {
+      const value = side === "doc" ? part.doc_text : part.site_text;
+      if (!value) return null;
+      return part.tag === "changed" ? `<mark class="sp-copy-mark">${escapeHtml(value)}</mark>` : escapeHtml(value);
+    })
+    .filter((v) => v !== null)
+    .join(" ");
+}
+
+function renderCopyTabTable(tab) {
+  const excludedCount = tab.stats.excluded || 0;
+  let rows = tab.rows.filter((r) => r.state !== "excluded");
+  if (!copyShowExtra) rows = rows.filter((r) => r.state !== "extra");
+  if (copyOnlyDifferences) rows = rows.filter((r) => r.state !== "match");
+
+  if (!rows.length) {
+    return `
+      <p class="sp-browse__status sp-copy-tab__empty">${icon("filter-x", "icon icon--tiny")}
+        <span>${copyOnlyDifferences ? "No differences found — every checked sentence matches the live page." : "Nothing to show with the current filters."}</span></p>
+      ${excludedCount ? `<p class="sp-copy-note">${excludedCount} layout line${excludedCount === 1 ? "" : "s"} (image/CTA/breadcrumb placeholders) excluded from comparison.</p>` : ""}`;
+  }
+
+  return `
+    <div class="table-scroll sp-copy-scroll">
+      <table class="tool-table sp-copy-table">
+        <caption class="visually-hidden">Sentence-by-sentence comparison for ${escapeHtml(tab.tab_title)}</caption>
+        <thead><tr>
+          <th scope="col">In the Copy tab</th>
+          <th scope="col">On the live page</th>
+          <th scope="col">Verdict</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(renderCopyRow).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${excludedCount ? `<p class="sp-copy-note">${excludedCount} layout line${excludedCount === 1 ? "" : "s"} (image/CTA/breadcrumb placeholders) excluded from comparison.</p>` : ""}`;
+}
+
+function renderCopyRow(row) {
+  const meta = COPY_ROW_STATE_META[row.state] || COPY_ROW_STATE_META.changed;
+  const docCell = row.doc_text
+    ? renderCopyDiffSpan(row.doc_text, row.diff_parts, "doc")
+    : `<span class="sp-copy-empty">—</span>`;
+  const siteCell = row.site_text
+    ? renderCopyDiffSpan(row.site_text, row.diff_parts, "site")
+    : `<span class="sp-copy-empty">—</span>`;
+  const verdictTitle = row.state === "changed" && row.diff_summary ? row.diff_summary : meta.title;
+  return `
+    <tr class="${meta.cls}">
+      <td>${row.section ? `<span class="sp-copy-section">${escapeHtml(row.section)}</span>` : ""}${docCell}</td>
+      <td>${siteCell}</td>
+      <td><span class="sp-copy-verdict" title="${escapeHtml(verdictTitle)}">${icon(meta.icon, "icon icon--tiny")}${escapeHtml(meta.label)}</span></td>
+    </tr>`;
 }
 
 function renderCrossStateTable(pkg) {

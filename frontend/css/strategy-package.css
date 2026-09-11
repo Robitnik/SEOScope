@@ -88,7 +88,7 @@
 .sp-toggles { display: grid; gap: 8px; margin: 4px 0 16px; }
 
 /* --- report: tabs --- */
-.sp-tablist { grid-template-columns: repeat(5, 1fr); margin-top: 4px; }
+.sp-tablist { grid-template-columns: repeat(6, 1fr); margin-top: 4px; }
 
 /* --- comparison tab (task-91 §3.6): grouped by page, three mini-tables
    (Strategy/Framework/Site) one after another per page, so all three sit
@@ -205,6 +205,78 @@
 .sp-cross-table-wrap { margin-bottom: 18px; }
 .sp-cross-table td, .sp-cross-table th { white-space: nowrap; }
 
+/* --- copy tab (task-92 §2.7): one row per sentence, grouped by page then
+   by copy tab then by section — distinct from Comparison (six metafields
+   per page), this compares the actual prose. --- */
+.sp-copy-toolbar { margin-bottom: 18px; }
+
+.sp-copy-group { padding: 18px 0; border-top: 1px solid var(--line); }
+.sp-copy-group:first-of-type { border-top: 0; padding-top: 0; }
+.sp-copy-group__title { margin: 0 0 12px; font-size: 16px; overflow-wrap: anywhere; }
+
+.sp-copy-tab { margin-bottom: 16px; }
+.sp-copy-tab__header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.sp-copy-tab__header strong { color: var(--ink); }
+.sp-copy-badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border: 1px solid var(--line);
+  font-size: 11px; color: var(--ink-muted); white-space: nowrap;
+}
+.sp-copy-badge--warn { border-color: var(--warning); color: var(--warning); }
+.sp-copy-tab__state { margin: 0; }
+.sp-copy-tab__empty { margin-top: 8px; }
+
+/* Secondary language variant (task-92 §1.8 — LAXTON links two Copy tabs,
+   English + Swedish, to one document): collapsed by default, the primary
+   tab already tells the operator which one matches the live site. */
+.sp-copy-secondary {
+  margin-bottom: 16px; border: 1px solid var(--line); background: var(--canvas-raised);
+}
+.sp-copy-secondary > summary {
+  padding: 10px 12px; cursor: pointer; font-size: 12px; color: var(--ink-muted); list-style: none;
+}
+.sp-copy-secondary > summary::-webkit-details-marker { display: none; }
+.sp-copy-secondary > summary::before { content: "▸ "; }
+.sp-copy-secondary[open] > summary::before { content: "▾ "; }
+.sp-copy-secondary > .sp-copy-tab { padding: 0 12px 12px; margin-bottom: 0; }
+
+/* Memory: table-scroll-contain-paint. */
+.sp-copy-scroll { contain: paint; }
+.sp-copy-table { table-layout: fixed; width: 100%; }
+.sp-copy-table th, .sp-copy-table td { overflow-wrap: anywhere; vertical-align: top; }
+.sp-copy-table th:nth-child(1), .sp-copy-table td:nth-child(1) { width: 42%; }
+.sp-copy-table th:nth-child(2), .sp-copy-table td:nth-child(2) { width: 42%; }
+.sp-copy-table th:nth-child(3), .sp-copy-table td:nth-child(3) { width: 16%; }
+
+.sp-copy-section {
+  display: block; margin-bottom: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--ink-dim);
+}
+.sp-copy-empty { color: var(--ink-dim); font-style: italic; }
+/* Word-level diff highlight inside a changed sentence (task-92 §1.5: the
+   verdict is never "similar enough" — this marks the EXACT words that
+   differ, e.g. "8" vs "7" inside two otherwise-identical sentences). */
+.sp-copy-mark {
+  background: color-mix(in srgb, var(--warning) 25%, transparent); color: var(--ink);
+  font-weight: 700; padding: 0 2px; border-radius: 2px;
+}
+/* No `white-space: nowrap` here on purpose — at phone width the Verdict
+   column is only 16% of a 390px viewport (~60px); forcing one line
+   clipped the label behind the edge instead of wrapping it. */
+.sp-copy-verdict { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+
+.sp-copy-row--match td { color: var(--ink-muted); }
+.sp-copy-row--match .sp-copy-verdict { color: var(--success); }
+.sp-copy-row--changed td { background: color-mix(in srgb, var(--warning) 8%, transparent); }
+.sp-copy-row--changed .sp-copy-verdict { color: var(--warning); }
+.sp-copy-row--missing td { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.sp-copy-row--missing .sp-copy-verdict { color: var(--danger); }
+.sp-copy-row--extra td { color: var(--ink-dim); }
+.sp-copy-row--extra .sp-copy-verdict { color: var(--ink-dim); }
+
+.sp-copy-note { margin: 8px 0 0; color: var(--ink-dim); font-size: 11px; }
+
 @media (max-width: 720px) {
   /* `flex-basis: 360px` on `.sp-link .form-field` means "don't shrink below
      360px wide" in the desktop row layout — stacked to a column here, that
@@ -214,4 +286,9 @@
   .sp-link .form-field { flex-basis: auto; }
   .sp-tablist { grid-template-columns: repeat(2, 1fr); }
   .sp-framework-picker__head { align-items: flex-start; flex-direction: column; }
+  /* Verdict needs more than 16% to hold an icon + wrapped label at phone
+     width without looking cramped (live-checked at 390px, task-92). */
+  .sp-copy-table th:nth-child(1), .sp-copy-table td:nth-child(1) { width: 38%; }
+  .sp-copy-table th:nth-child(2), .sp-copy-table td:nth-child(2) { width: 38%; }
+  .sp-copy-table th:nth-child(3), .sp-copy-table td:nth-child(3) { width: 24%; }
 }

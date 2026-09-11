@@ -21,11 +21,13 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
+from app.contentqa.copydiff import CopyTabResult, build_copy_tab_result, genre_of
 from app.contentqa.crosscheck import (
     CrossCheckInfo,
     check_copy_site,
@@ -36,23 +38,24 @@ from app.contentqa.crosscheck import (
 from app.contentqa.engine import run_checks
 from app.contentqa.findings import Finding
 from app.contentqa.model import ContentDoc, ContentItem
-from app.contentqa.readers.gdoc import read_framework_document
+from app.contentqa.readers.gdoc import copy_tab_blocks, read_framework_document
 from app.contentqa.rules import Profile
 from app.contentqa.site import LivePage, fetch_page
-from app.integrations.google_api.docs_client import DocsClient
+from app.integrations.google_api.docs_client import DocsClient, DocTab
 from app.monitor.fetcher import FetchStats
 from app.tools.http_safety import HostThrottle
 
 # Нижче цієї довжини вкладка `Content` вважається "копію ще не написали", не
-# "копія без порушень" (task-90 §2.3 DoD 4a). Заміряний живий розподіл
-# (task-90 §1.4a): 1 / 322 / 1446 / 2977 / 3614 / 5674 символів у документах
-# без готової копії, проти 8038-11256 у документах зі справжньою блоговою
-# прозою — між 5674 і 8038 лежить порожня прогалина без жодного живого
-# заміру. 6000 узятий усередині цієї прогалини, ближче до "порожньої"
-# групи (усі 6 заміряних "порожніх" значень лишаються нижче порогу).
-# **Не остаточне число** — DoD 4a вимагає калібрування на ширшому живому
-# зрізі, це обґрунтована стартова точка.
-MIN_COPY_CHARS = 6000
+# "копія без порушень" (task-90 §2.3 DoD 4a). Перекалібровано на task-92
+# §1.2: 6000 (task-90's число, зважений лише на блоги SHB, 8-11k символів)
+# відкидав 56/96 живих копі-вкладок ЯК ГРУПУ, включно з повністю готовими
+# продуктовими сторінками LAXTON (2034-3811 символів) і локейшн-сторінками
+# EFFYS. Живий розподіл довжини прози по всіх 96 копі-вкладках портфеля
+# (task-92 §1.2): 50, 313, 319 | 1630, 1974, 2034, ... 5831 | 6158, ...
+# 623287 — справжня прогалина "ще не написано" лежить між **319 і 1630**,
+# не між 5674 і 8038. 600 узяте усередині цієї прогалини, ближче до
+# "порожньої" групи (найдовше заміряне "порожнє" значення — 319).
+MIN_COPY_CHARS = 600
 
 FrameworkState = Literal["checked", "not_accessible", "no_recognized_tabs"]
 
@@ -94,6 +97,114 @@ class FrameworkOutcome:
     # `matrix.py` treats that the same as any other "nothing to compare".
     frame_item: ContentItem | None = None
     site_page: LivePage | None = None
+    # Лейн K (task-92): посегментна звірка КОЖНОЇ копі-вкладки документа з
+    # живою сторінкою — окрема таблиця "речення в Copy / речення на сайті
+    # / чи сходиться", не findings. `()` коли документ не має копі-вкладок
+    # ВЗАГАЛІ, `check_site=False`, чи `check_published=False`.
+    copy_diffs: tuple[CopyTabResult, ...] = ()
+
+
+# ── Лейн K: Copy ↔ живий сайт, посегментно (task-92 §2.1/§2.5) ──────────────
+
+# "English Content" -> "en", "Swedish Content" -> "sv" — найкраще
+# припущення з НАЗВИ вкладки (task-92 §2.5), не з вмісту: документи з
+# однією безіменною "Content"-вкладкою (переважна більшість) дають
+# `None` — "нема думки", не "англійська за замовчуванням".
+_LANGUAGE_HINT_WORDS: tuple[tuple[str, str], ...] = (
+    ("english", "en"), ("swedish", "sv"), ("spanish", "es"), ("french", "fr"),
+    ("german", "de"), ("italian", "it"), ("portuguese", "pt"), ("dutch", "nl"),
+    ("polish", "pl"), ("danish", "da"), ("norwegian", "no"), ("finnish", "fi"),
+)
+_LANGUAGE_HINT_RES = tuple(
+    (re.compile(rf"\b{word}\b", re.IGNORECASE), code) for word, code in _LANGUAGE_HINT_WORDS
+)
+# Живо заміряно на LAXTON (task-92 §1.8): найгірша "своя" мовна вкладка —
+# 9% покриття (стара копія, справжня зміна на сайті), найкраща "чужа" —
+# 13% (спільні токени-запозичення дають випадкові збіги). Поріг лежить
+# усередині цієї прогалини — нижче нього різномовна вкладка вважається
+# "нема опублікованої сторінки цією мовою", не провалом звірки.
+_LANGUAGE_MISMATCH_COVERAGE_FLOOR = 0.25
+
+
+def _language_hint(tab_title: str) -> str | None:
+    folded = re.sub(r"[_\-]+", " ", tab_title or "")
+    for pattern, code in _LANGUAGE_HINT_RES:
+        if pattern.search(folded):
+            return code
+    return None
+
+
+def _run_copy_lane(
+    copy_tabs: tuple[DocTab, ...], *, site_page: LivePage | None, has_url: bool
+) -> tuple[CopyTabResult, ...]:
+    """Кожна копі-вкладка документа проти ЖИВОЇ сторінки (лейн K, task-92
+    §2.1) — той самий `site_page`, що вже прочитаний для лейну I
+    (`check_frame_site`), нуль додаткових HTTP-запитів (task-92 §1.9).
+    Роль (`primary`/`secondary`) вирішує ПОКРИТТЯ (task-92 §2.5,
+    LAXTON: дві копі-вкладки на документ, правильну видає лише
+    порівняння з сайтом, не назва)."""
+    if not copy_tabs:
+        return ()
+
+    # `role` here only distinguishes "shown expanded" from "collapsed
+    # behind a <details>" in the UI (task-92 §2.7) — with no comparison
+    # possible at all (no URL / site unreachable), there is no "worse
+    # alternative" to hide, so the FIRST tab still gets `"primary"` (most
+    # documents have exactly one copy tab; blindly marking every tab
+    # `"secondary"` would collapse a lone blog's only Copy tab by default).
+    if not has_url:
+        return tuple(
+            CopyTabResult(
+                tab_title=t.title, genre=genre_of(copy_tab_blocks(t)),
+                role="primary" if i == 0 else "secondary",
+                state="no_url", reason="This framework has no URL to compare against.",
+                language_hint=None,
+            )
+            for i, t in enumerate(copy_tabs)
+        )
+
+    assert site_page is not None  # `has_url=True` -> caller already fetched it
+    if not site_page.ok:
+        return tuple(
+            CopyTabResult(
+                tab_title=t.title, genre=genre_of(copy_tab_blocks(t)),
+                role="primary" if i == 0 else "secondary",
+                state="not_checked", reason=site_page.error or "unreachable", language_hint=None,
+            )
+            for i, t in enumerate(copy_tabs)
+        )
+
+    site_lang = (site_page.lang or "").split("-")[0].lower() or None
+    outcomes: list[CopyTabResult] = []
+    for tab in copy_tabs:
+        blocks = copy_tab_blocks(tab)
+        if not blocks:
+            continue  # вкладка знайдена за іменем, але порожня — нема з чим звіряти
+        hint = _language_hint(tab.title)
+        cross_language = bool(hint and site_lang and hint != site_lang)
+        result = build_copy_tab_result(
+            tab_title=tab.title, doc_blocks=blocks, site_blocks=site_page.blocks,
+            cross_language=cross_language,
+        )
+        if cross_language and result.stats.coverage < _LANGUAGE_MISMATCH_COVERAGE_FLOOR:
+            outcomes.append(CopyTabResult(
+                tab_title=tab.title, genre=result.genre, role="secondary",
+                state="not_applicable", reason="No published page in this language.",
+                language_hint=hint,
+            ))
+        else:
+            outcomes.append(replace(result, role="secondary", language_hint=hint))
+
+    if not outcomes:
+        return ()
+
+    checked = [o for o in outcomes if o.state == "checked"]
+    primary_title = (
+        max(checked, key=lambda o: o.stats.coverage).tab_title if checked else outcomes[0].tab_title
+    )
+    return tuple(
+        replace(o, role="primary") if o.tab_title == primary_title else o for o in outcomes
+    )
 
 
 @dataclass(frozen=True)
@@ -151,6 +262,12 @@ def run_framework(
             "framework-tab-unnamed", "info", ref,
             "This document has a single, unnamed tab ('Tab 1') — read as Framework.",
         ))
+    elif resolved.frame_matched_by_content:
+        findings.append(Finding(
+            "framework-tab-unnamed", "info", ref,
+            "This document's Framework tab has no recognized name (e.g. 'Tab 1') — "
+            "matched by its table fields instead.",
+        ))
     elif resolved.frame_doc is None and resolved.copy_tab_title is not None:
         findings.append(Finding(
             "framework-no-frame-tab", "info", ref,
@@ -179,7 +296,10 @@ def run_framework(
     elif resolved.copy_doc is not None:
         findings.extend(run_checks(resolved.copy_doc, profile))
 
-    if check_site and resolved.frame_doc is not None and frame_item is not None and frame_item.url:
+    copy_diffs: tuple[CopyTabResult, ...] = ()
+    has_url = resolved.frame_doc is not None and frame_item is not None and bool(frame_item.url)
+    if check_site and has_url:
+        assert resolved.frame_doc is not None and frame_item is not None and frame_item.url
         frame_doc = resolved.frame_doc  # локальна прив'язка — вужче звуження типу для mypy
         site_page = fetch_page(frame_item.url, throttle=throttle, stats=stats)
         site_findings, frame_site_info = check_frame_site(frame_doc, site_page)
@@ -193,13 +313,22 @@ def run_framework(
             )
             findings.extend(copy_findings)
 
+        if check_published:
+            copy_diffs = _run_copy_lane(resolved.all_copy_tabs, site_page=site_page, has_url=True)
+    elif check_site and check_published and resolved.all_copy_tabs:
+        # Блог-фреймворки (task-92 §1.10) не мають URL НІДЕ — ні в
+        # таблиці Framework, ні в рядку стратегії — звірка з сайтом
+        # неможлива в принципі. Чесний `no_url` на кожній копі-вкладці,
+        # не порожня таблиця (task-92 DoD #7), а не мовчазне "нема лейну".
+        copy_diffs = _run_copy_lane(resolved.all_copy_tabs, site_page=None, has_url=False)
+
     return FrameworkOutcome(
         source=source, state="checked",
         frame_tab_title=resolved.frame_tab_title, copy_tab_title=resolved.copy_tab_title,
         findings=findings,
         frame_strategy_info=frame_strategy_info, frame_site_info=frame_site_info,
         copy_site_info=copy_site_info, matched_strategy_key=matched_key,
-        frame_item=frame_item, site_page=site_page,
+        frame_item=frame_item, site_page=site_page, copy_diffs=copy_diffs,
     )
 
 

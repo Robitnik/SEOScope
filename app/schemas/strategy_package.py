@@ -40,6 +40,14 @@ CrossCheckState = Literal["checked", "not_checked", "not_applicable"]
 MatrixCellState = Literal["value", "empty", "absent"]
 MatrixVerdict = Literal["match", "mismatch", "not_comparable"]
 MatrixRowKind = Literal["matched", "strategy_only", "framework_only"]
+# task-92 §2.1: посегментна звірка Copy ↔ живий сайт — рядок таблиці
+# "речення в Copy / речення на сайті / чи сходиться".
+CopyRowState = Literal["match", "changed", "missing", "extra", "excluded"]
+CopySegmentKind = Literal["heading", "sentence", "item", "directive"]
+CopyConfidence = Literal["strong", "weak"]
+CopyTabGenre = Literal["copy", "edit_brief"]
+CopyTabRole = Literal["primary", "secondary"]
+CopyTabState = Literal["checked", "no_url", "not_checked", "not_applicable"]
 
 
 class DriveFileDTO(BaseModel):
@@ -96,6 +104,62 @@ class CrossCheckInfoDTO(BaseModel):
     reason: str | None = None
 
 
+class CopyDiffPartDTO(BaseModel):
+    """Один опкод послівного diff'у (task-92 §2.1). `tag="equal"` —
+    спільні слова; `"changed"` — розійшлися (один бік може бути
+    порожнім — слово лише додане чи лише прибране)."""
+
+    tag: Literal["equal", "changed"]
+    doc_text: str
+    site_text: str
+
+
+class CopyRowDTO(BaseModel):
+    """Один рядок посегментної звірки Copy ↔ сайт — «речення в Copy /
+    речення на сайті / чи сходиться» (task-92 §2.1). `ratio`/`confidence`
+    — лише для `state="changed"` (вирішили ЗІСТАВЛЕННЯ в пару, не
+    вердикт — task-92 §1.5: вердикт `match` завжди точна рівність після
+    нормалізації, ratio 0.99 не рятує «8 AM» від «7 AM»)."""
+
+    state: CopyRowState
+    kind: CopySegmentKind
+    section: str | None = None
+    doc_text: str | None = None
+    site_text: str | None = None
+    ratio: float | None = None
+    confidence: CopyConfidence | None = None
+    diff_parts: list[CopyDiffPartDTO] = Field(default_factory=list)
+    diff_summary: str | None = None
+    note: str | None = None
+
+
+class CopyStatsDTO(BaseModel):
+    match: int = 0
+    changed: int = 0
+    missing: int = 0
+    extra: int = 0
+    excluded: int = 0
+    coverage: float = 0.0
+
+
+class CopyTabResultDTO(BaseModel):
+    """Результат звірки ОДНІЄЇ Copy-вкладки з живою сторінкою (task-92
+    §2.1). `role="secondary"` — мультимовний документ, вкладка з нижчим
+    покриттям (task-92 §1.8/§2.5, LAXTON: English/Swedish Content на
+    один документ, правильну видає ПОКРИТТЯ, не назва). `genre=
+    "edit_brief"` — вкладка правок для розробника (маркери `[KEEP]`/
+    `[EDIT]`), рядки `missing` там не є помилками копії."""
+
+    tab_title: str
+    genre: CopyTabGenre
+    role: CopyTabRole
+    state: CopyTabState
+    reason: str | None = None
+    language_hint: str | None = None
+    rows: list[CopyRowDTO] = Field(default_factory=list)
+    stats: CopyStatsDTO = Field(default_factory=CopyStatsDTO)
+
+
 class FrameworkOutcomeDTO(BaseModel):
     """Один фреймворк у пакеті — повний результат (task-90 §2.5/§4.6):
     QA Frame + QA Copy + три звірки, усі findings разом, бо звіт пакета
@@ -110,6 +174,12 @@ class FrameworkOutcomeDTO(BaseModel):
     frame_strategy_info: CrossCheckInfoDTO | None = None
     frame_site_info: CrossCheckInfoDTO | None = None
     copy_site_info: CrossCheckInfoDTO | None = None
+    # Лейн K (task-92): посегментна звірка кожної копі-вкладки — окрема
+    # таблиця, не findings. `[]` на пакетах, прогнаних до task-92 (те саме
+    # правило, що `matrix` на `ContentQaPackageDTO` для task-91: живе
+    # ВСЕРЕДИНІ вже наявного `frameworks_json`, окрема колонка/міграція
+    # не потрібна — цей блок і так персиститься по кожному фреймворку.
+    copy_diffs: list[CopyTabResultDTO] = Field(default_factory=list)
 
 
 class MatrixCellDTO(BaseModel):

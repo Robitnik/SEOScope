@@ -37,6 +37,7 @@ Outgoing links):
 from __future__ import annotations
 
 import io
+from collections.abc import Sequence
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -44,6 +45,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.schemas.strategy_package import (
+    CopyRowDTO,
+    FrameworkOutcomeDTO,
     MatrixCellDTO,
     MatrixFieldVerdictDTO,
     MatrixRowDTO,
@@ -358,7 +361,96 @@ def build_mismatches_sheet(ws: Worksheet, rows: list[MatrixRowDTO]) -> None:
         ws.cell(2, 1, "No mismatches in this run.").font = Font(italic=True, color=_ABSENT_FG)
 
 
-def build_matrix_xlsx(rows: list[MatrixRowDTO]) -> bytes:
+# ── аркуш Copy (task-92 §2.6/§3.6) ──────────────────────────────────────────
+
+_COPY_HEADER_LABELS = (
+    "Page", "Tab", "Section", "Doc sentence", "Site sentence", "Verdict", "Detail",
+)
+_COPY_COLUMN_WIDTHS = (34, 18, 26, 46, 46, 12, 40)
+_COPY_VERDICT_LABEL = {
+    "match": "match", "changed": "changed", "missing": "missing on site",
+    "extra": "extra on site", "excluded": "excluded (layout)",
+}
+# Той самий кольоровий словник, що Comparison/Mismatches (task-91): збіг —
+# зелений, розбіжність — червоний. "missing" (немає на сайті) — жовтий,
+# власний тон, бо це не те саме, що "framework/site розійшлись" — рядок
+# копії або ще не опубліковано, або знято зі сторінки. "excluded" —
+# сірий, той самий `_ABSENT_FG`, що незаповнені клітинки матриці.
+_COPY_ROW_FG = {
+    "match": _MATCH_FG, "changed": _MISMATCH_FG, "missing": "BF9000",
+    "extra": _ABSENT_FG, "excluded": _ABSENT_FG,
+}
+_COPY_ROW_BG = {
+    "match": _MATCH_BG, "changed": _MISMATCH_BG, "missing": "FFF6D9",
+}
+_COPY_ROW_HEIGHT = 46
+
+
+def _copy_row_values(row: CopyRowDTO) -> tuple[str, str]:
+    return row.doc_text or "", row.site_text or ""
+
+
+def _copy_detail(row: CopyRowDTO) -> str:
+    if row.state == "changed" and row.diff_summary:
+        return row.diff_summary
+    if row.note:
+        return row.note
+    return ""
+
+
+def build_copy_sheet(ws: Worksheet, frameworks: Sequence[FrameworkOutcomeDTO]) -> None:
+    """"Речення у Copy / речення на сайті / чи сходиться" (task-92 §2.6),
+    плоский список по всіх фреймворках пакета — на відміну від Comparison,
+    тут немає групування по трьох блоках-джерелах, лише один рядок на
+    сегмент. `page` — назва документа фреймворка (та сама, що вкладка
+    Frameworks на екрані), не URL: секція/вкладка мають сенс лише в
+    контексті документа, з яким копірайтер працював."""
+    _header_row(ws, 1, list(_COPY_HEADER_LABELS))
+    r = 2
+    any_row = False
+    for outcome in frameworks:
+        page = outcome.source.document_name or outcome.source.document_id
+        for tab in outcome.copy_diffs:
+            for row in tab.rows:
+                if row.state == "excluded":
+                    continue  # директиви верстки — шум у файлі, що йде клієнту
+                any_row = True
+                doc_text, site_text = _copy_row_values(row)
+                ws.cell(r, 1, page)
+                ws.cell(r, 2, f"{tab.tab_title} ({tab.role})")
+                ws.cell(r, 3, row.section or "")
+                ws.cell(r, 4, doc_text)
+                ws.cell(r, 5, site_text)
+                verdict_cell = ws.cell(r, 6, _COPY_VERDICT_LABEL.get(row.state, row.state))
+                ws.cell(r, 7, _copy_detail(row))
+                fg = _COPY_ROW_FG.get(row.state)
+                bg = _COPY_ROW_BG.get(row.state)
+                if fg:
+                    for col in range(1, len(_COPY_HEADER_LABELS) + 1):
+                        cell = ws.cell(r, col)
+                        cell.font = Font(bold=col == 6, color=fg)
+                        if bg:
+                            cell.fill = _fill(bg)
+                for col in range(1, len(_COPY_HEADER_LABELS) + 1):
+                    ws.cell(r, col).border = _GRID_BORDER
+                    ws.cell(r, col).alignment = Alignment(
+                        horizontal="left", vertical="top", wrap_text=True
+                    )
+                verdict_cell.alignment = Alignment(horizontal="left", vertical="top")
+                ws.row_dimensions[r].height = _COPY_ROW_HEIGHT
+                r += 1
+
+    for col_index, width in enumerate(_COPY_COLUMN_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(col_index)].width = width
+    ws.freeze_panes = "A2"
+    if not any_row:
+        note = ws.cell(2, 1, "No copy data in this run.")
+        note.font = Font(italic=True, color=_ABSENT_FG)
+
+
+def build_matrix_xlsx(
+    rows: list[MatrixRowDTO], *, frameworks: Sequence[FrameworkOutcomeDTO] = ()
+) -> bytes:
     workbook = Workbook()
     comparison_ws = workbook.active
     comparison_ws.title = "Comparison"
@@ -366,6 +458,9 @@ def build_matrix_xlsx(rows: list[MatrixRowDTO]) -> bytes:
 
     mismatches_ws = workbook.create_sheet("Mismatches")
     build_mismatches_sheet(mismatches_ws, rows)
+
+    copy_ws = workbook.create_sheet("Copy")
+    build_copy_sheet(copy_ws, frameworks)
 
     buffer = io.BytesIO()
     workbook.save(buffer)

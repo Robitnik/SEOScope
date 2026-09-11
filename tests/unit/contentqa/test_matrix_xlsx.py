@@ -13,6 +13,11 @@ from openpyxl import load_workbook
 
 from app.contentqa.matrix_xlsx import _COLUMN_WIDTHS, _TOTAL_COLUMNS, build_matrix_xlsx
 from app.schemas.strategy_package import (
+    CopyRowDTO,
+    CopyStatsDTO,
+    CopyTabResultDTO,
+    FrameworkCandidateDTO,
+    FrameworkOutcomeDTO,
     MatrixCellDTO,
     MatrixFieldVerdictDTO,
     MatrixRowDTO,
@@ -56,7 +61,7 @@ def test_build_matrix_xlsx_produces_a_valid_workbook_with_two_sheets() -> None:
     data = build_matrix_xlsx(rows)
     assert data[:2] == b"PK"  # xlsx is a zip archive
     workbook = load_workbook(io.BytesIO(data))
-    assert workbook.sheetnames == ["Comparison", "Mismatches"]
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
 
 
 def _mini_table_titles(ws, max_row: int = 30) -> dict[str, int]:
@@ -190,7 +195,7 @@ def test_mismatches_sheet_is_honest_when_nothing_mismatched() -> None:
 def test_empty_matrix_still_produces_a_valid_workbook() -> None:
     data = build_matrix_xlsx([])
     workbook = load_workbook(io.BytesIO(data))
-    assert workbook.sheetnames == ["Comparison", "Mismatches"]
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
 
 
 def test_mismatched_field_is_bold_red_in_every_mini_table() -> None:
@@ -333,3 +338,66 @@ def test_title_and_description_show_a_character_count() -> None:
     assert ws.cell(data_row, 3).value == "A description of 26 chars.\n(26 chars)"
     assert ws.cell(data_row, 1).value == "https://a"
     assert ws.cell(data_row, 4).value == "Heading"
+
+
+# ── аркуш Copy (task-92 §2.6/§3.6) ───────────────────────────────────────────
+
+
+def _framework_outcome(
+    *, document_name: str, copy_diffs: list[CopyTabResultDTO]
+) -> FrameworkOutcomeDTO:
+    return FrameworkOutcomeDTO(
+        source=FrameworkCandidateDTO(
+            document_id="d1", document_name=document_name, origin="drive_search",
+        ),
+        state="checked", copy_diffs=copy_diffs,
+    )
+
+
+def test_copy_sheet_shows_placeholder_when_no_copy_data() -> None:
+    data = build_matrix_xlsx([])
+    ws = load_workbook(io.BytesIO(data))["Copy"]
+    assert ws.cell(2, 1).value == "No copy data in this run."
+
+
+def test_copy_sheet_lists_rows_with_page_tab_and_verdict() -> None:
+    tab = CopyTabResultDTO(
+        tab_title="Content", genre="copy", role="primary", state="checked",
+        rows=[
+            CopyRowDTO(
+                state="changed", kind="sentence", section="FAQ",
+                doc_text="Open 8 AM to 5 PM.", site_text="Open 7 AM to 5 PM.",
+                diff_summary="8 → 7",
+            ),
+            CopyRowDTO(state="match", kind="sentence", doc_text="Same.", site_text="Same."),
+        ],
+        stats=CopyStatsDTO(match=1, changed=1, coverage=1.0),
+    )
+    frameworks = [_framework_outcome(document_name="EFFYS Columbus Ave", copy_diffs=[tab])]
+    data = build_matrix_xlsx([], frameworks=frameworks)
+    ws = load_workbook(io.BytesIO(data))["Copy"]
+    assert ws.cell(2, 1).value == "EFFYS Columbus Ave"
+    assert ws.cell(2, 2).value == "Content (primary)"
+    assert ws.cell(2, 3).value == "FAQ"
+    assert ws.cell(2, 4).value == "Open 8 AM to 5 PM."
+    assert ws.cell(2, 5).value == "Open 7 AM to 5 PM."
+    assert ws.cell(2, 6).value == "changed"
+    assert ws.cell(2, 7).value == "8 → 7"
+    assert ws.cell(3, 6).value == "match"
+
+
+def test_copy_sheet_excludes_layout_directive_rows() -> None:
+    tab = CopyTabResultDTO(
+        tab_title="Content", genre="copy", role="primary", state="checked",
+        rows=[
+            CopyRowDTO(state="excluded", kind="directive", doc_text="[IMAGE SECTION: hero]"),
+            CopyRowDTO(state="match", kind="sentence", doc_text="Real.", site_text="Real."),
+        ],
+        stats=CopyStatsDTO(match=1, excluded=1, coverage=1.0),
+    )
+    frameworks = [_framework_outcome(document_name="Doc", copy_diffs=[tab])]
+    data = build_matrix_xlsx([], frameworks=frameworks)
+    ws = load_workbook(io.BytesIO(data))["Copy"]
+    values = [ws.cell(r, 4).value for r in (2, 3)]
+    assert "[IMAGE SECTION: hero]" not in values
+    assert ws.cell(2, 4).value == "Real."

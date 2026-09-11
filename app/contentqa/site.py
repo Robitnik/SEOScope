@@ -15,6 +15,7 @@ H2-H4, прози-по-секціях (`chunk_into_sections`, `contentqa/section
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
@@ -89,6 +90,18 @@ class LivePage:
     # й заголовки. `()` завжди, коли сторінка недоступна.
     internal_links: tuple[str, ...] = ()
     external_links: tuple[str, ...] = ()
+    # Block-level potok +мова (task-92 §1.4/§2.2, sentence-level Copy↔site
+    # diff): `headings`/`sections` above merge ALL text between two
+    # headings into one run-on string (`_HeadingParser._flush_text`) — fine
+    # for section-level lane J, useless for per-sentence comparison (nine
+    # `<li>` bullets collapse into one "sentence", live-measured). `blocks`
+    # comes from an INDEPENDENT second parse pass (`_BlockParser` below)
+    # that never touches `headings`/`sections`/`internal_links`/
+    # `external_links` — those stay byte-identical for lanes I/J and
+    # task-91's matrix. `()`/`None` when the page is unreachable, same as
+    # every other field here.
+    blocks: tuple[SiteBlock, ...] = ()
+    lang: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -116,6 +129,7 @@ def fetch_page(
         signals=signals, headings=headings, sections=sections,
         x_robots_tag=result.headers.get("X-Robots-Tag"),
         internal_links=internal_links, external_links=external_links,
+        blocks=_extract_blocks(html), lang=_extract_lang(html),
     )
 
 
@@ -240,4 +254,118 @@ class _HeadingParser(HTMLParser):
         self._flush_text()
 
 
-__all__ = ["LivePage", "fetch_page"]
+# ── task-92 §1.4/§2.2: block-level potok, independent second pass ──────────
+
+_LANG_RE = re.compile(r"<html\b[^>]*\blang\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
+_BLOCK_HEAD_TAGS = frozenset({"h1", "h2", "h3", "h4"})
+# Tags whose start/end marks a new block boundary — the shape a sentence-
+# level Copy↔site diff needs (task-92 §1.4, live defect): the existing
+# `_HeadingParser` above merges everything between two headings into one
+# string, so nine `<li>` bullets became one "sentence". `<br>` is handled
+# separately via `handle_startendtag`/`handle_starttag` (it has no closing
+# tag of its own).
+_BLOCK_BOUNDARY_TAGS = frozenset({
+    "p", "li", "td", "th", "blockquote", "figcaption", "dt", "dd", "summary", "address",
+}) | _BLOCK_HEAD_TAGS
+# Broader than `_HeadingParser`'s `_SKIP_TEXT_TAGS`: `head`/`title`/`form`/
+# `select`/`svg` never belong in a sentence-level comparison table either
+# (live-measured, task-92 §2.2 — without this the first row of every
+# EFFYS page was `"... Café UWS Skip to content"`, `<title>` text bleeding
+# into the body stream).
+_BLOCK_SKIP_TAGS = frozenset({
+    "script", "style", "noscript", "template", "nav", "footer",
+    "head", "title", "form", "select", "svg",
+})
+
+
+@dataclass(frozen=True)
+class SiteBlock:
+    """One block-level chunk of the live page — `kind`: `"heading"` |
+    `"item"` | `"para"`. Produced by `_BlockParser`, a SECOND, independent
+    parse pass from `_HeadingParser` above: it never touches `headings`/
+    `sections`/`internal_links`/`external_links`, which stay byte-identical
+    for lanes I/J and task-91's matrix (task-92 DoD #8)."""
+
+    kind: str
+    level: str | None
+    text: str
+
+
+class _BlockParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.blocks: list[SiteBlock] = []
+        self._skip = 0
+        self._buf: list[str] = []
+        self._level: str | None = None
+        self._kind = "para"
+
+    def _flush(self) -> None:
+        text = " ".join("".join(self._buf).split())
+        self._buf = []
+        if text:
+            self.blocks.append(SiteBlock(
+                kind="heading" if self._level else self._kind, level=self._level, text=text,
+            ))
+        self._level, self._kind = None, "para"
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if tag in _BLOCK_SKIP_TAGS:
+            self._skip += 1
+            return
+        if self._skip:
+            return
+        if tag == "br":
+            self._flush()
+            return
+        if tag in _BLOCK_BOUNDARY_TAGS:
+            self._flush()
+            if tag in _BLOCK_HEAD_TAGS:
+                self._level = f"H{tag[1]}"
+            elif tag == "li":
+                self._kind = "item"
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "br" and not self._skip:
+            self._flush()
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in _BLOCK_SKIP_TAGS and self._skip:
+            self._skip -= 1
+            return
+        if self._skip:
+            return
+        if tag in _BLOCK_BOUNDARY_TAGS:
+            self._flush()
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self._buf.append(data)
+
+    def close(self) -> None:
+        super().close()
+        self._flush()
+
+
+def _extract_blocks(html: str) -> tuple[SiteBlock, ...]:
+    parser = _BlockParser()
+    try:
+        parser.feed(html)
+        parser.close()
+    except Exception:  # noqa: BLE001 - malformed markup: keep whatever parsed so far
+        pass
+    return tuple(parser.blocks)
+
+
+def _extract_lang(html: str) -> str | None:
+    # `<html lang="...">` is always near the very top of the document —
+    # searching the full (sometimes 500KB+) body for one regex is wasted
+    # work; the tag has never appeared past the first 4KB on any
+    # live-measured page.
+    match = _LANG_RE.search(html[:4096])
+    return match.group(1).strip() or None if match else None
+
+
+__all__ = ["LivePage", "SiteBlock", "fetch_page"]
