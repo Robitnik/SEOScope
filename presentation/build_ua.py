@@ -315,7 +315,7 @@ def add_slide_two(prs: Presentation, dashboard_image: Path, asset_dir: Path) -> 
     add_feature_chip(slide, x=5.72, width=1.80, text="ГРУПИ ТА СТАТУСИ")
     add_feature_chip(slide, x=7.64, width=1.74, text="ШВИДКИЙ ПОШУК")
 
-    add_footer(slide, 2)
+    add_footer(slide, len(prs.slides))
 
 
 def add_overview_item(slide, *, y: float, number: str, title: str, body: str) -> None:
@@ -433,7 +433,7 @@ def add_slide_three(prs: Presentation, client_overview_image: Path) -> None:
         width=Inches(5.26),
         height=Inches(3.62),
     )
-    add_footer(slide, 3)
+    add_footer(slide, len(prs.slides))
 
 
 def add_time_card(
@@ -541,7 +541,7 @@ def add_slide_four(prs: Presentation) -> None:
         highlight=True,
     )
 
-    add_footer(slide, 4)
+    add_footer(slide, len(prs.slides))
 
 
 def add_benefit(slide, *, y: float, text: str) -> None:
@@ -637,7 +637,7 @@ def add_slide_five(prs: Presentation, monthly_table_image: Path) -> None:
         align=PP_ALIGN.CENTER,
         line_spacing=1.10,
     )
-    add_footer(slide, 5)
+    add_footer(slide, len(prs.slides))
 
 
 def add_blog_problem(slide, *, y: float, number: str, title: str, body: str) -> None:
@@ -735,7 +735,7 @@ def add_slide_six(prs: Presentation) -> None:
         align=PP_ALIGN.CENTER,
         line_spacing=1.04,
     )
-    add_footer(slide, 6)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_seven(prs: Presentation, blogs_table_image: Path) -> None:
@@ -811,7 +811,7 @@ def add_slide_seven(prs: Presentation, blogs_table_image: Path) -> None:
         align=PP_ALIGN.CENTER,
         line_spacing=1.08,
     )
-    add_footer(slide, 7)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_eight(prs: Presentation) -> None:
@@ -887,7 +887,7 @@ def add_slide_eight(prs: Presentation) -> None:
         align=PP_ALIGN.CENTER,
         line_spacing=1.04,
     )
-    add_footer(slide, 8)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_nine(prs: Presentation, page_inventory_image: Path) -> None:
@@ -963,7 +963,7 @@ def add_slide_nine(prs: Presentation, page_inventory_image: Path) -> None:
         align=PP_ALIGN.CENTER,
         line_spacing=1.08,
     )
-    add_footer(slide, 9)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_ten(prs: Presentation, seo_qa_image: Path) -> None:
@@ -1039,7 +1039,241 @@ def add_slide_ten(prs: Presentation, seo_qa_image: Path) -> None:
         align=PP_ALIGN.CENTER,
         line_spacing=1.08,
     )
-    add_footer(slide, 10)
+    add_footer(slide, len(prs.slides))
+
+
+# Strategy Package Check (task-90/91): три слайди після SEO QA — проблема,
+# порівняльна матриця Strategy ↔ Framework ↔ Site, SEO QA стратегії/фреймів.
+# Функції нижче названі за змістом, а не за номером: після вставки нумерація
+# наступних слайдів зсунулась, а футер рахує номер сам (`len(prs.slides)`).
+
+
+def add_slide_strategy_package_problem(prs: Presentation) -> None:
+    slide = prs.slides.add_slide(prs.slide_layouts[10])
+    add_textbox(
+        slide,
+        0.68,
+        0.36,
+        8.65,
+        0.18,
+        ["S T R A T E G Y   P A C K A G E   C H E C K     ·     П Р О Б Л Е М А"],
+        size=10,
+        color=ORANGE,
+        bold=True,
+    )
+    add_textbox(
+        slide,
+        0.68,
+        0.78,
+        8.65,
+        0.60,
+        ["Звірка стратегії з сайтом — години вручну."],
+        size=24,
+        color=BLACK,
+        bold=True,
+    )
+
+    add_blog_problem(
+        slide,
+        y=1.67,
+        number="1",
+        title="Три джерела, які мають збігатися",
+        body="Стратегія, фреймворк кожної сторінки та живий сайт живуть окремо й розходяться непомітно.",
+    )
+    add_blog_problem(
+        slide,
+        y=2.72,
+        number="2",
+        title="Кожну сторінку — вручну",
+        body="Відкрити стратегію, кожен фреймворк, кожну сторінку сайту; звірити поле за полем; скласти звіт.",
+    )
+    add_blog_problem(
+        slide,
+        y=3.77,
+        number="3",
+        title="Години, а на великому сайті — день",
+        body="Що більше сторінок, то довше і то більше шансів пропустити розбіжність.",
+    )
+
+    card = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(6.55),
+        Inches(1.55),
+        Inches(2.80),
+        Inches(3.42),
+    )
+    card.fill.solid()
+    card.fill.fore_color.rgb = ORANGE
+    card.line.color.rgb = ORANGE
+    card.adjustments[0] = 0.10
+    add_textbox(slide, 6.78, 1.88, 2.34, 0.20, ["S A P H N Y   ·   Q 4   2 0 2 6"], size=8.5, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
+    add_textbox(slide, 6.75, 2.27, 2.40, 0.88, ["15"], size=62, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
+    add_textbox(slide, 6.78, 3.34, 2.34, 0.25, ["ФРЕЙМВОРКІВ"], size=15, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
+    add_textbox(
+        slide,
+        6.82,
+        4.18,
+        2.26,
+        0.48,
+        ["× 6 полів × 3 джерела", "= 270 ручних звірок"],
+        size=9.5,
+        color=WHITE,
+        align=PP_ALIGN.CENTER,
+        line_spacing=1.08,
+    )
+    add_footer(slide, len(prs.slides))
+
+
+def add_slide_strategy_package_comparison(prs: Presentation, comparison_image: Path) -> None:
+    slide = prs.slides.add_slide(prs.slide_layouts[10])
+    add_textbox(
+        slide,
+        0.68,
+        0.36,
+        8.65,
+        0.18,
+        ["Р І Ш Е Н Н Я     ·     S T R A T E G Y   P A C K A G E   C H E C K"],
+        size=10,
+        color=ORANGE,
+        bold=True,
+    )
+    add_textbox(
+        slide,
+        0.68,
+        0.78,
+        8.65,
+        0.58,
+        ["Стратегія ↔ фреймворк ↔ сайт — за 30 секунд."],
+        size=25,
+        color=BLACK,
+        bold=True,
+    )
+
+    border = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(0.60),
+        Inches(1.50),
+        Inches(6.25),
+        Inches(3.60),
+    )
+    border.fill.solid()
+    border.fill.fore_color.rgb = BLACK
+    border.line.color.rgb = BLACK
+    slide.shapes.add_picture(
+        str(comparison_image),
+        Inches(0.62),
+        Inches(1.52),
+        width=Inches(6.21),
+        height=Inches(3.56),
+    )
+
+    add_textbox(slide, 7.12, 1.54, 2.20, 0.18, ["П О К А З У Є"], size=8.5, color=ORANGE, bold=True)
+    add_benefit(slide, y=1.95, text="Стратегія, фрейм і сайт поруч")
+    add_benefit(slide, y=2.68, text="✓ / ✗ по кожному полю")
+    add_benefit(slide, y=3.42, text="Фільтр «Mismatches only»")
+
+    export = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(7.05),
+        Inches(4.15),
+        Inches(2.30),
+        Inches(0.93),
+    )
+    export.fill.solid()
+    export.fill.fore_color.rgb = ORANGE
+    export.line.color.rgb = ORANGE
+    export.adjustments[0] = 0.10
+    export.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+    export.text_frame.margin_left = Inches(0.10)
+    export.text_frame.margin_right = Inches(0.10)
+    export.text_frame.margin_top = Inches(0.07)
+    export.text_frame.margin_bottom = Inches(0.07)
+    set_text(
+        export,
+        ["EXPORT TO EXCEL", "Звіт одразу в роботу"],
+        size=10,
+        color=WHITE,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+        line_spacing=1.08,
+    )
+    add_footer(slide, len(prs.slides))
+
+
+def add_slide_strategy_package_qa(prs: Presentation, qa_image: Path) -> None:
+    slide = prs.slides.add_slide(prs.slide_layouts[10])
+    add_textbox(
+        slide,
+        0.68,
+        0.36,
+        8.65,
+        0.18,
+        ["S T R A T E G Y   P A C K A G E   C H E C K     ·     S E O   Q A"],
+        size=10,
+        color=ORANGE,
+        bold=True,
+    )
+    add_textbox(
+        slide,
+        0.68,
+        0.78,
+        8.65,
+        0.58,
+        ["SEO QA стратегії та фреймів — до публікації."],
+        size=24,
+        color=BLACK,
+        bold=True,
+    )
+
+    border = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(0.60),
+        Inches(1.50),
+        Inches(6.25),
+        Inches(3.60),
+    )
+    border.fill.solid()
+    border.fill.fore_color.rgb = BLACK
+    border.line.color.rgb = BLACK
+    slide.shapes.add_picture(
+        str(qa_image),
+        Inches(0.62),
+        Inches(1.52),
+        width=Inches(6.21),
+        height=Inches(3.56),
+    )
+
+    add_textbox(slide, 7.12, 1.54, 2.20, 0.18, ["З Н А Х О Д И Т Ь"], size=8.5, color=ORANGE, bold=True)
+    add_benefit(slide, y=1.95, text="Дублікати й довжина meta")
+    add_benefit(slide, y=2.68, text="Drift фрейму від живої сторінки")
+    add_benefit(slide, y=3.42, text="Cross-checks між файлами")
+
+    findings = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(7.05),
+        Inches(4.15),
+        Inches(2.30),
+        Inches(0.93),
+    )
+    findings.fill.solid()
+    findings.fill.fore_color.rgb = ORANGE
+    findings.line.color.rgb = ORANGE
+    findings.adjustments[0] = 0.10
+    findings.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+    findings.text_frame.margin_left = Inches(0.10)
+    findings.text_frame.margin_right = Inches(0.10)
+    findings.text_frame.margin_top = Inches(0.07)
+    findings.text_frame.margin_bottom = Inches(0.07)
+    set_text(
+        findings,
+        ["104 ERRORS · 60 WARNINGS", "Один запуск · 15 фреймворків"],
+        size=9.5,
+        color=WHITE,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+        line_spacing=1.08,
+    )
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_eleven(prs: Presentation) -> None:
@@ -1115,7 +1349,7 @@ def add_slide_eleven(prs: Presentation) -> None:
         align=PP_ALIGN.CENTER,
         line_spacing=1.08,
     )
-    add_footer(slide, 11)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_twelve(prs: Presentation, site_crawl_image: Path) -> None:
@@ -1191,7 +1425,7 @@ def add_slide_twelve(prs: Presentation, site_crawl_image: Path) -> None:
         align=PP_ALIGN.CENTER,
         line_spacing=1.08,
     )
-    add_footer(slide, 12)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_thirteen(prs: Presentation) -> None:
@@ -1262,7 +1496,7 @@ def add_slide_thirteen(prs: Presentation) -> None:
     add_textbox(slide, 6.70, 3.49, 2.50, 0.58, ["2000+"], size=37, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
     add_textbox(slide, 6.78, 4.13, 2.34, 0.22, ["СТОРІНОК"], size=12, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
     add_textbox(slide, 6.82, 4.55, 2.26, 0.20, ["ручний контроль неможливий"], size=8.5, color=WHITE, align=PP_ALIGN.CENTER)
-    add_footer(slide, 13)
+    add_footer(slide, len(prs.slides))
 
 
 def add_process_card(
@@ -1358,7 +1592,7 @@ def add_slide_fourteen(prs: Presentation) -> None:
         chip.text_frame.margin_top = 0
         chip.text_frame.margin_bottom = 0
         set_text(chip, [label], size=9, color=BLACK, bold=True, align=PP_ALIGN.CENTER)
-    add_footer(slide, 14)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_fifteen(prs: Presentation, monitor_overview_image: Path) -> None:
@@ -1388,7 +1622,7 @@ def add_slide_fifteen(prs: Presentation, monitor_overview_image: Path) -> None:
     action.text_frame.margin_top = Inches(0.07)
     action.text_frame.margin_bottom = Inches(0.07)
     set_text(action, ["CHECK NOW · HISTORY", "Поточний стан і ручний запуск перевірки"], size=9.5, color=WHITE, bold=True, align=PP_ALIGN.CENTER, line_spacing=1.08)
-    add_footer(slide, 15)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_sixteen(prs: Presentation, monitor_history_image: Path) -> None:
@@ -1418,7 +1652,7 @@ def add_slide_sixteen(prs: Presentation, monitor_history_image: Path) -> None:
     border.fill.fore_color.rgb = BLACK
     border.line.color.rgb = BLACK
     slide.shapes.add_picture(str(monitor_history_image), Inches(4.09), Inches(1.50), width=Inches(5.26), height=Inches(3.75))
-    add_footer(slide, 16)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_seventeen(prs: Presentation) -> None:
@@ -1490,7 +1724,7 @@ def add_slide_seventeen(prs: Presentation) -> None:
     divider.fill.fore_color.rgb = WHITE
     divider.line.fill.background()
     add_textbox(slide, 6.80, 4.42, 2.30, 0.22, ["І ЗНОВУ ІНШИЙ ПЕРІОД"], size=8.5, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
-    add_footer(slide, 17)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_eighteen(prs: Presentation, trends_image: Path) -> None:
@@ -1566,7 +1800,7 @@ def add_slide_eighteen(prs: Presentation, trends_image: Path) -> None:
         align=PP_ALIGN.CENTER,
         line_spacing=1.08,
     )
-    add_footer(slide, 18)
+    add_footer(slide, len(prs.slides))
 
 
 def add_metric_source_card(
@@ -1678,7 +1912,7 @@ def add_slide_nineteen(prs: Presentation) -> None:
         bold=True,
         align=PP_ALIGN.CENTER,
     )
-    add_footer(slide, 19)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_twenty(prs: Presentation) -> None:
@@ -1749,7 +1983,7 @@ def add_slide_twenty(prs: Presentation) -> None:
     add_textbox(slide, 6.80, 3.48, 2.30, 0.18, ["НЕМОЖЛИВО ПОБАЧИТИ"], size=8, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
     add_textbox(slide, 6.76, 3.80, 2.38, 0.38, ["MENU · CONTENT", "VISUAL"], size=15, color=WHITE, bold=True, align=PP_ALIGN.CENTER, line_spacing=1.02)
     add_textbox(slide, 6.80, 4.51, 2.30, 0.20, ["DEC 2025 · BROKEN"], size=8.5, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
-    add_footer(slide, 20)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_twenty_one(prs: Presentation, archive_overview_image: Path) -> None:
@@ -1825,7 +2059,7 @@ def add_slide_twenty_one(prs: Presentation, archive_overview_image: Path) -> Non
         align=PP_ALIGN.CENTER,
         line_spacing=1.08,
     )
-    add_footer(slide, 21)
+    add_footer(slide, len(prs.slides))
 
 
 def add_slide_twenty_two(prs: Presentation, archive_view_image: Path) -> None:
@@ -1901,7 +2135,239 @@ def add_slide_twenty_two(prs: Presentation, archive_view_image: Path) -> None:
         align=PP_ALIGN.CENTER,
         line_spacing=1.08,
     )
-    add_footer(slide, 22)
+    add_footer(slide, len(prs.slides))
+
+
+# URL Inspector (task-61/88): фінальна трійка — проблема, аналітика + стан у
+# Google, технічний стан сторінки (аудит, скріншоти, архів, зміни).
+
+
+def add_slide_url_inspector_problem(prs: Presentation) -> None:
+    slide = prs.slides.add_slide(prs.slide_layouts[10])
+    add_textbox(
+        slide,
+        0.68,
+        0.36,
+        8.65,
+        0.18,
+        ["U R L   I N S P E C T O R     ·     П Р О Б Л Е М А"],
+        size=10,
+        color=ORANGE,
+        bold=True,
+    )
+    add_textbox(
+        slide,
+        0.68,
+        0.78,
+        8.65,
+        0.60,
+        ["Усе про одну сторінку — у шести різних місцях."],
+        size=24,
+        color=BLACK,
+        bold=True,
+    )
+
+    add_blog_problem(
+        slide,
+        y=1.67,
+        number="1",
+        title="Шість вкладок на одне питання",
+        body="GSC, GA4, аудит, скріншоти, архів, монітор — окремі інструменти й окремі акаунти.",
+    )
+    add_blog_problem(
+        slide,
+        y=2.72,
+        number="2",
+        title="«Що з цією сторінкою?» — 20 хвилин",
+        body="Зібрати цифри, перевірити індексацію, глянути meta — щоразу з нуля.",
+    )
+    add_blog_problem(
+        slide,
+        y=3.77,
+        number="3",
+        title="Історії немає",
+        body="Що змінилось на сторінці і коли — ніхто не памʼятає й ніде не записано.",
+    )
+
+    card = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(6.55),
+        Inches(1.55),
+        Inches(2.80),
+        Inches(3.42),
+    )
+    card.fill.solid()
+    card.fill.fore_color.rgb = ORANGE
+    card.line.color.rgb = ORANGE
+    card.adjustments[0] = 0.10
+    add_textbox(slide, 6.78, 1.88, 2.34, 0.20, ["О Д Н А   С Т О Р І Н К А"], size=8.5, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
+    add_textbox(slide, 6.75, 2.27, 2.40, 0.88, ["6"], size=62, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
+    add_textbox(slide, 6.78, 3.34, 2.34, 0.25, ["ДЖЕРЕЛ ДАНИХ"], size=15, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
+    add_textbox(
+        slide,
+        6.82,
+        4.18,
+        2.26,
+        0.48,
+        ["GSC · GA4 · INDEX · AUDIT", "SCREENS · ARCHIVE"],
+        size=9.5,
+        color=WHITE,
+        align=PP_ALIGN.CENTER,
+        line_spacing=1.08,
+    )
+    add_footer(slide, len(prs.slides))
+
+
+def add_slide_url_inspector_analytics(prs: Presentation, analytics_image: Path) -> None:
+    slide = prs.slides.add_slide(prs.slide_layouts[10])
+    add_textbox(
+        slide,
+        0.68,
+        0.36,
+        8.65,
+        0.18,
+        ["Р І Ш Е Н Н Я     ·     U R L   I N S P E C T O R"],
+        size=10,
+        color=ORANGE,
+        bold=True,
+    )
+    add_textbox(
+        slide,
+        0.68,
+        0.78,
+        8.65,
+        0.58,
+        ["Вставив URL — отримав усе про сторінку."],
+        size=25,
+        color=BLACK,
+        bold=True,
+    )
+
+    border = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(0.60),
+        Inches(1.50),
+        Inches(6.25),
+        Inches(3.60),
+    )
+    border.fill.solid()
+    border.fill.fore_color.rgb = BLACK
+    border.line.color.rgb = BLACK
+    slide.shapes.add_picture(
+        str(analytics_image),
+        Inches(0.62),
+        Inches(1.52),
+        width=Inches(6.21),
+        height=Inches(3.56),
+    )
+
+    add_textbox(slide, 7.12, 1.54, 2.20, 0.18, ["А Н А Л І Т И К А"], size=8.5, color=ORANGE, bold=True)
+    add_benefit(slide, y=1.95, text="GSC + GA4: кліки, сесії, конверсії")
+    add_benefit(slide, y=2.68, text="Запити й ключі сторінки")
+    add_benefit(slide, y=3.42, text="Стан у Google: індекс, canonical")
+
+    action = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(7.05),
+        Inches(4.15),
+        Inches(2.30),
+        Inches(0.93),
+    )
+    action.fill.solid()
+    action.fill.fore_color.rgb = ORANGE
+    action.line.color.rgb = ORANGE
+    action.adjustments[0] = 0.10
+    action.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+    action.text_frame.margin_left = Inches(0.10)
+    action.text_frame.margin_right = Inches(0.10)
+    action.text_frame.margin_top = Inches(0.07)
+    action.text_frame.margin_bottom = Inches(0.07)
+    set_text(
+        action,
+        ["PASTE A PAGE URL", "Без входу в GSC чи GA4"],
+        size=10,
+        color=WHITE,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+        line_spacing=1.08,
+    )
+    add_footer(slide, len(prs.slides))
+
+
+def add_slide_url_inspector_page_state(prs: Presentation, page_state_image: Path) -> None:
+    slide = prs.slides.add_slide(prs.slide_layouts[10])
+    add_textbox(
+        slide,
+        0.68,
+        0.36,
+        8.65,
+        0.18,
+        ["U R L   I N S P E C T O R     ·     С Т А Н   С Т О Р І Н К И"],
+        size=10,
+        color=ORANGE,
+        bold=True,
+    )
+    add_textbox(
+        slide,
+        0.68,
+        0.78,
+        8.65,
+        0.58,
+        ["Аудит, скріншоти, архів і зміни — на одному екрані."],
+        size=24,
+        color=BLACK,
+        bold=True,
+    )
+
+    border = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(0.60),
+        Inches(1.50),
+        Inches(6.25),
+        Inches(3.60),
+    )
+    border.fill.solid()
+    border.fill.fore_color.rgb = BLACK
+    border.line.color.rgb = BLACK
+    slide.shapes.add_picture(
+        str(page_state_image),
+        Inches(0.62),
+        Inches(1.52),
+        width=Inches(6.21),
+        height=Inches(3.56),
+    )
+
+    add_textbox(slide, 7.12, 1.54, 2.20, 0.18, ["Щ Е   Н А   С Т О Р І Н Ц І"], size=8.5, color=ORANGE, bold=True)
+    add_benefit(slide, y=1.95, text="Технічний аудит: meta, H1, помилки")
+    add_benefit(slide, y=2.68, text="Desktop · Tablet · Mobile")
+    add_benefit(slide, y=3.42, text="Архівні версії й журнал змін")
+
+    action = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(7.05),
+        Inches(4.15),
+        Inches(2.30),
+        Inches(0.93),
+    )
+    action.fill.solid()
+    action.fill.fore_color.rgb = ORANGE
+    action.line.color.rgb = ORANGE
+    action.adjustments[0] = 0.10
+    action.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+    action.text_frame.margin_left = Inches(0.10)
+    action.text_frame.margin_right = Inches(0.10)
+    action.text_frame.margin_top = Inches(0.07)
+    action.text_frame.margin_bottom = Inches(0.07)
+    set_text(
+        action,
+        ["LIVE AUDIT · RECHECK", "Жива сторінка — за секунди"],
+        size=10,
+        color=WHITE,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+        line_spacing=1.08,
+    )
+    add_footer(slide, len(prs.slides))
 
 
 def build(
@@ -1913,12 +2379,16 @@ def build(
     blogs_table_image: Path,
     page_inventory_image: Path,
     seo_qa_image: Path,
+    strategy_package_comparison_image: Path,
+    strategy_package_qa_image: Path,
     site_crawl_image: Path,
     monitor_overview_image: Path,
     monitor_history_image: Path,
     trends_image: Path,
     archive_overview_image: Path,
     archive_view_image: Path,
+    url_inspector_analytics_image: Path,
+    url_inspector_page_state_image: Path,
 ) -> None:
     prs = Presentation(reference)
 
@@ -1985,6 +2455,9 @@ def build(
     add_slide_eight(prs)
     add_slide_nine(prs, page_inventory_image)
     add_slide_ten(prs, seo_qa_image)
+    add_slide_strategy_package_problem(prs)
+    add_slide_strategy_package_comparison(prs, strategy_package_comparison_image)
+    add_slide_strategy_package_qa(prs, strategy_package_qa_image)
     add_slide_eleven(prs)
     add_slide_twelve(prs, site_crawl_image)
     add_slide_thirteen(prs)
@@ -1997,6 +2470,9 @@ def build(
     add_slide_twenty(prs)
     add_slide_twenty_one(prs, archive_overview_image)
     add_slide_twenty_two(prs, archive_view_image)
+    add_slide_url_inspector_problem(prs)
+    add_slide_url_inspector_analytics(prs, url_inspector_analytics_image)
+    add_slide_url_inspector_page_state(prs, url_inspector_page_state_image)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     prs.save(output)
@@ -2037,6 +2513,16 @@ def main() -> None:
         default=Path("presentation/assets/slide-10-seo-qa.png"),
     )
     parser.add_argument(
+        "--strategy-package-comparison-image",
+        type=Path,
+        default=Path("presentation/assets/strategy-package-comparison.png"),
+    )
+    parser.add_argument(
+        "--strategy-package-qa-image",
+        type=Path,
+        default=Path("presentation/assets/strategy-package-qa.png"),
+    )
+    parser.add_argument(
         "--site-crawl-image",
         type=Path,
         default=Path("presentation/assets/slide-12-site-crawl-issues.png"),
@@ -2066,6 +2552,16 @@ def main() -> None:
         type=Path,
         default=Path("presentation/assets/slide-22-archive-view.png"),
     )
+    parser.add_argument(
+        "--url-inspector-analytics-image",
+        type=Path,
+        default=Path("presentation/assets/url-inspector-analytics.png"),
+    )
+    parser.add_argument(
+        "--url-inspector-page-state-image",
+        type=Path,
+        default=Path("presentation/assets/url-inspector-page-state.png"),
+    )
     args = parser.parse_args()
     build(
         args.reference,
@@ -2076,12 +2572,16 @@ def main() -> None:
         args.blogs_table_image,
         args.page_inventory_image,
         args.seo_qa_image,
+        args.strategy_package_comparison_image,
+        args.strategy_package_qa_image,
         args.site_crawl_image,
         args.monitor_overview_image,
         args.monitor_history_image,
         args.trends_image,
         args.archive_overview_image,
         args.archive_view_image,
+        args.url_inspector_analytics_image,
+        args.url_inspector_page_state_image,
     )
 
 

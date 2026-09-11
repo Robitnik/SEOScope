@@ -113,6 +113,30 @@ TRANSLATIONS = {
     "Calibrated / Strict перевірка": "Calibrated / Strict validation",
     "ПРІОРИТЕТИ": "PRIORITIES",
     "Сторінки, що точно потребують оновлення": "Pages that definitely need an update",
+    # Strategy Package Check (after SEO QA)
+    "S T R A T E G Y   P A C K A G E   C H E C K     ·     П Р О Б Л Е М А": "S T R A T E G Y   P A C K A G E   C H E C K     ·     P R O B L E M",
+    "Звірка стратегії з сайтом — години вручну.": "Strategy vs. site check—hours by hand.",
+    "Три джерела, які мають збігатися": "Three sources that must match",
+    "Стратегія, фреймворк кожної сторінки та живий сайт живуть окремо й розходяться непомітно.": "The strategy, each page framework, and the live site live apart—and drift unnoticed.",
+    "Кожну сторінку — вручну": "Every page—by hand",
+    "Відкрити стратегію, кожен фреймворк, кожну сторінку сайту; звірити поле за полем; скласти звіт.": "Open the strategy, every framework, every site page; compare field by field; write the report.",
+    "Години, а на великому сайті — день": "Hours—a full day on a large site",
+    "Що більше сторінок, то довше і то більше шансів пропустити розбіжність.": "More pages means more time—and more chances to miss a mismatch.",
+    "ФРЕЙМВОРКІВ": "FRAMEWORKS",
+    "× 6 полів × 3 джерела": "× 6 fields × 3 sources",
+    "= 270 ручних звірок": "= 270 manual checks",
+    "Р І Ш Е Н Н Я     ·     S T R A T E G Y   P A C K A G E   C H E C K": "S O L U T I O N     ·     S T R A T E G Y   P A C K A G E   C H E C K",
+    "Стратегія ↔ фреймворк ↔ сайт — за 30 секунд.": "Strategy ↔ framework ↔ site—in 30 seconds.",
+    "П О К А З У Є": "S H O W S",
+    "Стратегія, фрейм і сайт поруч": "Strategy, frame, and site side by side",
+    "✓ / ✗ по кожному полю": "✓ / ✗ for every field",
+    "Фільтр «Mismatches only»": "\"Mismatches only\" filter",
+    "Звіт одразу в роботу": "A report ready for work",
+    "SEO QA стратегії та фреймів — до публікації.": "SEO QA of strategy and frames—before publishing.",
+    "Дублікати й довжина meta": "Duplicate and mis-sized meta",
+    "Drift фрейму від живої сторінки": "Frame drift from the live page",
+    "Cross-checks між файлами": "Cross-checks between files",
+    "Один запуск · 15 фреймворків": "One run · 15 frameworks",
     # Slide 11
     "Т Е Х Н І Ч Н И Й   S E O     ·     П Р О Б Л Е М А": "T E C H N I C A L   S E O     ·     P R O B L E M",
     "Банальні помилки повторюються на сотнях сторінок.": "Basic issues repeat across hundreds of pages.",
@@ -224,6 +248,30 @@ TRANSLATIONS = {
     "Меню, контент і дизайн": "Menu, content, and design",
     "Meta й View source": "Meta and View source",
     "Будь-який URL — вручну": "Any URL—manually",
+    # URL Inspector (closing trio)
+    "U R L   I N S P E C T O R     ·     П Р О Б Л Е М А": "U R L   I N S P E C T O R     ·     P R O B L E M",
+    "Усе про одну сторінку — у шести різних місцях.": "Everything about one page—in six different places.",
+    "Шість вкладок на одне питання": "Six tabs for one question",
+    "GSC, GA4, аудит, скріншоти, архів, монітор — окремі інструменти й окремі акаунти.": "GSC, GA4, audit, screenshots, archive, monitor—separate tools and separate accounts.",
+    "«Що з цією сторінкою?» — 20 хвилин": "\"What is up with this page?\"—20 minutes",
+    "Зібрати цифри, перевірити індексацію, глянути meta — щоразу з нуля.": "Gather the numbers, check indexing, look at the meta—from scratch every time.",
+    "Історії немає": "No history",
+    "Що змінилось на сторінці і коли — ніхто не памʼятає й ніде не записано.": "What changed on the page and when—nobody remembers, nothing is recorded.",
+    "О Д Н А   С Т О Р І Н К А": "O N E   P A G E",
+    "ДЖЕРЕЛ ДАНИХ": "DATA SOURCES",
+    "Р І Ш Е Н Н Я     ·     U R L   I N S P E C T O R": "S O L U T I O N     ·     U R L   I N S P E C T O R",
+    "Вставив URL — отримав усе про сторінку.": "Paste a URL—get everything about the page.",
+    "А Н А Л І Т И К А": "A N A L Y T I C S",
+    "GSC + GA4: кліки, сесії, конверсії": "GSC + GA4: clicks, sessions, conversions",
+    "Запити й ключі сторінки": "Page queries and keywords",
+    "Стан у Google: індекс, canonical": "Google status: index, canonical",
+    "Без входу в GSC чи GA4": "No GSC or GA4 login needed",
+    "U R L   I N S P E C T O R     ·     С Т А Н   С Т О Р І Н К И": "U R L   I N S P E C T O R     ·     P A G E   S T A T E",
+    "Аудит, скріншоти, архів і зміни — на одному екрані.": "Audit, screenshots, archive, changes—one screen.",
+    "Щ Е   Н А   С Т О Р І Н Ц І": "A L S O   O N   T H E   P A G E",
+    "Технічний аудит: meta, H1, помилки": "Technical audit: meta, H1, issues",
+    "Архівні версії й журнал змін": "Archived versions and change log",
+    "Жива сторінка — за секунди": "The live page—in seconds",
 }
 
 
@@ -260,12 +308,16 @@ def main() -> None:
     parser.add_argument("--blogs-table-image", type=Path, default=Path("presentation/assets/slide-07-blogs-table.png"))
     parser.add_argument("--page-inventory-image", type=Path, default=Path("presentation/assets/slide-09-page-inventory.png"))
     parser.add_argument("--seo-qa-image", type=Path, default=Path("presentation/assets/slide-10-seo-qa.png"))
+    parser.add_argument("--strategy-package-comparison-image", type=Path, default=Path("presentation/assets/strategy-package-comparison.png"))
+    parser.add_argument("--strategy-package-qa-image", type=Path, default=Path("presentation/assets/strategy-package-qa.png"))
     parser.add_argument("--site-crawl-image", type=Path, default=Path("presentation/assets/slide-12-site-crawl-issues.png"))
     parser.add_argument("--monitor-overview-image", type=Path, default=Path("presentation/assets/slide-15-monitor-overview.png"))
     parser.add_argument("--monitor-history-image", type=Path, default=Path("presentation/assets/slide-16-monitor-history.png"))
     parser.add_argument("--trends-image", type=Path, default=Path("presentation/assets/slide-18-client-trends.png"))
     parser.add_argument("--archive-overview-image", type=Path, default=Path("presentation/assets/slide-21-web-archive.png"))
     parser.add_argument("--archive-view-image", type=Path, default=Path("presentation/assets/slide-22-archive-view.png"))
+    parser.add_argument("--url-inspector-analytics-image", type=Path, default=Path("presentation/assets/url-inspector-analytics.png"))
+    parser.add_argument("--url-inspector-page-state-image", type=Path, default=Path("presentation/assets/url-inspector-page-state.png"))
     args = parser.parse_args()
 
     build_ua.build(
@@ -277,12 +329,16 @@ def main() -> None:
         args.blogs_table_image,
         args.page_inventory_image,
         args.seo_qa_image,
+        args.strategy_package_comparison_image,
+        args.strategy_package_qa_image,
         args.site_crawl_image,
         args.monitor_overview_image,
         args.monitor_history_image,
         args.trends_image,
         args.archive_overview_image,
         args.archive_view_image,
+        args.url_inspector_analytics_image,
+        args.url_inspector_page_state_image,
     )
     translate_deck(args.output)
 
