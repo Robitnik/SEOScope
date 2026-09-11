@@ -328,8 +328,16 @@ def align_segments(
     саме він давав хибні пари на спільних токенах-запозиченнях
     (`"...EVP..."` в обох мовах). Лишається лише сильний рівень (>=0.75),
     де реальний переклад все одно рідко випадково потрапляє."""
-    comparable = [s for s in doc_segments if s.kind != "directive"]
+    # Сегмент, порожній ПІСЛЯ нормалізації, не порівнюється взагалі — живий
+    # випадок: абзац Docs, що складається з одного `​` (zero-width
+    # space). `str.split()` його не зʼїдає (не whitespace, а format-
+    # символ), тож він доживав до вирівнювання як «речення» довжиною 1 і
+    # звітувався як `missing` — 10 із 356 рядків-помилок по всіх пакетах,
+    # до 40% на окремій сторінці (LAXTON Ouija: 2 з 5). Ані doc-, ані
+    # site-бік такого не має породжувати ні `missing`, ні `extra`.
+    comparable = [s for s in doc_segments if s.kind != "directive" and normalize(s.text)]
     excluded = [s for s in doc_segments if s.kind == "directive"]
+    site_segments = [s for s in site_segments if normalize(s.text)]
 
     doc_norm = [normalize(s.text) for s in comparable]
     site_norm = [normalize(s.text) for s in site_segments]

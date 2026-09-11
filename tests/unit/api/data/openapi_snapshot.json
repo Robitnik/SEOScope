@@ -5754,6 +5754,17 @@
             ],
             "title": "Frame Tab Title"
           },
+          "page_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Url"
+          },
           "reason": {
             "anyOf": [
               {

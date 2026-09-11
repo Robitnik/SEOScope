@@ -83,6 +83,13 @@ _DIRECTIVE_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 _RULE_LINE_RE = re.compile(r"^[_\-–—=·•*\s]{4,}$")
+# A rule-line glued DIRECTLY onto a bracketed directive with no separator
+# (live, EFFYS COLUMBUS_AVE: `"_____...___[IMAGE SECTION: Full-width hero
+# ...]"` as ONE paragraph) — neither `_RULE_LINE_RE` (needs the whole
+# chunk) nor `_WRAPPED_RE` (needs a leading `[`) fires, and the placeholder
+# lands in the errors-only Copy sheet as a fake "missing" sentence. The
+# leading rule is peeled off before classification.
+_LEADING_RULE_RE = re.compile(r"^[_\-–—=·•*]{4,}\s*")
 # Second live form of an HTML heading tag inside Copy prose (task-92 §1.3):
 # `_HTML_HEADING_RE` above requires a matching closing tag on the SAME
 # line; measured live (EFFYS COLUMBUS_AVE) the opening tag sometimes has
@@ -334,6 +341,7 @@ def _classify_copy_chunk(text: str, *, style: str | None, bullet: bool) -> DocBl
     stripped, has_marker = _strip_marker_tail(text)
     if not stripped or _RULE_LINE_RE.match(stripped):
         return DocBlock(kind="directive", level=None, text=stripped or text, has_marker=has_marker)
+    stripped = _LEADING_RULE_RE.sub("", stripped) or stripped
 
     if stripped.lower().startswith("<h"):
         full = _HTML_HEADING_RE.match(stripped)

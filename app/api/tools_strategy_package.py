@@ -370,6 +370,10 @@ def _framework_outcome_dict(outcome: FrameworkOutcome) -> dict[str, Any]:
         # mapping. Lives inline in `frameworks_json`, not a new column —
         # this blob is already persisted per-framework.
         "copy_diffs": [asdict(cd) for cd in outcome.copy_diffs],
+        # The URL the site was fetched against — `frame_item` itself stays
+        # transient (task-91 decision), but the Copy per-page Excel sheets
+        # need the URL in their header long after the run (live feedback).
+        "page_url": outcome.frame_item.url if outcome.frame_item is not None else None,
     }
 
 

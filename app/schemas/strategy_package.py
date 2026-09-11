@@ -180,6 +180,13 @@ class FrameworkOutcomeDTO(BaseModel):
     # ВСЕРЕДИНІ вже наявного `frameworks_json`, окрема колонка/міграція
     # не потрібна — цей блок і так персиститься по кожному фреймворку.
     copy_diffs: list[CopyTabResultDTO] = Field(default_factory=list)
+    # URL сторінки з Framework-таблиці — те, проти чого фетчився сайт.
+    # Раніше жив лише транзитно у `FrameworkOutcome.frame_item` і губився
+    # при персистенції; Excel-аркуш Copy на сторінку (task-92, live
+    # feedback) має показувати URL і посилання на документ у шапці.
+    # `None` на пакетах до цього поля і на фреймворках без URL — не
+    # вгадується з `matrix_json` заднім числом.
+    page_url: str | None = None
 
 
 class MatrixCellDTO(BaseModel):

@@ -249,3 +249,18 @@ def test_build_copy_tab_result_coverage_and_stats() -> None:
     assert result.stats.coverage == 2 / 3
     assert result.genre == "copy"
     assert result.role == "primary"  # default before package.py's role selection
+
+
+# ── порожні після нормалізації сегменти (live: `​`-абзаци Docs) ─────────
+
+
+def test_zero_width_space_paragraph_never_becomes_a_missing_row() -> None:
+    """Live (LAXTON Ouija): a Docs paragraph holding only U+200B survived
+    `str.split()` (it is a format char, not whitespace) and was reported
+    as a "missing" sentence — 10 of 356 error rows across all packages,
+    2 of 5 on that one page. Empty-after-normalize segments are dropped on
+    BOTH sides before alignment."""
+    doc = _doc(("​", None, False), ("Real sentence.", None, False))
+    site = _site("​", "Real sentence.")
+    rows = _align(doc, site)
+    assert [r.state for r in rows] == ["match"]

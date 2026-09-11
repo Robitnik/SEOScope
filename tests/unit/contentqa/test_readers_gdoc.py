@@ -512,3 +512,14 @@ def test_copy_tab_blocks_plain_prose_is_a_para() -> None:
     (block,) = copy_tab_blocks(tab)
     assert block.kind == "para"
     assert block.has_marker is False
+
+
+def test_copy_tab_blocks_rule_line_glued_to_a_directive_is_a_directive() -> None:
+    """Live (EFFYS COLUMBUS_AVE): `"____...___[IMAGE SECTION: hero]"` as ONE
+    paragraph with no separator — neither the pure rule-line nor the
+    bracketed-aside pattern matched on its own, and the placeholder showed
+    up in the errors-only Copy sheet as a fake "missing" sentence."""
+    tab = _tab("Content", [_para("_" * 58 + "[IMAGE SECTION: Full-width hero background image]")])
+    (block,) = copy_tab_blocks(tab)
+    assert block.kind == "directive"
+    assert block.text == "[IMAGE SECTION: Full-width hero background image]"

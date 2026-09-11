@@ -37,7 +37,10 @@ Outgoing links):
 from __future__ import annotations
 
 import io
+import re
 from collections.abc import Sequence
+from typing import Any
+from urllib.parse import urlsplit
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -46,6 +49,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from app.schemas.strategy_package import (
     CopyRowDTO,
+    CopyTabResultDTO,
     FrameworkOutcomeDTO,
     MatrixCellDTO,
     MatrixFieldVerdictDTO,
@@ -361,91 +365,232 @@ def build_mismatches_sheet(ws: Worksheet, rows: list[MatrixRowDTO]) -> None:
         ws.cell(2, 1, "No mismatches in this run.").font = Font(italic=True, color=_ABSENT_FG)
 
 
-# ── аркуш Copy (task-92 §2.6/§3.6) ──────────────────────────────────────────
+# ── аркуші Copy (task-92 §2.6, переписано за live feedback) ─────────────────
+# Перший чорновик — один плаский аркуш на ВСІ сторінки з колонками
+# Page/Tab/Section/Doc/Site/Verdict/Detail: заміряно на EFFYS — 436 рядків
+# на 4 сторінки, з них 294 (67%) `match` і 79 (18%) `extra` — 6 із 7 рядків
+# шум для того, чия робота — виправити копію. Плюс фіксована висота 46pt
+# із переносом обрізала довгі речення знизу. Тепер: аркуш `Copy` — індекс
+# (рядок на сторінку/вкладку: URL, документ, к-сть проблем, лінк на
+# аркуш), далі ОДИН аркуш НА СТОРІНКУ лише з тим, що треба виправити
+# (`missing` + `changed`), без колонок Site sentence / Verdict — послівний
+# diff у колонці Issue (медіана 29 символів на 70 живих `changed`-рядках)
+# достатній, щоб зрозуміти, що саме не так, без другого речення поруч.
+# Висота рядка НЕ задається — Excel сам підганяє під перенесений текст.
 
-_COPY_HEADER_LABELS = (
-    "Page", "Tab", "Section", "Doc sentence", "Site sentence", "Verdict", "Detail",
-)
-_COPY_COLUMN_WIDTHS = (34, 18, 26, 46, 46, 12, 40)
-_COPY_VERDICT_LABEL = {
-    "match": "match", "changed": "changed", "missing": "missing on site",
-    "extra": "extra on site", "excluded": "excluded (layout)",
+_GDOC_URL = "https://docs.google.com/document/d/{document_id}/edit"
+_LINK_FG = "1155CC"
+_ACTIONABLE_STATES = frozenset({"missing", "changed"})
+# Excel: назва аркуша ≤ 31 символ, без `[ ] : * ? / \`, унікальна без
+# урахування регістру. Останній сегмент URL (`columbus-ave`,
+# `ouija-board-by-laxton`) коротший і впізнаваніший за назву документа
+# (51+ символів); на 203 живих URL — 193 унікальні імені, 8 колізій
+# (`faq`, `menu`, `home`…), звідси дедуп-суфікс ` (2)`.
+_EXCEL_SHEET_NAME_MAX = 31
+_EXCEL_SHEET_FORBIDDEN_RE = re.compile(r"[\[\]:*?/\\]")
+
+_COPY_INDEX_LABELS = ("Page", "Framework document", "Copy tab", "Issues", "Sheet")
+_COPY_INDEX_WIDTHS = (56, 46, 26, 34, 30)
+_COPY_PAGE_LABELS = ("#", "Section", "Sentence (from Copy)", "Issue")
+_COPY_PAGE_WIDTHS = (5, 30, 100, 44)
+# `missing` — речення взагалі нема на сторінці (червоний, як mismatch у
+# Comparison); `changed` — є, але з іншим текстом (бурштиновий). Колір
+# ніколи не єдиний сигнал (AGENTS.md §7) — колонка Issue каже те саме
+# словами.
+_COPY_ISSUE_FG = {"missing": _MISMATCH_FG, "changed": "BF9000"}
+_COPY_ISSUE_BG = {"missing": _MISMATCH_BG, "changed": "FFF6D9"}
+_COPY_STATE_NOTE = {
+    "no_url": "no URL to compare",
+    "not_checked": "site not checked",
+    "not_applicable": "n/a",
 }
-# Той самий кольоровий словник, що Comparison/Mismatches (task-91): збіг —
-# зелений, розбіжність — червоний. "missing" (немає на сайті) — жовтий,
-# власний тон, бо це не те саме, що "framework/site розійшлись" — рядок
-# копії або ще не опубліковано, або знято зі сторінки. "excluded" —
-# сірий, той самий `_ABSENT_FG`, що незаповнені клітинки матриці.
-_COPY_ROW_FG = {
-    "match": _MATCH_FG, "changed": _MISMATCH_FG, "missing": "BF9000",
-    "extra": _ABSENT_FG, "excluded": _ABSENT_FG,
-}
-_COPY_ROW_BG = {
-    "match": _MATCH_BG, "changed": _MISMATCH_BG, "missing": "FFF6D9",
-}
-_COPY_ROW_HEIGHT = 46
 
 
-def _copy_row_values(row: CopyRowDTO) -> tuple[str, str]:
-    return row.doc_text or "", row.site_text or ""
+def _gdoc_link(document_id: str) -> str:
+    return _GDOC_URL.format(document_id=document_id)
 
 
-def _copy_detail(row: CopyRowDTO) -> str:
-    if row.state == "changed" and row.diff_summary:
-        return row.diff_summary
-    if row.note:
-        return row.note
-    return ""
+def _sheet_title_for(
+    page_url: str | None, document_name: str, *, suffix: str, used: set[str]
+) -> str:
+    """URL's last path segment (fallback: document name), made Excel-safe
+    and unique against `used` (lower-cased — Excel treats `Menu`/`menu`
+    as the same sheet)."""
+    base = ""
+    if page_url:
+        path = urlsplit(page_url).path.strip("/")
+        base = path.rsplit("/", 1)[-1] if path else "home"
+    if not base:
+        base = document_name
+    base = _EXCEL_SHEET_FORBIDDEN_RE.sub("-", base).strip() or "page"
+    if suffix:
+        base = f"{base} {suffix}"
+    candidate = base[:_EXCEL_SHEET_NAME_MAX].rstrip()
+    n = 2
+    while candidate.lower() in used:
+        tail = f" ({n})"
+        candidate = base[: _EXCEL_SHEET_NAME_MAX - len(tail)].rstrip() + tail
+        n += 1
+    used.add(candidate.lower())
+    return candidate
 
 
-def build_copy_sheet(ws: Worksheet, frameworks: Sequence[FrameworkOutcomeDTO]) -> None:
-    """"Речення у Copy / речення на сайті / чи сходиться" (task-92 §2.6),
-    плоский список по всіх фреймворках пакета — на відміну від Comparison,
-    тут немає групування по трьох блоках-джерелах, лише один рядок на
-    сегмент. `page` — назва документа фреймворка (та сама, що вкладка
-    Frameworks на екрані), не URL: секція/вкладка мають сенс лише в
-    контексті документа, з яким копірайтер працював."""
-    _header_row(ws, 1, list(_COPY_HEADER_LABELS))
-    r = 2
-    any_row = False
+def _copy_issue(row: CopyRowDTO) -> str:
+    if row.state == "missing":
+        return "Not on the page"
+    if row.state == "changed":
+        return row.diff_summary or "Differs from the page"
+    return row.state
+
+
+def _link_cell(cell: Any, url: str, *, bold: bool = False, size: int = 11) -> None:
+    cell.hyperlink = url
+    cell.font = Font(name="Calibri", bold=bold, size=size, color=_LINK_FG, underline="single")
+
+
+def _merged_line(ws: Worksheet, row_index: int, text: str, width: int) -> Any:
+    ws.merge_cells(start_row=row_index, start_column=1, end_row=row_index, end_column=width)
+    cell = ws.cell(row_index, 1, text)
+    cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=False)
+    return cell
+
+
+def _copy_page_sheet(
+    ws: Worksheet, *, page_url: str | None, document_name: str, document_id: str,
+    tab: CopyTabResultDTO, rows: Sequence[CopyRowDTO],
+) -> None:
+    """Один аркуш = одна сторінка: шапка (URL → лінк, документ → лінк на
+    Google Doc, вкладка + лічильник), далі лише те, що треба виправити,
+    одне речення на рядок. Висота рядка не задається — Excel/LibreOffice/
+    Sheets автопідганяють під перенесений текст; фіксовані 46pt у першому
+    чорновику обрізали довгі речення (live feedback: «1 речення 1 рядок»)."""
+    width = len(_COPY_PAGE_LABELS)
+    r = 1
+    url_cell = _merged_line(ws, r, page_url or "(no page URL in this run)", width)
+    if page_url:
+        _link_cell(url_cell, page_url, bold=True, size=13)
+    else:
+        url_cell.font = Font(bold=True, size=13, italic=True, color=_ABSENT_FG)
+    ws.row_dimensions[r].height = _TITLE_ROW_HEIGHT
+    r += 1
+    doc_cell = _merged_line(ws, r, f"Framework: {document_name}", width)
+    _link_cell(doc_cell, _gdoc_link(document_id))
+    r += 1
+    n = len(rows)
+    counter = f"{n} issue{'' if n == 1 else 's'} to fix"
+    note = _merged_line(ws, r, f"Copy tab: {tab.tab_title} · {counter}", width)
+    note.font = Font(size=10, color=_ABSENT_FG)
+    r += 2  # порожній рядок між шапкою і таблицею
+
+    _header_row(ws, r, list(_COPY_PAGE_LABELS))
+    header_row = r
+    r += 1
+    for i, row in enumerate(rows, start=1):
+        values = (i, row.section or "", row.doc_text or "", _copy_issue(row))
+        fg, bg = _COPY_ISSUE_FG.get(row.state), _COPY_ISSUE_BG.get(row.state)
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(r, col, value)
+            cell.border = _GRID_BORDER
+            cell.alignment = Alignment(
+                horizontal="left", vertical="top", wrap_text=col in (2, 3, 4)
+            )
+            if fg and col == 4:
+                cell.font = Font(bold=True, color=fg)
+            if bg:
+                cell.fill = _fill(bg)
+        r += 1
+
+    for col_index, w in enumerate(_COPY_PAGE_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(col_index)].width = w
+    ws.freeze_panes = f"A{header_row + 1}"
+    ws.sheet_view.showGridLines = False
+
+
+def build_copy_sheets(workbook: Workbook, frameworks: Sequence[FrameworkOutcomeDTO]) -> None:
+    """Індексний аркуш `Copy` + один аркуш на кожну сторінку, де є що
+    виправити. Сторінки без проблем і вкладки зі станом `no_url`/
+    `not_checked`/`not_applicable` — теж рядок в індексі (перевірено-чисто
+    ≠ не перевірено, PLAN §12), але без окремого аркуша."""
+    index_ws = workbook.create_sheet("Copy")
+    used = {name.lower() for name in workbook.sheetnames}
+    index_rows: list[tuple[Any, ...]] = []
+    page_sheets: list[tuple[str, FrameworkOutcomeDTO, CopyTabResultDTO, list[CopyRowDTO]]] = []
+
     for outcome in frameworks:
-        page = outcome.source.document_name or outcome.source.document_id
+        if not outcome.copy_diffs:
+            continue
+        document_name = outcome.source.document_name or outcome.source.document_id
+        actionable = {
+            id(tab): [row for row in tab.rows if row.state in _ACTIONABLE_STATES]
+            for tab in outcome.copy_diffs
+        }
+        with_sheet = [
+            tab for tab in outcome.copy_diffs if tab.state == "checked" and actionable[id(tab)]
+        ]
         for tab in outcome.copy_diffs:
-            for row in tab.rows:
-                if row.state == "excluded":
-                    continue  # директиви верстки — шум у файлі, що йде клієнту
-                any_row = True
-                doc_text, site_text = _copy_row_values(row)
-                ws.cell(r, 1, page)
-                ws.cell(r, 2, f"{tab.tab_title} ({tab.role})")
-                ws.cell(r, 3, row.section or "")
-                ws.cell(r, 4, doc_text)
-                ws.cell(r, 5, site_text)
-                verdict_cell = ws.cell(r, 6, _COPY_VERDICT_LABEL.get(row.state, row.state))
-                ws.cell(r, 7, _copy_detail(row))
-                fg = _COPY_ROW_FG.get(row.state)
-                bg = _COPY_ROW_BG.get(row.state)
-                if fg:
-                    for col in range(1, len(_COPY_HEADER_LABELS) + 1):
-                        cell = ws.cell(r, col)
-                        cell.font = Font(bold=col == 6, color=fg)
-                        if bg:
-                            cell.fill = _fill(bg)
-                for col in range(1, len(_COPY_HEADER_LABELS) + 1):
-                    ws.cell(r, col).border = _GRID_BORDER
-                    ws.cell(r, col).alignment = Alignment(
-                        horizontal="left", vertical="top", wrap_text=True
-                    )
-                verdict_cell.alignment = Alignment(horizontal="left", vertical="top")
-                ws.row_dimensions[r].height = _COPY_ROW_HEIGHT
-                r += 1
+            rows = actionable[id(tab)]
+            sheet_title: str | None = None
+            if tab in with_sheet:
+                # Language suffix only when this page gets more than one
+                # sheet (a genuinely bilingual, both-published site — none
+                # in the portfolio, but the general case costs nothing).
+                suffix = ""
+                if len(with_sheet) > 1:
+                    suffix = f"({tab.language_hint or tab.role})"
+                sheet_title = _sheet_title_for(
+                    outcome.page_url, document_name, suffix=suffix, used=used
+                )
+                page_sheets.append((sheet_title, outcome, tab, rows))
+            if tab.state == "checked":
+                issues: Any = len(rows) if rows else "0 — clean"
+            else:
+                reason = f" — {tab.reason}" if tab.reason else ""
+                issues = f"{_COPY_STATE_NOTE.get(tab.state, tab.state)}{reason}"
+            tab_label = tab.tab_title if tab.role == "primary" else f"{tab.tab_title} (secondary)"
+            index_rows.append((outcome, document_name, tab_label, issues, sheet_title))
 
-    for col_index, width in enumerate(_COPY_COLUMN_WIDTHS, start=1):
-        ws.column_dimensions[get_column_letter(col_index)].width = width
-    ws.freeze_panes = "A2"
-    if not any_row:
-        note = ws.cell(2, 1, "No copy data in this run.")
-        note.font = Font(italic=True, color=_ABSENT_FG)
+    _header_row(index_ws, 1, list(_COPY_INDEX_LABELS))
+    r = 2
+    for outcome, document_name, tab_label, issues, sheet_title in index_rows:
+        page_cell = index_ws.cell(r, 1, outcome.page_url or document_name)
+        if outcome.page_url:
+            _link_cell(page_cell, outcome.page_url)
+        doc_cell = index_ws.cell(r, 2, document_name)
+        _link_cell(doc_cell, _gdoc_link(outcome.source.document_id))
+        index_ws.cell(r, 3, tab_label)
+        issues_cell = index_ws.cell(r, 4, issues)
+        if isinstance(issues, int):
+            issues_cell.font = Font(bold=True, color=_MISMATCH_FG)
+        elif str(issues).startswith("0"):
+            issues_cell.font = Font(color=_MATCH_FG)
+        else:
+            issues_cell.font = Font(italic=True, color=_ABSENT_FG)
+        sheet_cell = index_ws.cell(r, 5, sheet_title or "—")
+        if sheet_title:
+            # Internal link: Excel quotes the sheet name, a literal `'`
+            # inside it is doubled.
+            _link_cell(sheet_cell, f"#'{sheet_title.replace(chr(39), chr(39) * 2)}'!A1")
+        else:
+            sheet_cell.font = Font(color=_ABSENT_FG)
+        for col in range(1, len(_COPY_INDEX_LABELS) + 1):
+            cell = index_ws.cell(r, col)
+            cell.border = _GRID_BORDER
+            cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        r += 1
+    for col_index, w in enumerate(_COPY_INDEX_WIDTHS, start=1):
+        index_ws.column_dimensions[get_column_letter(col_index)].width = w
+    index_ws.freeze_panes = "A2"
+    index_ws.sheet_view.showGridLines = False
+    if not index_rows:
+        index_ws.cell(2, 1, "No copy data in this run.").font = Font(italic=True, color=_ABSENT_FG)
+
+    for sheet_title, outcome, tab, rows in page_sheets:
+        ws = workbook.create_sheet(sheet_title)
+        _copy_page_sheet(
+            ws, page_url=outcome.page_url,
+            document_name=outcome.source.document_name or outcome.source.document_id,
+            document_id=outcome.source.document_id, tab=tab, rows=rows,
+        )
 
 
 def build_matrix_xlsx(
@@ -459,8 +604,7 @@ def build_matrix_xlsx(
     mismatches_ws = workbook.create_sheet("Mismatches")
     build_mismatches_sheet(mismatches_ws, rows)
 
-    copy_ws = workbook.create_sheet("Copy")
-    build_copy_sheet(copy_ws, frameworks)
+    build_copy_sheets(workbook, frameworks)
 
     buffer = io.BytesIO()
     workbook.save(buffer)

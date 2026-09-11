@@ -340,64 +340,170 @@ def test_title_and_description_show_a_character_count() -> None:
     assert ws.cell(data_row, 4).value == "Heading"
 
 
-# ── аркуш Copy (task-92 §2.6/§3.6) ───────────────────────────────────────────
+# ── аркуші Copy (task-92 §2.6, per-page layout after live feedback) ─────────
 
 
 def _framework_outcome(
-    *, document_name: str, copy_diffs: list[CopyTabResultDTO]
+    *, document_name: str, copy_diffs: list[CopyTabResultDTO],
+    page_url: str | None = "https://example.com/locations/columbus-ave/",
+    document_id: str = "d1",
 ) -> FrameworkOutcomeDTO:
     return FrameworkOutcomeDTO(
         source=FrameworkCandidateDTO(
-            document_id="d1", document_name=document_name, origin="drive_search",
+            document_id=document_id, document_name=document_name, origin="drive_search",
         ),
-        state="checked", copy_diffs=copy_diffs,
+        state="checked", copy_diffs=copy_diffs, page_url=page_url,
     )
 
 
-def test_copy_sheet_shows_placeholder_when_no_copy_data() -> None:
+def _checked_tab(rows: list[CopyRowDTO], *, title: str = "Content") -> CopyTabResultDTO:
+    missing = sum(1 for r in rows if r.state == "missing")
+    changed = sum(1 for r in rows if r.state == "changed")
+    match = sum(1 for r in rows if r.state == "match")
+    return CopyTabResultDTO(
+        tab_title=title, genre="copy", role="primary", state="checked", rows=rows,
+        stats=CopyStatsDTO(match=match, changed=changed, missing=missing, coverage=1.0),
+    )
+
+
+_CHANGED = CopyRowDTO(
+    state="changed", kind="sentence", section="FAQ",
+    doc_text="Open 8 AM to 5 PM.", site_text="Open 7 AM to 5 PM.", diff_summary="8 → 7",
+)
+_MISSING = CopyRowDTO(state="missing", kind="sentence", section="FAQ", doc_text="Cut sentence.")
+_MATCH = CopyRowDTO(state="match", kind="sentence", doc_text="Same.", site_text="Same.")
+_EXTRA = CopyRowDTO(state="extra", kind="sentence", site_text="Only on site.")
+_EXCLUDED = CopyRowDTO(state="excluded", kind="directive", doc_text="[IMAGE SECTION: hero]")
+
+
+def test_copy_index_shows_placeholder_when_no_copy_data() -> None:
     data = build_matrix_xlsx([])
-    ws = load_workbook(io.BytesIO(data))["Copy"]
-    assert ws.cell(2, 1).value == "No copy data in this run."
+    workbook = load_workbook(io.BytesIO(data))
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
+    assert workbook["Copy"].cell(2, 1).value == "No copy data in this run."
 
 
-def test_copy_sheet_lists_rows_with_page_tab_and_verdict() -> None:
+def test_copy_page_gets_its_own_sheet_named_from_the_url() -> None:
+    frameworks = [_framework_outcome(
+        document_name="EFFYS_PAGE_FRAMEWORK_COLUMBUS_AVE_LOCATION_06112026",
+        copy_diffs=[_checked_tab([_CHANGED, _MISSING, _MATCH, _EXTRA, _EXCLUDED])],
+    )]
+    workbook = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks)))
+    # Sheet named by the URL's last path segment, not the 51-char doc name.
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy", "columbus-ave"]
+
+    ws = workbook["columbus-ave"]
+    assert ws["A1"].value == "https://example.com/locations/columbus-ave/"
+    assert ws["A1"].hyperlink.target == "https://example.com/locations/columbus-ave/"
+    assert ws["A2"].value == "Framework: EFFYS_PAGE_FRAMEWORK_COLUMBUS_AVE_LOCATION_06112026"
+    assert ws["A2"].hyperlink.target == "https://docs.google.com/document/d/d1/edit"
+    assert ws["A3"].value == "Copy tab: Content · 2 issues to fix"
+    assert [ws.cell(5, c).value for c in range(1, 5)] == [
+        "#", "Section", "Sentence (from Copy)", "Issue",
+    ]
+    # Only missing + changed — match/extra/excluded never reach the sheet.
+    assert ws.max_row == 7
+    assert [ws.cell(6, c).value for c in range(1, 5)] == [1, "FAQ", "Open 8 AM to 5 PM.", "8 → 7"]
+    assert [ws.cell(7, c).value for c in range(1, 5)] == [
+        2, "FAQ", "Cut sentence.", "Not on the page",
+    ]
+    # No explicit row height — Excel auto-fits the wrapped sentence.
+    assert ws.row_dimensions[6].height is None
+    assert ws.freeze_panes == "A6"
+
+
+def test_copy_index_links_page_document_and_sheet() -> None:
+    frameworks = [_framework_outcome(
+        document_name="Doc", copy_diffs=[_checked_tab([_MISSING])],
+    )]
+    ws = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks)))["Copy"]
+    assert [ws.cell(1, c).value for c in range(1, 6)] == [
+        "Page", "Framework document", "Copy tab", "Issues", "Sheet",
+    ]
+    assert ws.cell(2, 1).hyperlink.target == "https://example.com/locations/columbus-ave/"
+    assert ws.cell(2, 2).hyperlink.target == "https://docs.google.com/document/d/d1/edit"
+    assert ws.cell(2, 3).value == "Content"
+    assert ws.cell(2, 4).value == 1
+    assert ws.cell(2, 5).value == "columbus-ave"
+    assert ws.cell(2, 5).hyperlink.target == "#'columbus-ave'!A1"
+
+
+def test_clean_page_is_listed_in_the_index_but_gets_no_sheet() -> None:
+    """Checked-and-clean ≠ not checked (PLAN §12): the page still shows
+    up, with "0 — clean", but there is nothing to fix so no sheet."""
+    frameworks = [_framework_outcome(document_name="Doc", copy_diffs=[_checked_tab([_MATCH])])]
+    workbook = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks)))
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
+    ws = workbook["Copy"]
+    assert ws.cell(2, 4).value == "0 — clean"
+    assert ws.cell(2, 5).value == "—"
+
+
+def test_unchecked_tab_states_are_listed_with_their_reason() -> None:
     tab = CopyTabResultDTO(
-        tab_title="Content", genre="copy", role="primary", state="checked",
-        rows=[
-            CopyRowDTO(
-                state="changed", kind="sentence", section="FAQ",
-                doc_text="Open 8 AM to 5 PM.", site_text="Open 7 AM to 5 PM.",
-                diff_summary="8 → 7",
-            ),
-            CopyRowDTO(state="match", kind="sentence", doc_text="Same.", site_text="Same."),
-        ],
-        stats=CopyStatsDTO(match=1, changed=1, coverage=1.0),
+        tab_title="Content", genre="copy", role="primary", state="no_url",
+        reason="This framework has no URL to compare against.",
     )
-    frameworks = [_framework_outcome(document_name="EFFYS Columbus Ave", copy_diffs=[tab])]
-    data = build_matrix_xlsx([], frameworks=frameworks)
-    ws = load_workbook(io.BytesIO(data))["Copy"]
-    assert ws.cell(2, 1).value == "EFFYS Columbus Ave"
-    assert ws.cell(2, 2).value == "Content (primary)"
-    assert ws.cell(2, 3).value == "FAQ"
-    assert ws.cell(2, 4).value == "Open 8 AM to 5 PM."
-    assert ws.cell(2, 5).value == "Open 7 AM to 5 PM."
-    assert ws.cell(2, 6).value == "changed"
-    assert ws.cell(2, 7).value == "8 → 7"
-    assert ws.cell(3, 6).value == "match"
+    frameworks = [_framework_outcome(document_name="Blog", copy_diffs=[tab], page_url=None)]
+    workbook = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks)))
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
+    ws = workbook["Copy"]
+    assert ws.cell(2, 1).value == "Blog"  # no URL -> document name, no hyperlink
+    assert ws.cell(2, 1).hyperlink is None
+    assert ws.cell(2, 4).value == (
+        "no URL to compare — This framework has no URL to compare against."
+    )
 
 
-def test_copy_sheet_excludes_layout_directive_rows() -> None:
-    tab = CopyTabResultDTO(
-        tab_title="Content", genre="copy", role="primary", state="checked",
-        rows=[
-            CopyRowDTO(state="excluded", kind="directive", doc_text="[IMAGE SECTION: hero]"),
-            CopyRowDTO(state="match", kind="sentence", doc_text="Real.", site_text="Real."),
-        ],
-        stats=CopyStatsDTO(match=1, excluded=1, coverage=1.0),
+def test_page_without_persisted_url_still_gets_a_sheet() -> None:
+    """Packages persisted before `page_url` existed: honest "(no page URL)",
+    never a URL guessed backwards from matrix_json."""
+    frameworks = [_framework_outcome(
+        document_name="Old Doc", copy_diffs=[_checked_tab([_MISSING])], page_url=None,
+    )]
+    workbook = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks)))
+    assert workbook.sheetnames[-1] == "Old Doc"  # falls back to the document name
+    ws = workbook["Old Doc"]
+    assert ws["A1"].value == "(no page URL in this run)"
+    assert ws["A1"].hyperlink is None
+
+
+def test_sheet_names_are_excel_safe_and_unique() -> None:
+    """Excel: ≤31 chars, no []:*?/\\, case-insensitively unique — live:
+    193 unique names out of 203 URLs, 8 collisions (`faq`, `menu`, `home`)."""
+    long_seg = "a-very-long-slug-that-goes-well-past-thirty-one-characters"
+    one = _checked_tab([_MISSING])
+    frameworks = [
+        _framework_outcome(document_name="A", document_id="a", copy_diffs=[one],
+                           page_url="https://x.com/faq/"),
+        _framework_outcome(document_name="B", document_id="b", copy_diffs=[one],
+                           page_url="https://x.com/help/FAQ/"),
+        _framework_outcome(document_name="C", document_id="c", copy_diffs=[one],
+                           page_url=f"https://x.com/{long_seg}/"),
+        _framework_outcome(document_name="D", document_id="d", copy_diffs=[one],
+                           page_url="https://x.com/"),
+        _framework_outcome(document_name="What: is [this]?", document_id="e",
+                           copy_diffs=[_checked_tab([_MISSING])], page_url=None),
+    ]
+    names = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks))).sheetnames[3:]
+    assert names[0] == "faq"
+    assert names[1] == "FAQ (2)"  # same name case-insensitively -> deduped
+    assert len(names[2]) <= 31 and names[2].startswith("a-very-long-slug")
+    assert names[3] == "home"  # bare domain root
+    assert names[4] == "What- is -this-?"[:31].replace("?", "-")  # forbidden chars replaced
+
+
+def test_two_checked_language_tabs_on_one_page_get_suffixed_sheets() -> None:
+    sv = CopyTabResultDTO(
+        tab_title="Swedish Content", genre="copy", role="primary", state="checked",
+        language_hint="sv", rows=[_MISSING], stats=CopyStatsDTO(missing=1),
     )
-    frameworks = [_framework_outcome(document_name="Doc", copy_diffs=[tab])]
-    data = build_matrix_xlsx([], frameworks=frameworks)
-    ws = load_workbook(io.BytesIO(data))["Copy"]
-    values = [ws.cell(r, 4).value for r in (2, 3)]
-    assert "[IMAGE SECTION: hero]" not in values
-    assert ws.cell(2, 4).value == "Real."
+    en = CopyTabResultDTO(
+        tab_title="English Content", genre="copy", role="secondary", state="checked",
+        language_hint="en", rows=[_MISSING], stats=CopyStatsDTO(missing=1),
+    )
+    frameworks = [_framework_outcome(
+        document_name="Doc", copy_diffs=[sv, en], page_url="https://laxton.se/shop/ouija/",
+    )]
+    names = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks))).sheetnames[3:]
+    assert names == ["ouija (sv)", "ouija (en)"]
