@@ -8,7 +8,7 @@
 
 import {
   getDashboard, isAbortError, listReportBatches, listReportRuns, reportBatchPdfArchiveUrl,
-} from "./api.js?v=20260821-spin3";
+} from "./api.js?v=20260914-t93";
 import {
   buildReportsBatchHash, buildReportsRunHash, replaceReportsHash,
 } from "./router.js?v=20260821-spin3";
@@ -18,6 +18,8 @@ import {
 } from "./formatters.js?v=20260907-t84";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
 import { openReportsWizard } from "./reports-wizard.js?v=20260907-t84";
+import { authorPlaceholder, loadAuthors, patchAuthorCells } from "./authorship.js?v=20260914-t93";
+import { isAdmin } from "./session.js?v=20260906-t72";
 
 const root = document.querySelector("#reports-page-root");
 const PAGE_SIZE = 25;
@@ -382,17 +384,40 @@ function renderTable() {
     return;
   }
 
+  // Started-by column (task-93): admin-only, since only `GET /authorship`
+  // ever exposes it — the row/batch data itself carries no author field,
+  // so non-admin sees the same 9 columns it always has.
+  const showAuthor = isAdmin();
   host.innerHTML = `
     <div class="table-scroll">
       <table class="analytics-table reports-table">
         <thead><tr>
           <th>Client</th><th>Report</th><th>Periods</th><th>Source</th><th>Status</th>
-          <th>Cross-check</th><th>Duration</th><th>Files</th><th>Created</th>
+          <th>Cross-check</th><th>Duration</th><th>Files</th>
+          ${showAuthor ? "<th>Started by</th>" : ""}
+          <th>Created</th>
         </tr></thead>
-        <tbody>${rows.map((row) => (row.kind === "run" ? renderRow(row.run) : renderBatchRow(row.batch))).join("")}</tbody>
+        <tbody>${rows.map((row) => (row.kind === "run" ? renderRow(row.run, showAuthor) : renderBatchRow(row.batch, showAuthor))).join("")}</tbody>
       </table>
     </div>
     ${renderPagination(lastData.total, PAGE_SIZE, current.offset)}`;
+
+  if (showAuthor) loadRowAuthors(rows, host);
+}
+
+// One batched call per resource type per render (task-93): `report_run`
+// ids from single rows, `report_batch` ids from batch cards — never one
+// request per row. Runs after the table is already in the DOM (the list
+// itself never waits on this), then patches the placeholders in place.
+async function loadRowAuthors(rows, host) {
+  const runIds = rows.filter((r) => r.kind === "run").map((r) => r.run.id);
+  const batchIds = rows.filter((r) => r.kind === "batch").map((r) => r.batch.id);
+  const [runAuthors, batchAuthors] = await Promise.all([
+    loadAuthors("report_run", runIds),
+    loadAuthors("report_batch", batchIds),
+  ]);
+  patchAuthorCells(host, runAuthors);
+  patchAuthorCells(host, batchAuthors);
 }
 
 function renderPagination(total, limit, offset) {
@@ -412,7 +437,7 @@ function periodSignature(run) {
   return `${kindLabel} · ${run.period_count} period${run.period_count === 1 ? "" : "s"}`;
 }
 
-function renderRow(run) {
+function renderRow(run, showAuthor) {
   const client = lastData.clientsById.get(run.client_id);
   const clientName = client ? client.name : run.client_id;
   const statusMeta = REPORT_RUN_STATUS_META[run.status] || REPORT_RUN_STATUS_META.queued;
@@ -437,6 +462,7 @@ function renderRow(run) {
       </td>
       <td>${escapeHtml(formatDuration(run.started_at, run.finished_at))}</td>
       <td class="reports-files-count">${filesCell}</td>
+      ${showAuthor ? `<td>${authorPlaceholder(run.id)}</td>` : ""}
       <td>${escapeHtml(formatTimestamp(run.queued_at))}</td>
     </tr>`;
 }
@@ -470,14 +496,14 @@ function batchStatusSummary(batch) {
   return parts.join(" · ") || "—";
 }
 
-function renderBatchRow(batch) {
+function renderBatchRow(batch, showAuthor) {
   const kindMeta = REPORT_KIND_META[batch.kind];
   const sourceMeta = REPORT_SOURCE_META[batch.source] || REPORT_SOURCE_META.api;
   const statusMeta = REPORT_RUN_STATUS_META[batch.status] || REPORT_RUN_STATUS_META.queued;
   const hasClientPdfs = batch.clients_done > 0;
   return `
     <tr class="reports-batch-row" data-batch-row="${escapeHtml(batch.id)}" tabindex="0">
-      <td colspan="9">
+      <td colspan="${showAuthor ? 10 : 9}">
         <div class="reports-batch-card">
           <span class="reports-batch-card__badge">${icon("stack-2", "icon icon--tiny")}Batch</span>
           <strong translate="no">${escapeHtml(kindMeta?.label || batch.kind)}</strong>
@@ -487,6 +513,7 @@ function renderBatchRow(batch) {
           <span class="reports-batch-card__summary">${escapeHtml(batchStatusSummary(batch))}</span>
           <span class="reports-batch-card__duration">${escapeHtml(formatDuration(batch.started_at, batch.finished_at))}</span>
           <span class="reports-batch-card__created">${escapeHtml(formatTimestamp(batch.queued_at))}</span>
+          ${showAuthor ? `<span class="reports-batch-card__author">Started by ${authorPlaceholder(batch.id)}</span>` : ""}
           <span class="reports-batch-card__actions">
             <a class="button button--quiet" href="${buildReportsBatchHash(batch.id)}">${icon("arrow-right", "icon icon--tiny")}Open batch</a>
             ${hasClientPdfs ? `<a class="button button--quiet" href="${reportBatchPdfArchiveUrl(batch.id)}">${icon("download", "icon icon--tiny")}Download all PDFs</a>` : ""}

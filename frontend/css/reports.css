@@ -509,7 +509,13 @@ tr:has(.reports-cross-check.state-mismatch) { border-left: 3px solid var(--dange
 /* Batch detail page (task-47 §2.4)                                    */
 /* ------------------------------------------------------------------ */
 
-.reports-batch-header .reports-run-header__meta span { display: inline-flex; align-items: center; }
+/* `gap` (task-93 fix): making every meta span an inline-flex container puts
+   the "Started " text node and its `<strong>` value in separate flex items
+   — flexbox does not preserve a plain source-whitespace gap between them
+   the way normal inline text flow would, so "Started Sep 07…" silently
+   rendered as "StartedSep 07…" (found live while adding the "Started by"
+   author chip, which inherited the same collapse — pre-existing, not new). */
+.reports-batch-header .reports-run-header__meta span { display: inline-flex; align-items: center; gap: 4px; }
 
 .reports-batch-matrix { list-style: none; margin: 0; padding: 0; }
 .reports-batch-matrix-row {

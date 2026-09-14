@@ -205,6 +205,18 @@ input::placeholder { color: var(--ink-dim); }
 .client-status--paused { border-color: var(--warning); color: var(--warning); }
 .client-status--paused .client-status__since { color: var(--warning); opacity: .8; }
 
+/* Хто створив звіт/пакет (task-93, `authorship.js`) — admin-only, скрізь
+   однаковий чип: муте текст або посилання на журнал дій, ніколи кольором
+   без тексту. `--loading`/`--unknown` навмисно того самого приглушеного
+   тону — обидва читаються як "тут ще немає конкретної відповіді", а не як
+   помилка. */
+.author-chip {
+  display: inline-flex; align-items: center; font-size: 12px; color: var(--ink-muted);
+  text-decoration: none; white-space: nowrap;
+}
+a.author-chip:hover, a.author-chip:focus-visible { color: var(--accent); text-decoration: underline; }
+.author-chip--unknown, .author-chip--loading { color: var(--ink-dim); font-style: italic; }
+
 /* Позначка тестового/dev-клієнта — не кнопка, лише мітка (client-status.js
    `devBadge`), тому окремий колір (--info), щоб не зливатись зі status/health. */
 .dev-badge {

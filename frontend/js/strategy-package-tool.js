@@ -19,11 +19,13 @@ import {
   browseStrategyPackageDrive, checkStrategyPackage, getDashboard, getStrategyPackageReport,
   getStrategyPackageReports, inspectStrategyPackage, resolveStrategyPackageSource,
   strategyPackageMatrixXlsxUrl,
-} from "./api.js?v=20260909-t91";
+} from "./api.js?v=20260914-t93";
 import { buildToolsHash } from "./router.js?v=20260909-t91";
 import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260909-t91";
 import { panelSkeleton } from "./skeleton.js?v=20260909-t91";
 import { renderError, renderReport, wireReport } from "./content-qa-render.js?v=20260909-t91";
+import { authorPlaceholder, loadAuthors, patchAuthorCells } from "./authorship.js?v=20260914-t93";
+import { isAdmin } from "./session.js?v=20260906-t72";
 
 const TOOL_KEY = "strategy-package";
 let root = null;
@@ -576,6 +578,10 @@ async function loadReports() {
     const page = await getStrategyPackageReports();
     if (token !== requestToken) return;
     body.innerHTML = renderPackagesList(page.packages);
+    if (isAdmin()) {
+      loadAuthors("content_qa_package", page.packages.map((pkg) => pkg.id))
+        .then((authors) => { if (token === requestToken) patchAuthorCells(body, authors); });
+    }
   } catch (error) {
     if (token !== requestToken) return;
     body.innerHTML = `
@@ -590,21 +596,27 @@ function renderPackagesList(packages) {
   if (!packages.length) {
     return `<p class="tool-empty">${icon("file-off")}<span>No reports yet. Run a check above to create the first one.</span></p>`;
   }
+  // Checked-by column (task-93): admin-only, same rule as Reports (`#/reports`)
+  // — the packages themselves carry no author field, so non-admin sees the
+  // same columns it always has.
+  const showAuthor = isAdmin();
   return `
     <div class="table-scroll">
       <table class="tool-table">
         <caption class="visually-hidden">Past reports</caption>
         <thead><tr>
           <th scope="col">Strategy</th><th scope="col">Client</th><th scope="col">Frameworks</th>
-          <th scope="col">Findings</th><th scope="col">Checked</th>
+          <th scope="col">Findings</th>
+          ${showAuthor ? '<th scope="col">Checked by</th>' : ""}
+          <th scope="col">Checked</th>
           <th scope="col"><span class="visually-hidden">Open</span></th>
         </tr></thead>
-        <tbody>${packages.map(renderPackageRow).join("")}</tbody>
+        <tbody>${packages.map((pkg) => renderPackageRow(pkg, showAuthor)).join("")}</tbody>
       </table>
     </div>`;
 }
 
-function renderPackageRow(pkg) {
+function renderPackageRow(pkg, showAuthor) {
   const counts = pkg.severity_counts || {};
   const href = buildToolsHash(TOOL_KEY, pkg.id);
   const badges = ["error", "warn", "info"].filter((sev) => counts[sev]).map((sev) => `
@@ -618,6 +630,7 @@ function renderPackageRow(pkg) {
         : '<span class="muted">No client</span>'}</td>
       <td>${pkg.framework_count}</td>
       <td>${badges}</td>
+      ${showAuthor ? `<td>${authorPlaceholder(pkg.id)}</td>` : ""}
       <td class="report-row__date">${escapeHtml(formatTimestamp(pkg.created_at, "—"))}</td>
       <td class="tool-table__actions"><a class="button button--quiet" href="${href}">Open${icon("arrow-right", "icon icon--tiny")}</a></td>
     </tr>`;
@@ -667,6 +680,9 @@ async function renderReportView(packageId) {
     currentPackage = pkg;
     body.innerHTML = renderPackageShell(pkg);
     wirePackageTabs(body, pkg);
+    if (isAdmin()) {
+      loadAuthors("content_qa_package", [pkg.id]).then((authors) => patchAuthorCells(body, authors));
+    }
   } catch (error) {
     if (token !== requestToken) return;
     body.innerHTML = renderError(error);
@@ -685,9 +701,14 @@ function renderPackageShell(pkg) {
         <span class="cq-report__file">${icon("file-stack", "icon icon--tiny")}${escapeHtml(pkg.source_name)}</span>
         ${pkg.created_at ? `<span class="cq-report__date">${escapeHtml(formatTimestamp(pkg.created_at))}</span>` : ""}
         <span class="cq-report__profile">${chips.map(escapeHtml).join(" · ")}</span>
+        ${isAdmin() ? `<span class="cq-report__author">Checked by ${authorPlaceholder(pkg.id)}</span>` : ""}
         <button class="button button--quiet cq-report__link" type="button" id="sp-copy-link">
           ${icon("link", "icon icon--tiny")}Copy link
         </button>
+        ${isAdmin() ? `
+          <a class="button button--quiet" href="#/admin/audit?resource_type=content_qa_package&resource_id=${encodeURIComponent(pkg.id)}">
+            ${icon("history", "icon icon--tiny")}Activity
+          </a>` : ""}
       </div>
       <ul class="cq-summary">${renderPackageSummary(pkg)}</ul>
       <div class="tablist sp-tablist" role="tablist" aria-label="Package report sections">

@@ -9,12 +9,13 @@ import {
   cancelReportBatch, createClientPdf, getBatchPortfolioTable, getReportBatch, getReportTypes,
   isAbortError, isFixtureMode, reportBatchPdfArchiveUrl, reportBatchPortfolioPdfUrl,
   reportBatchPortfolioXlsxUrl, reportDocumentUrl, reportFileUrl, retryReportBatchClient,
-} from "./api.js?v=20260821-spin3";
+} from "./api.js?v=20260914-t93";
 import { openReportsWizard } from "./reports-wizard.js?v=20260907-t84";
 // Під тегом самого `session.js`, не під тегом цього файлу: модуль
 // кешується per-URL, і другий тег дав би ДРУГИЙ інстанс із порожнім
 // `cached` — тобто `isAdmin()` завжди false, ще до першого запиту.
 import { isAdmin } from "./session.js?v=20260906-t72";
+import { authorPlaceholder, loadAuthors, patchAuthorCells } from "./authorship.js?v=20260914-t93";
 import { buildReportsHash, buildReportsRunHash } from "./router.js?v=20260821-spin3";
 import {
   REPORT_KIND_META, REPORT_RUN_STATUS_META, REPORT_SOURCE_META,
@@ -180,9 +181,14 @@ function renderHeader() {
           <span>${escapeHtml(statusSummaryLine())}</span>
           <span>Started <strong>${escapeHtml(batch.started_at ? formatTimestamp(batch.started_at) : "not yet")}</strong></span>
           <span>Duration <strong>${escapeHtml(formatDuration(batch.started_at, batch.finished_at))}</strong></span>
+          ${canManage ? `<span>Started by ${authorPlaceholder(batch.id)}</span>` : ""}
         </div>
       </div>
       <div class="reports-run-header__actions">
+        ${canManage ? `
+          <a class="button button--quiet" href="#/admin/audit?resource_type=report_batch&resource_id=${encodeURIComponent(batch.id)}">
+            ${icon("history", "icon icon--tiny")}Activity
+          </a>` : ""}
         ${hasClientPdfs ? `<a class="button button--quiet" href="${reportBatchPdfArchiveUrl(batch.id)}">${icon("download", "icon icon--tiny")}Download all PDFs</a>` : ""}
         ${hasClientPdfs ? `<button type="button" class="button button--quiet" id="rb-preview-pdf">${icon("eye", "icon icon--tiny")}Preview PDF</button>` : ""}
         ${hasClientPdfs ? `<a class="button button--quiet" href="${reportBatchPortfolioPdfUrl(batch.id)}">${icon("file-text", "icon icon--tiny")}Portfolio PDF</a>` : ""}
@@ -196,6 +202,10 @@ function renderHeader() {
           </button>` : ""}
       </div>
     </header>`;
+
+  if (canManage) {
+    loadAuthors("report_batch", [batch.id]).then((authors) => patchAuthorCells(host, authors));
+  }
 }
 
 function renderBody() {

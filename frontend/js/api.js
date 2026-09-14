@@ -3311,6 +3311,22 @@ export function auditExportUrl(filters = {}) {
   return `${API_ROOT}/admin/audit/export.csv?${params.toString()}`;
 }
 
+// ── Авторство (task-93) ────────────────────────────────────────────────────
+// Admin-only — non-admin отримує 403; кожен викликач (`authorship.js`) сам
+// не робить запиту, якщо `!isAdmin()`, тож ці функції не приховують помилку,
+// а просто не мають бути дзвінком для не-адміна. Без `requestKey`-скасування:
+// сторінка може паралельно питати авторів для кількох ресурсних типів.
+
+export async function getAuthorship(resourceType, ids) {
+  const params = new URLSearchParams({ resource_type: resourceType, ids: ids.join(",") });
+  return request(`/authorship?${params}`, {}, `authorship-${resourceType}-${ids.join(",")}`);
+}
+
+export async function getAuthorshipFacets(resourceTypes) {
+  const params = new URLSearchParams({ resource_type: resourceTypes.join(",") });
+  return request(`/authorship/facets?${params}`, {}, `authorship-facets-${resourceTypes.join(",")}`);
+}
+
 // ── Prompt Launcher (task-94) ────────────────────────────────────────────
 // Read-only тул: бек уже рендерить готовий рядок для буфера, фронт нічого
 // не склеює сам. `request-key` — явна назва призначення, не похідна від

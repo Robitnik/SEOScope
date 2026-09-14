@@ -14,7 +14,7 @@ import {
   cancelReportRun, createClientPdf, getDashboard, getReportRun,
   getReportRunEvents, getReportTable, isAbortError, isFixtureMode, listReportFiles,
   rebuildReportRun, reportDocumentUrl, reportFileUrl, reportRunEventsUrl, retryReportPeriod,
-} from "./api.js?v=20260821-spin3";
+} from "./api.js?v=20260914-t93";
 import { buildReportsHash, buildReportsRunHash } from "./router.js?v=20260821-spin3";
 import {
   REPORT_CROSS_CHECK_META, REPORT_KIND_META, REPORT_RUN_STATUS_META, REPORT_SOURCE_META,
@@ -22,6 +22,8 @@ import {
   formatMetricValue, formatTimestamp, icon, isTerminal, stateClass, statusIcon,
 } from "./formatters.js?v=20260907-t84";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
+import { authorPlaceholder, loadAuthors, patchAuthorCells } from "./authorship.js?v=20260914-t93";
+import { isAdmin } from "./session.js?v=20260906-t72";
 
 const root = document.querySelector("#reports-run-page-root");
 const fileDialog = document.querySelector("#reports-file-dialog");
@@ -269,9 +271,14 @@ function renderHeader() {
             ? `<span>Reporting Ninja report <strong translate="no">${escapeHtml(run.ninja_report_name)}</strong></span>`
             : ""}
           ${foreign ? `<span class="status-label state-partial reports-foreign-binding-chip">${statusIcon("alert-triangle")}Foreign binding</span>` : ""}
+          ${isAdmin() ? `<span>Started by ${authorPlaceholder(run.id)}</span>` : ""}
         </div>
       </div>
       <div class="reports-run-header__actions">
+        ${isAdmin() ? `
+          <a class="button button--quiet" href="#/admin/audit?resource_type=report_run&resource_id=${encodeURIComponent(run.id)}">
+            ${icon("history", "icon icon--tiny")}Activity
+          </a>` : ""}
         ${canRebuild ? `
           <button type="button" class="button button--quiet" id="rr-rebuild-run">
             ${icon("refresh", "icon icon--tiny")}Rebuild (re-download)
@@ -282,6 +289,10 @@ function renderHeader() {
           </button>` : ""}
       </div>
     </header>`;
+
+  if (isAdmin()) {
+    loadAuthors("report_run", [run.id]).then((authors) => patchAuthorCells(host, authors));
+  }
 }
 
 // --- Live sections: progress + logs --------------------------------------

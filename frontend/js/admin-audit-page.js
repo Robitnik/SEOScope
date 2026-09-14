@@ -49,15 +49,29 @@ export async function initAdminAuditPage(query) {
   state.filters = {};
   state.cursor = null;
 
-  // Дозволяємо прийти сюди з посилання «History» конкретного клієнта.
+  // Дозволяємо прийти сюди з посилання «History» конкретного клієнта, або
+  // (task-93) з чипа автора на звіті/пакеті — «хто ще це робив».
   const resourceType = query?.get?.("resource_type");
   const resourceId = query?.get?.("resource_id");
+  const actorId = query?.get?.("actor_id");
   if (resourceType) state.filters.resource_type = resourceType;
   if (resourceId) state.filters.resource_id = resourceId;
+  if (actorId) state.filters.actor_id = actorId;
 
   root.replaceChildren(buildShell());
   wireFilters(root);
   await Promise.all([loadFacets(root), reload(root)]);
+  // Опція автора з'являється в `<select>` лише після `loadFacets()` вище —
+  // без цього присвоєння фільтр діяв би на дані (`state.filters` вже мав
+  // `actor_id`), але сам випадаючий список показував би "Everyone", і
+  // перша ж зміна ІНШОГО фільтра прочитала б порожнє значення селекта й
+  // тихо скинула б deep-link фільтр.
+  if (actorId) {
+    const actorSelect = root.querySelector("#audit-actor");
+    if (actorSelect && [...actorSelect.options].some((option) => option.value === actorId)) {
+      actorSelect.value = actorId;
+    }
+  }
 }
 
 function buildShell() {

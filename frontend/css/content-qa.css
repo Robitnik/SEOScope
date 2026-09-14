@@ -57,7 +57,7 @@
 .cq-report__file { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 700; }
 .cq-report__file .icon { width: 14px; height: 14px; }
 .cq-report__count { font-variant-numeric: tabular-nums; }
-.cq-report__client, .cq-report__date, .cq-report__profile { display: inline-flex; align-items: center; gap: 6px; }
+.cq-report__client, .cq-report__date, .cq-report__profile, .cq-report__author { display: inline-flex; align-items: center; gap: 6px; }
 .cq-report__client .icon { width: 14px; height: 14px; color: var(--ink-dim); }
 .cq-report__link { margin-left: auto; gap: 6px; }
 .cq-report__link .icon { width: 14px; height: 14px; }
