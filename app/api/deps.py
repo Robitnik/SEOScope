@@ -37,6 +37,7 @@ __all__ = [
     "SettingsDep",
     "current_actor",
     "current_attribution",
+    "ensure_role",
     "get_session",
     "pagination",
     "require_role",
@@ -133,6 +134,27 @@ def current_actor(request: Request) -> Actor:
 ActorDep = Annotated[Actor, Depends(current_actor)]
 
 
+def ensure_role(actor: Actor, minimum: UserRole) -> None:
+    """Raises the same `403` shape as `require_role` below, for a check that
+    can't be a plain FastAPI dependency because it only applies
+    CONDITIONALLY within a handler — e.g. `GET /reports/runs` is open to
+    every role, but task-93's `created_by_*` query params on that same
+    route are an admin-only filter (plan §2 D4: a filter is an oracle).
+    `auth_enabled=False` (tests/local dev) always passes, same as
+    `require_role`.
+    """
+    if not get_settings().auth_enabled:
+        return
+    if actor.role is None or not role_satisfies(actor.role, minimum):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error_code": "forbidden",
+                "message": "Your role does not allow this action.",
+            },
+        )
+
+
 def require_role(minimum: UserRole) -> Callable[[Actor], Actor]:
     """Точкова перевірка ролі для роутера.
 
@@ -143,16 +165,7 @@ def require_role(minimum: UserRole) -> Callable[[Actor], Actor]:
     """
 
     def _dependency(actor: ActorDep) -> Actor:
-        if not get_settings().auth_enabled:
-            return actor
-        if actor.role is None or not role_satisfies(actor.role, minimum):
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "error_code": "forbidden",
-                    "message": "Your role does not allow this action.",
-                },
-            )
+        ensure_role(actor, minimum)
         return actor
 
     return _dependency

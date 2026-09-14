@@ -23,7 +23,9 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api import register_router
-from app.api.deps import PaginationDep
+from app.api.deps import ActorDep, AttributionDep, PaginationDep, ensure_role
+from app.audit import mark_created_resource
+from app.authorship.model import Attribution
 from app.core.config import get_settings
 from app.core.security import PathTraversalError, safe_resolve
 from app.db.models import ReportBatch, ReportRun
@@ -49,7 +51,7 @@ from app.reports.runner import build_periods, period_rows
 from app.reports.table import ReportTable
 from app.reports.verify import DIFFER_VERDICTS
 from app.schemas.api import ErrorDTO
-from app.schemas.enums import Provider
+from app.schemas.enums import Provider, UserRole
 from app.schemas.reports import (
     AccuracyClientRowDTO,
     AccuracyReportDTO,
@@ -180,12 +182,14 @@ async def get_report_types() -> ReportTypesDTO:
 
 def _list_runs(
     *, client_id: str | None, kind: str | None, source: str | None, status: str | None,
-    has_batch: bool | None, limit: int, offset: int,
+    has_batch: bool | None, created_by_user_id: str | None, created_by_kind: str | None,
+    limit: int, offset: int,
 ) -> tuple[list[ReportRunDTO], int]:
     with worker_session_scope() as session:
         rows, total = ReportRepository(session).list_runs(
             client_id=client_id, kind=kind, source=source, status=status,
-            has_batch=has_batch, limit=limit, offset=offset,
+            has_batch=has_batch, created_by_user_id=created_by_user_id,
+            created_by_kind=created_by_kind, limit=limit, offset=offset,
         )
         return [_run_dto(r) for r in rows], total
 
@@ -193,6 +197,7 @@ def _list_runs(
 @router.get("/runs")
 async def list_report_runs(
     pagination: PaginationDep,
+    actor: ActorDep,
     client_id: str | None = None,
     kind: str | None = None,
     source: str | None = None,
@@ -202,10 +207,20 @@ async def list_report_runs(
     # only, hiding batch children so a portfolio-wide batch doesn't drown the
     # history in near-identical rows. `Batches` itself is `GET /batches`.
     has_batch: bool | None = None,
+    # Admin-only (task-93 plan §2 D4): a filter is an oracle over who ran
+    # what, so a non-admin request that even SETS one of these is `403`, not
+    # silently ignored. Every other query param and the response body stay
+    # byte-identical across roles — this is the only role-conditional part
+    # of this route.
+    created_by_user_id: str | None = None,
+    created_by_kind: str | None = None,
 ) -> ReportRunsPageDTO:
+    if created_by_user_id is not None or created_by_kind is not None:
+        ensure_role(actor, UserRole.admin)
     rows, total = await run_in_threadpool(
         _list_runs, client_id=client_id, kind=kind, source=source, status=status,
-        has_batch=has_batch, limit=pagination.limit, offset=pagination.offset,
+        has_batch=has_batch, created_by_user_id=created_by_user_id,
+        created_by_kind=created_by_kind, limit=pagination.limit, offset=pagination.offset,
     )
     return ReportRunsPageDTO(
         rows=rows, total=total, limit=pagination.limit, offset=pagination.offset
@@ -222,7 +237,7 @@ def _params_for(body: ReportRunRequest) -> dict[str, Any]:
     return params
 
 
-def _create_run(body: ReportRunRequest) -> str:
+def _create_run(body: ReportRunRequest, created_by: Attribution) -> str:
     """Raises `HTTPException` for every validated failure — 404 for a
     missing client, 422 for everything else (task-42 §5). Only reaches the
     scheduler's queue once every preflight in §3.4/§3.8 has passed.
@@ -276,6 +291,7 @@ def _create_run(body: ReportRunRequest) -> str:
             # every period with its real date range before the worker even
             # claims it (task-45 §2.1), instead of `Period 1 … Period 6`.
             periods=period_rows(periods),
+            created_by=created_by,
         )
         return run.id
 
@@ -283,8 +299,11 @@ def _create_run(body: ReportRunRequest) -> str:
 @router.post(
     "/runs", status_code=202, responses={404: {"model": ErrorDTO}, 422: {"model": ErrorDTO}}
 )
-async def create_report_run(body: ReportRunRequest) -> ReportRunAcceptedDTO:
-    run_id = await run_in_threadpool(_create_run, body)
+async def create_report_run(
+    body: ReportRunRequest, created_by: AttributionDep, request: Request
+) -> ReportRunAcceptedDTO:
+    run_id = await run_in_threadpool(_create_run, body, created_by)
+    mark_created_resource(request, "report_run", run_id)
     return ReportRunAcceptedDTO(
         run_id=run_id,
         status_url=f"/api/v1/reports/runs/{run_id}",
@@ -416,12 +435,15 @@ async def cancel_report_run(run_id: str) -> ReportRunDTO:
 # rebuilt batch child stays inside its batch instead of becoming an orphan.
 
 
-def _rebuild_run(run_id: str, *, force_refresh: bool) -> tuple[str | None, str | None]:
+def _rebuild_run(
+    run_id: str, *, force_refresh: bool, created_by: Attribution
+) -> tuple[str | None, str | None]:
     settings = get_settings()
     return rebuild_run(
         worker_session_scope, run_id, force_refresh=force_refresh,
         max_months=settings.reports_max_months,
         max_comparator_years=settings.reports_max_comparator_years,
+        created_by=created_by,
     )
 
 
@@ -430,9 +452,11 @@ def _rebuild_run(run_id: str, *, force_refresh: bool) -> tuple[str | None, str |
     status_code=202,
     responses={404: {"model": ErrorDTO}, 409: {"model": ErrorDTO}},
 )
-async def rebuild_report_run(run_id: str, body: RunRebuildRequest) -> ReportRunAcceptedDTO:
+async def rebuild_report_run(
+    run_id: str, body: RunRebuildRequest, created_by: AttributionDep, request: Request
+) -> ReportRunAcceptedDTO:
     error, new_run_id = await run_in_threadpool(
-        _rebuild_run, run_id, force_refresh=body.force_refresh
+        _rebuild_run, run_id, force_refresh=body.force_refresh, created_by=created_by
     )
     if error == "run_not_found":
         raise HTTPException(404, _RUN_NOT_FOUND)
@@ -440,6 +464,7 @@ async def rebuild_report_run(run_id: str, body: RunRebuildRequest) -> ReportRunA
         raise HTTPException(409, _RUN_NOT_RETRYABLE)
     if new_run_id is None:  # pragma: no cover - exhaustive with the checks above
         raise HTTPException(404, _RUN_NOT_FOUND)
+    mark_created_resource(request, "report_run", new_run_id)
     return ReportRunAcceptedDTO(
         run_id=new_run_id,
         status_url=f"/api/v1/reports/runs/{new_run_id}",
@@ -995,13 +1020,15 @@ def _batch_dto(
 
 
 def _list_batches(
-    *, client_id: str | None, status: str | None, limit: int, offset: int
+    *, client_id: str | None, status: str | None, created_by_user_id: str | None,
+    created_by_kind: str | None, limit: int, offset: int,
 ) -> tuple[list[ReportBatchDTO], int]:
     with worker_session_scope() as session:
         repo = ReportRepository(session)
         client_repo = ClientRepository(session)
         rows, total = repo.list_batches(
-            client_id=client_id, status=status, limit=limit, offset=offset
+            client_id=client_id, status=status, created_by_user_id=created_by_user_id,
+            created_by_kind=created_by_kind, limit=limit, offset=offset,
         )
         dtos = [_batch_dto(b, repo.list_runs_for_batch(b.id), client_repo) for b in rows]
         return dtos, total
@@ -1009,10 +1036,19 @@ def _list_batches(
 
 @router.get("/batches")
 async def list_report_batches(
-    pagination: PaginationDep, client_id: str | None = None, status: str | None = None
+    pagination: PaginationDep,
+    actor: ActorDep,
+    client_id: str | None = None,
+    status: str | None = None,
+    # Same admin-only oracle guard as `GET /runs` above (task-93 plan §2 D4).
+    created_by_user_id: str | None = None,
+    created_by_kind: str | None = None,
 ) -> ReportBatchesPageDTO:
+    if created_by_user_id is not None or created_by_kind is not None:
+        ensure_role(actor, UserRole.admin)
     rows, total = await run_in_threadpool(
         _list_batches, client_id=client_id, status=status,
+        created_by_user_id=created_by_user_id, created_by_kind=created_by_kind,
         limit=pagination.limit, offset=pagination.offset,
     )
     return ReportBatchesPageDTO(
@@ -1047,7 +1083,9 @@ def _batch_params_for(body: ReportBatchCreateRequest) -> dict[str, Any]:
     return params
 
 
-def _create_batch(body: ReportBatchCreateRequest) -> tuple[str | None, str | None]:
+def _create_batch(
+    body: ReportBatchCreateRequest, created_by: Attribution
+) -> tuple[str | None, str | None]:
     """Returns `(error_code, batch_id)` — exactly one is `None`."""
     if not body.client_ids:
         return "no_clients_selected", None
@@ -1063,6 +1101,7 @@ def _create_batch(body: ReportBatchCreateRequest) -> tuple[str | None, str | Non
                 session, client_ids=body.client_ids, kind=body.kind, source=body.source,
                 params=params, max_months=settings.reports_max_months,
                 max_comparator_years=settings.reports_max_comparator_years,
+                created_by=created_by,
             )
         except NoClientsSelectedError:
             return "no_clients_selected", None
@@ -1076,8 +1115,10 @@ def _create_batch(body: ReportBatchCreateRequest) -> tuple[str | None, str | Non
 @router.post(
     "/batches", status_code=202, responses={404: {"model": ErrorDTO}, 422: {"model": ErrorDTO}}
 )
-async def create_report_batch(body: ReportBatchCreateRequest) -> ReportBatchAcceptedDTO:
-    error, batch_id = await run_in_threadpool(_create_batch, body)
+async def create_report_batch(
+    body: ReportBatchCreateRequest, created_by: AttributionDep, request: Request
+) -> ReportBatchAcceptedDTO:
+    error, batch_id = await run_in_threadpool(_create_batch, body, created_by)
     if error == "client_not_found":
         raise HTTPException(404, _CLIENT_NOT_FOUND)
     if error == "no_clients_selected":
@@ -1088,6 +1129,7 @@ async def create_report_batch(body: ReportBatchCreateRequest) -> ReportBatchAcce
         )
     if batch_id is None:  # pragma: no cover - exhaustive with the checks above
         raise HTTPException(422, _NO_CLIENTS_SELECTED)
+    mark_created_resource(request, "report_batch", batch_id)
     return ReportBatchAcceptedDTO(
         batch_id=batch_id,
         status_url=f"/api/v1/reports/batches/{batch_id}",
@@ -1121,8 +1163,13 @@ async def cancel_report_batch(batch_id: str) -> ReportBatchDTO:
 
 
 def _retry_batch_client(
-    batch_id: str, client_id: str, *, force_refresh: bool
+    batch_id: str, client_id: str, *, force_refresh: bool, created_by: Attribution
 ) -> tuple[str | None, str | None]:
+    """Returns `(error_code, new_run_id)` — exactly one is `None`.
+    `new_run_id` (task-93 plan §2 D6) lets the endpoint mark the retry's own
+    new run as the audited resource, on top of the batch id the route
+    already carries via `report.batch_retry`'s `resource_param="batch_id"`.
+    """
     settings = get_settings()
     with worker_session_scope() as session:
         repo = ReportRepository(session)
@@ -1133,14 +1180,15 @@ def _retry_batch_client(
         if current is None:
             return "client_not_in_batch", None
         source_run_id = current.id
-    error, _new_run_id = rebuild_run(
+    error, new_run_id = rebuild_run(
         worker_session_scope, source_run_id, force_refresh=force_refresh,
         max_months=settings.reports_max_months,
         max_comparator_years=settings.reports_max_comparator_years,
+        created_by=created_by,
     )
     if error == "run_not_retryable":
         return "client_not_retryable", None
-    return error, batch_id
+    return error, new_run_id
 
 
 _BATCH_CLIENT_RETRY_ERROR_RESPONSES = {
@@ -1155,14 +1203,18 @@ _BATCH_CLIENT_RETRY_ERROR_RESPONSES = {
     responses={404: {"model": ErrorDTO}, 409: {"model": ErrorDTO}},
 )
 async def retry_batch_client(
-    batch_id: str, client_id: str, body: BatchClientRetryRequest
+    batch_id: str, client_id: str, body: BatchClientRetryRequest, created_by: AttributionDep,
+    request: Request,
 ) -> ReportBatchDTO:
-    error, _batch_id = await run_in_threadpool(
-        _retry_batch_client, batch_id, client_id, force_refresh=body.force_refresh
+    error, new_run_id = await run_in_threadpool(
+        _retry_batch_client, batch_id, client_id, force_refresh=body.force_refresh,
+        created_by=created_by,
     )
     if error is not None:
         status_code = 404 if error in ("batch_not_found", "client_not_in_batch") else 409
         raise HTTPException(status_code, _BATCH_CLIENT_RETRY_ERROR_RESPONSES[error])
+    if new_run_id is not None:  # pragma: no branch - exhaustive with the check above
+        mark_created_resource(request, "report_run", new_run_id)
     dto = await run_in_threadpool(_get_batch_dto, batch_id)
     if dto is None:  # pragma: no cover - can't disappear between the two calls above
         raise HTTPException(404, _BATCH_NOT_FOUND)

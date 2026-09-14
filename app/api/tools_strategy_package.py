@@ -22,13 +22,14 @@ import collections
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api import register_router
-from app.api.deps import PaginationDep, SessionDep
+from app.api.deps import ActorDep, AttributionDep, PaginationDep, SessionDep, ensure_role
+from app.audit import mark_created_resource
 from app.contentqa.crosscheck import CrossCheckInfo
 from app.contentqa.findings import Finding
 from app.contentqa.matrix import MatrixRow, build_matrix
@@ -66,6 +67,7 @@ from app.integrations.google_api.drive_client import (
 from app.integrations.google_api.sheets_client import SheetGrid, SheetsClient
 from app.schemas.api import ErrorDTO
 from app.schemas.content_qa import ContentQaFindingDTO, ContentQaSheetDTO, ContentQaSheetPreviewDTO
+from app.schemas.enums import UserRole
 from app.schemas.strategy_package import (
     CheckPackageRequestDTO,
     ContentQaPackageDTO,
@@ -423,7 +425,10 @@ def _package_detail_dto(
 
 
 @router.post("/check", response_model=ContentQaPackageDTO)
-async def check_package(body: CheckPackageRequestDTO, session: SessionDep) -> ContentQaPackageDTO:
+async def check_package(
+    body: CheckPackageRequestDTO, session: SessionDep, created_by: AttributionDep,
+    request: Request,
+) -> ContentQaPackageDTO:
     """Крок 3 (task-90 §5): повний прогін — QA стратегії + всі обрані
     фреймворки (кожен: Frame QA + Copy QA + три звірки), персистовано в
     один рядок `content_qa_packages`."""
@@ -490,19 +495,36 @@ async def check_package(body: CheckPackageRequestDTO, session: SessionDep) -> Co
             severity_counts=dict(collections.Counter(all_severities)),
             sheets=_sheet_state_dicts(strategy.sheet_states),
             matrix=_matrix_row_dicts(matrix_rows),
+            created_by=created_by,
         ))
         return _package_detail_dto(package, client_name=client_name)
 
     dto = await session.run_sync(_persist)
     await session.commit()
+    mark_created_resource(request, "content_qa_package", dto.id)
     return dto
 
 
 @router.get("/reports", response_model=ContentQaPackagesPageDTO)
-async def list_packages(session: SessionDep, pagination: PaginationDep) -> ContentQaPackagesPageDTO:
+async def list_packages(
+    session: SessionDep,
+    pagination: PaginationDep,
+    actor: ActorDep,
+    # Admin-only (task-93 plan §2 D4) — same oracle guard as `GET
+    # /reports/runs`. Every other query param and the response body stay
+    # byte-identical across roles.
+    created_by_user_id: str | None = None,
+    created_by_kind: str | None = None,
+) -> ContentQaPackagesPageDTO:
+    if created_by_user_id is not None or created_by_kind is not None:
+        ensure_role(actor, UserRole.admin)
+
     def _read(sync_session: Session) -> ContentQaPackagesPageDTO:
         repository = ContentQaPackageRepository(sync_session)
-        packages, total = repository.list_packages(limit=pagination.limit, offset=pagination.offset)
+        packages, total = repository.list_packages(
+            limit=pagination.limit, offset=pagination.offset,
+            created_by_user_id=created_by_user_id, created_by_kind=created_by_kind,
+        )
         return ContentQaPackagesPageDTO(
             total=total, limit=pagination.limit, offset=pagination.offset,
             packages=[

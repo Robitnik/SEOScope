@@ -14,7 +14,9 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.authorship.model import Attribution
 from app.db.models import ContentQaPackage
+from app.db.repositories.reports import apply_authorship_filter
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,9 @@ class ContentQaPackageInput:
     severity_counts: dict[str, int]
     sheets: Sequence[dict[str, Any]] = ()
     matrix: Sequence[dict[str, Any]] = ()
+    # `None` = невідомо (task-93) — той самий інваріант, що решта поля
+    # цього класу: якщо викликач не передав автора, ми НЕ вгадуємо "system".
+    created_by: Attribution | None = None
 
 
 class ContentQaPackageRepository:
@@ -38,6 +43,7 @@ class ContentQaPackageRepository:
         self._session = session
 
     def create_package(self, data: ContentQaPackageInput) -> ContentQaPackage:
+        created_by = data.created_by
         package = ContentQaPackage(
             client_id=data.client_id,
             source_kind=data.source_kind,
@@ -51,6 +57,8 @@ class ContentQaPackageRepository:
             severity_counts_json=dict(data.severity_counts),
             sheets_json=list(data.sheets),
             matrix_json=list(data.matrix),
+            created_by_user_id=created_by.user_id if created_by else None,
+            created_by_kind=created_by.kind if created_by else None,
         )
         self._session.add(package)
         self._session.flush()
@@ -59,8 +67,20 @@ class ContentQaPackageRepository:
     def get_package(self, package_id: str) -> ContentQaPackage | None:
         return self._session.get(ContentQaPackage, package_id)
 
-    def list_packages(self, *, limit: int, offset: int) -> tuple[list[ContentQaPackage], int]:
-        base = select(ContentQaPackage)
+    def list_packages(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        created_by_user_id: str | None = None,
+        created_by_kind: str | None = None,
+    ) -> tuple[list[ContentQaPackage], int]:
+        base = apply_authorship_filter(
+            select(ContentQaPackage),
+            ContentQaPackage,
+            created_by_user_id=created_by_user_id,
+            created_by_kind=created_by_kind,
+        )
         total = self._session.scalar(select(func.count()).select_from(base.subquery())) or 0
         statement = (
             base.order_by(ContentQaPackage.created_at.desc(), ContentQaPackage.id)

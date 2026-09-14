@@ -24749,6 +24749,38 @@
           },
           {
             "in": "query",
+            "name": "created_by_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created By User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_by_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created By Kind"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -25582,6 +25614,38 @@
                 }
               ],
               "title": "Has Batch"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_by_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created By User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_by_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created By Kind"
             }
           },
           {
@@ -28917,6 +28981,38 @@
       "get": {
         "operationId": "list_packages_api_v1_tools_strategy_package_reports_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "created_by_user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created By User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_by_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created By Kind"
+            }
+          },
           {
             "in": "query",
             "name": "limit",

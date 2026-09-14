@@ -41,6 +41,25 @@ _LOGIN_PATH = "/api/v1/auth/login"
 _MAX_BODY_BYTES = 64 * 1024
 
 
+def mark_created_resource(request: Request, resource_type: str, resource_id: str) -> None:
+    """Called by a handler right after it creates a row whose id didn't
+    exist when the request arrived (task-93 plan §2 D6) — a `POST` that
+    creates a `report_run`/`report_batch`/`content_qa_package`, say.
+    `request.scope["state"]` is the same dict `AuthMiddleware` already
+    writes `auth_session` into, so this reaches `_record` below without a
+    new request-scoped channel.
+
+    Without this, `_record`'s only source for `resource_id` is a
+    path-parameter — which doesn't exist yet for a creation route, so the
+    audit row for "who ran this report" could never be found by the
+    report's own id. Whatever `resource_id` `_record` would otherwise have
+    used (a rebuild/retry's SOURCE run, say) is preserved separately as
+    `details.parent_resource` — it stays useful, just demoted from primary
+    key to context.
+    """
+    request.state.audit_created_resource = (resource_type, resource_id)
+
+
 class AuditMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, settings: Settings) -> None:
         super().__init__(app)
@@ -166,6 +185,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
         auth = getattr(request.state, "auth_session", None)
         path_params: dict[str, Any] = request.scope.get("path_params") or {}
+        resource_type = spec.resource_type if spec else None
         resource_id = None
         if spec and spec.resource_param:
             resource_id = path_params.get(spec.resource_param)
@@ -173,6 +193,22 @@ class AuditMiddleware(BaseHTTPMiddleware):
             resource_id = path_params["client_id"]
 
         details: dict[str, Any] = {}
+        # task-93 plan §2 D6: a handler that just created a row (a report
+        # run/batch, a content_qa_package) calls `mark_created_resource` to
+        # say so — its id didn't exist when this request arrived, so the
+        # path-derived `resource_id` above (if any) is the SOURCE of a
+        # rebuild/retry, not the thing this action produced. That source
+        # moves into `details.parent_resource`; the new row becomes the
+        # action's own resource, so "Activity" on the report's own page
+        # finds its own creation event.
+        created_resource = getattr(request.state, "audit_created_resource", None)
+        if created_resource is not None:
+            if resource_id is not None:
+                details["parent_resource"] = {
+                    "type": resource_type, "id": str(resource_id),
+                }
+            resource_type, resource_id = created_resource
+
         if body:
             details["request"] = body
         if request.url.query:
@@ -201,7 +237,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
             session_id=getattr(auth, "session_id", None),
             ip=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
-            resource_type=spec.resource_type if spec else None,
+            resource_type=resource_type,
             resource_id=str(resource_id) if resource_id is not None else None,
             method=method,
             path=path,

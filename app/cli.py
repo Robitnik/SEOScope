@@ -1192,6 +1192,7 @@ def main(argv: list[str] | None = None) -> int:
         # Imported here, not at module scope: pulls in the reports engine
         # (periods/API-or-browser fetch/table/xlsx), which the other
         # commands have no reason to load.
+        from app.authorship.model import Attribution
         from app.core.config import get_settings
         from app.db.repositories.clients import ClientRepository
         from app.db.repositories.reports import ReportRepository
@@ -1235,6 +1236,7 @@ def main(argv: list[str] | None = None) -> int:
             run = ReportRepository(session).create_run(
                 args.client_id, kind=args.kind, source=args.source,
                 params=params, period_count=len(periods),
+                created_by=Attribution.cli(),
             )
             session.commit()
             run_id = run.id

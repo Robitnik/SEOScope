@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.authorship.model import Attribution
 from app.db.base import utcnow
 from app.db.models import ReportBatch, ReportFile, ReportRun, ReportRunEvent
 
@@ -40,6 +41,32 @@ def _elapsed_seconds(started_at: Any, now: datetime) -> float | None:
     return round((now - started).total_seconds(), 3)
 
 
+def apply_authorship_filter(
+    stmt: Any, model: Any, *, created_by_user_id: str | None, created_by_kind: str | None
+) -> Any:
+    """Shared by every list query with a `created_by_*` filter (task-93 plan
+    §2 D4): `list_runs`/`list_batches` here, `ContentQaPackageRepository.
+    list_packages` (`app/db/repositories/content_qa_packages.py`). Every
+    target model carries the same two column names, so one function serves
+    all three — the caller (an admin-only route) is responsible for the 403
+    on every non-admin request that even sets these, per plan §2 D4's "a
+    filter is an oracle" rule; this function only ever narrows a query,
+    never decides who may call it.
+
+    `created_by_kind="unknown"` is not a real value stored in the column —
+    it means "rows with no recorded author at all" (`NULL`, never a literal
+    string), the honest state for anything created before task-93 or left
+    ambiguous by the backfill.
+    """
+    if created_by_kind == "unknown":
+        stmt = stmt.where(model.created_by_kind.is_(None))
+    elif created_by_kind is not None:
+        stmt = stmt.where(model.created_by_kind == created_by_kind)
+    if created_by_user_id is not None:
+        stmt = stmt.where(model.created_by_user_id == created_by_user_id)
+    return stmt
+
+
 class ReportRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -59,6 +86,7 @@ class ReportRepository:
         period_count: int,
         periods: list[dict[str, Any]] | None = None,
         batch_id: str | None = None,
+        created_by: Attribution | None = None,
     ) -> ReportRun:
         """`periods` (task-45 §2.1) is the full per-period list, every entry
         `waiting` with its dates already resolved — passed at CREATE time so
@@ -66,6 +94,11 @@ class ReportRepository:
         second of a `queued` run, before the worker has even claimed it.
         `batch_id` (task-47 §2.2) makes this run a batch's child — `None` for
         every standalone run, unchanged from task-42.
+
+        `created_by` (task-93): who is responsible for THIS run existing —
+        for a rebuild/retry that's whoever clicked the button, not the
+        source run's original author (plan §2 D5). `None` (the default)
+        means "unknown", written as `NULL` in both columns, never guessed.
         """
         run = ReportRun(
             client_id=client_id,
@@ -75,6 +108,8 @@ class ReportRepository:
             period_count=period_count,
             periods_json=list(periods) if periods is not None else None,
             batch_id=batch_id,
+            created_by_user_id=created_by.user_id if created_by else None,
+            created_by_kind=created_by.kind if created_by else None,
         )
         self._session.add(run)
         self._session.flush()
@@ -91,6 +126,8 @@ class ReportRepository:
         source: str | None = None,
         status: str | None = None,
         has_batch: bool | None = None,
+        created_by_user_id: str | None = None,
+        created_by_kind: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> tuple[list[ReportRun], int]:
@@ -110,6 +147,9 @@ class ReportRepository:
             stmt = stmt.where(ReportRun.batch_id.is_not(None))
         elif has_batch is False:
             stmt = stmt.where(ReportRun.batch_id.is_(None))
+        stmt = apply_authorship_filter(
+            stmt, ReportRun, created_by_user_id=created_by_user_id, created_by_kind=created_by_kind
+        )
 
         total = self._session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         stmt = stmt.order_by(ReportRun.created_at.desc()).limit(limit).offset(offset)
@@ -433,10 +473,21 @@ class ReportRepository:
     # --- batches (task-47 §2.2/§4) ------------------------------------------
 
     def create_batch(
-        self, *, kind: str, source: str, params: dict[str, Any], client_count: int
+        self,
+        *,
+        kind: str,
+        source: str,
+        params: dict[str, Any],
+        client_count: int,
+        created_by: Attribution | None = None,
     ) -> ReportBatch:
         batch = ReportBatch(
-            kind=kind, source=source, params_json=params, client_count=client_count
+            kind=kind,
+            source=source,
+            params_json=params,
+            client_count=client_count,
+            created_by_user_id=created_by.user_id if created_by else None,
+            created_by_kind=created_by.kind if created_by else None,
         )
         self._session.add(batch)
         self._session.flush()
@@ -447,6 +498,7 @@ class ReportRepository:
 
     def list_batches(
         self, *, client_id: str | None = None, status: str | None = None,
+        created_by_user_id: str | None = None, created_by_kind: str | None = None,
         limit: int = 100, offset: int = 0,
     ) -> tuple[list[ReportBatch], int]:
         stmt = select(ReportBatch)
@@ -463,6 +515,10 @@ class ReportRepository:
                     )
                 )
             )
+        stmt = apply_authorship_filter(
+            stmt, ReportBatch,
+            created_by_user_id=created_by_user_id, created_by_kind=created_by_kind,
+        )
         total = self._session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         stmt = stmt.order_by(ReportBatch.created_at.desc()).limit(limit).offset(offset)
         rows = list(self._session.scalars(stmt))

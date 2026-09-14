@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.authorship.model import Attribution
 from app.db.models import ReportBatch, ReportRun
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.reports import ReportRepository
@@ -60,6 +61,7 @@ def rebuild_run(
     force_refresh: bool,
     max_months: int,
     max_comparator_years: int,
+    created_by: Attribution | None = None,
 ) -> tuple[str | None, str | None]:
     """Clone `run_id` into a new `queued` run with the same `kind`/`source`/
     params, `force_refresh` overwritten EXPLICITLY (task-49 §1.4/§2.5 — the
@@ -68,6 +70,10 @@ def rebuild_run(
     `batch_id` if it had one. One primitive serves both the standalone
     "Rebuild" action on a run page and the in-batch "Retry"/"Rebuild" pair
     (`app/api/reports.py`'s two new routes both call this).
+
+    `created_by` (task-93 plan §2 D5): the new run's author is whoever
+    clicked rebuild/retry NOW, never the source run's original author — a
+    rebuild is a fresh decision to spend the collection budget again.
 
     Returns `(error_code, new_run_id)` — exactly one is `None`. Error codes:
     `run_not_found`, `run_not_retryable` (the source run hasn't finished yet).
@@ -89,7 +95,7 @@ def rebuild_run(
         new_run = repo.create_run(
             source.client_id, kind=source.kind, source=source.source, params=params,
             period_count=len(periods), periods=period_rows(periods),
-            batch_id=source.batch_id,
+            batch_id=source.batch_id, created_by=created_by,
         )
 
         if source.batch_id is not None:
@@ -117,12 +123,17 @@ def create_batch(
     params: dict[str, Any],
     max_months: int,
     max_comparator_years: int,
+    created_by: Attribution | None = None,
 ) -> ReportBatch:
     """Build the shared period list ONCE (it depends only on `kind`/`params`,
     never on the client) and fan it out into one `queued` run per client.
     Raises `InvalidPeriodError`/`InvalidComparatorMonthsError`/`ValueError`
     for a malformed request — the caller (`app/api/reports.py`) maps those to
     `422` exactly like `POST /reports/runs` already does.
+
+    `created_by` (task-93 plan §2 D5) is written on the batch AND on every
+    child run it fans out — whoever started the batch is the author of the
+    whole thing, not just the parent row.
     """
     if not client_ids:
         raise NoClientsSelectedError("At least one client must be selected")
@@ -134,7 +145,10 @@ def create_batch(
 
     repo = ReportRepository(session)
     client_repo = ClientRepository(session)
-    batch = repo.create_batch(kind=kind, source=source, params=params, client_count=len(client_ids))
+    batch = repo.create_batch(
+        kind=kind, source=source, params=params, client_count=len(client_ids),
+        created_by=created_by,
+    )
     created = 0
     for client_id in client_ids:
         # A client removed between the wizard loading its list and the
@@ -146,6 +160,7 @@ def create_batch(
         repo.create_run(
             client_id, kind=kind, source=source, params=params,
             period_count=len(periods), periods=rows, batch_id=batch.id,
+            created_by=created_by,
         )
         created += 1
     if created != len(client_ids):
