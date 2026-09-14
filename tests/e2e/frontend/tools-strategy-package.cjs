@@ -116,6 +116,12 @@ async function main() {
   const exportHref = await page.locator('a:has-text("Export to Excel")').getAttribute("href");
   assert.match(exportHref, /\/matrix\.xlsx$/);
 
+  // 6c-ter (task-96): "Open strategy" links back to the strategy's own
+  // Google Sheet — this run's source is a native Sheet, so it opens as
+  // Sheets, not a generic Drive file view.
+  const strategyHref = await page.locator('a:has-text("Open strategy")').getAttribute("href");
+  assert.match(strategyHref, /^https:\/\/docs\.google\.com\/spreadsheets\/d\/.+\/edit$/);
+
   // 6c-bis (task-95): the link-chain ("In copy"/"On site") replaced the
   // old sixth "Outgoing links" column — each mini-table has 7 columns
   // (5 scalar + 2 chain steps), and the page header carries badges for
@@ -184,6 +190,35 @@ async function main() {
     await page.locator("#sp-copy-only-diff").check();
   }
   await page.screenshot({ path: path.join(screenshots, "tools-strategy-package-copy-1440.png"), fullPage: true });
+
+  // 8b (task-96): Links tab consolidates the per-page link-chain blocks
+  // into one place — a card per page with a framework, no `strategy_only`
+  // noise. State-agnostic (which framework/pages this run picks varies),
+  // so this asserts shape: either real cards or the honest empty state,
+  // and (if a table is rendered) the same 4-column shape as the
+  // Comparison tab's `<details>` block.
+  await page.locator("#sp-tab-links").click();
+  await page.locator(".sp-matrix-page, .sp-browse__status").first().waitFor({ timeout: 15_000 });
+  assert.equal(await page.locator("#sp-tab-links").getAttribute("aria-selected"), "true");
+  const linksCardCount = await page.locator("#sp-tabpanel .sp-matrix-page").count();
+  if (linksCardCount > 0) {
+    const linksTableCount = await page.locator("#sp-tabpanel .sp-links-table").count();
+    if (linksTableCount > 0) {
+      const tabHeaders = await page.locator("#sp-tabpanel .sp-links-table").first()
+        .locator("thead th").allInnerTexts();
+      assert.deepEqual(
+        tabHeaders.map((t) => t.toLowerCase()), // CSS text-transform:uppercase changes rendered case
+        ["link", "in copy", "on site", "note"],
+      );
+    }
+    // "Mismatches only" actually filters cards, not just dims them.
+    const totalCards = linksCardCount;
+    await page.locator("#sp-links-mismatches-only").check();
+    const filteredCards = await page.locator("#sp-tabpanel .sp-matrix-page").count();
+    assert.ok(filteredCards <= totalCards, "mismatches-only filter never shows MORE cards");
+    await page.locator("#sp-links-mismatches-only").uncheck();
+  }
+  await page.screenshot({ path: path.join(screenshots, "tools-strategy-package-links-1440.png"), fullPage: true });
 
   // 9. Cross-checks tab: the per-framework coverage table + aggregate findings panel.
   await page.locator("#sp-tab-cross").click();

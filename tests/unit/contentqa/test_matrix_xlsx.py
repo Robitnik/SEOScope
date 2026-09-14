@@ -19,6 +19,7 @@ from app.schemas.strategy_package import (
     FrameworkCandidateDTO,
     FrameworkOutcomeDTO,
     LinkAuditDTO,
+    LinkRowDTO,
     MatrixCellDTO,
     MatrixFieldVerdictDTO,
     MatrixRowDTO,
@@ -68,7 +69,7 @@ def test_build_matrix_xlsx_produces_a_valid_workbook_with_two_sheets() -> None:
     data = build_matrix_xlsx(rows)
     assert data[:2] == b"PK"  # xlsx is a zip archive
     workbook = load_workbook(io.BytesIO(data))
-    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Links", "Copy"]
 
 
 def _mini_table_titles(ws, max_row: int = 30) -> dict[str, int]:
@@ -231,7 +232,7 @@ def test_mismatches_sheet_is_honest_when_nothing_mismatched() -> None:
 def test_empty_matrix_still_produces_a_valid_workbook() -> None:
     data = build_matrix_xlsx([])
     workbook = load_workbook(io.BytesIO(data))
-    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Links", "Copy"]
 
 
 def test_mismatched_field_is_bold_red_in_every_mini_table() -> None:
@@ -465,7 +466,7 @@ _EXCLUDED = CopyRowDTO(state="excluded", kind="directive", doc_text="[IMAGE SECT
 def test_copy_index_shows_placeholder_when_no_copy_data() -> None:
     data = build_matrix_xlsx([])
     workbook = load_workbook(io.BytesIO(data))
-    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Links", "Copy"]
     assert workbook["Copy"].cell(2, 1).value == "No copy data in this run."
 
 
@@ -476,7 +477,7 @@ def test_copy_page_gets_its_own_sheet_named_from_the_url() -> None:
     )]
     workbook = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks)))
     # Sheet named by the URL's last path segment, not the 51-char doc name.
-    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy", "columbus-ave"]
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Links", "Copy", "columbus-ave"]
 
     ws = workbook["columbus-ave"]
     assert ws["A1"].value == "https://example.com/locations/columbus-ave/"
@@ -519,7 +520,7 @@ def test_clean_page_is_listed_in_the_index_but_gets_no_sheet() -> None:
     up, with "0 — clean", but there is nothing to fix so no sheet."""
     frameworks = [_framework_outcome(document_name="Doc", copy_diffs=[_checked_tab([_MATCH])])]
     workbook = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks)))
-    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Links", "Copy"]
     ws = workbook["Copy"]
     assert ws.cell(2, 4).value == "0 — clean"
     assert ws.cell(2, 5).value == "—"
@@ -532,7 +533,7 @@ def test_unchecked_tab_states_are_listed_with_their_reason() -> None:
     )
     frameworks = [_framework_outcome(document_name="Blog", copy_diffs=[tab], page_url=None)]
     workbook = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks)))
-    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Links", "Copy"]
     ws = workbook["Copy"]
     assert ws.cell(2, 1).value == "Blog"  # no URL -> document name, no hyperlink
     assert ws.cell(2, 1).hyperlink is None
@@ -571,12 +572,120 @@ def test_sheet_names_are_excel_safe_and_unique() -> None:
         _framework_outcome(document_name="What: is [this]?", document_id="e",
                            copy_diffs=[_checked_tab([_MISSING])], page_url=None),
     ]
-    names = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks))).sheetnames[3:]
+    names = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks))).sheetnames[4:]
     assert names[0] == "faq"
     assert names[1] == "FAQ (2)"  # same name case-insensitively -> deduped
     assert len(names[2]) <= 31 and names[2].startswith("a-very-long-slug")
     assert names[3] == "home"  # bare domain root
     assert names[4] == "What- is -this-?"[:31].replace("?", "-")  # forbidden chars replaced
+
+
+# ── аркуш Links (task-96 §2) ─────────────────────────────────────────────
+
+
+def test_links_sheet_skips_strategy_only_rows() -> None:
+    """task-96 §1.3: EFFYS measured 33 of 35 matrix rows as `strategy_only`
+    (no framework) — the Links sheet must not render an empty block for
+    each of those; it simply doesn't mention them."""
+    rows = [
+        MatrixRowDTO(
+            key="r1", kind="strategy_only", label="Sheet!row 9",
+            strategy=_cells(), framework=None, site=None, verdicts=_verdicts(),
+        ),
+        MatrixRowDTO(
+            key="r2", kind="matched", label="https://example.com/a",
+            strategy=_cells(), framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            links=_link_audit(
+                in_copy=MatrixFieldVerdictDTO(
+                    state="match", detail="1/1 framework link(s) in copy"
+                ),
+                on_site=MatrixFieldVerdictDTO(
+                    state="match", detail="1/1 copy link(s) on the live page"
+                ),
+            ),
+        ),
+    ]
+    ws = load_workbook(io.BytesIO(build_matrix_xlsx(rows)))["Links"]
+    texts = [ws.cell(r, 1).value for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value]
+    assert "Sheet!row 9" not in texts
+    assert "https://example.com/a" in texts
+
+
+def test_links_sheet_is_honest_about_predating_the_audit() -> None:
+    rows = [
+        MatrixRowDTO(
+            key="r1", kind="matched", label="https://example.com/a",
+            strategy=_cells(), framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            links=None, framework_document_id="doc1",
+        ),
+    ]
+    ws = load_workbook(io.BytesIO(build_matrix_xlsx(rows)))["Links"]
+    texts = [ws.cell(r, 1).value for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value]
+    assert any("predates the link audit" in t for t in texts)
+
+
+def test_links_sheet_shows_not_applicable_reason_not_a_table() -> None:
+    rows = [
+        MatrixRowDTO(
+            key="r1", kind="matched", label="https://example.com/a",
+            strategy=_cells(), framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            links=_link_audit(
+                state="not_applicable",
+                reason="No links to compare: the framework declares none and the copy has none.",
+            ),
+        ),
+    ]
+    ws = load_workbook(io.BytesIO(build_matrix_xlsx(rows)))["Links"]
+    texts = [ws.cell(r, 1).value for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value]
+    assert any("the framework declares none" in t for t in texts)
+    assert "Link" not in texts  # no table header rendered for not_applicable
+
+
+def test_links_sheet_renders_the_link_table_and_copy_sheet_link() -> None:
+    frameworks = [_framework_outcome(
+        document_name="EFFYS_PAGE_FRAMEWORK_COLUMBUS_AVE_LOCATION_06112026",
+        copy_diffs=[_checked_tab([_CHANGED])],
+    )]
+    rows = [
+        MatrixRowDTO(
+            key="r1", kind="matched", label="https://example.com/locations/columbus-ave/",
+            strategy=_cells(), framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            links=_link_audit(
+                in_copy=MatrixFieldVerdictDTO(
+                    state="mismatch", detail="0/1 framework link(s) in copy"
+                ),
+                on_site=MatrixFieldVerdictDTO(state="not_comparable", detail="site not checked"),
+                rows=[
+                    LinkRowDTO(
+                        target="/shop/x", display="X → /shop/x", origin="framework",
+                        in_copy="no", on_site="not_checked",
+                    ),
+                ],
+                skipped=["Hemingway Editor (instruction, skipped)"],
+            ),
+            framework_document_id="d1", framework_document_name="EFFYS Framework",
+        ),
+    ]
+    workbook = load_workbook(io.BytesIO(build_matrix_xlsx(rows, frameworks=frameworks)))
+    ws = workbook["Links"]
+    texts = [ws.cell(r, 1).value for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value]
+    assert "Copy sheet: columbus-ave" in texts
+    assert "X → /shop/x" in texts
+    header_row = next(r for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "Link")
+    assert [ws.cell(header_row, c).value for c in range(1, 5)] == [
+        "Link", "In copy", "On site", "Note",
+    ]
+    assert any("Skipped: Hemingway Editor" in t for t in texts)
+    copy_sheet_cell = next(
+        ws.cell(r, 1) for r in range(1, ws.max_row + 1)
+        if ws.cell(r, 1).value == "Copy sheet: columbus-ave"
+    )
+    assert copy_sheet_cell.hyperlink.target == "#'columbus-ave'!A1"
+
+
+def test_links_sheet_empty_run_says_no_pages() -> None:
+    ws = load_workbook(io.BytesIO(build_matrix_xlsx([])))["Links"]
+    assert ws.cell(1, 1).value == "No pages with a framework in this run."
 
 
 def test_two_checked_language_tabs_on_one_page_get_suffixed_sheets() -> None:
@@ -591,5 +700,5 @@ def test_two_checked_language_tabs_on_one_page_get_suffixed_sheets() -> None:
     frameworks = [_framework_outcome(
         document_name="Doc", copy_diffs=[sv, en], page_url="https://laxton.se/shop/ouija/",
     )]
-    names = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks))).sheetnames[3:]
+    names = load_workbook(io.BytesIO(build_matrix_xlsx([], frameworks=frameworks))).sheetnames[4:]
     assert names == ["ouija (sv)", "ouija (en)"]

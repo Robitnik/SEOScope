@@ -653,6 +653,10 @@ let comparisonMismatchesOnly = false;
 // "extra" rows (EFFYS menu measured 239) that swamp the real diff.
 let copyOnlyDifferences = true;
 let copyShowExtra = false;
+// task-96: separate from `comparisonMismatchesOnly` — the two tabs are
+// independent views, so switching one filter shouldn't silently move the
+// other.
+let linksMismatchesOnly = false;
 
 async function renderReportView(packageId) {
   activeTab = "comparison";
@@ -660,6 +664,7 @@ async function renderReportView(packageId) {
   comparisonMismatchesOnly = false;
   copyOnlyDifferences = true;
   copyShowExtra = false;
+  linksMismatchesOnly = false;
   root.innerHTML = `
     <a class="back-link" href="${buildToolsHash(TOOL_KEY)}">${icon("arrow-left")}<span>All reports</span></a>
     <header class="tool-header">
@@ -717,6 +722,7 @@ function renderPackageShell(pkg) {
         <button type="button" role="tab" id="sp-tab-strategy" data-sp-tab="strategy" aria-selected="false">${icon("file-spreadsheet", "icon icon--tiny")}Strategy</button>
         <button type="button" role="tab" id="sp-tab-frameworks" data-sp-tab="frameworks" aria-selected="false">${icon("file-text", "icon icon--tiny")}Frameworks</button>
         <button type="button" role="tab" id="sp-tab-copy" data-sp-tab="copy" aria-selected="false">${icon("align-left", "icon icon--tiny")}Copy</button>
+        <button type="button" role="tab" id="sp-tab-links" data-sp-tab="links" aria-selected="false">${icon("link", "icon icon--tiny")}Links</button>
         <button type="button" role="tab" id="sp-tab-cross" data-sp-tab="cross" aria-selected="false">${icon("arrows-cross", "icon icon--tiny")}Cross-checks</button>
       </div>
       <div id="sp-tabpanel" role="tabpanel"></div>
@@ -772,6 +778,7 @@ function renderTabPanel(container, pkg) {
   if (activeTab === "strategy") { renderStrategyTab(panel, pkg); return; }
   if (activeTab === "frameworks") { renderFrameworksTab(panel, pkg); return; }
   if (activeTab === "copy") { renderCopyTab(panel, pkg); return; }
+  if (activeTab === "links") { renderLinksTab(panel, pkg); return; }
   renderCrossTab(panel, pkg);
 }
 
@@ -802,6 +809,20 @@ const MATRIX_VERDICT_META = {
 // (a `LinkAuditDTO | null`, not a per-source field), two steps:
 // `in_copy` (Framework -> Copy) and `on_site` (Copy -> Site).
 const LINK_STEP_FIELDS = [["in_copy", "In copy"], ["on_site", "On site"]];
+// task-96: same URL shape `matrix_xlsx.py:_gdoc_link` builds for the
+// Excel export — no earlier frontend module links out to a framework's
+// Google Doc, so this is the one place that needs it.
+const GDOC_URL = (documentId) => `https://docs.google.com/document/d/${documentId}/edit`;
+// The strategy source itself isn't always a Google Sheet (`source_kind`
+// can be `xlsx_blob` — an .xlsx uploaded to Drive, not a native Sheet) —
+// only `spreadsheet` opens as Sheets; anything else opens as a Drive file
+// view, which still works for every `source_kind` Drive actually returns.
+function strategySourceUrl(pkg) {
+  if (!pkg.source_file_id) return null;
+  return pkg.source_kind === "spreadsheet"
+    ? `https://docs.google.com/spreadsheets/d/${pkg.source_file_id}/edit`
+    : `https://drive.google.com/file/d/${pkg.source_file_id}/view`;
+}
 
 function linkStepVerdict(row, field) {
   return row.links ? row.links[field] : { state: "not_comparable", detail: null };
@@ -830,6 +851,10 @@ function renderComparisonTab(panel, pkg) {
         <input type="checkbox" id="sp-matrix-mismatches-only" ${comparisonMismatchesOnly ? "checked" : ""}>
         <span>Mismatches only (${mismatchCount} of ${allRows.length} page${allRows.length === 1 ? "" : "s"})</span>
       </label>
+      ${strategySourceUrl(pkg) ? `
+        <a class="button button--quiet" href="${strategySourceUrl(pkg)}" target="_blank" rel="noopener">
+          ${icon("file-spreadsheet", "icon icon--tiny")}Open strategy
+        </a>` : ""}
       <a class="button button--quiet" href="${strategyPackageMatrixXlsxUrl(pkg.id)}">
         ${icon("file-spreadsheet", "icon icon--tiny")}Export to Excel
       </a>
@@ -907,6 +932,33 @@ function renderLinkPresence(presence) {
   return `<span class="sp-links-presence ${meta.cls}">${icon(meta.icon, "icon icon--tiny")}${meta.label}</span>`;
 }
 
+// task-96 §2.3: the table body (header + one row per `LinkRow` + skipped
+// notes) is shared by the `<details>` under each Comparison mini-table
+// group and the dedicated Links tab — same rendering, two places it's
+// read from, so they can't drift apart the way the Excel per-page block
+// and the new Links sheet don't (`matrix_xlsx.py:_links_block`).
+function renderLinkTable(links) {
+  return `
+    <div class="table-scroll sp-matrix-scroll">
+      <table class="tool-table sp-links-table">
+        <thead><tr><th scope="col">Link</th><th scope="col">In copy</th><th scope="col">On site</th><th scope="col">Note</th></tr></thead>
+        <tbody>
+          ${links.rows.map((r) => `
+            <tr>
+              <td>${escapeHtml(r.display)}</td>
+              <td>${renderLinkPresence(r.in_copy)}</td>
+              <td>${renderLinkPresence(r.on_site)}</td>
+              <td>${r.note ? escapeHtml(r.note) : ""}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${links.skipped.length ? `
+      <ul class="sp-links-skipped">
+        ${links.skipped.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}
+      </ul>` : ""}`;
+}
+
 function renderLinkDetails(row) {
   const links = row.links;
   if (!links || (!links.rows.length && !links.skipped.length)) return "";
@@ -914,24 +966,7 @@ function renderLinkDetails(row) {
   return `
     <details class="sp-links-details" ${hasMismatch ? "open" : ""}>
       <summary>${icon("link", "icon icon--tiny")}Links (Framework → Copy → Site) — ${links.rows.length} link${links.rows.length === 1 ? "" : "s"}${links.skipped.length ? `, ${links.skipped.length} skipped` : ""}</summary>
-      <div class="table-scroll sp-matrix-scroll">
-        <table class="tool-table sp-links-table">
-          <thead><tr><th scope="col">Link</th><th scope="col">In copy</th><th scope="col">On site</th><th scope="col">Note</th></tr></thead>
-          <tbody>
-            ${links.rows.map((r) => `
-              <tr>
-                <td>${escapeHtml(r.display)}</td>
-                <td>${renderLinkPresence(r.in_copy)}</td>
-                <td>${renderLinkPresence(r.on_site)}</td>
-                <td>${r.note ? escapeHtml(r.note) : ""}</td>
-              </tr>`).join("")}
-          </tbody>
-        </table>
-      </div>
-      ${links.skipped.length ? `
-        <ul class="sp-links-skipped">
-          ${links.skipped.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}
-        </ul>` : ""}
+      ${renderLinkTable(links)}
     </details>`;
 }
 
@@ -1175,6 +1210,104 @@ function renderFrameworkDetail(mount, outcome) {
     <div class="sp-fw-row__cross sp-fw-detail__cross">${crossBadges}</div>
     <div id="sp-fw-report">${renderReport(report)}</div>`;
   wireReport(mount.querySelector("#sp-fw-report"), report);
+}
+
+// ── Links tab (task-96) ───────────────────────────────────────────────
+// Consolidates the `<details class="sp-links-details">` block that
+// task-95 tucks under every Comparison page group (open only on a
+// mismatch, easy to miss when scanning a long run) into one dedicated
+// tab: one card per page, in matrix order, the same way `renderCopyTab`
+// groups per-page copy diffs. `strategy_only` rows (no framework at all)
+// are left out, not shown as an empty card — measured live (task-96
+// §1.3): 33 of 35 EFFYS matrix rows carry no framework.
+
+function linksAuditableRows(pkg) {
+  return (pkg.matrix || []).filter((row) => row.kind !== "strategy_only");
+}
+
+function linksRowHasMismatch(row) {
+  return LINK_STEP_FIELDS.some(([field]) => linkStepVerdict(row, field).state === "mismatch");
+}
+
+function renderLinksTab(panel, pkg) {
+  const allRows = linksAuditableRows(pkg);
+  if (!allRows.length) {
+    panel.innerHTML = `
+      <p class="sp-browse__status">${icon("link-off", "icon icon--tiny")}
+        <span>No pages with a framework in this run — nothing to audit for outgoing links.</span></p>`;
+    return;
+  }
+  const rows = linksMismatchesOnly ? allRows.filter(linksRowHasMismatch) : allRows;
+  const mismatchCount = allRows.filter(linksRowHasMismatch).length;
+
+  panel.innerHTML = `
+    <div class="sp-matrix-toolbar">
+      <label class="cq-sheet-picker__cross sp-matrix-toolbar__filter">
+        <input type="checkbox" id="sp-links-mismatches-only" ${linksMismatchesOnly ? "checked" : ""}>
+        <span>Mismatches only (${mismatchCount} of ${allRows.length} page${allRows.length === 1 ? "" : "s"})</span>
+      </label>
+      <a class="button button--quiet" href="${strategyPackageMatrixXlsxUrl(pkg.id)}">
+        ${icon("file-spreadsheet", "icon icon--tiny")}Export to Excel
+      </a>
+    </div>
+    ${rows.length ? rows.map(renderLinksPageCard).join("") : `
+      <p class="sp-browse__status">${icon("filter-x", "icon icon--tiny")}<span>No mismatches in this run.</span></p>`}`;
+
+  panel.querySelector("#sp-links-mismatches-only")?.addEventListener("change", (event) => {
+    linksMismatchesOnly = event.target.checked;
+    renderLinksTab(panel, pkg);
+  });
+}
+
+function renderLinksPageHeader(row) {
+  const title = row.label.startsWith("http://") || row.label.startsWith("https://")
+    ? `<a href="${escapeHtml(row.label)}" target="_blank" rel="noopener">${escapeHtml(row.label)}</a>`
+    : escapeHtml(row.label);
+  const docLabel = row.framework_document_name || row.framework_document_id;
+  return `
+    <div class="sp-matrix-page__header">
+      <h3 class="sp-matrix-page__title">${title}</h3>
+      <div class="sp-matrix-page__verdicts">${LINK_STEP_FIELDS.map(([field, label]) => renderMatrixVerdictBadge(label, linkStepVerdict(row, field))).join("")}</div>
+    </div>
+    ${row.framework_document_id ? `
+      <p class="sp-links-doc">${icon("file-text", "icon icon--tiny")}
+        <a href="${GDOC_URL(row.framework_document_id)}" target="_blank" rel="noopener">${escapeHtml(docLabel)}</a></p>` : ""}`;
+}
+
+function renderLinksPageCard(row) {
+  const header = renderLinksPageHeader(row);
+  const links = row.links;
+  // Predates task-95 (PLAN §12: predates ≠ empty — a re-run would find
+  // links, not zero of them).
+  if (!links) {
+    return `
+      <div class="sp-matrix-page">
+        ${header}
+        <p class="sp-browse__status sp-links-empty">${icon("history", "icon icon--tiny")}
+          <span>This run predates the link audit — re-run the check to get one.</span></p>
+      </div>`;
+  }
+  if (links.state === "not_applicable") {
+    return `
+      <div class="sp-matrix-page">
+        ${header}
+        <p class="sp-browse__status sp-links-empty">${icon("info-circle", "icon icon--tiny")}
+          <span>${escapeHtml(links.reason || "No links to compare.")}</span></p>
+      </div>`;
+  }
+  if (!links.rows.length && !links.skipped.length) {
+    return `
+      <div class="sp-matrix-page">
+        ${header}
+        <p class="sp-browse__status sp-links-empty">${icon("filter-x", "icon icon--tiny")}
+          <span>No links to compare on this page.</span></p>
+      </div>`;
+  }
+  return `
+    <div class="sp-matrix-page">
+      ${header}
+      ${renderLinkTable(links)}
+    </div>`;
 }
 
 function renderCrossTab(panel, pkg) {

@@ -404,6 +404,7 @@ def _package_summary_dto(
     return ContentQaPackageSummaryDTO(
         id=package.id, client_id=package.client_id, client_name=client_name,
         source_kind=package.source_kind, source_name=package.source_name,
+        source_file_id=package.source_file_id,
         framework_count=package.framework_count,
         severity_counts=package.severity_counts_json, created_at=package.created_at,
     )

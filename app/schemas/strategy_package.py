@@ -296,6 +296,13 @@ class ContentQaPackageSummaryDTO(BaseModel):
     client_name: str | None = None
     source_kind: str
     source_name: str
+    # task-96: the Drive file id of the strategy source itself, so the
+    # UI can link back to it (`open_strategy_link`, mirrors how the Excel
+    # export already links a framework's Google Doc). `None` only for
+    # packages persisted before this column existed on `ContentQaPackage`
+    # (`source_file_id` has had `default=None` on the model since task-90
+    # — legitimately unset on old rows, not a bug).
+    source_file_id: str | None = None
     framework_count: int
     severity_counts: dict[str, int] = Field(default_factory=dict)
     created_at: datetime

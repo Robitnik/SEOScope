@@ -4504,6 +4504,17 @@
             "title": "Sheets",
             "type": "array"
           },
+          "source_file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source File Id"
+          },
           "source_kind": {
             "title": "Source Kind",
             "type": "string"
@@ -4573,6 +4584,17 @@
             },
             "title": "Severity Counts",
             "type": "object"
+          },
+          "source_file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source File Id"
           },
           "source_kind": {
             "title": "Source Kind",

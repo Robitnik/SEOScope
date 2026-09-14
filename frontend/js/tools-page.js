@@ -18,7 +18,7 @@ const TOOL_MODULES = {
   "char-counter": () => import("./char-counter-tool.js?v=20260821-spin3"),
   "strategy-check": () => import("./strategy-check-tool.js?v=20260908-t87"),
   "framework-check": () => import("./framework-check-tool.js?v=20260908-t87"),
-  "strategy-package": () => import("./strategy-package-tool.js?v=20260914-t95"),
+  "strategy-package": () => import("./strategy-package-tool.js?v=20260914-t96"),
   "schema-markup": () => import("./schema-markup-tool.js?v=20260821-spin3"),
   "prompt-launcher": () => import("./prompt-launcher-tool.js?v=20260914-t94"),
 };

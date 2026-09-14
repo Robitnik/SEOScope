@@ -1,4 +1,5 @@
-"""Excel-експорт порівняльної матриці (task-91 §1.8/§3.5, links task-95 §2.7).
+"""Excel-експорт порівняльної матриці (task-91 §1.8/§3.5, links task-95 §2.7,
+consolidated Links sheet task-96 §2).
 
 Той самий принцип, що `app/pageinventory/xlsx.py`/`app/reports/monthly_xlsx.py`
 (докстрінг `pageinventory/xlsx.py`): білдер читає `list[MatrixRowDTO]` —
@@ -38,6 +39,18 @@ Framework; Strategy/Site показують сірий «—». Деталі (я
 через усі інші сторінки. Плюс окремий аркуш `Mismatches` — лише рядки з
 хоч одним `mismatch`-полем, бо саме їх реально шукає оператор після
 великого прогону.
+
+Аркуш `Links` (task-96 §2, третій за порядком, одразу після `Mismatches`)
+збирає блок `Links (Framework -> Copy -> Site)` з УСІХ per-page аркушів
+`Copy` в одне місце — заміряно живо (task-96 §1.1): на LAXTON (12
+фреймворків) той блок ховається в кожному аркуші на медіанному рядку 45
+(максимум 52), під таблицею розбіжностей речень, тож побачити картину
+посилань по клієнту означало відкрити 12 аркушів і в кожному прогорнути
+вниз. Блок на per-page аркушах ЛИШАЄТЬСЯ (копірайтеру, що править одну
+сторінку, він потрібен у контексті) — тіло рендерить спільний
+`_links_block()`, тож два місця показу не можуть розійтись. `strategy_
+only` рядки (немає фреймворка) на аркуш не потрапляють — заміряно
+33 з 35 рядків матриці EFFYS як шум без фреймворка.
 """
 
 from __future__ import annotations
@@ -542,6 +555,37 @@ _LINK_PRESENCE_SYMBOL = {"yes": "✓", "no": "✗", "not_checked": "—"}
 _LINK_PRESENCE_FG = {"yes": _MATCH_FG, "no": _MISMATCH_FG, "not_checked": _ABSENT_FG}
 
 
+def _links_block(ws: Worksheet, row_index: int, link_audit: LinkAuditDTO, *, width: int) -> int:
+    """Header row + one row per `LinkRow` + `Skipped: …` notes (task-95
+    §2.7). Shared by the per-page Copy sheets and the consolidated `Links`
+    sheet (task-96 §2.3) — same rendering read from two places, so they
+    can't drift apart. The caller decides whether there's anything to
+    render at all (`rows`/`skipped` both empty is nothing, not an empty
+    table) and prints its own title/spacer first — the two callers want
+    different surrounding context."""
+    r = row_index
+    _header_row(ws, r, list(_LINKS_BLOCK_LABELS))
+    r += 1
+    for link_row in link_audit.rows:
+        link_cell = ws.cell(r, 1, link_row.display)
+        link_cell.border = _GRID_BORDER
+        link_cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        for col, presence in ((2, link_row.in_copy), (3, link_row.on_site)):
+            cell = ws.cell(r, col, f"{_LINK_PRESENCE_SYMBOL[presence]} {presence}")
+            cell.font = Font(color=_LINK_PRESENCE_FG[presence])
+            cell.border = _GRID_BORDER
+            cell.alignment = Alignment(horizontal="left", vertical="top")
+        note_cell = ws.cell(r, 4, link_row.note or "")
+        note_cell.border = _GRID_BORDER
+        note_cell.alignment = Alignment(horizontal="left", vertical="top")
+        r += 1
+    for skipped in link_audit.skipped:
+        note_cell = _merged_line(ws, r, f"Skipped: {skipped}", width)
+        note_cell.font = Font(italic=True, size=10, color=_ABSENT_FG)
+        r += 1
+    return r
+
+
 def _copy_page_sheet(
     ws: Worksheet, *, page_url: str | None, document_name: str, document_id: str,
     tab: CopyTabResultDTO, rows: Sequence[CopyRowDTO], link_audit: LinkAuditDTO | None = None,
@@ -595,25 +639,7 @@ def _copy_page_sheet(
         title_cell = _merged_line(ws, r, "Links (Framework -> Copy -> Site)", width)
         title_cell.font = Font(bold=True, size=12)
         r += 1
-        _header_row(ws, r, list(_LINKS_BLOCK_LABELS))
-        r += 1
-        for link_row in link_audit.rows:
-            link_cell = ws.cell(r, 1, link_row.display)
-            link_cell.border = _GRID_BORDER
-            link_cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
-            for col, presence in ((2, link_row.in_copy), (3, link_row.on_site)):
-                cell = ws.cell(r, col, f"{_LINK_PRESENCE_SYMBOL[presence]} {presence}")
-                cell.font = Font(color=_LINK_PRESENCE_FG[presence])
-                cell.border = _GRID_BORDER
-                cell.alignment = Alignment(horizontal="left", vertical="top")
-            note_cell = ws.cell(r, 4, link_row.note or "")
-            note_cell.border = _GRID_BORDER
-            note_cell.alignment = Alignment(horizontal="left", vertical="top")
-            r += 1
-        for skipped in link_audit.skipped:
-            note_cell = _merged_line(ws, r, f"Skipped: {skipped}", width)
-            note_cell.font = Font(italic=True, size=10, color=_ABSENT_FG)
-            r += 1
+        r = _links_block(ws, r, link_audit, width=width)
 
     for col_index, w in enumerate(_COPY_PAGE_WIDTHS, start=1):
         ws.column_dimensions[get_column_letter(col_index)].width = w
@@ -641,7 +667,7 @@ def _link_audit_has_mismatch(link_audit: LinkAuditDTO | None) -> bool:
 def build_copy_sheets(
     workbook: Workbook, frameworks: Sequence[FrameworkOutcomeDTO],
     matrix_rows: Sequence[MatrixRowDTO] = (),
-) -> None:
+) -> dict[str, str]:
     """Індексний аркуш `Copy` + один аркуш на кожну сторінку, де є що
     виправити. Сторінки без проблем і вкладки зі станом `no_url`/
     `not_checked`/`not_applicable` — теж рядок в індексі (перевірено-чисто
@@ -649,7 +675,13 @@ def build_copy_sheets(
     (task-95, іменовано так, щоб не затінювати локальну `rows` = список
     `CopyRowDTO` нижче) дає доступ до ланцюга посилань кожної сторінки —
     сторінка з чистою прозою (task-92), але зламаним ланцюгом посилань
-    (task-95) теж отримує аркуш, лише заради блоку `Links`."""
+    (task-95) теж отримує аркуш, лише заради блоку `Links`.
+
+    Повертає `document_id -> назва primary-аркуша` (task-96 §2.4): аркуш
+    `Links` створюється РАНІШЕ за ці per-page аркуші (щоб застовпити своє
+    ім'я в дедуп-наборі `used`), але лінк на конкретний per-page аркуш
+    можна побудувати лише після того, як цей цикл дав йому назву — це
+    той міст назад."""
     link_audits = _link_audits_by_document(matrix_rows)
     index_ws = workbook.create_sheet("Copy")
     used = {name.lower() for name in workbook.sheetnames}
@@ -728,6 +760,7 @@ def build_copy_sheets(
     if not index_rows:
         index_ws.cell(2, 1, "No copy data in this run.").font = Font(italic=True, color=_ABSENT_FG)
 
+    primary_sheet_by_document: dict[str, str] = {}
     for sheet_title, outcome, tab, rows in page_sheets:
         ws = workbook.create_sheet(sheet_title)
         # Link audit is per-PAGE, computed against the primary copy tab
@@ -735,12 +768,114 @@ def build_copy_sheets(
         # the `Links` block; a secondary (e.g. non-matching-language)
         # tab's sheet would show the same numbers out of context.
         link_audit = link_audits.get(outcome.source.document_id) if tab.role == "primary" else None
+        if tab.role == "primary":
+            primary_sheet_by_document[outcome.source.document_id] = sheet_title
         _copy_page_sheet(
             ws, page_url=outcome.page_url,
             document_name=outcome.source.document_name or outcome.source.document_id,
             document_id=outcome.source.document_id, tab=tab, rows=rows,
             link_audit=link_audit,
         )
+    return primary_sheet_by_document
+
+
+# ── аркуш Links (task-96) ────────────────────────────────────────────────
+# Консолідація блоків `Links`, розсіяних task-95 по низу кожного per-page
+# аркуша `Copy` — заміряно живо (task-96 §1.1): на 12-фреймворковому
+# LAXTON-звіті той блок ховається на медіанному рядку 45 (макс. 52).
+# Тут — один блок на сторінку, у порядку матриці, без табличної розбивки
+# на джерела (ланцюг не per-source, як і на `Comparison`).
+
+_LINKS_SHEET_COLUMNS = 4
+_LINKS_SHEET_WIDTHS = (60, 16, 16, 44)
+
+
+def build_links_sheet(
+    ws: Worksheet, rows: Sequence[MatrixRowDTO], *, copy_sheet_by_document: dict[str, str],
+) -> None:
+    """Один блок на сторінку: заголовок (лінк на сторінку), лінк на
+    Google Doc фреймворка, зведення `In copy`/`On site`, лінк на per-page
+    аркуш `Copy` (якщо є), і сама таблиця посилань (`_links_block`).
+    `strategy_only` рядки (немає фреймворка) пропускаються МОВЧКИ, не
+    порожнім блоком — task-96 §1.3 виміряв 33 з 35 рядків матриці EFFYS
+    саме такими, без жодного фреймворка до звірки."""
+    width = _LINKS_SHEET_COLUMNS
+    framework_rows = [row for row in rows if row.kind != "strategy_only"]
+    r = 1
+    if not framework_rows:
+        ws.cell(r, 1, "No pages with a framework in this run.").font = Font(
+            italic=True, color=_ABSENT_FG
+        )
+
+    for row in framework_rows:
+        title_cell = _merged_line(ws, r, row.label, width)
+        title_cell.font = Font(bold=True, size=13)
+        if row.label.startswith(("http://", "https://")):
+            _link_cell(title_cell, row.label, bold=True, size=13)
+        ws.row_dimensions[r].height = _TITLE_ROW_HEIGHT
+        r += 1
+
+        if row.framework_document_id:
+            doc_cell = _merged_line(
+                ws, r,
+                f"Framework: {row.framework_document_name or row.framework_document_id}",
+                width,
+            )
+            _link_cell(doc_cell, _gdoc_link(row.framework_document_id), size=10)
+            r += 1
+            sheet_title = copy_sheet_by_document.get(row.framework_document_id)
+            if sheet_title:
+                sheet_cell = _merged_line(ws, r, f"Copy sheet: {sheet_title}", width)
+                _link_cell(
+                    sheet_cell,
+                    f"#'{sheet_title.replace(chr(39), chr(39) * 2)}'!A1", size=10,
+                )
+                r += 1
+
+        link_audit = row.links
+        if link_audit is None:
+            # Persisted before task-95 (PLAN §12: predates ≠ empty).
+            note = _merged_line(
+                ws, r,
+                "This run predates the link audit (task-95) — re-run the check to get one.",
+                width,
+            )
+            note.font = Font(italic=True, color=_ABSENT_FG)
+            r += 2
+            continue
+
+        summary = "  ·  ".join(
+            f"{label}: {_link_step_cell_text(verdict)}"
+            for label, verdict in _link_step_verdicts(link_audit)
+        )
+        summary_cell = _merged_line(ws, r, summary, width)
+        summary_cell.font = Font(size=10, color=_ABSENT_FG)
+        r += 1
+
+        if link_audit.state == "not_applicable":
+            note = _merged_line(ws, r, link_audit.reason or "No links to compare.", width)
+            note.font = Font(italic=True, color=_ABSENT_FG)
+            r += 1
+            for skipped in link_audit.skipped:
+                skipped_cell = _merged_line(ws, r, f"Skipped: {skipped}", width)
+                skipped_cell.font = Font(italic=True, size=10, color=_ABSENT_FG)
+                r += 1
+            r += 1
+            continue
+
+        if not link_audit.rows and not link_audit.skipped:
+            note = _merged_line(ws, r, "No links to compare on this page.", width)
+            note.font = Font(italic=True, color=_ABSENT_FG)
+            r += 2
+            continue
+
+        r = _links_block(ws, r, link_audit, width=width)
+        r += 1  # spacer before the next page's block
+
+    for col_index, w in enumerate(_LINKS_SHEET_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(col_index)].width = w
+    ws.freeze_panes = "A1"
+    ws.sheet_view.showGridLines = False
 
 
 def build_matrix_xlsx(
@@ -754,7 +889,16 @@ def build_matrix_xlsx(
     mismatches_ws = workbook.create_sheet("Mismatches")
     build_mismatches_sheet(mismatches_ws, rows)
 
-    build_copy_sheets(workbook, frameworks, rows)
+    # `Links` claims its name (index 2) BEFORE the per-page Copy sheets are
+    # created below, so a page literally named "links" can't steal it —
+    # `build_copy_sheets` dedupes against `workbook.sheetnames` as it goes
+    # (task-96 §2.4). It's filled in only after, once `build_copy_sheets`
+    # hands back which per-page sheet is each document's primary one.
+    links_ws = workbook.create_sheet("Links", index=2)
+
+    copy_sheet_by_document = build_copy_sheets(workbook, frameworks, rows)
+
+    build_links_sheet(links_ws, rows, copy_sheet_by_document=copy_sheet_by_document)
 
     buffer = io.BytesIO()
     workbook.save(buffer)

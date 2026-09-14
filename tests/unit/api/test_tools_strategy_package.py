@@ -251,6 +251,10 @@ def test_check_persists_and_returns_package(client: Any, monkeypatch: Any) -> No
     assert r.status_code == 200
     body = r.json()
     assert body["source_name"] == "ACME_SEO_STRATEGY"
+    # task-96: the strategy's own Drive file id, so the UI can link back
+    # to it (`open_strategy_link`) — persisted since task-90, only newly
+    # exposed on the DTO.
+    assert body["source_file_id"] == STRATEGY_ID
     assert body["framework_count"] == 1
     assert len(body["frameworks"]) == 1
     outcome = body["frameworks"][0]
@@ -374,7 +378,7 @@ def test_matrix_xlsx_download_reads_the_persisted_matrix(client: Any, monkeypatc
     assert "attachment" in r.headers["content-disposition"]
     assert r.content[:2] == b"PK"
     workbook = load_workbook(io.BytesIO(r.content))
-    assert workbook.sheetnames == ["Comparison", "Mismatches", "Copy"]
+    assert workbook.sheetnames == ["Comparison", "Mismatches", "Links", "Copy"]
 
 
 def test_matrix_xlsx_unknown_package_gives_404(client: Any) -> None:
