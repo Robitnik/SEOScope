@@ -412,3 +412,124 @@ e2e, Completion report, рядок у `INDEX.md`, `graphify update .`.
 - Cloudflare Cache Rule «bypass cache» для `/api/*` — загальна проблема (task-79 інцидент), конфіг дашборда, дія оператора.
 - Загальний `Cache-Control: no-store` на всі JSON-відповіді API — зона task-01 (`app/main.py`).
 - `INDEX.md` позначає task-90 і task-91 як ✅ з посиланнями на `../done/`, але файли досі лежать у `doc/dev/new/` — посилання биті; виправляє власник тих тасок.
+- Хвиля 2 (§8): Strategy Check / Framework Check / Alt Text / Schema Markup / Page Inventory / Redirects тощо — той самий механізм (дві колонки + kw-only параметр), окрема таска.
+- "Retried by" на рядку клієнта в батчі (коли автор дочірнього run ≠ автор батча) — свідомо не зроблено: вимагало б асинхронного пре-фетчу перед побудовою розмітки рядка заради рідкісного кейсу; сьогодні видно через власну сторінку run.
+- `.table-scroll` (client-page.css) і далі дає ~39px горизонтального page-скролу на 390px на сторінках Reports і Strategy Package Check — підтверджено ідентичним до і після цієї таски (не регресія, чужа зона).
+- Localhost-байпас лишається безіменним (`Local operator`) — прив'язка до конкретного акаунта обговорювалась (план §7 п.1), рішення за оператором, зона task-73.
+
+---
+
+## ✅ Completion report
+
+- **Дата:** 2026-09-14
+- **Гілка / комміт:** `feat/task-93-authorship` @ `ce59181` (+ ще один комміт нижче зі static-guard тестом)
+- **Статус:** done
+
+### Що зроблено
+
+Кожен новий звіт (`report_runs`), батч (`report_batches`) і Strategy Package
+Check (`content_qa_packages`) тепер зберігає, хто його створив — форма
+входу, особистий токен, dev bearer-токен, localhost-байпас чи CLI.
+Rebuild/retry атрибутується тому, хто натиснув кнопку, а не оригінальному
+автору джерела. Адмін бачить колонку **Started by**/**Checked by** на
+`#/reports` і в списку Strategy Package Check, чип «Started by/Checked by
+<автор>» у заголовку сторінки run/батча/пакета, і посилання **Activity** в
+журнал дій, попередньо відфільтрований по ресурсу; клік на ім'я людини
+веде в журнал, відфільтрований по цій людині. Member/viewer не бачать
+жодного з цього — ні колонки, ні фільтра, ні мережевого запиту. Старі
+записи (до 2026-09-14) підписано заднім числом через `yovth-report
+authorship-backfill --apply`, застосовано на проді.
+
+### Як зроблено (ключові рішення)
+
+- **Автор — атрибут рядка** (`created_by_user_id` + `created_by_kind`),
+  не похідне з `audit_events`: журнал для створювальних POST пише
+  `resource_id=NULL`, має ретенцію 365 днів і чергу, яка може відкидати
+  рядки. `NULL` в обох колонках = `Unknown`, ніколи не `System`.
+- **Окремий admin-only `GET /api/v1/authorship` (+`/facets`)**, а не
+  рольове поле в наявних DTO — списки звітів лишаються байт-у-байт
+  однаковими для всіх ролей, бо Cloudflare-тунель уже живо віддавав
+  закешовані `/api/*`-відповіді повз `no-store` (інцидент task-79).
+  `Cache-Control: private, no-store` + `Vary: Cookie, Authorization`,
+  живо перевірено — `cf-cache-status: DYNAMIC` через тунель.
+- **Фільтр `created_by_*` для non-admin — `403`**, не мовчазне
+  ігнорування (фільтр — оракул над тим, хто що робив).
+- **Бекфіл** (`app/authorship/backfill.py`) — точний ключ
+  (`details.request.file_id`/`client_id`) + часове вікно, чисто в Python
+  над уже завантаженими ORM-рядками (не сирий SQL з JSON-path), тож
+  однаково працює на Postgres і в SQLite-тестах. Резолвиться лише коли
+  серед кандидатів рівно один актор; інакше лишається `NULL`.
+- **Фронт**: `frontend/js/authorship.js` — `loadAuthors()` не робить
+  жодного виклику, якщо `!isAdmin()`; список рендериться одразу з
+  `[data-author-id]`-плейсхолдерами, батч-запит патчить їх пізніше, тож
+  колонка автора ніколи не блокує сам список.
+- Головні файли: `app/authorship/{model,registry,backfill}.py` — ядро;
+  `app/api/authorship.py` + `app/db/repositories/authorship.py` —
+  ендпоінт; `app/audit/middleware.py::mark_created_resource` — журнал
+  тепер знає id щойно створеного ресурсу; `frontend/js/authorship.js` —
+  спільний фронтовий модуль.
+- **Відхилення від плану**: "Retried by" на рядку клієнта в батчі (коли
+  автор дочірнього run відрізняється від автора батча) не зроблено —
+  вимагало асинхронного пре-фетчу перед побудовою розмітки рядка заради
+  рідкісного кейсу, видно через власну сторінку run.
+
+### Контрактні зміни (Contract changes)
+
+- Нові поля в БД (не в API DTO): `report_runs`/`report_batches`/
+  `content_qa_packages` отримали `created_by_user_id`/`created_by_kind`
+  (міграція `4644b24285b9`). **Не додані** в жоден наявний DTO — свідомо,
+  щоб не ламати рольову інваріантність.
+- Нові ендпоінти: `GET /api/v1/authorship`, `GET /api/v1/authorship/facets`
+  — admin-only (додано в `DEFAULT_ADMIN_ONLY_PATHS`).
+- Нові query-параметри (admin-only, `403` для інших ролей):
+  `created_by_user_id`/`created_by_kind` на `GET /reports/runs`,
+  `GET /reports/batches`, `GET /tools/strategy-package/reports`.
+- `AuditMiddleware`: подія створення тепер несе `resource_id` щойно
+  створеного рядка (`app/audit/mark_created_resource`), а не `NULL`;
+  path-ресурс rebuild/retry переїхав у `details.parent_resource`.
+- OpenAPI-снапшот оновлено (нові маршрути + query-параметри).
+
+### Як перевірити (verification)
+
+```bash
+docker compose exec api poetry run pytest tests/unit/authorship tests/unit/db/test_authorship_repository.py tests/unit/api/test_authorship_api.py -q
+docker compose exec api poetry run ruff check . && docker compose exec api poetry run mypy app
+docker compose exec api poetry run yovth-report authorship-backfill   # dry-run, має показати 0 кандидатів після --apply
+```
+
+Живо: `#/reports` і `#/tools/strategy-package` як адмін (localhost-байпас) —
+колонки «Started by»/«Checked by», клік на ім'я веде в `#/admin/audit`,
+фільтрований по людині; той самий цикл через `qa-*`-акаунт роллю member
+(логін через публічний домен, бо localhost-байпас перекриває cookie в
+`AuthMiddleware`) — жодного сліду.
+
+### Тести
+
+- `tests/unit/authorship/test_model.py` (9) — `Attribution.from_actor` на
+  всі джерела: cookie, особистий токен, dev-токен, байпас, cli/system.
+- `tests/unit/authorship/test_resource_registry.py` (3) — реєстр типів
+  ресурсів.
+- `tests/unit/authorship/test_backfill.py` (12) — точний ключ, вікно,
+  один/два актори, race guard на `apply_backfill`.
+- `tests/unit/authorship/test_no_client_facing_leak.py` (1) — статичний
+  guard: жоден генератор клієнтських PDF/XLSX не читає `created_by_*`.
+- `tests/unit/db/test_authorship_repository.py` (9) — батч-лукап, facets,
+  join на `users`, ліміти.
+- `tests/unit/api/test_authorship_api.py` (11) — контракт ендпоінта,
+  403 для member, `Cache-Control`/`Vary`.
+- Доповнення `tests/unit/api/test_reports_api.py` (4) і
+  `test_tools_strategy_package.py` (2) — запис автора через реальний
+  HTTP-запит, рольова інваріантність списків, 403 на фільтр.
+- `tests/e2e/frontend/reports-authorship.cjs` — живий Playwright,
+  два проходи (admin через локальний байпас, member через реальний
+  cookie-логін на публічному домені, за конвенцією `account-tokens.cjs`).
+
+Живі перевірки цієї сесії, не автоматизовані в тестах: бекфіл застосовано
+на проді (70/87 рядків); мінімум 3 різні шляхи атрибуції (`agent`/`local`/
+`cli`) підтверджено на бойовій БД; 3 особисті токени (admin/member/viewer)
+перевірені напряму на origin; `cf-cache-status: DYNAMIC` через тунель.
+
+### Follow-ups / борг
+
+Див. §9 плану вище — Хвиля 2 (інші тули), "Retried by" на рядку клієнта,
+`.table-scroll`-overflow (чужа зона), безіменний localhost-байпас.
