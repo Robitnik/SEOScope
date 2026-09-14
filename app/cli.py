@@ -489,6 +489,20 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    # ── Авторство заднім числом (task-93) ───────────────────────────────
+    authorship_backfill_cmd = subparsers.add_parser(
+        "authorship-backfill",
+        help=(
+            "Resolve who created report_runs/report_batches/content_qa_packages "
+            "written before task-93, from audit_events (exact key + time window, "
+            "plan §2 D7) — dry-run by default"
+        ),
+    )
+    authorship_backfill_cmd.add_argument(
+        "--apply", action="store_true",
+        help="Actually write resolved authors (default: report only, write nothing)",
+    )
+
     subparsers.add_parser(  # noqa: F841 - no extra arguments
         "db-maintenance",
         help=(
@@ -528,6 +542,32 @@ def main(argv: list[str] | None = None) -> int:
         "ensure-admin",
     }:
         return _run_user_command(args)
+
+    if args.command == "authorship-backfill":
+        # Imported here, not at module scope — same convention as every
+        # other rarely-used subcommand in this file.
+        from app.authorship.backfill import apply_backfill, run_backfill_scan
+
+        session_factory = get_sync_sessionmaker()
+        with session_factory() as session:
+            reports = run_backfill_scan(session)
+            for table_report in reports:
+                print(
+                    f"{table_report.table}: {table_report.total} unattributed row(s) — "
+                    f"{table_report.matched} matched, {table_report.ambiguous} ambiguous, "
+                    f"{table_report.no_evidence} no evidence"
+                )
+            total_matched = sum(r.matched for r in reports)
+            if total_matched == 0:
+                print("nothing to write")
+                return 0
+            if not args.apply:
+                print(f"dry-run: would write {total_matched} row(s). Pass --apply to write them.")
+                return 0
+            written = apply_backfill(session, reports)
+            session.commit()
+            print(f"wrote {written} row(s)")
+        return 0
 
     if args.command == "backfill-health-history":
         # Imported here, not at module scope: this pulls in the API layer,
