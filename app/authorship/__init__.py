@@ -3,5 +3,6 @@
 from __future__ import annotations
 
 from app.authorship.model import Attribution
+from app.authorship.registry import RESOURCE_MODELS, resolve_model
 
-__all__ = ["Attribution"]
+__all__ = ["RESOURCE_MODELS", "Attribution", "resolve_model"]

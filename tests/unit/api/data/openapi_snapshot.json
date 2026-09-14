@@ -2956,6 +2956,142 @@
         "title": "AuditPageDTO",
         "type": "object"
       },
+      "AuthorDTO": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthorUserDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "AuthorDTO",
+        "type": "object"
+      },
+      "AuthorUserDTO": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "is_active"
+        ],
+        "title": "AuthorUserDTO",
+        "type": "object"
+      },
+      "AuthorshipFacetDTO": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthorUserDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "count"
+        ],
+        "title": "AuthorshipFacetDTO",
+        "type": "object"
+      },
+      "AuthorshipFacetsDTO": {
+        "properties": {
+          "authors": {
+            "items": {
+              "$ref": "#/components/schemas/AuthorshipFacetDTO"
+            },
+            "title": "Authors",
+            "type": "array"
+          }
+        },
+        "title": "AuthorshipFacetsDTO",
+        "type": "object"
+      },
+      "AuthorshipItemDTO": {
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/AuthorDTO"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "author"
+        ],
+        "title": "AuthorshipItemDTO",
+        "type": "object"
+      },
+      "AuthorshipLookupDTO": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuthorshipItemDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_type",
+          "items"
+        ],
+        "title": "AuthorshipLookupDTO",
+        "type": "object"
+      },
       "BackupTierCountsDTO": {
         "properties": {
           "daily": {
@@ -19265,6 +19401,103 @@
         "summary": "Current Session",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/authorship": {
+      "get": {
+        "operationId": "lookup_authorship_api_v1_authorship_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_type",
+            "required": true,
+            "schema": {
+              "title": "Resource Type",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated resource ids, at most 200",
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "description": "Comma-separated resource ids, at most 200",
+              "title": "Ids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorshipLookupDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Lookup Authorship",
+        "tags": [
+          "authorship"
+        ]
+      }
+    },
+    "/api/v1/authorship/facets": {
+      "get": {
+        "operationId": "authorship_facets_api_v1_authorship_facets_get",
+        "parameters": [
+          {
+            "description": "Comma-separated resource types, e.g. report_run,report_batch",
+            "in": "query",
+            "name": "resource_type",
+            "required": true,
+            "schema": {
+              "description": "Comma-separated resource types, e.g. report_run,report_batch",
+              "title": "Resource Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorshipFacetsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Authorship Facets",
+        "tags": [
+          "authorship"
         ]
       }
     },
