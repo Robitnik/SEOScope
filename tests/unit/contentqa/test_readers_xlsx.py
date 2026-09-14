@@ -91,6 +91,26 @@ def test_item_carries_its_source_sheet_name() -> None:
     assert doc.items[0].sheet == "Q3 Strategy"
 
 
+def test_dash_placeholder_url_is_treated_as_absent_not_a_real_url() -> None:
+    # Живий баг (3XE_SEO_STRATEGY_08032026): оператор заповнює порожню
+    # клітинку URL буквальним "-" замість пустої. Якщо тримати це як
+    # справжнє значення, усі рядки з "-" схлопуються в ОДИН ключ
+    # зіставлення в `crosscheck.py:_item_key()` — кожен фреймворк тоді
+    # "зіставляється" з останнім таким рядком стратегії замість свого.
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Q3 Strategy"
+    ws.append(["Page Name", "URL", "Title", "Description"])
+    ws.append(["Page One", "-", "Title One", "Desc One"])
+    ws.append(["Page Two", "-", "Title Two", "Desc Two"])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    doc = read_strategy_xlsx(buf.getvalue(), source="test.xlsx")
+    assert [item.url for item in doc.items] == [None, None]
+    assert [item.page_name for item in doc.items] == ["Page One", "Page Two"]
+
+
 # ── task-87 §1.3: вибір аркуша ────────────────────────────────────────────────
 
 

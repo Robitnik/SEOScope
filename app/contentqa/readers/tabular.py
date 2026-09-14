@@ -27,6 +27,17 @@ from app.contentqa.model import ContentDoc, ContentItem, SheetInfo
 
 _HEADER_MIN_SCORE = 2
 
+# Той самий набір плейсхолдерів, що вже фільтрує `readers/gdoc.py`/
+# `readers/docx.py` (`_NO_VALUE`) — тут застосований до `url`/`page_name`,
+# бо саме ці два поля живлять `crosscheck.py:_item_key()`. Живий баг
+# (3XE_SEO_STRATEGY_08032026): порожні клітинки URL заповнені буквальним
+# `-`, а не залишені пустими. `_item_key()` бере цей `-` за справжній URL,
+# тож усі 16 рядків стратегії схлопуються в ОДИН ключ зіставлення — і
+# кожен фреймворк у матриці «зіставляється» з останнім рядком стратегії
+# замість свого (task-91 build_matrix §2.1: `strategy_by_key` — звичайний
+# dict-comprehension, останній запис перемагає колізію мовчки).
+_NO_VALUE = {"no", "none", "n/a", "-"}
+
 # {нормалізований заголовок: тег поля}
 _ALIASES: dict[str, str] = {
     "title": "title", "meta title": "title", "title tag": "title", "meta page title": "title",
@@ -122,6 +133,12 @@ def _row_to_item(
             # Longtail зліва направо, тож просте append тримає primary першим.
             if text:
                 keywords.append(text)
+        elif tag in {"url", "page_name"} and text.lower() in _NO_VALUE:
+            # Плейсхолдер ("-"/"n/a"/...) замість реального URL/назви
+            # сторінки — не кладемо його як значення, інакше він виглядає
+            # як справжні непусті дані для `crosscheck.py:_item_key()`
+            # (див. `_NO_VALUE` вище).
+            continue
         else:
             values[tag] = text
 
