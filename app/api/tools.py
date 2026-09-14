@@ -119,6 +119,17 @@ _TOOLS: tuple[_ToolEntry, ...] = (
         route="#/tools/schema-markup",
         icon="braces",
     ),
+    _ToolEntry(
+        key="prompt-launcher",
+        name="Prompt Launcher",
+        summary=(
+            "Pick a weekly prompt template and copy it pre-filled for any client — "
+            "no more typing the client code and domain into the same header by hand."
+        ),
+        tags=("prompts", "techaudit", "automation", "clients", "copy"),
+        route="#/tools/prompt-launcher",
+        icon="rocket",
+    ),
 )
 
 
@@ -156,9 +167,11 @@ def _strategy_package_stat(session: Session) -> tuple[str | None, str | None]:
 
 
 # Статистику дає сам інструмент: хаб не знає, що для нього «одиниця роботи».
-# `char-counter` тут навмисно немає: він нічого не зберігає в БД, тож
-# stat_label/stat_value лишаються `None` (картка чесно показує «Not used
-# yet»), а не `0 uses` заради заповнення (PLAN §12).
+# `char-counter` і `prompt-launcher` тут навмисно немає: жоден нічого не
+# зберігає в БД (лаунчер лише копіює готовий рядок, «скопійовано» — це
+# localStorage браузера, не серверний факт), тож stat_label/stat_value
+# лишаються `None` (картка чесно показує «Not used yet»), а не `0 uses`
+# заради заповнення (PLAN §12).
 _STATS: dict[str, Callable[[Session], tuple[str | None, str | None]]] = {
     "alt-text": _alt_text_stat,
     "redirects": _redirects_stat,

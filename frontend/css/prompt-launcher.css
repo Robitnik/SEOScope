@@ -1,0 +1,88 @@
+/* Prompt Launcher (task-94).
+ *
+ * Only existing tokens from tokens.css — same discipline as schema-markup.css.
+ * Reuses `.tool-header`/`.tool-panel`/`.section-heading`/`.form-field`/
+ * `.state-panel`/`.button`/`.link-button`/`.back-link`/`.tools-empty` from
+ * app.css/tools.css; the table wrapper follows `.account-table-wrap`'s
+ * `overflow-x: auto` + `contain: paint` pattern (account.css) so a wide
+ * table never scrolls the whole page.
+ */
+
+.pl-template-field { margin: 0; flex: 0 0 auto; min-width: 200px; }
+.pl-template-field select {
+  display: block; width: 100%; margin-top: 6px; font: inherit; padding: 9px 34px 9px 10px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--canvas-raised); color: var(--ink);
+}
+.pl-template-field select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.pl-summary { margin: 0 0 14px; color: var(--ink-muted); max-width: 68ch; }
+
+.pl-source { margin-top: 4px; }
+.pl-source summary {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 13px; font-weight: 700; color: var(--ink-muted); list-style: none;
+}
+.pl-source summary::-webkit-details-marker { display: none; }
+.pl-source summary .icon { width: 14px; height: 14px; }
+.pl-source[open] summary { color: var(--ink); margin-bottom: 10px; }
+.pl-source-body { max-width: 100%; }
+.pl-source-pre {
+  margin: 0; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius-md); font-size: 12px; line-height: 1.6; white-space: pre-wrap;
+  overflow-wrap: anywhere; max-height: 360px; overflow-y: auto; color: var(--ink);
+}
+.pl-source-truncated {
+  display: flex; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 12px; color: var(--ink-dim);
+}
+
+.pl-clients-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.pl-copy-count { margin: 0; font-size: 13px; color: var(--ink-muted); white-space: nowrap; }
+
+/* Table — same horizontal-scroll containment as account.css/admin.css. */
+.pl-table-wrap { overflow-x: auto; contain: paint; }
+.pl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pl-table th {
+  text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line);
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-dim);
+  white-space: nowrap;
+}
+/* A field column's header IS the literal placeholder token from the prompt
+ * (`{{CLIENT}}`) — kept lowercase/monospace so it never reads as a second
+ * "Client" column duplicating the leading name column next to it. */
+.pl-table th code {
+  text-transform: none; letter-spacing: 0; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.pl-table td { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+.pl-table tr:last-child td { border-bottom: none; }
+.pl-row.is-copied .pl-copied-cell { color: var(--ink); font-weight: 700; }
+.pl-client-cell { display: table-cell; }
+.pl-client-name { font-weight: 700; }
+.pl-missing { color: var(--ink-dim); }
+.pl-copied-cell { color: var(--ink-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pl-action-cell { text-align: right; white-space: nowrap; }
+.pl-copy-btn { gap: 6px; }
+.pl-copy-btn .icon { width: 14px; height: 14px; }
+.pl-copy-btn:disabled { opacity: .5; cursor: not-allowed; }
+.pl-empty-row { padding: 18px 0; color: var(--ink-dim); }
+
+.pl-badge {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;
+  padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  letter-spacing: .02em; white-space: nowrap; vertical-align: middle;
+}
+.pl-badge .icon { width: 12px; height: 12px; }
+.pl-badge--paused { color: var(--ink-muted); background: var(--surface-strong); }
+.pl-badge--hidden { color: var(--ink-dim); background: var(--surface-strong); }
+
+.pl-secondary-toggle {
+  display: inline-flex; align-items: center; gap: 6px; margin: 14px 0 0; font-size: 13px;
+}
+.pl-secondary-toggle .icon { width: 14px; height: 14px; }
+#pl-secondary-wrap { margin-top: 10px; }
+
+@media (max-width: 640px) {
+  .pl-table th:nth-child(n+2):not(:last-child), .pl-table td:nth-child(n+2):not(:last-child) {
+    white-space: normal;
+  }
+}

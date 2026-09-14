@@ -10610,6 +10610,236 @@
         "title": "PreflightResult",
         "type": "object"
       },
+      "PromptClientRowDTO": {
+        "properties": {
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "collectable": {
+            "title": "Collectable",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "is_dev": {
+            "title": "Is Dev",
+            "type": "boolean"
+          },
+          "rendered": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rendered"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "slug",
+          "status",
+          "enabled",
+          "is_dev",
+          "collectable",
+          "values",
+          "rendered"
+        ],
+        "title": "PromptClientRowDTO",
+        "type": "object"
+      },
+      "PromptClientsDTO": {
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/PromptClientRowDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "template_key": {
+            "title": "Template Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_key",
+          "generated_at",
+          "rows"
+        ],
+        "title": "PromptClientsDTO",
+        "type": "object"
+      },
+      "PromptFieldDTO": {
+        "description": "\u041e\u0434\u043d\u0435 \u0412\u0425\u0406\u0414\u041d\u0415 \u043f\u043e\u043b\u0435 \u0448\u0430\u0431\u043b\u043e\u043d\u0443 (\u043d\u0430\u043f\u0440\u0438\u043a\u043b\u0430\u0434 CLIENT \u0430\u0431\u043e URL).\n\n\u0421\u0432\u0456\u0434\u043e\u043c\u043e \u043d\u0435 \u0432\u0441\u0456 `{{\u2026}}` \u0444\u0430\u0439\u043b\u0443 \u043f\u0440\u043e\u043c\u0442\u0430 \u2014 \u0431\u0456\u043b\u044c\u0448\u0456\u0441\u0442\u044c \u043f\u043b\u0435\u0439\u0441\u0445\u043e\u043b\u0434\u0435\u0440\u0456\u0432 \u0443\n\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0445 AISeoTools \u0446\u0435 \u0448\u0430\u0431\u043b\u043e\u043d \u0424\u0406\u041d\u0410\u041b\u042c\u041d\u041e\u0413\u041e \u0437\u0432\u0456\u0442\u0443 \u0430\u0433\u0435\u043d\u0442\u0430 (`{{XLSX_PATH}}`,\n`{{DDMMYYYY}}`\u2026), \u0430 \u043d\u0435 \u0444\u043e\u0440\u043c\u0430, \u044f\u043a\u0443 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440 \u0437\u0430\u043f\u043e\u0432\u043d\u044e\u0454 \u043f\u0435\u0440\u0435\u0434 \u0437\u0430\u043f\u0443\u0441\u043a\u043e\u043c.\n\u0421\u043f\u0438\u0441\u043e\u043a \u043f\u043e\u043b\u0456\u0432 \u043e\u0433\u043e\u043b\u043e\u0448\u0443\u0454\u0442\u044c\u0441\u044f \u044f\u0432\u043d\u043e \u0432 \u0440\u0435\u0454\u0441\u0442\u0440\u0456 (`app/prompts/registry.py`),\n\u0444\u0430\u0439\u043b \u043f\u0440\u043e\u043c\u0442\u0430 \u043d\u0430 \u0446\u0435 \u043d\u0456\u043a\u043e\u043b\u0438 \u043d\u0435 \u043f\u0430\u0440\u0441\u0438\u0442\u044c\u0441\u044f.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "PromptFieldDTO",
+        "type": "object"
+      },
+      "PromptSourceDTO": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "truncated"
+        ],
+        "title": "PromptSourceDTO",
+        "type": "object"
+      },
+      "PromptTemplateDTO": {
+        "properties": {
+          "doc_available": {
+            "title": "Doc Available",
+            "type": "boolean"
+          },
+          "doc_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Bytes"
+          },
+          "doc_host_path": {
+            "title": "Doc Host Path",
+            "type": "string"
+          },
+          "doc_relpath": {
+            "title": "Doc Relpath",
+            "type": "string"
+          },
+          "doc_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Updated At"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/PromptFieldDTO"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "summary",
+          "doc_relpath",
+          "doc_host_path",
+          "doc_available",
+          "fields"
+        ],
+        "title": "PromptTemplateDTO",
+        "type": "object"
+      },
+      "PromptTemplatesDTO": {
+        "properties": {
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/PromptTemplateDTO"
+            },
+            "title": "Templates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "templates"
+        ],
+        "title": "PromptTemplatesDTO",
+        "type": "object"
+      },
       "Provider": {
         "enum": [
           "ahrefs",
@@ -28004,6 +28234,131 @@
         "summary": "Get Framework Report",
         "tags": [
           "content-qa"
+        ]
+      }
+    },
+    "/api/v1/tools/prompts": {
+      "get": {
+        "operationId": "list_templates_api_v1_tools_prompts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptTemplatesDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Templates",
+        "tags": [
+          "prompts"
+        ]
+      }
+    },
+    "/api/v1/tools/prompts/{key}/clients": {
+      "get": {
+        "operationId": "list_clients_api_v1_tools_prompts__key__clients_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptClientsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Clients",
+        "tags": [
+          "prompts"
+        ]
+      }
+    },
+    "/api/v1/tools/prompts/{key}/source": {
+      "get": {
+        "operationId": "get_source_api_v1_tools_prompts__key__source_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptSourceDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Source",
+        "tags": [
+          "prompts"
         ]
       }
     },

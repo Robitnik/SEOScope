@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     # Read-only checkout mounted by compose. Provider code, clients.json and
     # historical artifacts remain owned by AISeoTools.
     aiseotools_source_path: Path = Path("/seo/AISeoTools")
+    # Same checkout, but the path as it exists on the OPERATOR's host, not
+    # inside this container (task-94, Prompt Launcher). The agent that runs
+    # a copied prompt (Claude Code, e.g.) works on the host, not in here —
+    # a launcher built from `aiseotools_source_path` would point at a
+    # directory that only exists inside this container. Text only: the
+    # backend never opens a file at this path, it only interpolates the
+    # string into the copied prompt (reading still goes through
+    # `aiseotools_source_path`, see `app/api/tools_prompts.py`).
+    aiseotools_host_path: str = "/home/elon/dev/seo/AISeoTools"
 
     frontend_dir: Path = Path("./frontend")
 

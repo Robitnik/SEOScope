@@ -20,6 +20,7 @@ const TOOL_MODULES = {
   "framework-check": () => import("./framework-check-tool.js?v=20260908-t87"),
   "strategy-package": () => import("./strategy-package-tool.js?v=20260911-t92"),
   "schema-markup": () => import("./schema-markup-tool.js?v=20260821-spin3"),
+  "prompt-launcher": () => import("./prompt-launcher-tool.js?v=20260914-t94"),
 };
 
 export async function initToolsRoute(route) {

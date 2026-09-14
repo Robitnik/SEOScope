@@ -3310,3 +3310,29 @@ export function auditExportUrl(filters = {}) {
   });
   return `${API_ROOT}/admin/audit/export.csv?${params.toString()}`;
 }
+
+// ── Prompt Launcher (task-94) ────────────────────────────────────────────
+// Read-only тул: бек уже рендерить готовий рядок для буфера, фронт нічого
+// не склеює сам. `request-key` — явна назва призначення, не похідна від
+// параметрів (task-36 gotcha: інакше другий шаблон/клієнт скасовував би
+// в польоті запит першого).
+
+export async function getPromptTemplates() {
+  return request("/tools/prompts", {}, "prompt-templates");
+}
+
+export async function getPromptClients(templateKey) {
+  return request(
+    `/tools/prompts/${encodeURIComponent(templateKey)}/clients`,
+    {},
+    "prompt-clients",
+  );
+}
+
+export async function getPromptSource(templateKey) {
+  return request(
+    `/tools/prompts/${encodeURIComponent(templateKey)}/source`,
+    {},
+    "prompt-source",
+  );
+}
