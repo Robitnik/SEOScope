@@ -20,6 +20,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.authorship.model import Attribution
 from app.core.auth.policy import role_satisfies
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
@@ -29,11 +30,13 @@ __all__ = [
     "Actor",
     "ActorDep",
     "AdminActorDep",
+    "AttributionDep",
     "Pagination",
     "PaginationDep",
     "SessionDep",
     "SettingsDep",
     "current_actor",
+    "current_attribution",
     "get_session",
     "pagination",
     "require_role",
@@ -156,3 +159,13 @@ def require_role(minimum: UserRole) -> Callable[[Actor], Actor]:
 
 
 AdminActorDep = Annotated[Actor, Depends(require_role(UserRole.admin))]
+
+
+def current_attribution(actor: ActorDep) -> Attribution:
+    """Хто створює НОВИЙ рядок (task-93) — тонка обгортка над `current_actor`,
+    окрема залежність, бо не кожен маршрут, що читає `Actor`, створює щось
+    атрибутовне (більшість лише перевіряють роль)."""
+    return Attribution.from_actor(actor)
+
+
+AttributionDep = Annotated[Attribution, Depends(current_attribution)]

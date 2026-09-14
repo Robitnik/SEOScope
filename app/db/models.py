@@ -685,6 +685,11 @@ class ContentQaPackage(Base):
     __tablename__ = "content_qa_packages"
     __table_args__ = (
         Index("ix_content_qa_packages_created_at", "created_at"),
+        Index(
+            "ix_content_qa_packages_created_by_user_id_created_at",
+            "created_by_user_id",
+            "created_at",
+        ),
     )
 
     id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
@@ -722,6 +727,12 @@ class ContentQaPackage(Base):
     # вгадує заднім числом (CLAUDE.md).
     matrix_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # Хто прогнав пакет (task-93) — той самий словник/`SET NULL`-міркування,
+    # що в `ReportRun`/`ReportBatch`.
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    created_by_kind: Mapped[str | None] = mapped_column(String(16), default=None)
 
 
 class RedirectCheck(Base):
@@ -1260,6 +1271,17 @@ class ReportBatch(Base):
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # Хто запустив батч (task-93). `SET NULL`, не `CASCADE`: деактивація чи
+    # видалення акаунта людини не має стирати факт "хтось це запустив" —
+    # `created_by_kind` лишається (він не FK), лише `created_by_user_id`
+    # обнуляється. `NULL` в обох = невідомо (рядок до task-93 або
+    # неоднозначний бекфіл) — НІКОЛИ не підміняється на `"system"`.
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    # `user | agent | local | cli | system | NULL` — той самий словник, що й
+    # `AuditEvent.actor_kind` (task-72).
+    created_by_kind: Mapped[str | None] = mapped_column(String(16), default=None)
 
 
 class ReportRun(Base):
@@ -1272,6 +1294,7 @@ class ReportRun(Base):
     __table_args__ = (
         Index("ix_report_runs_client_created", "client_id", "created_at"),
         Index("ix_report_runs_status", "status"),
+        Index("ix_report_runs_created_by_user_id_created_at", "created_by_user_id", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
@@ -1315,6 +1338,14 @@ class ReportRun(Base):
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    # Хто створив цей КОНКРЕТНИЙ run (task-93) — при rebuild/retry це той,
+    # хто натиснув кнопку, не автор джерела; при батчі — той, хто запустив
+    # батч. Той самий словник і те саме `SET NULL`-міркування, що в
+    # `ReportBatch` вище.
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    created_by_kind: Mapped[str | None] = mapped_column(String(16), default=None)
 
 
 class ReportRunEvent(Base):
