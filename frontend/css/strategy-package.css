@@ -132,13 +132,16 @@
    for a vertical scan (live feedback: "розмір клітинок зроби однаковий"). */
 .sp-matrix-table { table-layout: fixed; width: 100%; }
 .sp-matrix-table th, .sp-matrix-table td { overflow-wrap: anywhere; vertical-align: top; }
-.sp-matrix-table th:nth-child(1), .sp-matrix-table td:nth-child(1) { width: 13%; }
-.sp-matrix-table th:nth-child(2), .sp-matrix-table td:nth-child(2) { width: 16%; }
-.sp-matrix-table th:nth-child(3), .sp-matrix-table td:nth-child(3) { width: 22%; }
-.sp-matrix-table th:nth-child(4), .sp-matrix-table td:nth-child(4) { width: 14%; }
-.sp-matrix-table th:nth-child(5), .sp-matrix-table td:nth-child(5) { width: 17%; }
-.sp-matrix-table th:nth-child(6), .sp-matrix-table td:nth-child(6) { width: 18%; }
-.sp-matrix-cell--absent, .sp-matrix-cell--empty { color: var(--ink-dim); font-style: italic; }
+.sp-matrix-table th:nth-child(1), .sp-matrix-table td:nth-child(1) { width: 12%; }
+.sp-matrix-table th:nth-child(2), .sp-matrix-table td:nth-child(2) { width: 15%; }
+.sp-matrix-table th:nth-child(3), .sp-matrix-table td:nth-child(3) { width: 20%; }
+.sp-matrix-table th:nth-child(4), .sp-matrix-table td:nth-child(4) { width: 12%; }
+.sp-matrix-table th:nth-child(5), .sp-matrix-table td:nth-child(5) { width: 16%; }
+/* task-95: "In copy"/"Site" — the link-chain columns — replaced the old
+   6th "Outgoing links" column (`Link 1…6` in Excel). */
+.sp-matrix-table th:nth-child(6), .sp-matrix-table td:nth-child(6) { width: 12%; }
+.sp-matrix-table th:nth-child(7), .sp-matrix-table td:nth-child(7) { width: 13%; }
+.sp-matrix-cell--absent, .sp-matrix-cell--empty, .sp-matrix-cell--na { color: var(--ink-dim); font-style: italic; }
 .sp-matrix-cell--more { color: var(--ink-dim); }
 /* Character count under Title/Description — SERP truncation is a length
    problem independent of whether the field matches across sources, so it
@@ -163,6 +166,32 @@
 }
 .sp-matrix-table th.sp-matrix-th--mismatch { color: var(--danger); }
 .sp-matrix-table th.sp-matrix-th--match { color: var(--success); }
+
+/* task-95 §2.5/§2.7: per-page link detail — the two Comparison columns
+   only carry a summary verdict ("2/3 in copy"); this is where the
+   operator sees WHICH link matched/missed. Open by default only when
+   there's a mismatch to explain (`renderLinkDetails`), collapsed
+   otherwise — nothing to dig into when everything already matches. */
+.sp-links-details { margin-top: 8px; }
+.sp-links-details > summary {
+  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--ink-muted);
+  display: flex; align-items: center; gap: 6px; padding: 4px 0;
+}
+.sp-links-details > summary::-webkit-details-marker { display: none; }
+.sp-links-details > summary::before { content: "▸ "; }
+.sp-links-details[open] > summary::before { content: "▾ "; }
+.sp-links-table th:nth-child(1), .sp-links-table td:nth-child(1) { width: 46%; }
+.sp-links-table th:nth-child(2), .sp-links-table td:nth-child(2),
+.sp-links-table th:nth-child(3), .sp-links-table td:nth-child(3) { width: 15%; }
+.sp-links-table th:nth-child(4), .sp-links-table td:nth-child(4) { width: 24%; }
+.sp-links-presence { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.sp-links-presence--yes { color: var(--success); }
+.sp-links-presence--no { color: var(--danger); font-weight: 600; }
+.sp-links-presence--na { color: var(--ink-dim); }
+.sp-links-skipped {
+  margin: 8px 0 0; padding-left: 18px; font-size: 11px; color: var(--ink-dim); font-style: italic;
+}
+.sp-links-skipped li { margin-bottom: 2px; }
 
 /* --- overview tab --- */
 .sp-fw-overview { display: grid; gap: 8px; }

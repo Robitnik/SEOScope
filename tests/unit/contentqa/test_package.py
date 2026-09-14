@@ -439,3 +439,141 @@ def test_copy_diffs_wrong_language_with_no_matching_page_is_not_applicable(
     )
     assert outcome.copy_diffs[0].state == "not_applicable"
     assert outcome.copy_diffs[0].reason == "No published page in this language."
+
+
+# ── task-95 §2.3: link_audit — Framework -> Copy -> Site, wired into run_framework ──
+
+
+def _linked_run(content: str, url: str | None = None) -> dict[str, object]:
+    text_run: dict[str, object] = {"content": content}
+    if url:
+        text_run["textStyle"] = {"link": {"url": url}}
+    return {"textRun": text_run}
+
+
+def _linked_para(*runs: dict[str, object]) -> dict[str, object]:
+    return {"paragraph": {"elements": list(runs)}}
+
+
+def test_link_audit_is_not_applicable_without_a_frame_tab() -> None:
+    """A Copy-only document (no Framework tab at all) still gets a
+    `link_audit` — `not_applicable`, since neither side claims any link —
+    never `None` for a `state="checked"` outcome."""
+    tabs = (_tab("Content", [_para("<h1>Real Title</h1>"), _para("Some short prose.")]),)
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(source, docs_client=docs_client, **_common_kwargs())
+    assert outcome.state == "checked"
+    assert outcome.frame_item is None
+    assert outcome.link_audit is not None
+    assert outcome.link_audit.state == "not_applicable"
+
+
+def test_link_audit_catches_framework_links_missing_from_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """task-95 §1.1 reproduced against `run_framework` directly: a
+    Framework-declared link that never made it into the copy tab must
+    read `mismatch`, regardless of whether the live site happens to carry
+    that link somewhere else (nav, footer — irrelevant to this step)."""
+    html = b"<html><body><h1>H</h1><p>No links in this prose at all.</p></body></html>"
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch_factory(html))
+    tabs = (
+        _tab("Framework", [_table(
+            (["URL"], ["https://example.com/a"]),
+            (["Internal Link + Anchor Text"], ["our menu (/menu/)"]),
+        )]),
+        _tab("Content", [_linked_para(_linked_run("Some unrelated prose."))]),
+    )
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=True, check_published=True,
+    )
+    assert outcome.link_audit is not None
+    assert outcome.link_audit.in_copy.state == "mismatch"
+    assert outcome.link_audit.in_copy.detail == "0/1 framework link(s) in copy"
+
+
+def test_link_audit_match_when_framework_link_is_in_copy_and_on_site(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    html = b'<html><body><h1>H</h1><p><a href="/menu/">Menu</a></p></body></html>'
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch_factory(html))
+    tabs = (
+        _tab("Framework", [_table(
+            (["URL"], ["https://example.com/a"]),
+            (["Internal Link + Anchor Text"], ["our menu (/menu/)"]),
+        )]),
+        _tab("Content", [_linked_para(_linked_run("our menu", "https://example.com/menu/"))]),
+    )
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=True, check_published=True,
+    )
+    assert outcome.link_audit is not None
+    assert outcome.link_audit.in_copy.state == "match"
+    assert outcome.link_audit.on_site.state == "match"
+
+
+def test_link_audit_picks_the_primary_language_tab_not_the_first_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """task-95 §2.3, reusing task-92 §2.5's coverage-based role: the
+    Swedish tab matches the live (Swedish) page, so its links — not the
+    English tab's — are what gets audited, even though English comes
+    first in the document."""
+    html = (
+        b'<html lang="sv-SE"><body><h1>Spirit Box</h1>'
+        b'<p><a href="/prs/">PRS</a> Svensk text om produkten.</p></body></html>'
+    )
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch_factory(html))
+    tabs = (
+        _tab("Framework", [_table((["URL"], ["https://laxton.se/p"]))]),
+        _tab("English Content", [
+            _linked_para(_linked_run("English link", "https://laxton.se/en-only/")),
+        ]),
+        _tab("Swedish Content", [
+            _linked_para(_linked_run("PRS", "https://laxton.se/prs/")),
+            _para("Svensk text om produkten."),
+        ]),
+    )
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=True, check_published=True,
+    )
+    assert outcome.link_audit is not None
+    targets = {row.target for row in outcome.link_audit.rows}
+    assert any("prs" in t for t in targets)
+    assert not any("en-only" in t for t in targets)
+
+
+def test_link_audit_runs_even_when_check_published_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The link chain (task-95) is independent of task-92's sentence-diff
+    lane — it must still compute when `check_published=False` disables
+    `copy_diffs`, falling back to the first copy tab."""
+    html = b'<html><body><h1>H</h1><p><a href="/menu/">Menu</a></p></body></html>'
+    monkeypatch.setattr(site_module, "fetch", _fake_fetch_factory(html))
+    tabs = (
+        _tab("Framework", [_table(
+            (["URL"], ["https://example.com/a"]),
+            (["Internal Link + Anchor Text"], ["our menu (/menu/)"]),
+        )]),
+        _tab("Content", [_linked_para(_linked_run("our menu", "https://example.com/menu/"))]),
+    )
+    source = FrameworkSource(document_id="d1", document_name="Doc", origin="drive_search")
+    docs_client = _FakeDocsClient({"d1": tabs})
+    outcome = run_framework(
+        source, docs_client=docs_client, strategy=_strategy(), profile=Profile(),
+        throttle=HostThrottle(), stats=FetchStats(), check_site=True, check_published=False,
+    )
+    assert outcome.copy_diffs == ()
+    assert outcome.link_audit is not None
+    assert outcome.link_audit.in_copy.state == "match"

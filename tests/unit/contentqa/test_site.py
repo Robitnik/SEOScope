@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.contentqa import site as site_module
-from app.contentqa.site import LivePage, fetch_page
+from app.contentqa.site import LivePage, SiteLink, fetch_page
 from app.monitor.fetcher import FetchResult, FetchStats
 from app.tools.http_safety import HostThrottle
 
@@ -134,7 +134,13 @@ def test_malformed_html_does_not_crash(monkeypatch: pytest.MonkeyPatch) -> None:
     assert page.ok is True  # parser failures are swallowed, not fatal
 
 
-# ── outgoing links (task-91 §1.3/§2.4) ────────────────────────────────────
+# ── outgoing links (task-95 §2.2 — CONTENT-only, жива поправка до task-91) ──
+#
+# task-95 §1.1: the pre-task-95 rule deliberately INCLUDED nav/header/
+# footer links (task-91 §3.3) — live-measured to be wrong: it made the
+# link-audit verdict say "all claimed links found" on 3/4 EFFYS pages even
+# though 0/3 prescribed Framework links were actually IN THE COPY, only in
+# the global nav. These tests assert the corrected, content-only rule.
 
 
 def test_links_split_internal_vs_external(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -148,13 +154,15 @@ def test_links_split_internal_vs_external(monkeypatch: pytest.MonkeyPatch) -> No
     """
     page = _run(monkeypatch, html)
     assert page.internal_links == (
-        "Our menu → /menu/", "Catering → /catering/", "Locations → /locations/",
+        SiteLink(url="https://example.com/menu/", text="Our menu"),
+        SiteLink(url="https://example.com/catering/", text="Catering"),
+        SiteLink(url="https://www.example.com/locations/", text="Locations"),
     )
-    assert page.external_links == ("Facebook → /example",)
+    assert page.external_links == (SiteLink(url="https://facebook.com/example", text="Facebook"),)
 
 
 def test_relative_links_are_absolutized_against_final_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    html = b'<html><body><a href="../about">About</a></body></html>'
+    html = b'<html><body><p><a href="../about">About</a></p></body></html>'
 
     # final_url differs from requested (redirect) — resolution must use final_url.
     def fetch(url, *, throttle, stats, timeout):
@@ -167,46 +175,48 @@ def test_relative_links_are_absolutized_against_final_url(monkeypatch: pytest.Mo
         )
     monkeypatch.setattr(site_module, "fetch", fetch)
     page = fetch_page(URL, throttle=HostThrottle(), stats=FetchStats())
-    assert page.internal_links == ("About → /blog/about",)
+    assert page.internal_links == (SiteLink(url="https://example.com/blog/about", text="About"),)
 
 
 def test_fragment_javascript_and_mailto_links_are_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
     html = b"""
     <html><body>
-      <a href="#section">Jump</a>
-      <a href="javascript:void(0)">Do nothing</a>
-      <a href="mailto:hi@example.com">Email us</a>
-      <a href="tel:+15551234567">Call us</a>
-      <a href="/real-page/">Real page</a>
+      <p><a href="#section">Jump</a></p>
+      <p><a href="javascript:void(0)">Do nothing</a></p>
+      <p><a href="mailto:hi@example.com">Email us</a></p>
+      <p><a href="tel:+15551234567">Call us</a></p>
+      <p><a href="/real-page/">Real page</a></p>
     </body></html>
     """
     page = _run(monkeypatch, html)
-    assert page.internal_links == ("Real page → /real-page/",)
+    assert page.internal_links == (
+        SiteLink(url="https://example.com/real-page/", text="Real page"),
+    )
     assert page.external_links == ()
 
 
 def test_duplicate_link_targets_are_deduplicated(monkeypatch: pytest.MonkeyPatch) -> None:
     html = b"""
     <html><body>
-      <a href="/menu/">Menu</a>
-      <a href="/menu/">See our menu</a>
-      <a href="/menu/#specials">Specials</a>
+      <p><a href="/menu/">Menu</a></p>
+      <p><a href="/menu/">See our menu</a></p>
+      <p><a href="/menu/#specials">Specials</a></p>
     </body></html>
     """
     page = _run(monkeypatch, html)
-    assert page.internal_links == ("Menu → /menu/",)
+    assert page.internal_links == (SiteLink(url="https://example.com/menu/", text="Menu"),)
 
 
-def test_nav_and_footer_links_are_included_unlike_headings(
+def test_nav_and_footer_links_are_excluded_now_unlike_task_91(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Deliberately the OPPOSITE rule from headings (task-91 §3.3, a real
-    bug found and fixed by live verification on SHB): a Framework claiming
-    "links to /locations/" was reported as "missing from the live site"
-    even though the link was genuinely present, only inside a `<nav>`
-    location-switcher widget. A clickable link is a real link regardless
-    of which tag wraps it — only headings represent "authored page
-    structure" and stay excluded."""
+    """task-95 §1.1/§1.3, correcting task-91 §3.3: the OLD rule kept
+    nav/footer links precisely so a Framework's "link to /locations/"
+    would not be falsely reported "missing from the site" — but that made
+    the NEW copy<->site link audit say "found" for links that were never
+    actually IN THE COPY, just in the global menu (live-measured: 3/4
+    EFFYS pages). A live page's own outgoing-link inventory now excludes
+    the navigational chrome; only content prose/CTA links are kept."""
     html = b"""
     <html><body>
       <nav><a href="/about/">About</a></nav>
@@ -216,14 +226,106 @@ def test_nav_and_footer_links_are_included_unlike_headings(
     """
     page = _run(monkeypatch, html)
     assert page.internal_links == (
-        "About → /about/", "Real link → /real-content-link/", "Privacy → /privacy/",
+        SiteLink(url="https://example.com/real-content-link/", text="Real link"),
     )
 
 
-def test_link_with_no_anchor_text_falls_back_to_the_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    html = b'<html><body><a href="/icon-only/"><svg></svg></a></body></html>'
+def test_breadcrumb_link_is_excluded_even_without_a_nav_tag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """task-95 §1.3: EFFYS wraps its breadcrumb in a bare `<p id=
+    "breadcrumbs">`, no `<nav>` at all — the word "breadcrumb" in `id`/
+    `class` is the only reliable signal there, live-measured."""
+    html = b"""
+    <html><body>
+      <p id="breadcrumbs"><a href="/">Home</a></p>
+      <p><a href="/real-content-link/">Real link</a></p>
+    </body></html>
+    """
     page = _run(monkeypatch, html)
-    assert page.internal_links == ("https://example.com/icon-only/",)
+    assert page.internal_links == (
+        SiteLink(url="https://example.com/real-content-link/", text="Real link"),
+    )
+
+
+def test_elementor_widget_class_does_not_make_a_link_chrome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """task-95 §1.3, live pitfall found and fixed while building the rule:
+    `elementor-widget`/`elementor-element` classes sit on EVERY element of
+    an Elementor page, including genuine prose — a naive "class contains
+    a chrome-ish word" heuristic swallowed 100% of content links on the
+    first draft. Only semantic tags/roles/"breadcrumb" may exclude."""
+    html = b"""
+    <html><body>
+      <div class="elementor-element elementor-widget">
+        <p><a href="/real-content-link/">Real link</a></p>
+      </div>
+    </body></html>
+    """
+    page = _run(monkeypatch, html)
+    assert page.internal_links == (
+        SiteLink(url="https://example.com/real-content-link/", text="Real link"),
+    )
+
+
+def test_cta_button_outside_prose_is_included(monkeypatch: pytest.MonkeyPatch) -> None:
+    """task-95 §1.7 пастка 2: EFFYS's "Order Now"/"Kosher Certified" CTAs
+    live directly in a `<div>`, not wrapped in `<p>` — a "prose ancestor
+    only" rule would have missed them entirely."""
+    html = b"""
+    <html><body>
+      <div class="elementor-element">
+        <a class="elementor-button" href="/order/">Order Now</a>
+      </div>
+    </body></html>
+    """
+    page = _run(monkeypatch, html)
+    assert page.internal_links == (SiteLink(url="https://example.com/order/", text="Order Now"),)
+
+
+def test_woocommerce_cart_and_sort_links_are_excluded_as_self_links(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """task-95 §1.7 пастка 3: admitting CTA buttons re-admits WooCommerce
+    "add to cart"/sort links, which are buttons too — they are the SAME
+    page as the one being fetched, differing only by query string, and
+    get filtered as self-links (query-stripped key match)."""
+    html = b"""
+    <html><body>
+      <p><a class="button" href="/some-page/?add-to-cart=817533">Add to cart</a></p>
+      <p><a class="button" href="/some-page/?orderby=price">Sort by price</a></p>
+      <p><a class="button" href="/other-page/">Related product</a></p>
+    </body></html>
+    """
+    page = _run(monkeypatch, html)
+    assert page.internal_links == (
+        SiteLink(url="https://example.com/other-page/", text="Related product"),
+    )
+
+
+def test_gallery_image_link_is_excluded_but_pdf_stays(monkeypatch: pytest.MonkeyPatch) -> None:
+    """task-95 §1.2/§1.7: lightbox `.jpg` links are UI chrome (34 on one
+    live LAXTON page); a PDF certificate link stays IN — that is exactly
+    how a stale-certificate content drift gets caught (EFFYS, §1.7)."""
+    html = b"""
+    <html><body>
+      <p><a href="/gallery/photo.jpg">Photo</a></p>
+      <p><a href="/cert-2027.pdf">Certificate</a></p>
+    </body></html>
+    """
+    page = _run(monkeypatch, html)
+    assert page.internal_links == (
+        SiteLink(url="https://example.com/cert-2027.pdf", text="Certificate"),
+    )
+
+
+def test_link_with_no_anchor_text_falls_back_to_empty_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    html = b'<html><body><p><a href="/icon-only/"><svg></svg></a></p></body></html>'
+    page = _run(monkeypatch, html)
+    assert page.internal_links == (SiteLink(url="https://example.com/icon-only/", text=""),)
 
 
 def test_blocked_fetch_gives_empty_links(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -785,8 +785,8 @@ function renderTabPanel(container, pkg) {
  * is not a fourth table — it rides as inline badges on the group header,
  * so the count stays exactly 3 tables per page as confirmed live. */
 
-const MATRIX_FIELDS = ["url", "title", "description", "h1", "keywords", "links"];
-const MATRIX_FIELD_LABELS = { url: "URL", title: "Title", description: "Description", h1: "H1", keywords: "Keywords", links: "Outgoing links" };
+const MATRIX_FIELDS = ["url", "title", "description", "h1", "keywords"];
+const MATRIX_FIELD_LABELS = { url: "URL", title: "Title", description: "Description", h1: "H1", keywords: "Keywords" };
 const MATRIX_BLOCKS = [
   { side: "strategy", title: "Strategy", icon: "file-spreadsheet" },
   { side: "framework", title: "Framework", icon: "file-text" },
@@ -797,9 +797,19 @@ const MATRIX_VERDICT_META = {
   mismatch: { icon: "alert-triangle", cls: "sp-matrix-verdict--mismatch", label: "mismatch" },
   not_comparable: { icon: "circle-dashed", cls: "sp-matrix-verdict--na", label: "n/a" },
 };
+// task-95: the outgoing-links chain (Framework -> Copy -> Site) replaced
+// the old sixth "links" field on `verdicts` — it lives on `row.links`
+// (a `LinkAuditDTO | null`, not a per-source field), two steps:
+// `in_copy` (Framework -> Copy) and `on_site` (Copy -> Site).
+const LINK_STEP_FIELDS = [["in_copy", "In copy"], ["on_site", "On site"]];
+
+function linkStepVerdict(row, field) {
+  return row.links ? row.links[field] : { state: "not_comparable", detail: null };
+}
 
 function matrixRowHasMismatch(row) {
-  return MATRIX_FIELDS.some((f) => row.verdicts[f].state === "mismatch");
+  if (MATRIX_FIELDS.some((f) => row.verdicts[f].state === "mismatch")) return true;
+  return LINK_STEP_FIELDS.some(([field]) => linkStepVerdict(row, field).state === "mismatch");
 }
 
 function renderComparisonTab(panel, pkg) {
@@ -854,16 +864,19 @@ function renderMatrixCell(cell, field) {
   return items.length > 4 ? `${shown} <span class="sp-matrix-cell--more">(+${items.length - 4} more)</span>` : shown;
 }
 
-function renderMatrixVerdictBadges(verdicts) {
-  return MATRIX_FIELDS.map((f) => {
-    const v = verdicts[f];
-    const meta = MATRIX_VERDICT_META[v.state];
-    const title = v.detail ? `${MATRIX_FIELD_LABELS[f]}: ${v.detail}` : `${MATRIX_FIELD_LABELS[f]}: ${meta.label}`;
-    return `
-      <span class="sp-matrix-verdict-badge ${meta.cls}" title="${escapeHtml(title)}">
-        ${icon(meta.icon, "icon icon--tiny")}<span>${MATRIX_FIELD_LABELS[f]}</span>
-      </span>`;
-  }).join("");
+function renderMatrixVerdictBadge(label, verdict) {
+  const meta = MATRIX_VERDICT_META[verdict.state];
+  const title = verdict.detail ? `${label}: ${verdict.detail}` : `${label}: ${meta.label}`;
+  return `
+    <span class="sp-matrix-verdict-badge ${meta.cls}" title="${escapeHtml(title)}">
+      ${icon(meta.icon, "icon icon--tiny")}<span>${label}</span>
+    </span>`;
+}
+
+function renderMatrixVerdictBadges(row) {
+  const scalar = MATRIX_FIELDS.map((f) => renderMatrixVerdictBadge(MATRIX_FIELD_LABELS[f], row.verdicts[f]));
+  const links = LINK_STEP_FIELDS.map(([field, label]) => renderMatrixVerdictBadge(label, linkStepVerdict(row, field)));
+  return scalar.concat(links).join("");
 }
 
 function renderMatrixPageGroup(row) {
@@ -871,10 +884,55 @@ function renderMatrixPageGroup(row) {
     <div class="sp-matrix-page">
       <div class="sp-matrix-page__header">
         <h3 class="sp-matrix-page__title">${escapeHtml(row.label)}</h3>
-        <div class="sp-matrix-page__verdicts">${renderMatrixVerdictBadges(row.verdicts)}</div>
+        <div class="sp-matrix-page__verdicts">${renderMatrixVerdictBadges(row)}</div>
       </div>
       ${MATRIX_BLOCKS.map((b) => renderMatrixMiniTable(b, row)).join("")}
+      ${renderLinkDetails(row)}
     </div>`;
+}
+
+// task-95 §2.5/§2.7: the per-link detail (which target, "in copy"/"on
+// site" per row, skipped rows) — the Comparison mini-tables only show the
+// two summary verdicts; this is where the operator sees WHICH link
+// mismatched. Collapsed by default when everything matches (nothing to
+// dig into); open when there's a mismatch to explain.
+const LINK_PRESENCE_META = {
+  yes: { icon: "circle-check", cls: "sp-links-presence--yes", label: "yes" },
+  no: { icon: "circle-x", cls: "sp-links-presence--no", label: "no" },
+  not_checked: { icon: "circle-dashed", cls: "sp-links-presence--na", label: "not checked" },
+};
+
+function renderLinkPresence(presence) {
+  const meta = LINK_PRESENCE_META[presence] || LINK_PRESENCE_META.not_checked;
+  return `<span class="sp-links-presence ${meta.cls}">${icon(meta.icon, "icon icon--tiny")}${meta.label}</span>`;
+}
+
+function renderLinkDetails(row) {
+  const links = row.links;
+  if (!links || (!links.rows.length && !links.skipped.length)) return "";
+  const hasMismatch = links.in_copy.state === "mismatch" || links.on_site.state === "mismatch";
+  return `
+    <details class="sp-links-details" ${hasMismatch ? "open" : ""}>
+      <summary>${icon("link", "icon icon--tiny")}Links (Framework → Copy → Site) — ${links.rows.length} link${links.rows.length === 1 ? "" : "s"}${links.skipped.length ? `, ${links.skipped.length} skipped` : ""}</summary>
+      <div class="table-scroll sp-matrix-scroll">
+        <table class="tool-table sp-links-table">
+          <thead><tr><th scope="col">Link</th><th scope="col">In copy</th><th scope="col">On site</th><th scope="col">Note</th></tr></thead>
+          <tbody>
+            ${links.rows.map((r) => `
+              <tr>
+                <td>${escapeHtml(r.display)}</td>
+                <td>${renderLinkPresence(r.in_copy)}</td>
+                <td>${renderLinkPresence(r.on_site)}</td>
+                <td>${r.note ? escapeHtml(r.note) : ""}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      ${links.skipped.length ? `
+        <ul class="sp-links-skipped">
+          ${links.skipped.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}
+        </ul>` : ""}
+    </details>`;
 }
 
 // Live feedback: a mismatch must flag only the source that actually
@@ -895,12 +953,22 @@ function matrixCellTone(verdict, side) {
   return null;
 }
 
+// task-95 §2.5: the link chain has no "Strategy side"/"Site side" — only
+// Framework carries the real verdict (it's the side whose declared links
+// are being audited); Strategy/Site show a plain, untoned "—".
+function linkStepTone(verdict) {
+  if (verdict.state === "not_comparable") return null;
+  return verdict.state === "match" ? "match" : "mismatch";
+}
+
 function renderMatrixMiniTable(block, row) {
   const cells = row[block.side];
+  const isLinkSide = block.side === "framework";
   // Only a cell that actually HAS a value can be the agreeing/outlier side
   // of a comparison — an empty/absent cell contributed nothing to the
   // verdict, coloring it red or green would claim an opinion it never had.
   const toneFor = (f) => (cells && cells[f].state === "value" ? matrixCellTone(row.verdicts[f], block.side) : null);
+  const totalCols = MATRIX_FIELDS.length + LINK_STEP_FIELDS.length;
   return `
     <div class="sp-matrix-mini">
       <p class="sp-matrix-mini__title">${icon(block.icon, "icon icon--tiny")}${block.title}</p>
@@ -912,6 +980,10 @@ function renderMatrixMiniTable(block, row) {
               const tone = toneFor(f);
               return `<th scope="col" class="${tone ? `sp-matrix-th--${tone}` : ""}">${MATRIX_FIELD_LABELS[f]}</th>`;
             }).join("")}
+            ${LINK_STEP_FIELDS.map(([field, label]) => {
+              const tone = isLinkSide ? linkStepTone(linkStepVerdict(row, field)) : null;
+              return `<th scope="col" class="${tone ? `sp-matrix-th--${tone}` : ""}">${label}</th>`;
+            }).join("")}
           </tr></thead>
           <tbody>
             <tr>
@@ -920,7 +992,21 @@ function renderMatrixMiniTable(block, row) {
                     const tone = toneFor(f);
                     return `<td class="${tone ? `sp-matrix-cell--${tone}` : ""}">${renderMatrixCell(cells[f], f)}</td>`;
                   }).join("")
-                : `<td colspan="${MATRIX_FIELDS.length}" class="sp-matrix-cell sp-matrix-cell--absent">— not in this run</td>`}
+                : `<td colspan="${totalCols}" class="sp-matrix-cell sp-matrix-cell--absent">— not in this run</td>`}
+              ${cells ? LINK_STEP_FIELDS.map(([field]) => {
+                  // Distinct from `sp-matrix-cell--absent` (a column this
+                  // SOURCE never had) — this is "the link chain has no
+                  // Strategy/Site side at all" (task-95 §2.5), a different
+                  // fact the Comparison sheet's absent-column tests must
+                  // not conflate with a genuinely missing column.
+                  if (!isLinkSide) return `<td class="sp-matrix-cell--na">—</td>`;
+                  const verdict = linkStepVerdict(row, field);
+                  const tone = linkStepTone(verdict);
+                  const text = verdict.state === "not_comparable"
+                    ? (verdict.detail || "—")
+                    : `${verdict.state === "match" ? "✓" : "✗"} ${verdict.detail || ""}`.trim();
+                  return `<td class="${tone ? `sp-matrix-cell--${tone}` : ""}">${escapeHtml(text)}</td>`;
+                }).join("") : ""}
             </tr>
           </tbody>
         </table>

@@ -1,6 +1,6 @@
 """Живий фетч сторінки + власний екстрактор H2-H4/секцій/вихідних посилань,
 для лейнів I (Frame ↔ живий сайт) і J (Copy ↔ живий сайт), task-90
-§1.7/§2.4/§4.4, і для матриці Стратегія/Фреймворк/Сайт (task-91 §1.3/§2.4).
+§1.7/§2.4/§4.4, і для звірки посилань Framework → Copy → Site (task-95).
 
 `app/monitor/**` — **read-only**: `app.monitor.fetcher.fetch()` дає
 SSRF-guard + `HostThrottle` + класифікацію антибот-блоку, а
@@ -24,6 +24,7 @@ from app.contentqa.sections import ContentSection, chunk_into_sections
 from app.monitor.fetcher import FetchResult, FetchStats, fetch
 from app.monitor.page import PageSignals, decode_body, extract_signals
 from app.tools.http_safety import HostThrottle
+from app.urlinspector.urlkey import inspector_key
 
 # `nav`/`footer` — на відміну від `app.monitor.page._SKIP_TEXT_TAGS`
 # (`script`/`style`/`noscript`/`template`) — виключені навмисно, лише тут:
@@ -35,18 +36,56 @@ from app.tools.http_safety import HostThrottle
 # витягує H2+.
 _HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4"})
 _SKIP_TEXT_TAGS = frozenset({"script", "style", "noscript", "template", "nav", "footer"})
-# Посилання НЕ виключають nav/footer (task-91 §3.3, живий баг знайдено й
-# виправлено: Framework claims "link to /locations/" -> сторінка
-# `/menu/` реально має цей лінк, але лише в блоці локацій, теговано як
-# `<nav>` — з тим самим `_SKIP_TEXT_TAGS`, що для заголовків, звірка
-# "чи заявлене посилання реально на сторінці" (task-90 §10 follow-up
-# `site-internal-link-missing`, task-91 §2.3 links-вердикт) хибно казала
-# "не знайдено", хоча посилання фізично присутнє. Заголовок у сайдбарі —
-# не авторська структура сторінки (`_SKIP_TEXT_TAGS` рація лишається), але
-# посилання в nav/footer — це посилання, яке реально можна клікнути; питання
-# "чи є на сторінці" не залежить від того, в якому тезі воно лежить.
 _LINK_SKIP_TAGS = frozenset({"script", "style", "noscript", "template"})
 _LINK_SKIP_SCHEMES = ("javascript:", "mailto:", "tel:")
+
+# task-95 §1.1-1.3 — жива поправка до task-91 §3.3: посилання в
+# nav/header/footer/крихтах — це не авторська копія сторінки, а навігаційний
+# каркас, що є на КОЖНІЙ сторінці сайту. Заміряно живо: чинний вердикт
+# "усі приписані посилання знайдено" світився ✓ на 3 з 4 сторінок EFFYS,
+# хоча 0 з 3 приписаних Framework-посилань реально потрапили в копію — усі
+# три знайшлись у головному меню. Порівняння "копія -> сайт" має сенс лише
+# проти КОНТЕНТНИХ посилань — тих, які копірайтер міг фізично вставити в
+# прозу чи CTA-кнопку. `<nav>/<header>/<footer>/<aside>` виключаються
+# структурно; хлібні крихти позначені по-різному по темах (LAXTON:
+# `<nav class="woocommerce-breadcrumb">`, EFFYS: голий `<p id="breadcrumbs">`
+# без жодного семантичного тега) — тому ще й слово "breadcrumb" в `id`/
+# `class`.
+_LINK_CHROME_TAGS = frozenset({"nav", "header", "footer", "aside"})
+_LINK_CHROME_ROLES = frozenset({"navigation", "banner", "contentinfo", "search"})
+# ВАЖЛИВО (пастка, знайдена наживо на Elementor): слова в class ("menu",
+# "widget", "sidebar") НЕ придатні як сигнал — `elementor-widget`/
+# `elementor-element` стоїть на КОЖНОМУ елементі сторінки, включно з
+# прозою. Єдиний надійний сигнал за класом — сам напис "breadcrumb".
+_LINK_BREADCRUMB_RE = re.compile(r"breadcrumb", re.IGNORECASE)
+# Посилання-проза: копірайтер міг вставити лінк у будь-який з цих тегів.
+_LINK_PROSE_TAGS = frozenset({
+    "p", "li", "td", "th", "blockquote", "figcaption", "dd", "dt",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+})
+# CTA-кнопки (task-95 §1.7 пастка 2, EFFYS "Order Now"/"Kosher Certified")
+# живуть ПОЗА прозою — прямо в `<div>` як `a.elementor-button`. Дозвіл на
+# сам `<a>`-тег (не предок): `class` містить слово "btn"/"button" як ціле
+# слово (не підрядок — "buttons-wrap" на контейнері вище НЕ повинен
+# відкривати посилання, які самі кнопками не є) або `role="button"`.
+_LINK_BUTTON_CLASS_RE = re.compile(r"(?:^|[\s_-])(?:btn|button)(?:[\s_-]|$)", re.IGNORECASE)
+# Голі елементи html.parser віддає лише через `handle_starttag`
+# (`handle_startendtag` для `<img/>` теж викликає `handle_starttag`
+# внутрішньо) — без цього списку `<img>`/`<br>` лишались би "відкритими"
+# на стеку до кінця документа.
+_VOID_TAGS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+    "meta", "param", "source", "track", "wbr",
+})
+# Зображення/відео — не контент-посилання навіть у прозі (лайтбокс
+# галереї: 34 таких на одній сторінці `/hemsokt-museum/`, живо заміряно).
+# PDF/DOC НЕ виключені навмисно — EFFYS посилається з копії на застарілий
+# сертифікат (`…CERT-July-2026.pdf`, на сайті вже `…CERT-July-2027.pdf`) —
+# саме такий дрейф ця перевірка мусить ловити (task-95 §1.7).
+_MEDIA_EXTENSIONS = (
+    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".avif",
+    ".mp4", ".webm", ".ico",
+)
 # Стеля на кількість посилань, що зберігаються (task-91 §4 — "cap на
 # кількість у клітинці з лічильником"): деякі сторінки мають сотні
 # однакових карток товару/блогу, і без стелі payload одного фетчу роздувся
@@ -60,6 +99,25 @@ def _strip_www(host: str) -> str:
 
 def _same_site(host_a: str, host_b: str) -> bool:
     return _strip_www(host_a) == _strip_www(host_b)
+
+
+def _page_key(url: str) -> str:
+    """Ключ сторінки без query — `inspector_key` без casefold (task-95
+    §1.8: `inspector_key` — чужий модуль, зберігає регістр шляху навмисно;
+    казефолд для звірки джерел живе лише в `links.py`, не тут)."""
+    return inspector_key(url).partition("?")[0]
+
+
+@dataclass(frozen=True)
+class SiteLink:
+    """Одне контентне вихідне посилання живої сторінки (task-95 §2.2).
+    `url` — абсолютний, з query (лишається — `?add-to-cart=`-варіанти
+    самопосилань і так відсіюються за `_page_key`, а справжні query-
+    параметри іншої сторінки — частина її ідентичності). `text` — анкор,
+    `""` коли посилання не має текстового вмісту (іконка/зображення)."""
+
+    url: str
+    text: str
 
 
 @dataclass(frozen=True)
@@ -82,14 +140,16 @@ class LivePage:
     # потребує його поряд із `signals.meta_robots`, бо або з них може
     # заборонити індексацію (`app.monitor.page.is_indexable`).
     x_robots_tag: str | None = None
-    # Вихідні посилання (task-91 §1.3/§2.4) — `"текст → /шлях"`, той самий
-    # display-формат, що вже живе у Frame/Copy (`readers/gdoc.py`), щоб
-    # матриця могла показати всі три джерела однаково. Абсолютизовані від
-    # `final_url` (після редиректів), розділені на internal/external за
-    # хостом; посилання з nav/footer виключені тим самим `_skip_depth`, що
-    # й заголовки. `()` завжди, коли сторінка недоступна.
-    internal_links: tuple[str, ...] = ()
-    external_links: tuple[str, ...] = ()
+    # Вихідні посилання (task-95 §2.2) — **лише контентні**: поза
+    # `nav/header/footer/aside`/хлібними крихтами, у прозі чи CTA-кнопці,
+    # без самопосилань і без зображень/відео. До task-95 тут лежали УСІ
+    # `<a href>` сторінки (94-97% з них — навігаційний каркас, живо
+    # заміряно) — єдиний споживач цього поля, `contentqa/links.py`,
+    # звіряє копію з сайтом, і меню/футер там дають хибне "усе на місці".
+    # Абсолютизовані від `final_url` (після редиректів), розділені на
+    # internal/external за хостом. `()` завжди, коли сторінка недоступна.
+    internal_links: tuple[SiteLink, ...] = ()
+    external_links: tuple[SiteLink, ...] = ()
     # Block-level potok +мова (task-92 §1.4/§2.2, sentence-level Copy↔site
     # diff): `headings`/`sections` above merge ALL text between two
     # headings into one run-on string (`_HeadingParser._flush_text`) — fine
@@ -97,9 +157,8 @@ class LivePage:
     # `<li>` bullets collapse into one "sentence", live-measured). `blocks`
     # comes from an INDEPENDENT second parse pass (`_BlockParser` below)
     # that never touches `headings`/`sections`/`internal_links`/
-    # `external_links` — those stay byte-identical for lanes I/J and
-    # task-91's matrix. `()`/`None` when the page is unreachable, same as
-    # every other field here.
+    # `external_links` — those stay byte-identical for lane J (task-92 DoD
+    # #8 still holds).
     blocks: tuple[SiteBlock, ...] = ()
     lang: str | None = None
 
@@ -136,7 +195,8 @@ def fetch_page(
 def _extract_page_structure(
     html: str, base_url: str
 ) -> tuple[
-    tuple[tuple[str, str], ...], tuple[ContentSection, ...], tuple[str, ...], tuple[str, ...]
+    tuple[tuple[str, str], ...], tuple[ContentSection, ...],
+    tuple[SiteLink, ...], tuple[SiteLink, ...],
 ]:
     parser = _HeadingParser(base_url=base_url)
     try:
@@ -155,19 +215,24 @@ class _HeadingParser(HTMLParser):
     """H1-H4 + текст між ними, у document order — той самий потік-формат
     `(рівень | None, текст)`, що `readers/gdoc.py:_copy_paragraph_stream`
     (task-90 §4.4), щоб `chunk_into_sections` була справді одним алгоритмом
-    для обох джерел. Заразом (task-91 §1.3/§2.4) збирає `<a href>` у
-    `internal_links`/`external_links` — окремим лічильником глибини
-    (`_link_skip_depth`), НЕ тим самим `_skip_depth`, що виключає nav/footer
-    із заголовків: посилання в nav/footer лишаються реальними, клікабельними
-    посиланнями сторінки (живий баг знайдено й виправлено, task-91 §3.3)."""
+    для обох джерел. Заразом (task-95 §2.2) збирає КОНТЕНТНІ `<a href>` у
+    `internal_links`/`external_links` — окремий стек `_link_stack`, який
+    відстежує для кожного відкритого тега (chrome, prose): "chrome" —
+    посилання виключається структурно (nav/header/footer/aside/крихти);
+    "prose" (або сам `<a>` — CTA-кнопка) — посилання включається. Стек, не
+    лічильник (на відміну від `_skip_depth` нижче) — bool-прапорці, зняті з
+    атрибутів тега, доступні лише на `handle_starttag`, тож їх треба
+    пронести до відповідного `handle_endtag` для коректних НЕ-вкладених
+    (malformed) документів."""
 
     def __init__(self, *, base_url: str) -> None:
         super().__init__(convert_charrefs=True)
         self.stream: list[tuple[str | None, str]] = []
-        self.internal_links: list[str] = []
-        self.external_links: list[str] = []
+        self.internal_links: list[SiteLink] = []
+        self.external_links: list[SiteLink] = []
         self._base_url = base_url
         self._base_host = (urlsplit(base_url).hostname or "").lower()
+        self._self_key = _page_key(base_url)
         self._skip_depth = 0
         self._link_skip_depth = 0
         self._heading_level: str | None = None
@@ -175,10 +240,13 @@ class _HeadingParser(HTMLParser):
         self._text_buf: list[str] = []
         self._link_href: str | None = None
         self._link_text_buf: list[str] = []
-        self._seen_link_targets: set[str] = set()
+        self._link_is_content = False
+        self._seen_link_keys: set[str] = set()
+        self._link_stack: list[tuple[str, bool, bool]] = []  # (tag, chrome, prose)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
+        attrs_dict = dict(attrs)
         if tag in _SKIP_TEXT_TAGS:
             self._skip_depth += 1
         if tag in _LINK_SKIP_TAGS:
@@ -187,12 +255,32 @@ class _HeadingParser(HTMLParser):
             self._flush_text()
             self._heading_level = f"H{tag[1]}"
             self._heading_buf = []
+
+        class_attr = attrs_dict.get("class") or ""
+        id_attr = attrs_dict.get("id") or ""
+        role_attr = (attrs_dict.get("role") or "").lower()
+        is_chrome = (
+            tag in _LINK_CHROME_TAGS
+            or role_attr in _LINK_CHROME_ROLES
+            or bool(_LINK_BREADCRUMB_RE.search(class_attr))
+            or bool(_LINK_BREADCRUMB_RE.search(id_attr))
+        )
+        is_prose = tag in _LINK_PROSE_TAGS
+        if tag not in _VOID_TAGS:
+            self._link_stack.append((tag, is_chrome, is_prose))
+
         if tag == "a" and self._link_skip_depth == 0 and self._link_href is None:
-            href = dict(attrs).get("href") or ""
+            href = attrs_dict.get("href") or ""
             noise = href.startswith("#") or href.lower().startswith(_LINK_SKIP_SCHEMES)
             if href and not noise:
+                in_chrome = any(frame[1] for frame in self._link_stack)
+                in_prose = any(frame[2] for frame in self._link_stack)
+                is_button = (
+                    bool(_LINK_BUTTON_CLASS_RE.search(class_attr)) or role_attr == "button"
+                )
                 self._link_href = href
                 self._link_text_buf = []
+                self._link_is_content = not in_chrome and (in_prose or is_button)
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
@@ -208,11 +296,15 @@ class _HeadingParser(HTMLParser):
             self._heading_buf = []
         if tag == "a" and self._link_href is not None:
             self._flush_link()
+        for i in range(len(self._link_stack) - 1, -1, -1):
+            if self._link_stack[i][0] == tag:
+                del self._link_stack[i:]
+                break
 
     def handle_data(self, data: str) -> None:
         # Ця гілка керує лише заголовками/прозою — `_link_href`/
         # `_link_text_buf` живуть окремо нижче, бо `_skip_depth` (nav/footer
-        # включно) не має гасити текст посилання (task-91 §3.3).
+        # включно) не має гасити текст посилання.
         if self._skip_depth == 0:
             if self._heading_level is not None:
                 self._heading_buf.append(data)
@@ -229,25 +321,29 @@ class _HeadingParser(HTMLParser):
 
     def _flush_link(self) -> None:
         href, self._link_href = self._link_href, None
+        is_content, self._link_is_content = self._link_is_content, False
         text = " ".join("".join(self._link_text_buf).split())
         self._link_text_buf = []
-        if href is None:
+        if href is None or not is_content:
             return
         absolute = urljoin(self._base_url, href)
         parts = urlsplit(absolute)
         if parts.scheme not in ("http", "https"):
             return
-        target = urlsplit(absolute)._replace(fragment="").geturl()
-        if target in self._seen_link_targets:
+        if parts.path.lower().endswith(_MEDIA_EXTENSIONS):
             return
-        self._seen_link_targets.add(target)
-        display = f"{text} → {parts.path or '/'}" if text else target
+        target = urlsplit(absolute)._replace(fragment="").geturl()
+        key = _page_key(target)
+        if key == self._self_key or key in self._seen_link_keys:
+            return
+        self._seen_link_keys.add(key)
+        link = SiteLink(url=target, text=text)
         bucket = (
             self.internal_links
             if _same_site(parts.hostname or "", self._base_host)
             else self.external_links
         )
-        bucket.append(display)
+        bucket.append(link)
 
     def close(self) -> None:
         super().close()
@@ -284,7 +380,7 @@ class SiteBlock:
     `"item"` | `"para"`. Produced by `_BlockParser`, a SECOND, independent
     parse pass from `_HeadingParser` above: it never touches `headings`/
     `sections`/`internal_links`/`external_links`, which stay byte-identical
-    for lanes I/J and task-91's matrix (task-92 DoD #8)."""
+    for lane J (task-92 DoD #8)."""
 
     kind: str
     level: str | None
@@ -368,4 +464,4 @@ def _extract_lang(html: str) -> str | None:
     return match.group(1).strip() or None if match else None
 
 
-__all__ = ["LivePage", "SiteBlock", "fetch_page"]
+__all__ = ["LivePage", "SiteBlock", "SiteLink", "fetch_page"]

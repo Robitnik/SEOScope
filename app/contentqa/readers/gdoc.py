@@ -402,6 +402,68 @@ def copy_tab_blocks(tab: DocTab) -> tuple[DocBlock, ...]:
 
 
 @dataclass(frozen=True)
+class CopyLink:
+    """Одне гіперпосилання вкладки Copy (task-95 §1.4/§2.3). `anchor` —
+    злиті сусідні `textRun` з тією ж `url` (Docs часто розбиває один
+    видимий анкор на кілька ранів — порожній textRun перед видимим
+    текстом, форматування всередині анкора), пробіли нормалізовані.
+    `in_marker=True` — абзац, у якому лежить посилання, класифікований як
+    інструкція верстальнику (`[MAP: ...]`, `[Order →]`, той самий
+    `_classify_copy_chunk`, що task-92 вже використовує для Copy-блоків):
+    така ціль не є "копія посилається на", а вказівка розробнику — звірка
+    (`contentqa/links.py`) показує її окремо, але не рахує в вердикті."""
+
+    url: str
+    anchor: str
+    in_marker: bool
+
+
+def copy_tab_links(tab: DocTab) -> tuple[CopyLink, ...]:
+    """Усі гіперпосилання вкладки Copy (task-95 §1.4) —
+    `textRun.textStyle.link.url`. **Ніколи не викликається на вкладці
+    Framework**: та несе бойлерплейт-посилання в КОЖНОМУ з 60 живо
+    заміряних документів (Hemingway Score, Title Case Converter,
+    Grammarly plagiarism checker) — інструменти для копірайтера, не
+    посилання копії; звідси лише `caller` (`package.py`) вирішує, яку
+    вкладку сюди передати. Внутрішні якорі документа (`textStyle.link.
+    headingId`/`.bookmarkId`, без `url`) ігноруються — не зовнішнє/
+    сторінкове посилання."""
+    out: list[CopyLink] = []
+    for el in tab.body_content:
+        p = el.get("paragraph")
+        if p is None:
+            continue
+        paragraph_text = _paragraph_text(el).rstrip("\n").strip()
+        in_marker = bool(paragraph_text) and _classify_copy_chunk(
+            paragraph_text, style=_paragraph_style(el), bullet=bool(p.get("bullet"))
+        ).kind == "directive"
+
+        run_url: str | None = None
+        run_parts: list[str] = []
+        for run in p.get("elements", []) or []:
+            text_run = run.get("textRun")
+            url: str | None = None
+            if text_run is not None:
+                link = (text_run.get("textStyle") or {}).get("link") or {}
+                candidate = link.get("url")
+                url = candidate if isinstance(candidate, str) else None
+            if url != run_url:
+                if run_url is not None:
+                    out.append(CopyLink(
+                        url=run_url, anchor=" ".join("".join(run_parts).split()),
+                        in_marker=in_marker,
+                    ))
+                run_url, run_parts = url, []
+            if url is not None and text_run is not None:
+                run_parts.append(text_run.get("content", ""))
+        if run_url is not None:
+            out.append(CopyLink(
+                url=run_url, anchor=" ".join("".join(run_parts).split()), in_marker=in_marker,
+            ))
+    return tuple(out)
+
+
+@dataclass(frozen=True)
 class ResolvedTabs:
     """Три заміряні стани документа (task-90 §2.3): `frame_doc`/`copy_doc`
     можуть бути `None`, і це не помилка — 22 з 40 живих документів не мають

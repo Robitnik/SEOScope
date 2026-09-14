@@ -18,6 +18,7 @@ from app.schemas.strategy_package import (
     CopyTabResultDTO,
     FrameworkCandidateDTO,
     FrameworkOutcomeDTO,
+    LinkAuditDTO,
     MatrixCellDTO,
     MatrixFieldVerdictDTO,
     MatrixRowDTO,
@@ -30,8 +31,7 @@ _ABSENT = MatrixCellDTO(state="absent")
 
 def _cells(**overrides: MatrixCellDTO) -> MatrixSourceCellsDTO:
     base: dict[str, MatrixCellDTO] = dict(
-        url=_ABSENT, title=_ABSENT, description=_ABSENT, h1=_ABSENT,
-        keywords=_ABSENT, links=_ABSENT,
+        url=_ABSENT, title=_ABSENT, description=_ABSENT, h1=_ABSENT, keywords=_ABSENT,
     )
     base.update(overrides)
     return MatrixSourceCellsDTO(**base)
@@ -40,10 +40,17 @@ def _cells(**overrides: MatrixCellDTO) -> MatrixSourceCellsDTO:
 def _verdicts(**overrides: MatrixFieldVerdictDTO) -> MatrixRowVerdictsDTO:
     na = MatrixFieldVerdictDTO(state="not_comparable")
     base: dict[str, MatrixFieldVerdictDTO] = dict(
-        url=na, title=na, description=na, h1=na, keywords=na, links=na,
+        url=na, title=na, description=na, h1=na, keywords=na,
     )
     base.update(overrides)
     return MatrixRowVerdictsDTO(**base)
+
+
+def _link_audit(**overrides: object) -> LinkAuditDTO:
+    na = MatrixFieldVerdictDTO(state="not_comparable")
+    base: dict[str, object] = dict(state="checked", reason=None, in_copy=na, on_site=na)
+    base.update(overrides)
+    return LinkAuditDTO(**base)  # type: ignore[arg-type]
 
 
 def test_build_matrix_xlsx_produces_a_valid_workbook_with_two_sheets() -> None:
@@ -302,44 +309,94 @@ def test_comparison_sheet_column_widths_match_the_real_column_count() -> None:
     assert len(_COLUMN_WIDTHS) == _TOTAL_COLUMNS
 
 
-def test_outgoing_links_split_into_one_sub_column_per_link() -> None:
-    """Live feedback: one packed, semicolon-joined "Outgoing links" cell
-    was unreadable — each link now gets its own column."""
+def test_link_chain_columns_only_carry_a_value_on_the_framework_row() -> None:
+    """task-95 §2.7: `In copy`/`On site` replaced the old per-link
+    sub-columns. The chain has no "Strategy side"/"Site side" — only the
+    Framework mini-table shows the real verdict text; Strategy/Site show
+    a plain "—" (task-95 §2.5: the row-level `links` object has no
+    per-source shape to draw from for those two blocks)."""
     rows = [
         MatrixRowDTO(
             key="r1", kind="matched", label="p1",
-            strategy=_cells(links=MatrixCellDTO(
-                state="value", items=["Home → /", "Menu → /menu/", "Catering → /catering/"],
-            )),
-            framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            strategy=_cells(), framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            links=_link_audit(
+                in_copy=MatrixFieldVerdictDTO(
+                    state="match", detail="2/2 framework link(s) in copy"
+                ),
+                on_site=MatrixFieldVerdictDTO(
+                    state="mismatch", detail="1/2 copy link(s) on the live page"
+                ),
+            ),
+            framework_document_id="doc1",
         ),
     ]
     data = build_matrix_xlsx(rows)
     ws = load_workbook(io.BytesIO(data))["Comparison"]
-    strategy_title_row = _mini_table_titles(ws)["Strategy"]
-    data_row = strategy_title_row + 2
-    # Columns 1-5 are the scalar fields; links start at column 6.
-    assert ws.cell(data_row, 6).value == "Home → /"
-    assert ws.cell(data_row, 7).value == "Menu → /menu/"
-    assert ws.cell(data_row, 8).value == "Catering → /catering/"
-    assert ws.cell(data_row, 9).value in (None, "")
+    titles = _mini_table_titles(ws)
+    strategy_row = titles["Strategy"] + 2
+    framework_row = titles["Framework"] + 2
+    site_row = titles["Site"] + 2
+    # Columns 1-5 are the scalar fields; "In copy"/"On site" are 6/7.
+    assert ws.cell(strategy_row, 6).value == "—"
+    assert ws.cell(strategy_row, 7).value == "—"
+    assert ws.cell(framework_row, 6).value == "✓ 2/2 framework link(s) in copy"
+    assert ws.cell(framework_row, 7).value == "✗ 1/2 copy link(s) on the live page"
+    assert ws.cell(site_row, 6).value == "—"
+    assert ws.cell(site_row, 7).value == "—"
 
 
-def test_outgoing_links_beyond_the_cap_note_a_remaining_count() -> None:
-    many_links = [f"Link {i} → /{i}/" for i in range(9)]
+def test_link_chain_not_comparable_shows_the_reason_not_a_symbol() -> None:
     rows = [
         MatrixRowDTO(
             key="r1", kind="matched", label="p1",
-            strategy=_cells(links=MatrixCellDTO(state="value", items=many_links)),
-            framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            strategy=_cells(), framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            links=_link_audit(
+                in_copy=MatrixFieldVerdictDTO(
+                    state="not_comparable", detail="no copy tab in this document"
+                ),
+            ),
         ),
     ]
     data = build_matrix_xlsx(rows)
     ws = load_workbook(io.BytesIO(data))["Comparison"]
-    strategy_title_row = _mini_table_titles(ws)["Strategy"]
-    data_row = strategy_title_row + 2
-    last_link_col = 5 + 6  # 5 scalar columns + _MAX_LINK_COLUMNS
-    assert "(+3 more)" in ws.cell(data_row, last_link_col).value
+    framework_row = _mini_table_titles(ws)["Framework"] + 2
+    assert ws.cell(framework_row, 6).value == "no copy tab in this document"
+
+
+def test_link_chain_absent_row_shows_dashes_everywhere() -> None:
+    """`links=None` — matrices persisted before task-95, or a
+    `strategy_only` row with no framework at all."""
+    rows = [
+        MatrixRowDTO(
+            key="r1", kind="matched", label="p1",
+            strategy=_cells(), framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            links=None,
+        ),
+    ]
+    data = build_matrix_xlsx(rows)
+    ws = load_workbook(io.BytesIO(data))["Comparison"]
+    framework_row = _mini_table_titles(ws)["Framework"] + 2
+    assert ws.cell(framework_row, 6).value == "—"
+    assert ws.cell(framework_row, 7).value == "—"
+
+
+def test_mismatches_sheet_includes_link_chain_mismatches() -> None:
+    rows = [
+        MatrixRowDTO(
+            key="r1", kind="matched", label="https://example.com/a",
+            strategy=_cells(), framework=_cells(), site=_cells(), verdicts=_verdicts(),
+            links=_link_audit(
+                on_site=MatrixFieldVerdictDTO(
+                    state="mismatch", detail="1/2 copy link(s) on the live page"
+                ),
+            ),
+        ),
+    ]
+    ws = load_workbook(io.BytesIO(build_matrix_xlsx(rows)))["Mismatches"]
+    values = [tuple(ws.cell(r, c).value for c in (1, 2, 3)) for r in range(2, 4)]
+    assert (
+        "https://example.com/a", "On site", "1/2 copy link(s) on the live page",
+    ) in values
 
 
 def test_title_and_description_show_a_character_count() -> None:

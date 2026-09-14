@@ -116,6 +116,33 @@ async function main() {
   const exportHref = await page.locator('a:has-text("Export to Excel")').getAttribute("href");
   assert.match(exportHref, /\/matrix\.xlsx$/);
 
+  // 6c-bis (task-95): the link-chain ("In copy"/"On site") replaced the
+  // old sixth "Outgoing links" column — each mini-table has 7 columns
+  // (5 scalar + 2 chain steps), and the page header carries badges for
+  // both steps alongside the 5 scalar ones. State-agnostic (the run picks
+  // whichever framework the picker's "first" candidate happens to be), so
+  // this only asserts SHAPE, not a specific verdict.
+  const headerBadgeTexts = await firstPage.locator(".sp-matrix-verdict-badge").allInnerTexts();
+  assert.ok(
+    headerBadgeTexts.some((t) => /in copy/i.test(t)) && headerBadgeTexts.some((t) => /on site/i.test(t)),
+    "page header shows both link-chain badges",
+  );
+  const frameworkColCount = await firstPage.locator(".sp-matrix-mini").nth(1)
+    .locator("thead th").count();
+  assert.equal(frameworkColCount, 7, "5 scalar fields + In copy + On site");
+  // A `.sp-links-details` block is optional (only rendered when this page
+  // actually has comparable links, task-95 §2.6's `not_applicable` state
+  // renders none) — if present, it must have the four expected columns.
+  const linksDetailsCount = await page.locator(".sp-links-details").count();
+  if (linksDetailsCount > 0) {
+    const linkHeaders = await page.locator(".sp-links-details").first()
+      .locator(".sp-links-table thead th").allInnerTexts();
+    assert.deepEqual(
+      linkHeaders.map((t) => t.toLowerCase()), // CSS text-transform:uppercase changes rendered case
+      ["link", "in copy", "on site", "note"],
+    );
+  }
+
   // 6d. Overview still works — the matrix is an addition, not a replacement.
   await page.locator("#sp-tab-overview").click();
   await page.locator(".sp-fw-overview").waitFor({ timeout: 10_000 });

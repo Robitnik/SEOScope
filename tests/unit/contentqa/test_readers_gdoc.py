@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from app.contentqa.readers.gdoc import (
     copy_tab_blocks,
+    copy_tab_links,
     read_copy_sections,
     read_copy_tab,
     read_framework_document,
@@ -523,3 +524,90 @@ def test_copy_tab_blocks_rule_line_glued_to_a_directive_is_a_directive() -> None
     (block,) = copy_tab_blocks(tab)
     assert block.kind == "directive"
     assert block.text == "[IMAGE SECTION: Full-width hero background image]"
+
+
+# ── task-95 §1.4/§2.3: copy_tab_links — hyperlinks a copy tab carries ───────
+
+
+def _run(content: str, url: str | None = None) -> dict[str, object]:
+    text_run: dict[str, object] = {"content": content}
+    if url:
+        text_run["textStyle"] = {"link": {"url": url}}
+    return {"textRun": text_run}
+
+
+def _link_para(*runs: dict[str, object]) -> dict[str, object]:
+    return {"paragraph": {"elements": list(runs)}}
+
+
+def test_copy_tab_links_extracts_a_plain_hyperlink() -> None:
+    tab = _tab("Content", [_link_para(_run("our menu", "https://example.com/menu/"))])
+    (link,) = copy_tab_links(tab)
+    assert link.url == "https://example.com/menu/"
+    assert link.anchor == "our menu"
+    assert link.in_marker is False
+
+
+def test_copy_tab_links_merges_adjacent_runs_sharing_the_same_url() -> None:
+    """Docs often splits one visible anchor into several `textRun`s (an
+    empty run before the visible text, or formatting inside the anchor) —
+    live-measured on LAXTON/EFFYS. Merged into ONE `CopyLink`, not two."""
+    tab = _tab("Content", [_link_para(
+        _run("", "https://example.com/prs/"),
+        _run("Paranormal REM Static", "https://example.com/prs/"),
+    )])
+    (link,) = copy_tab_links(tab)
+    assert link.anchor == "Paranormal REM Static"
+    assert link.url == "https://example.com/prs/"
+
+
+def test_copy_tab_links_keeps_separate_runs_with_different_urls_apart() -> None:
+    tab = _tab("Content", [_link_para(
+        _run("our menu", "https://example.com/menu/"),
+        _run(" and ", None),
+        _run("our story", "https://example.com/about/"),
+    )])
+    links = copy_tab_links(tab)
+    assert [link.url for link in links] == [
+        "https://example.com/menu/", "https://example.com/about/",
+    ]
+
+
+def test_copy_tab_links_ignores_plain_text_without_a_link() -> None:
+    tab = _tab("Content", [_link_para(_run("just some prose, no link here"))])
+    assert copy_tab_links(tab) == ()
+
+
+def test_copy_tab_links_ignores_internal_anchor_without_a_url() -> None:
+    # `textStyle.link` can point at a `headingId`/`bookmarkId` inside the
+    # SAME document (an internal cross-reference), never a `url` — not an
+    # external/page link the site-audit chain cares about.
+    tab = _tab("Content", [{"paragraph": {"elements": [
+        {"textRun": {"content": "see above", "textStyle": {"link": {"headingId": "h.abc"}}}},
+    ]}}])
+    assert copy_tab_links(tab) == ()
+
+
+def test_copy_tab_links_flags_instruction_paragraphs_as_in_marker() -> None:
+    """task-95 §1.4/§2.3, live EFFYS_LOCATIONS_HUB: `[MAP: ...]`/
+    `[Order Pickup or Delivery →]` are verstalnyk instructions, not copy
+    the operator should expect published — `in_marker=True`, still
+    returned (shown, not silently dropped) so the caller can choose to
+    exclude them from the verdict while still surfacing them."""
+    tab = _tab("Content", [_link_para(
+        _run("[Order Pickup or Delivery →]", "https://www.getsauce.com/order/x"),
+    )])
+    (link,) = copy_tab_links(tab)
+    assert link.in_marker is True
+
+
+def test_copy_tab_links_never_reads_the_framework_tab_boilerplate() -> None:
+    """The Framework tab's own tool-links (Hemingway/Title Case
+    Converter/Grammarly) are present in EVERY live document (task-95
+    §1.4) — `copy_tab_links` only ever gets called on a COPY tab by its
+    caller, but the function itself doesn't special-case tab identity;
+    this asserts it simply extracts whatever hyperlinks the given tab
+    carries, boilerplate or not — the exclusion is the caller's job."""
+    tab = _tab("Framework", [_link_para(_run("Hemingway Score", "https://hemingwayapp.com/"))])
+    (link,) = copy_tab_links(tab)
+    assert link.url == "https://hemingwayapp.com/"

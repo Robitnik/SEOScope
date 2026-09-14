@@ -191,7 +191,7 @@ class FrameworkOutcomeDTO(BaseModel):
 
 class MatrixCellDTO(BaseModel):
     """Одна клітинка матриці (task-91 §2.2). `text` — скалярні поля (url/
-    title/description/h1), `items` — множинні (keywords/links). Рівно один
+    title/description/h1), `items` — множинні (keywords). Рівно один
     непорожній, коли `state == "value"`."""
 
     state: MatrixCellState
@@ -205,7 +205,6 @@ class MatrixSourceCellsDTO(BaseModel):
     description: MatrixCellDTO
     h1: MatrixCellDTO
     keywords: MatrixCellDTO
-    links: MatrixCellDTO
 
 
 class MatrixFieldVerdictDTO(BaseModel):
@@ -224,7 +223,48 @@ class MatrixRowVerdictsDTO(BaseModel):
     description: MatrixFieldVerdictDTO
     h1: MatrixFieldVerdictDTO
     keywords: MatrixFieldVerdictDTO
-    links: MatrixFieldVerdictDTO
+
+
+# ── Вихідні посилання: ланцюг Framework -> Copy -> Site (task-95) ──────────
+# Замінює колишню шосту колонку `links` у `MatrixSourceCellsDTO`/
+# `MatrixRowVerdictsDTO` (task-91 §2.3): та звіряла приписані посилання з
+# УСІМА `<a href>` живої сторінки (94-97% з них — навігаційний каркас,
+# task-95 §1.1/§1.2) і не читала копію взагалі. Тепер — два кроки:
+# "in copy" (Framework -> Copy) і "on site" (Copy -> Site), не по-джерельні
+# клітинки, тож окремий блок рядка, а не сьоме поле трьох мінітаблиць.
+LinkPresenceDTO = Literal["yes", "no", "not_checked"]
+LinkOriginDTO = Literal["framework", "copy"]
+LinkAuditStateDTO = Literal["checked", "not_applicable"]
+
+
+class LinkRowDTO(BaseModel):
+    """Одне порівнюване посилання (task-95 §2.5). `origin` — хто перший
+    заявив цю ціль: `"framework"` навіть коли копія теж її несе, інакше
+    `"copy"` (посилання, яке Framework не приписував, але копія має —
+    §1.7, саме так знайдено застарілий PDF-сертифікат на EFFYS)."""
+
+    target: str
+    display: str
+    origin: LinkOriginDTO
+    in_copy: LinkPresenceDTO
+    on_site: LinkPresenceDTO
+    note: str | None = None
+
+
+class LinkAuditDTO(BaseModel):
+    """Результат звірки посилань одного фреймворка (task-95 §2.5).
+    `state="not_applicable"` — і Framework, і Copy чесно не заявляють
+    жодної цілі (13/56 живих копі-вкладок портфеля, task-95 §1.5) — не
+    помилка інструменту. `skipped` — рядки без видобутої цілі (Framework-
+    проза без URL) і рядки-інструкції верстальнику з Copy (`[MAP: …]`) —
+    показати оператору, не рахувати у вердикт."""
+
+    state: LinkAuditStateDTO
+    reason: str | None = None
+    in_copy: MatrixFieldVerdictDTO
+    on_site: MatrixFieldVerdictDTO
+    rows: list[LinkRowDTO] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
 
 
 class MatrixRowDTO(BaseModel):
@@ -240,6 +280,10 @@ class MatrixRowDTO(BaseModel):
     framework: MatrixSourceCellsDTO | None = None
     site: MatrixSourceCellsDTO | None = None
     verdicts: MatrixRowVerdictsDTO
+    # Ланцюг Framework -> Copy -> Site (task-95) — `None` для
+    # `strategy_only` (фреймворка нема) і для матриць, персистованих до
+    # task-95 (`matrix_json` без цього поля) — не вгадується заднім числом.
+    links: LinkAuditDTO | None = None
     # Google Doc фреймворка за цим рядком — для лінка в Excel `Comparison`
     # (live feedback). `None` для `strategy_only` і для матриць до цього поля.
     framework_document_id: str | None = None

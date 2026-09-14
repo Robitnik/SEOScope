@@ -3,6 +3,11 @@
 Normalizer tests use the exact live-measured strings from task-91 §1.4-1.6
 (SHB keyword merging, SDS/SAPHNY parens, 3XE arrows, LAXTON's misleading
 arrow, PJC/EFFYS's URL-less prose) — not invented examples.
+
+Link-chain tests (`_extract_link_target`/`_link_verdict`/outgoing-links
+cells) moved to `test_links.py` (task-95): the matrix no longer has a
+per-source "links" column — `contentqa/links.py` owns the Framework ->
+Copy -> Site chain as a separate `MatrixRow.links` block.
 """
 
 from __future__ import annotations
@@ -11,12 +16,9 @@ from app.contentqa.crosscheck import _item_key
 from app.contentqa.matrix import (
     Cell,
     _document_presence,
-    _extract_link_target,
     _framework_cells,
     _keyword_verdict,
-    _link_verdict,
     _norm_keyword_set,
-    _norm_link_set,
     _norm_text,
     _scalar_verdict,
     _site_cells,
@@ -74,63 +76,6 @@ def test_keyword_set_dedupes_and_casefolds() -> None:
 
 def test_empty_keyword_tuple_gives_empty_set() -> None:
     assert _norm_keyword_set(()) == frozenset()
-
-
-# ── _extract_link_target (§1.4/§1.4a) ───────────────────────────────────
-
-
-def test_extracts_absolute_url_strategy_format() -> None:
-    # Live SDS strategy cell.
-    raw = "INT LINK 1 - https://www.shorelinedentalstudio.com/services/invisalign/"
-    assert (
-        _extract_link_target(raw, base_url=None)
-        == "https://www.shorelinedentalstudio.com/services/invisalign/"
-    )
-
-
-def test_extracts_parenthesized_path_sds_saphny_format() -> None:
-    raw = (
-        'Dental Implants (/services/tooth-replacement/dental-implants/) '
-        '- in "Discuss Implant Support"'
-    )
-    assert (
-        _extract_link_target(raw, base_url="https://example.com/x")
-        == "https://example.com/services/tooth-replacement/dental-implants/"
-    )
-
-
-def test_extracts_path_after_arrow_3xe_format() -> None:
-    raw = "2026 EXXXOTICA locations → /locations/"
-    assert (
-        _extract_link_target(raw, base_url="https://exxxotica.com/home")
-        == "https://exxxotica.com/locations/"
-    )
-
-
-def test_arrow_followed_by_non_path_is_not_extracted_laxton_format() -> None:
-    # Live LAXTON cell: the arrow is there, but what follows is a
-    # placement description, not a URL — a naive "everything after the
-    # arrow" extractor would have produced a garbage "URL".
-    raw = 'utrustning för spökjakt → placement: H2 "Utrustningen bakom undersökningarna"'
-    assert _extract_link_target(raw, base_url="https://laxton.se/artikel") is None
-
-
-def test_plain_prose_with_no_url_is_not_extracted_pjc_effys_format() -> None:
-    assert _extract_link_target("make a reservation", base_url="https://pjclarkes.com/") is None
-    assert _extract_link_target("Effy's UWS location", base_url="https://effys.com/") is None
-
-
-def test_relative_path_without_base_url_is_returned_as_is() -> None:
-    assert _extract_link_target("anchor → /menu/", base_url=None) == "/menu/"
-
-
-def test_norm_link_set_dedupes_via_inspector_key() -> None:
-    values = (
-        "Our menu → /menu/",
-        "See the menu → /menu",  # same page, no trailing slash
-    )
-    keys = _norm_link_set(values, base_url="https://example.com/")
-    assert len(keys) == 1
 
 
 # ── _document_presence (§1.2, the None-vs-absent finding) ───────────────
@@ -359,31 +304,6 @@ def test_keyword_verdict_falls_back_to_site_coverage_with_one_claim_source() -> 
     assert result.state == "mismatch"
 
 
-def test_link_verdict_mismatch_when_claimed_link_missing_from_site() -> None:
-    result = _link_verdict(
-        frozenset({"example.com/menu"}),
-        frozenset(),
-        frozenset({"example.com/about"}),
-        site_known=True,
-    )
-    assert result.state == "mismatch"
-
-
-def test_link_verdict_match_when_all_claimed_links_present() -> None:
-    result = _link_verdict(
-        frozenset({"example.com/menu"}),
-        frozenset(),
-        frozenset({"example.com/menu"}),
-        site_known=True,
-    )
-    assert result.state == "match"
-
-
-def test_link_verdict_not_comparable_with_nothing_claimed_and_site_unreachable() -> None:
-    result = _link_verdict(frozenset(), frozenset(), frozenset(), site_known=False)
-    assert result.state == "not_comparable"
-
-
 # ── build_matrix: integration ────────────────────────────────────────
 
 
@@ -477,3 +397,31 @@ def test_matrix_row_carries_the_framework_document_for_the_excel_link() -> None:
     assert by_kind["framework_only"].framework_document_id == "doc123"
     assert by_kind["framework_only"].framework_document_name == "EFFYS_PAGE_FRAMEWORK_A"
     assert by_kind["strategy_only"].framework_document_id is None
+
+
+def test_matrix_row_carries_the_outcome_link_audit() -> None:
+    """task-95: the link chain is a row-level field, `outcome.link_audit`
+    copied verbatim — `strategy_only` rows (no framework at all) get
+    `None`, never a guessed value."""
+    from app.contentqa.links import LinkAudit
+    from app.contentqa.matrix import build_matrix
+    from app.contentqa.verdict import FieldVerdict
+
+    audit = LinkAudit(
+        state="checked", reason=None,
+        in_copy=FieldVerdict("match", detail="1/1 framework link(s) in copy"),
+        on_site=FieldVerdict("mismatch", detail="0/1 copy link(s) on the live page"),
+    )
+    frame_item = ContentItem(ref="Doc › Framework", url="https://example.com/a", title="T")
+    outcome = FrameworkOutcome(
+        source=FrameworkSource(document_id="d1", document_name="Doc1", origin="drive_search"),
+        state="checked", frame_item=frame_item, link_audit=audit,
+    )
+    strategy = ContentDoc(
+        source="s", doc_type="strategy_gsheet",
+        items=(ContentItem(ref="Sheet!row 1", url="https://example.com/orphan"),),
+    )
+    rows = build_matrix(strategy, [outcome])
+    by_kind = {r.kind: r for r in rows}
+    assert by_kind["framework_only"].links is audit
+    assert by_kind["strategy_only"].links is None

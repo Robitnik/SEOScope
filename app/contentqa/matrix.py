@@ -3,8 +3,13 @@
 Чиста функція над уже готовими `ContentDoc`/`FrameworkOutcome` — не читає
 жодного нового джерела, лише зводить те, що вже витягнули `readers/
 gsheet.py`, `readers/gdoc.py` і `site.py` (`FrameworkOutcome.frame_item`/
-`.site_page`, task-91 §2.2 доповнення до `package.py`). Шість колонок з
-малюнка користувача: URL, Title, Description, H1, Ключі, Вихідні посилання.
+`.site_page`, task-91 §2.2 доповнення до `package.py`). П'ять колонок:
+URL, Title, Description, H1, Ключі — плюс окремий блок «Вихідні посилання»
+(`MatrixRow.links: LinkAudit`, task-95), що більше не є шостим полем цих
+трьох мінітаблиць: до task-95 тут порівнювались приписані посилання з
+УСІМА `<a href>` сторінки (94-97% — навігаційний каркас), і копія в цю
+звірку не входила взагалі — `contentqa/links.py` замінює це ланцюгом
+Framework → Copy → Site.
 
 **Три стани клітинки** (`CellState`) — той самий інваріант PLAN §12
 (`None` ≠ `""`), піднятий на рівень таблиці: заміряно живо (task-91 §1.2) —
@@ -18,28 +23,29 @@ gsheet.py`, `readers/gdoc.py` і `site.py` (`FrameworkOutcome.frame_item`/
 403 інших рядках) — тому присутність колонки для Strategy визначається на
 рівні ВСЬОГО документа (`_document_presence`): якщо хоч один рядок має
 значення, колонка вважається наявною для всіх рядків цього документа.
-
-**Формат посилань — п'ять живих варіантів, не один** (task-91 §1.4/§1.4a):
-`_extract_link_target()` пробує абсолютний URL, шлях у дужках (SDS/SAPHNY),
-шлях одразу після `→` (3XE, і власний формат `site.py`) — і чесно здається
-(`None`), коли жодного шаблону нема (LAXTON: `→` є, але після нього опис
-місця вставки, не шлях; PJC/EFFYS: посилання нема взагалі, лише проза для
-копірайтера). Клітинка, для якої не вдалось екстрагувати ціль, лишається
-`value` для показу (сирий текст), але не бере участі у вердикті.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Literal
-from urllib.parse import urljoin
+from typing import TYPE_CHECKING, Literal
 
 from app.contentqa.crosscheck import _item_key  # noqa: PLC2701 - see note below
 from app.contentqa.model import ContentDoc, ContentItem
 from app.contentqa.package import FrameworkOutcome
 from app.contentqa.site import LivePage
+from app.contentqa.verdict import FieldVerdict, Verdict
 from app.urlinspector.urlkey import inspector_key
+
+if TYPE_CHECKING:
+    # `links.py` тепер несе ЛАНЦЮГ Framework -> Copy -> Site (task-95) і
+    # сам імпортує `FieldVerdict` із `verdict.py` (не звідси) — типовий
+    # імпорт `LinkAudit` тут лише для анотації `MatrixRow.links`, під
+    # `from __future__ import annotations` рядковий, тож `TYPE_CHECKING`-
+    # гілка вистачає й не створює цикл `matrix -> package -> links ->
+    # matrix` на рівні виконання.
+    from app.contentqa.links import LinkAudit
 
 # `FrameworkOutcome.matched_strategy_key` is `_item_key(known_row)`
 # (`crosscheck.py`), NOT `item.ref` — live-verified (task-91 3.3), a naive
@@ -50,10 +56,9 @@ from app.urlinspector.urlkey import inspector_key
 # from crosscheck.py's own matching rules.
 
 CellState = Literal["value", "empty", "absent"]
-Verdict = Literal["match", "mismatch", "not_comparable"]
 RowKind = Literal["matched", "strategy_only", "framework_only"]
 
-_FIELD_NAMES = ("url", "title", "description", "h1", "keywords", "links")
+_FIELD_NAMES = ("url", "title", "description", "h1", "keywords")
 
 
 @dataclass(frozen=True)
@@ -78,20 +83,6 @@ class SourceCells:
     description: Cell
     h1: Cell
     keywords: Cell
-    links: Cell
-
-
-@dataclass(frozen=True)
-class FieldVerdict:
-    state: Verdict
-    detail: str | None = None
-    # Live feedback (task-91 §3.6): a "mismatch" must say WHICH source is
-    # the odd one out, not paint all three sources red — when Strategy and
-    # Framework agree and only Site differs, Strategy/Framework should read
-    # green (they agree with each other), only Site red. Names of sources
-    # ("strategy"/"framework"/"site") whose value is not shared by any
-    # other source with a value; `()` for "match"/"not_comparable" states.
-    outlier_sources: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -101,7 +92,6 @@ class RowVerdicts:
     description: FieldVerdict
     h1: FieldVerdict
     keywords: FieldVerdict
-    links: FieldVerdict
 
 
 @dataclass(frozen=True)
@@ -120,6 +110,12 @@ class MatrixRow:
     framework: SourceCells | None
     site: SourceCells | None
     verdicts: RowVerdicts
+    # Ланцюг Framework -> Copy -> Site (task-95) — НЕ per-source клітинка
+    # (сайт/стратегія не мають "своєї сторони" цієї звірки, §2.5 плану),
+    # тому окреме поле рядка, не шосте поле `SourceCells`/`RowVerdicts`.
+    # `None` для `strategy_only` (фреймворка нема — нічого звіряти) і для
+    # матриць, персистованих до task-95 — не вгадується заднім числом.
+    links: LinkAudit | None = None
     # Google Doc за цим рядком (live feedback на Excel: «додати посилання на
     # фрейм» у Comparison). `None` для `strategy_only` (фреймворка нема) і
     # для матриць, персистованих до цього поля — не вгадується заднім
@@ -149,40 +145,6 @@ def _norm_keyword_set(values: tuple[str, ...]) -> frozenset[str]:
     return frozenset(out)
 
 
-_ABS_URL_RE = re.compile(r"https?://\S+")
-_PAREN_PATH_RE = re.compile(r"\((/[^\s)]*)\)")
-_ARROW_PATH_RE = re.compile(r"→\s*(/\S*)")
-_TRAILING_PUNCT = ").,;:'\""
-
-
-def _extract_link_target(raw: str, *, base_url: str | None) -> str | None:
-    """Найкраща спроба видобути URL з довільного рядка посилання (task-91
-    §1.4a) — три живо заміряні форми, по черзі, перша знахідка перемагає.
-    `None`, коли жодна не спрацювала (не здогадка) — типово для Framework-
-    клітин, які є прозою для людини, не машинним посиланням."""
-    match = _ABS_URL_RE.search(raw)
-    if match:
-        return match.group(0).rstrip(_TRAILING_PUNCT)
-    match = _PAREN_PATH_RE.search(raw)
-    if match:
-        path = match.group(1)
-        return urljoin(base_url, path) if base_url else path
-    match = _ARROW_PATH_RE.search(raw)
-    if match:
-        path = match.group(1).rstrip(_TRAILING_PUNCT)
-        return urljoin(base_url, path) if base_url else path
-    return None
-
-
-def _norm_link_set(values: tuple[str, ...], *, base_url: str | None) -> frozenset[str]:
-    keys: set[str] = set()
-    for value in values:
-        target = _extract_link_target(value, base_url=base_url)
-        if target:
-            keys.add(inspector_key(target))
-    return frozenset(keys)
-
-
 # ── видимість колонки на рівні документа (Strategy) ────────────────────────
 
 
@@ -199,8 +161,6 @@ def _document_presence(doc: ContentDoc) -> frozenset[str]:
             present.add("h1")
         if item.keywords:
             present.add("keywords")
-        if item.internal_links or item.external_links:
-            present.add("links")
     return frozenset(present)
 
 
@@ -209,7 +169,7 @@ def _document_presence(doc: ContentDoc) -> frozenset[str]:
 
 def _strategy_cells(item: ContentItem | None, presence: frozenset[str]) -> SourceCells:
     if item is None:
-        return SourceCells(_ABSENT, _ABSENT, _ABSENT, _ABSENT, _ABSENT, _ABSENT)
+        return SourceCells(_ABSENT, _ABSENT, _ABSENT, _ABSENT, _ABSENT)
 
     def text(field: str, value: str | None) -> Cell:
         if field not in presence:
@@ -221,14 +181,12 @@ def _strategy_cells(item: ContentItem | None, presence: frozenset[str]) -> Sourc
             return _ABSENT
         return Cell(state="value", items=values) if values else _EMPTY
 
-    links = item.internal_links + item.external_links
     return SourceCells(
         url=text("url", item.url),
         title=text("title", item.title),
         description=text("description", item.description),
         h1=text("h1", item.h1),
         keywords=multi("keywords", item.keywords),
-        links=multi("links", links),
     )
 
 
@@ -236,11 +194,11 @@ def _framework_cells(item: ContentItem | None) -> SourceCells:
     """Один Framework-документ = один рядок — `readers/gdoc.py:_first`
     уже точно розрізняє `None`/`""` per-field, тож на відміну від
     `_strategy_cells` тут не потрібна евристика рівня документа. Для
-    keywords/links (завжди `tuple`, без `None`) присутність колонки
-    читається з `item.raw`, який `gdoc.py` заповнює для КОЖНОГО
-    розпізнаного лейбла, навіть якщо значення порожнє."""
+    keywords (завжди `tuple`, без `None`) присутність колонки читається з
+    `item.raw`, який `gdoc.py` заповнює для КОЖНОГО розпізнаного лейбла,
+    навіть якщо значення порожнє."""
     if item is None:
-        return SourceCells(_ABSENT, _ABSENT, _ABSENT, _ABSENT, _ABSENT, _ABSENT)
+        return SourceCells(_ABSENT, _ABSENT, _ABSENT, _ABSENT, _ABSENT)
 
     def text(value: str | None) -> Cell:
         if value is None:
@@ -252,14 +210,12 @@ def _framework_cells(item: ContentItem | None) -> SourceCells:
             return _ABSENT
         return Cell(state="value", items=values) if values else _EMPTY
 
-    links = item.internal_links + item.external_links
     return SourceCells(
         url=text(item.url),
         title=text(item.title),
         description=text(item.description),
         h1=text(item.h1),
         keywords=multi(("keywords",), item.keywords),
-        links=multi(("internal_links", "external_links"), links),
     )
 
 
@@ -269,15 +225,13 @@ def _site_cells(page: LivePage | None, claimed_keywords: frozenset[str]) -> Sour
     (task-91 §1.3): "скільки із заявлених ключів реально знайдено", тому
     їй потрібен `claimed_keywords` ззовні, а не власне значення."""
     if page is None or not page.ok or page.signals is None:
-        return SourceCells(_ABSENT, _ABSENT, _ABSENT, _ABSENT, _ABSENT, _ABSENT)
+        return SourceCells(_ABSENT, _ABSENT, _ABSENT, _ABSENT, _ABSENT)
 
     def text(value: str | None) -> Cell:
         if value is None:
             return _ABSENT
         return Cell(state="value", text=value) if value else _EMPTY
 
-    links = page.internal_links + page.external_links
-    links_cell = Cell(state="value", items=links) if links else _EMPTY
     keywords_cell = _site_keyword_coverage(page, claimed_keywords)
     return SourceCells(
         url=Cell(state="value", text=page.url),
@@ -285,7 +239,6 @@ def _site_cells(page: LivePage | None, claimed_keywords: frozenset[str]) -> Sour
         description=text(page.signals.description),
         h1=text(page.signals.h1),
         keywords=keywords_cell,
-        links=links_cell,
     )
 
 
@@ -356,28 +309,6 @@ def _keyword_verdict(
     return FieldVerdict("not_comparable")
 
 
-def _link_verdict(
-    strategy_links: frozenset[str],
-    framework_links: frozenset[str],
-    site_links: frozenset[str],
-    *,
-    site_known: bool,
-) -> FieldVerdict:
-    claimed = strategy_links | framework_links
-    if claimed and site_known:
-        missing = claimed - site_links
-        if missing:
-            return FieldVerdict(
-                "mismatch", detail=f"{len(missing)} claimed link(s) not found on the live page"
-            )
-        return FieldVerdict("match", detail="all claimed links found on the live page")
-    claimed_sources = [s for s in (strategy_links, framework_links) if s]
-    if len(claimed_sources) >= 2:
-        overlap = strategy_links & framework_links
-        return FieldVerdict("match") if overlap else FieldVerdict("mismatch")
-    return FieldVerdict("not_comparable")
-
-
 def _row_verdicts(
     strategy: SourceCells | None,
     framework: SourceCells | None,
@@ -385,7 +316,6 @@ def _row_verdicts(
     *,
     strategy_item: ContentItem | None,
     framework_item: ContentItem | None,
-    site_page: LivePage | None,
 ) -> RowVerdicts:
     def cells_for(field: str) -> dict[str, Cell]:
         out: dict[str, Cell] = {}
@@ -397,33 +327,8 @@ def _row_verdicts(
             out["site"] = getattr(site, field)
         return out
 
-    base_url = (
-        (framework_item.url if framework_item else None)
-        or (strategy_item.url if strategy_item else None)
-        or (site_page.url if site_page else None)
-    )
     strategy_kw = _norm_keyword_set(strategy_item.keywords) if strategy_item else frozenset()
     framework_kw = _norm_keyword_set(framework_item.keywords) if framework_item else frozenset()
-    strategy_links = (
-        _norm_link_set(
-            strategy_item.internal_links + strategy_item.external_links, base_url=base_url
-        )
-        if strategy_item
-        else frozenset()
-    )
-    framework_links = (
-        _norm_link_set(
-            framework_item.internal_links + framework_item.external_links, base_url=base_url
-        )
-        if framework_item
-        else frozenset()
-    )
-    site_links = (
-        _norm_link_set(site_page.internal_links + site_page.external_links, base_url=site_page.url)
-        if site_page and site_page.ok
-        else frozenset()
-    )
-    site_known = site_page is not None and site_page.ok
 
     return RowVerdicts(
         url=_scalar_verdict(cells_for("url"), url=True),
@@ -431,7 +336,6 @@ def _row_verdicts(
         description=_scalar_verdict(cells_for("description")),
         h1=_scalar_verdict(cells_for("h1")),
         keywords=_keyword_verdict(strategy_kw, framework_kw, site.keywords if site else _ABSENT),
-        links=_link_verdict(strategy_links, framework_links, site_links, site_known=site_known),
     )
 
 
@@ -498,8 +402,8 @@ def build_matrix(strategy: ContentDoc, outcomes: list[FrameworkOutcome]) -> list
                     site_cells,
                     strategy_item=strategy_item,
                     framework_item=framework_item,
-                    site_page=outcome.site_page,
                 ),
+                links=outcome.link_audit,
                 framework_document_id=outcome.source.document_id,
                 framework_document_name=outcome.source.document_name,
             )
@@ -523,7 +427,6 @@ def build_matrix(strategy: ContentDoc, outcomes: list[FrameworkOutcome]) -> list
                     None,
                     strategy_item=item,
                     framework_item=None,
-                    site_page=None,
                 ),
             )
         )

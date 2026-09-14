@@ -1,4 +1,4 @@
-"""Excel-експорт порівняльної матриці (task-91 §1.8/§3.5).
+"""Excel-експорт порівняльної матриці (task-91 §1.8/§3.5, links task-95 §2.7).
 
 Той самий принцип, що `app/pageinventory/xlsx.py`/`app/reports/monthly_xlsx.py`
 (докстрінг `pageinventory/xlsx.py`): білдер читає `list[MatrixRowDTO]` —
@@ -14,18 +14,24 @@ Drive/Docs API — DTO є в обох джерелах (щойно з `build_mat
 за прямим фідбеком оператора на першому чорновику: "10 URL = 30 таблиць",
 не 4 гігантські таблиці по 10 рядків кожна). Для кожної сторінки — заголовок
 із URL і зведеними вердиктами, а під ним три маленькі таблиці одна за одною,
-кожна з тим самим набором шести колонок (URL/Title/Description/H1/Keywords/
-Outgoing links):
+кожна з тим самим набором семи колонок (URL/Title/Description/H1/Keywords/
+In copy/On site):
 
-    https://example.com/page             URL:✓  Title:✗  Description:✗  …
-      Strategy   [заголовок 6 колонок] [1 рядок даних]
-      Framework  [той самий заголовок] [1 рядок даних]
-      Site       [той самий заголовок] [1 рядок даних]
+    https://example.com/page             URL:✓  Title:✗  Description:✗ … In copy:✗  On site:✗
+      Strategy   [заголовок 7 колонок] [1 рядок даних, In copy/On site — "—"]
+      Framework  [той самий заголовок] [1 рядок даних, In copy/On site — вердикт ланцюга]
+      Site       [той самий заголовок] [1 рядок даних, In copy/On site — "—"]
 
     https://example.com/next-page        URL:✓  Title:✓  …
       Strategy   …
       Framework  …
       Site       …
+
+Колонки `In copy`/`On site` (task-95) замінили колишні `Link 1…Link 6` —
+ланцюг Framework -> Copy -> Site не є per-source звіркою (сайт/стратегія
+не мають "своєї сторони" цього ланцюга), тож значення несе лише рядок
+Framework; Strategy/Site показують сірий «—». Деталі (яке саме посилання
+не дійшло) — у блоці `Links` під кожним per-page аркушем Copy (task-92).
 
 Той самий порядок, що на екрані (`strategy-package-tool.js:renderMatrixPageGroup`)
 — оператор звіряє три таблиці однієї сторінки одним поглядом, не гортаючи
@@ -51,6 +57,7 @@ from app.schemas.strategy_package import (
     CopyRowDTO,
     CopyTabResultDTO,
     FrameworkOutcomeDTO,
+    LinkAuditDTO,
     MatrixCellDTO,
     MatrixFieldVerdictDTO,
     MatrixRowDTO,
@@ -107,27 +114,25 @@ _SOURCE_LABEL_BG = "F3F3F3"
 _TITLE_ROW_HEIGHT = 22
 _SUMMARY_ROW_HEIGHT = 16
 
-_FIELDS = ("url", "title", "description", "h1", "keywords", "links")
-_FIELD_LABELS = ("URL", "Title", "Description", "H1", "Keywords", "Outgoing links")
+_FIELDS = ("url", "title", "description", "h1", "keywords")
+_FIELD_LABELS = ("URL", "Title", "Description", "H1", "Keywords")
 
-# Live feedback: one packed "Outgoing links" cell (semicolon-joined, most
-# of it invisible behind Excel's own row clipping) is unreadable — split
-# into its own sub-column per link instead. Scalar fields keep one column
-# each. Link columns beyond `_MAX_LINK_COLUMNS` collapse into a "(+N more)"
-# note on the last one, same cap `_cell_text` already used for the single-
-# cell display.
 _SCALAR_FIELDS = ("url", "title", "description", "h1", "keywords")
 _SCALAR_LABELS = ("URL", "Title", "Description", "H1", "Keywords")
-_MAX_LINK_COLUMNS = 6
-_LINK_COLUMN_LABELS = tuple(f"Link {i + 1}" for i in range(_MAX_LINK_COLUMNS))
-_ALL_LABELS = _SCALAR_LABELS + _LINK_COLUMN_LABELS
+# task-95 §2.7: замінили колишні `Link 1…Link 6` (одна колонка на кожне
+# приписане посилання, нечитабельно при 10+) — ланцюг Framework -> Copy ->
+# Site дає рівно два кроки-вердикти, не список; деталі (яке саме
+# посилання не дійшло) — у блоці `Links` під per-page аркушем Copy.
+_LINK_STEP_LABELS = ("In copy", "On site")
+_ALL_LABELS = _SCALAR_LABELS + _LINK_STEP_LABELS
 _TOTAL_COLUMNS = len(_ALL_LABELS)
 # Character widths tuned to each field's typical content (task-91 §3.5,
 # corrected live twice: the original list had 7 entries for what was then
 # a 6-column table — one column short of the dropped "Page" lead column,
 # silently shifting every column — and columns/rows were later widened
-# again live for readability after the "Outgoing links" split).
-_COLUMN_WIDTHS = (32, 30, 44, 30, 34) + (30,) * _MAX_LINK_COLUMNS
+# again live for readability after the "Outgoing links" split; task-95
+# replaced the six 30-wide link sub-columns with two 34-wide verdict ones).
+_COLUMN_WIDTHS = (32, 30, 44, 30, 34, 34, 34)
 _DATA_ROW_HEIGHT = 70
 
 
@@ -173,9 +178,9 @@ _MINI_TABLES: tuple[tuple[str, str], ...] = (
 
 def _cell_tone(verdict: MatrixFieldVerdictDTO, side: str) -> str | None:
     """Mirrors `strategy-package-tool.js:matrixCellTone` — `outlier_sources`
-    (task-91 §3.6) says which source(s) actually drifted; keywords/links
-    verdicts don't compute per-source outliers (different claim-vs-confirm
-    shape), so a mismatch there still flags every source, same as before."""
+    (task-91 §3.6) says which source(s) actually drifted; keywords verdicts
+    don't compute per-source outliers (different claim-vs-confirm shape),
+    so a mismatch there still flags every source, same as before."""
     if verdict.state == "match":
         return "match"
     if verdict.state == "mismatch":
@@ -183,6 +188,33 @@ def _cell_tone(verdict: MatrixFieldVerdictDTO, side: str) -> str | None:
             return "mismatch" if side in verdict.outlier_sources else "match"
         return "mismatch"
     return None
+
+
+def _link_step_verdicts(
+    links: LinkAuditDTO | None,
+) -> tuple[tuple[str, MatrixFieldVerdictDTO | None], ...]:
+    if links is None:
+        return (("In copy", None), ("On site", None))
+    return (("In copy", links.in_copy), ("On site", links.on_site))
+
+
+def _link_step_tone(verdict: MatrixFieldVerdictDTO | None) -> str | None:
+    if verdict is None or verdict.state == "not_comparable":
+        return None
+    return "match" if verdict.state == "match" else "mismatch"
+
+
+def _link_step_cell_text(verdict: MatrixFieldVerdictDTO | None) -> str:
+    """Компактний текст клітинки ланцюга (task-95 §2.7): символ + число
+    (`✓ 3/3 framework link(s) in copy`), чи сам `detail`, коли числа нема
+    (`not_comparable` — «no copy tab in this document», «no URL», …)."""
+    if verdict is None:
+        return "—"
+    if verdict.state == "not_comparable":
+        return verdict.detail or "—"
+    return f"{_VERDICT_SYMBOL[verdict.state]} {verdict.detail}" if verdict.detail else (
+        _VERDICT_SYMBOL[verdict.state]
+    )
 
 
 def _page_header(ws: Worksheet, row_index: int, row: MatrixRowDTO) -> int:
@@ -217,14 +249,23 @@ def _page_header(ws: Worksheet, row_index: int, row: MatrixRowDTO) -> int:
     # хрестики червоні") instead of one joined string — a single cell can
     # only carry one font, so a match's ✓ and a mismatch's ✗ in the same
     # string were forced to share one (muted gray) color. `_FIELDS` has
-    # exactly 6 entries, aligned one-to-one with the sheet's first 6
-    # columns (5 scalar fields + the "Outgoing links" column), so each
-    # badge lands directly above the column it summarizes.
+    # exactly 5 entries, aligned one-to-one with the sheet's first 5
+    # columns; the two link-chain steps (task-95) come from `row.links`,
+    # a row-level object, not a sixth per-source field, so they get their
+    # own short loop over the same summary row.
     summary_row = title_row + 1
     summary_fg = {"match": _MATCH_FG, "mismatch": _MISMATCH_FG, "not_comparable": _ABSENT_FG}
     for col_index, (field, label) in enumerate(zip(_FIELDS, _FIELD_LABELS, strict=True), start=1):
         state = getattr(row.verdicts, field).state
         badge_cell = ws.cell(summary_row, col_index, f"{label}: {_VERDICT_SYMBOL[state]}")
+        badge_cell.font = Font(bold=state != "not_comparable", size=10, color=summary_fg[state])
+        badge_cell.alignment = Alignment(horizontal="left", vertical="center")
+    link_col_start = len(_SCALAR_FIELDS) + 1
+    for offset, (label, verdict) in enumerate(_link_step_verdicts(row.links)):
+        state = verdict.state if verdict is not None else "not_comparable"
+        badge_cell = ws.cell(
+            summary_row, link_col_start + offset, f"{label}: {_VERDICT_SYMBOL[state]}"
+        )
         badge_cell.font = Font(bold=state != "not_comparable", size=10, color=summary_fg[state])
         badge_cell.alignment = Alignment(horizontal="left", vertical="center")
     for col in range(1, _TOTAL_COLUMNS + 1):
@@ -265,21 +306,27 @@ def _tone_font_fill_border(tone: str | None) -> tuple[Font, PatternFill | None, 
 def _mini_table(
     ws: Worksheet, start_row: int, side: str, title: str,
     cells: MatrixSourceCellsDTO | None, verdicts: MatrixRowVerdictsDTO,
+    links: LinkAuditDTO | None,
 ) -> int:
     """Одна маленька таблиця — назва джерела, заголовок колонок (5
-    скалярних полів + до `_MAX_LINK_COLUMNS` окремих підколонок-посилань),
-    один рядок даних. `cells=None` -> сторінка не мала цього джерела в
-    цьому прогоні (наприклад фреймворк без відповідного рядка стратегії).
-    `side` ("strategy"/"framework"/"site") вирішує, чи ЦЕ джерело — той
-    самий "outlier", що відрізняється (червоний), чи один із тих, що
-    погоджуються між собою (зелений) — `_cell_tone()`. Кожна підколонка
-    посилання успадковує тон усього поля `links` — самих посилань
-    попарно не звіряємо, лише факт "поле розходиться десь"."""
+    скалярних полів + 2 кроки ланцюга посилань), один рядок даних.
+    `cells=None` -> сторінка не мала цього джерела в цьому прогоні
+    (наприклад фреймворк без відповідного рядка стратегії). `side`
+    ("strategy"/"framework"/"site") вирішує, чи ЦЕ джерело — той самий
+    "outlier", що відрізняється (червоний), чи один із тих, що
+    погоджуються між собою (зелений) — `_cell_tone()`. Ланцюг Framework ->
+    Copy -> Site (task-95) не має "своєї сторони" на Strategy/Site — лише
+    рядок Framework несе вердикт, інші два показують сірий «—»."""
 
     def tone_for(field: str) -> str | None:
         if cells is None or getattr(cells, field).state != "value":
             return None
         return _cell_tone(getattr(verdicts, field), side)
+
+    is_link_side = side == "framework"
+    link_verdicts = (
+        _link_step_verdicts(links) if is_link_side else (("In copy", None), ("On site", None))
+    )
 
     r = start_row
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_TOTAL_COLUMNS)
@@ -290,10 +337,12 @@ def _mini_table(
         ws.cell(r, col).fill = _fill(_SOURCE_LABEL_BG)
     r += 1
 
-    links_tone = tone_for("links")
     for col_index, label in enumerate(_ALL_LABELS, start=1):
-        is_link_col = col_index > len(_SCALAR_FIELDS)
-        tone = links_tone if is_link_col else tone_for(_SCALAR_FIELDS[col_index - 1])
+        if col_index > len(_SCALAR_FIELDS):
+            _, verdict = link_verdicts[col_index - len(_SCALAR_FIELDS) - 1]
+            tone = _link_step_tone(verdict) if is_link_side else None
+        else:
+            tone = tone_for(_SCALAR_FIELDS[col_index - 1])
         header_fg = _HEADER_FG
         if tone == "mismatch":
             header_fg = _MISMATCH_FG
@@ -323,25 +372,17 @@ def _mini_table(
             elif cell_value.state == "absent":
                 cell.font = Font(color=_ABSENT_FG, italic=True)
 
-        links_cell = cells.links
-        link_items = links_cell.items if links_cell.state == "value" else ()
         base_col = len(_SCALAR_FIELDS) + 1
-        link_font, link_fill, link_border = _tone_font_fill_border(links_tone)
-        for i in range(_MAX_LINK_COLUMNS):
-            col = base_col + i
-            if i < len(link_items):
-                text = link_items[i]
-                if i == _MAX_LINK_COLUMNS - 1 and len(link_items) > _MAX_LINK_COLUMNS:
-                    text += f"  (+{len(link_items) - _MAX_LINK_COLUMNS} more)"
-                cell = ws.cell(r, col, text)
-                if links_tone:
-                    cell.font, cell.fill = link_font, link_fill
-            elif i == 0 and links_cell.state == "absent":
-                cell = ws.cell(r, col, "— (no such column)")
+        for offset, (_, verdict) in enumerate(link_verdicts):
+            col = base_col + offset
+            cell = ws.cell(r, col, _link_step_cell_text(verdict) if is_link_side else "—")
+            tone = _link_step_tone(verdict) if is_link_side else None
+            font, fill, border = _tone_font_fill_border(tone)
+            cell.border = border
+            if tone:
+                cell.font, cell.fill = font, fill
+            elif not is_link_side:
                 cell.font = Font(color=_ABSENT_FG, italic=True)
-            else:
-                cell = ws.cell(r, col, "")
-            cell.border = link_border
             cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
     ws.row_dimensions[r].height = _DATA_ROW_HEIGHT
     return r + 1
@@ -357,20 +398,26 @@ def build_comparison_sheet(ws: Worksheet, rows: list[MatrixRowDTO]) -> None:
     for row in rows:
         r = _page_header(ws, r, row)
         for side, title in _MINI_TABLES:
-            r = _mini_table(ws, r, side, title, getattr(row, side), row.verdicts)
+            r = _mini_table(ws, r, side, title, getattr(row, side), row.verdicts, row.links)
         r += 1  # spacer between page groups
     _column_widths(ws)
     ws.freeze_panes = "A1"
     ws.sheet_view.showGridLines = False
 
 
+def _row_has_mismatch(row: MatrixRowDTO) -> bool:
+    if any(getattr(row.verdicts, f).state == "mismatch" for f in _FIELDS):
+        return True
+    return row.links is not None and (
+        row.links.in_copy.state == "mismatch" or row.links.on_site.state == "mismatch"
+    )
+
+
 def build_mismatches_sheet(ws: Worksheet, rows: list[MatrixRowDTO]) -> None:
     """Лише рядки з хоч одним `mismatch`-полем (task-91 §3.5) — те, що
-    оператор реально шукає після прогону на десятках сторінок."""
-    mismatched = [
-        row for row in rows
-        if any(getattr(row.verdicts, f).state == "mismatch" for f in _FIELDS)
-    ]
+    оператор реально шукає після прогону на десятках сторінок. Ланцюг
+    посилань (task-95) рахується так само, як п'ять скалярних полів."""
+    mismatched = [row for row in rows if _row_has_mismatch(row)]
     labels = ["Page", "Field", "Detail"]
     _header_row(ws, 1, labels)
     r = 2
@@ -378,6 +425,13 @@ def build_mismatches_sheet(ws: Worksheet, rows: list[MatrixRowDTO]) -> None:
         for field, label in zip(_FIELDS, _FIELD_LABELS, strict=True):
             verdict = getattr(row.verdicts, field)
             if verdict.state != "mismatch":
+                continue
+            ws.cell(r, 1, row.label)
+            ws.cell(r, 2, label)
+            ws.cell(r, 3, verdict.detail or "").alignment = Alignment(wrap_text=True)
+            r += 1
+        for label, verdict in _link_step_verdicts(row.links):
+            if verdict is None or verdict.state != "mismatch":
                 continue
             ws.cell(r, 1, row.label)
             ws.cell(r, 2, label)
@@ -417,7 +471,10 @@ _EXCEL_SHEET_FORBIDDEN_RE = re.compile(r"[\[\]:*?/\\]")
 _COPY_INDEX_LABELS = ("Page", "Framework document", "Copy tab", "Issues", "Sheet")
 _COPY_INDEX_WIDTHS = (56, 46, 26, 34, 30)
 _COPY_PAGE_LABELS = ("#", "Section", "Sentence (from Copy)", "Issue")
-_COPY_PAGE_WIDTHS = (5, 30, 100, 44)
+# col 1 wider than a bare "#" needs (5) — shared with the Links block
+# below (task-95 §2.7), whose first column holds a full link display
+# text, same width class as "Sentence (from Copy)".
+_COPY_PAGE_WIDTHS = (38, 30, 100, 44)
 # `missing` — речення взагалі нема на сторінці (червоний, як mismatch у
 # Comparison); `changed` — є, але з іншим текстом (бурштиновий). Колір
 # ніколи не єдиний сигнал (AGENTS.md §7) — колонка Issue каже те саме
@@ -480,15 +537,23 @@ def _merged_line(ws: Worksheet, row_index: int, text: str, width: int) -> Any:
     return cell
 
 
+_LINKS_BLOCK_LABELS = ("Link", "In copy", "On site", "Note")
+_LINK_PRESENCE_SYMBOL = {"yes": "✓", "no": "✗", "not_checked": "—"}
+_LINK_PRESENCE_FG = {"yes": _MATCH_FG, "no": _MISMATCH_FG, "not_checked": _ABSENT_FG}
+
+
 def _copy_page_sheet(
     ws: Worksheet, *, page_url: str | None, document_name: str, document_id: str,
-    tab: CopyTabResultDTO, rows: Sequence[CopyRowDTO],
+    tab: CopyTabResultDTO, rows: Sequence[CopyRowDTO], link_audit: LinkAuditDTO | None = None,
 ) -> None:
     """Один аркуш = одна сторінка: шапка (URL → лінк, документ → лінк на
     Google Doc, вкладка + лічильник), далі лише те, що треба виправити,
     одне речення на рядок. Висота рядка не задається — Excel/LibreOffice/
     Sheets автопідганяють під перенесений текст; фіксовані 46pt у першому
-    чорновику обрізали довгі речення (live feedback: «1 речення 1 рядок»)."""
+    чорновику обрізали довгі речення (live feedback: «1 речення 1 рядок»).
+    Унизу — блок `Links` (task-95 §2.7): деталі ланцюга Framework -> Copy
+    -> Site, яких дві колонки Comparison не показують (лише зведений
+    вердикт). `None`/порожній — блок не додається, а не порожня таблиця."""
     width = len(_COPY_PAGE_LABELS)
     r = 1
     url_cell = _merged_line(ws, r, page_url or "(no page URL in this run)", width)
@@ -525,17 +590,67 @@ def _copy_page_sheet(
                 cell.fill = _fill(bg)
         r += 1
 
+    if link_audit is not None and (link_audit.rows or link_audit.skipped):
+        r += 1  # spacer before the Links block
+        title_cell = _merged_line(ws, r, "Links (Framework -> Copy -> Site)", width)
+        title_cell.font = Font(bold=True, size=12)
+        r += 1
+        _header_row(ws, r, list(_LINKS_BLOCK_LABELS))
+        r += 1
+        for link_row in link_audit.rows:
+            link_cell = ws.cell(r, 1, link_row.display)
+            link_cell.border = _GRID_BORDER
+            link_cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+            for col, presence in ((2, link_row.in_copy), (3, link_row.on_site)):
+                cell = ws.cell(r, col, f"{_LINK_PRESENCE_SYMBOL[presence]} {presence}")
+                cell.font = Font(color=_LINK_PRESENCE_FG[presence])
+                cell.border = _GRID_BORDER
+                cell.alignment = Alignment(horizontal="left", vertical="top")
+            note_cell = ws.cell(r, 4, link_row.note or "")
+            note_cell.border = _GRID_BORDER
+            note_cell.alignment = Alignment(horizontal="left", vertical="top")
+            r += 1
+        for skipped in link_audit.skipped:
+            note_cell = _merged_line(ws, r, f"Skipped: {skipped}", width)
+            note_cell.font = Font(italic=True, size=10, color=_ABSENT_FG)
+            r += 1
+
     for col_index, w in enumerate(_COPY_PAGE_WIDTHS, start=1):
         ws.column_dimensions[get_column_letter(col_index)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
     ws.sheet_view.showGridLines = False
 
 
-def build_copy_sheets(workbook: Workbook, frameworks: Sequence[FrameworkOutcomeDTO]) -> None:
+def _link_audits_by_document(rows: Sequence[MatrixRowDTO]) -> dict[str, LinkAuditDTO]:
+    """`document_id -> LinkAudit` (task-95 §2.7) — the Excel Copy sheets
+    are keyed by `FrameworkOutcomeDTO` (no `links` field of its own; the
+    chain lives on the matrix ROW), so this is the join back."""
+    return {
+        row.framework_document_id: row.links
+        for row in rows
+        if row.framework_document_id and row.links is not None
+    }
+
+
+def _link_audit_has_mismatch(link_audit: LinkAuditDTO | None) -> bool:
+    return link_audit is not None and (
+        link_audit.in_copy.state == "mismatch" or link_audit.on_site.state == "mismatch"
+    )
+
+
+def build_copy_sheets(
+    workbook: Workbook, frameworks: Sequence[FrameworkOutcomeDTO],
+    matrix_rows: Sequence[MatrixRowDTO] = (),
+) -> None:
     """Індексний аркуш `Copy` + один аркуш на кожну сторінку, де є що
     виправити. Сторінки без проблем і вкладки зі станом `no_url`/
     `not_checked`/`not_applicable` — теж рядок в індексі (перевірено-чисто
-    ≠ не перевірено, PLAN §12), але без окремого аркуша."""
+    ≠ не перевірено, PLAN §12), але без окремого аркуша. `matrix_rows`
+    (task-95, іменовано так, щоб не затінювати локальну `rows` = список
+    `CopyRowDTO` нижче) дає доступ до ланцюга посилань кожної сторінки —
+    сторінка з чистою прозою (task-92), але зламаним ланцюгом посилань
+    (task-95) теж отримує аркуш, лише заради блоку `Links`."""
+    link_audits = _link_audits_by_document(matrix_rows)
     index_ws = workbook.create_sheet("Copy")
     used = {name.lower() for name in workbook.sheetnames}
     index_rows: list[tuple[Any, ...]] = []
@@ -544,13 +659,17 @@ def build_copy_sheets(workbook: Workbook, frameworks: Sequence[FrameworkOutcomeD
     for outcome in frameworks:
         if not outcome.copy_diffs:
             continue
+        link_audit = link_audits.get(outcome.source.document_id)
+        has_link_mismatch = _link_audit_has_mismatch(link_audit)
         document_name = outcome.source.document_name or outcome.source.document_id
         actionable = {
             id(tab): [row for row in tab.rows if row.state in _ACTIONABLE_STATES]
             for tab in outcome.copy_diffs
         }
         with_sheet = [
-            tab for tab in outcome.copy_diffs if tab.state == "checked" and actionable[id(tab)]
+            tab for tab in outcome.copy_diffs if tab.state == "checked" and (
+                actionable[id(tab)] or (has_link_mismatch and tab.role == "primary")
+            )
         ]
         for tab in outcome.copy_diffs:
             rows = actionable[id(tab)]
@@ -611,10 +730,16 @@ def build_copy_sheets(workbook: Workbook, frameworks: Sequence[FrameworkOutcomeD
 
     for sheet_title, outcome, tab, rows in page_sheets:
         ws = workbook.create_sheet(sheet_title)
+        # Link audit is per-PAGE, computed against the primary copy tab
+        # (task-92 §2.5 role, task-95 §2.3) — only that tab's sheet gets
+        # the `Links` block; a secondary (e.g. non-matching-language)
+        # tab's sheet would show the same numbers out of context.
+        link_audit = link_audits.get(outcome.source.document_id) if tab.role == "primary" else None
         _copy_page_sheet(
             ws, page_url=outcome.page_url,
             document_name=outcome.source.document_name or outcome.source.document_id,
             document_id=outcome.source.document_id, tab=tab, rows=rows,
+            link_audit=link_audit,
         )
 
 
@@ -629,7 +754,7 @@ def build_matrix_xlsx(
     mismatches_ws = workbook.create_sheet("Mismatches")
     build_mismatches_sheet(mismatches_ws, rows)
 
-    build_copy_sheets(workbook, frameworks)
+    build_copy_sheets(workbook, frameworks, rows)
 
     buffer = io.BytesIO()
     workbook.save(buffer)

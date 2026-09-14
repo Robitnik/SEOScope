@@ -37,8 +37,9 @@ from app.contentqa.crosscheck import (
 )
 from app.contentqa.engine import run_checks
 from app.contentqa.findings import Finding
+from app.contentqa.links import LinkAudit, audit_links
 from app.contentqa.model import ContentDoc, ContentItem
-from app.contentqa.readers.gdoc import copy_tab_blocks, read_framework_document
+from app.contentqa.readers.gdoc import copy_tab_blocks, copy_tab_links, read_framework_document
 from app.contentqa.rules import Profile
 from app.contentqa.site import LivePage, fetch_page
 from app.integrations.google_api.docs_client import DocsClient, DocTab
@@ -102,6 +103,13 @@ class FrameworkOutcome:
     # / чи сходиться", не findings. `()` коли документ не має копі-вкладок
     # ВЗАГАЛІ, `check_site=False`, чи `check_published=False`.
     copy_diffs: tuple[CopyTabResult, ...] = ()
+    # Ланцюг Framework -> Copy -> Site (task-95): чи приписані Framework-
+    # посилання реально потрапили в копію, і чи посилання копії реально є
+    # на живій сторінці. Незалежно від `copy_diffs`/task-92 — рахується,
+    # доки є Framework-документ, навіть коли `check_published=False`.
+    # `None`, коли рахувати нема з чого взагалі (нема ні Frame, ні Copy
+    # документа — `no_recognized_tabs`).
+    link_audit: LinkAudit | None = None
 
 
 # ── Лейн K: Copy ↔ живий сайт, посегментно (task-92 §2.1/§2.5) ──────────────
@@ -205,6 +213,25 @@ def _run_copy_lane(
     return tuple(
         replace(o, role="primary") if o.tab_title == primary_title else o for o in outcomes
     )
+
+
+def _primary_copy_tab(
+    all_copy_tabs: tuple[DocTab, ...], copy_diffs: tuple[CopyTabResult, ...]
+) -> DocTab | None:
+    """Яка копі-вкладка — "основна" для звірки посилань (task-95 §2.3):
+    та сама роль, що лейн K уже вирішив за ПОКРИТТЯМ проти живої сторінки
+    (`_run_copy_lane` вище, task-92 §2.5 — LAXTON: дві мовні вкладки на
+    документ, правильну видає лише порівняння з сайтом, не назва). Коли
+    `copy_diffs` порожній (нема URL / `check_published=False`) —
+    вирішувати нема з чого, перша вкладка документа."""
+    if not all_copy_tabs:
+        return None
+    primary_title = next((o.tab_title for o in copy_diffs if o.role == "primary"), None)
+    if primary_title is not None:
+        for tab in all_copy_tabs:
+            if tab.title == primary_title:
+                return tab
+    return all_copy_tabs[0]
 
 
 @dataclass(frozen=True)
@@ -322,6 +349,25 @@ def run_framework(
         # не порожня таблиця (task-92 DoD #7), а не мовчазне "нема лейну".
         copy_diffs = _run_copy_lane(resolved.all_copy_tabs, site_page=None, has_url=False)
 
+    # Ланцюг посилань Framework -> Copy -> Site (task-95 §2.3) — незалежно
+    # від `check_published`: "основна" копі-вкладка переїжджає з `copy_diffs`,
+    # коли він порахований (роль за покриттям, task-92 §2.5), інакше перша
+    # вкладка документа. `frame_item`/`site_page` — ті самі об'єкти, що
+    # вище, нуль додаткових HTTP-запитів чи повторного читання Docs.
+    primary_copy_tab = _primary_copy_tab(resolved.all_copy_tabs, copy_diffs)
+    copy_links = copy_tab_links(primary_copy_tab) if primary_copy_tab is not None else ()
+    copy_genre = (
+        genre_of(copy_tab_blocks(primary_copy_tab)) if primary_copy_tab is not None else None
+    )
+    link_audit = audit_links(
+        frame_item,
+        copy_links=copy_links,
+        has_copy_tab=primary_copy_tab is not None,
+        copy_genre=copy_genre,
+        site_page=site_page,
+        has_url=has_url,
+    )
+
     return FrameworkOutcome(
         source=source, state="checked",
         frame_tab_title=resolved.frame_tab_title, copy_tab_title=resolved.copy_tab_title,
@@ -329,6 +375,7 @@ def run_framework(
         frame_strategy_info=frame_strategy_info, frame_site_info=frame_site_info,
         copy_site_info=copy_site_info, matched_strategy_key=matched_key,
         frame_item=frame_item, site_page=site_page, copy_diffs=copy_diffs,
+        link_audit=link_audit,
     )
 
 

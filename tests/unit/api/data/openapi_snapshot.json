@@ -6560,6 +6560,116 @@
         "title": "LastBackupDTO",
         "type": "object"
       },
+      "LinkAuditDTO": {
+        "description": "\u0420\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442 \u0437\u0432\u0456\u0440\u043a\u0438 \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u044c \u043e\u0434\u043d\u043e\u0433\u043e \u0444\u0440\u0435\u0439\u043c\u0432\u043e\u0440\u043a\u0430 (task-95 \u00a72.5).\n`state=\"not_applicable\"` \u2014 \u0456 Framework, \u0456 Copy \u0447\u0435\u0441\u043d\u043e \u043d\u0435 \u0437\u0430\u044f\u0432\u043b\u044f\u044e\u0442\u044c\n\u0436\u043e\u0434\u043d\u043e\u0457 \u0446\u0456\u043b\u0456 (13/56 \u0436\u0438\u0432\u0438\u0445 \u043a\u043e\u043f\u0456-\u0432\u043a\u043b\u0430\u0434\u043e\u043a \u043f\u043e\u0440\u0442\u0444\u0435\u043b\u044f, task-95 \u00a71.5) \u2014 \u043d\u0435\n\u043f\u043e\u043c\u0438\u043b\u043a\u0430 \u0456\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u0443. `skipped` \u2014 \u0440\u044f\u0434\u043a\u0438 \u0431\u0435\u0437 \u0432\u0438\u0434\u043e\u0431\u0443\u0442\u043e\u0457 \u0446\u0456\u043b\u0456 (Framework-\n\u043f\u0440\u043e\u0437\u0430 \u0431\u0435\u0437 URL) \u0456 \u0440\u044f\u0434\u043a\u0438-\u0456\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0456\u0457 \u0432\u0435\u0440\u0441\u0442\u0430\u043b\u044c\u043d\u0438\u043a\u0443 \u0437 Copy (`[MAP: \u2026]`) \u2014\n\u043f\u043e\u043a\u0430\u0437\u0430\u0442\u0438 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0443, \u043d\u0435 \u0440\u0430\u0445\u0443\u0432\u0430\u0442\u0438 \u0443 \u0432\u0435\u0440\u0434\u0438\u043a\u0442.",
+        "properties": {
+          "in_copy": {
+            "$ref": "#/components/schemas/MatrixFieldVerdictDTO"
+          },
+          "on_site": {
+            "$ref": "#/components/schemas/MatrixFieldVerdictDTO"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LinkRowDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "checked",
+              "not_applicable"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "in_copy",
+          "on_site"
+        ],
+        "title": "LinkAuditDTO",
+        "type": "object"
+      },
+      "LinkRowDTO": {
+        "description": "\u041e\u0434\u043d\u0435 \u043f\u043e\u0440\u0456\u0432\u043d\u044e\u0432\u0430\u043d\u0435 \u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f (task-95 \u00a72.5). `origin` \u2014 \u0445\u0442\u043e \u043f\u0435\u0440\u0448\u0438\u0439\n\u0437\u0430\u044f\u0432\u0438\u0432 \u0446\u044e \u0446\u0456\u043b\u044c: `\"framework\"` \u043d\u0430\u0432\u0456\u0442\u044c \u043a\u043e\u043b\u0438 \u043a\u043e\u043f\u0456\u044f \u0442\u0435\u0436 \u0457\u0457 \u043d\u0435\u0441\u0435, \u0456\u043d\u0430\u043a\u0448\u0435\n`\"copy\"` (\u043f\u043e\u0441\u0438\u043b\u0430\u043d\u043d\u044f, \u044f\u043a\u0435 Framework \u043d\u0435 \u043f\u0440\u0438\u043f\u0438\u0441\u0443\u0432\u0430\u0432, \u0430\u043b\u0435 \u043a\u043e\u043f\u0456\u044f \u043c\u0430\u0454 \u2014\n\u00a71.7, \u0441\u0430\u043c\u0435 \u0442\u0430\u043a \u0437\u043d\u0430\u0439\u0434\u0435\u043d\u043e \u0437\u0430\u0441\u0442\u0430\u0440\u0456\u043b\u0438\u0439 PDF-\u0441\u0435\u0440\u0442\u0438\u0444\u0456\u043a\u0430\u0442 \u043d\u0430 EFFYS).",
+        "properties": {
+          "display": {
+            "title": "Display",
+            "type": "string"
+          },
+          "in_copy": {
+            "enum": [
+              "yes",
+              "no",
+              "not_checked"
+            ],
+            "title": "In Copy",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "on_site": {
+            "enum": [
+              "yes",
+              "no",
+              "not_checked"
+            ],
+            "title": "On Site",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "framework",
+              "copy"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "display",
+          "origin",
+          "in_copy",
+          "on_site"
+        ],
+        "title": "LinkRowDTO",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -6583,7 +6693,7 @@
         "type": "object"
       },
       "MatrixCellDTO": {
-        "description": "\u041e\u0434\u043d\u0430 \u043a\u043b\u0456\u0442\u0438\u043d\u043a\u0430 \u043c\u0430\u0442\u0440\u0438\u0446\u0456 (task-91 \u00a72.2). `text` \u2014 \u0441\u043a\u0430\u043b\u044f\u0440\u043d\u0456 \u043f\u043e\u043b\u044f (url/\ntitle/description/h1), `items` \u2014 \u043c\u043d\u043e\u0436\u0438\u043d\u043d\u0456 (keywords/links). \u0420\u0456\u0432\u043d\u043e \u043e\u0434\u0438\u043d\n\u043d\u0435\u043f\u043e\u0440\u043e\u0436\u043d\u0456\u0439, \u043a\u043e\u043b\u0438 `state == \"value\"`.",
+        "description": "\u041e\u0434\u043d\u0430 \u043a\u043b\u0456\u0442\u0438\u043d\u043a\u0430 \u043c\u0430\u0442\u0440\u0438\u0446\u0456 (task-91 \u00a72.2). `text` \u2014 \u0441\u043a\u0430\u043b\u044f\u0440\u043d\u0456 \u043f\u043e\u043b\u044f (url/\ntitle/description/h1), `items` \u2014 \u043c\u043d\u043e\u0436\u0438\u043d\u043d\u0456 (keywords). \u0420\u0456\u0432\u043d\u043e \u043e\u0434\u0438\u043d\n\u043d\u0435\u043f\u043e\u0440\u043e\u0436\u043d\u0456\u0439, \u043a\u043e\u043b\u0438 `state == \"value\"`.",
         "properties": {
           "items": {
             "items": {
@@ -6707,6 +6817,16 @@
             "title": "Label",
             "type": "string"
           },
+          "links": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinkAuditDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "site": {
             "anyOf": [
               {
@@ -6751,9 +6871,6 @@
           "keywords": {
             "$ref": "#/components/schemas/MatrixFieldVerdictDTO"
           },
-          "links": {
-            "$ref": "#/components/schemas/MatrixFieldVerdictDTO"
-          },
           "title": {
             "$ref": "#/components/schemas/MatrixFieldVerdictDTO"
           },
@@ -6766,8 +6883,7 @@
           "title",
           "description",
           "h1",
-          "keywords",
-          "links"
+          "keywords"
         ],
         "title": "MatrixRowVerdictsDTO",
         "type": "object"
@@ -6783,9 +6899,6 @@
           "keywords": {
             "$ref": "#/components/schemas/MatrixCellDTO"
           },
-          "links": {
-            "$ref": "#/components/schemas/MatrixCellDTO"
-          },
           "title": {
             "$ref": "#/components/schemas/MatrixCellDTO"
           },
@@ -6798,8 +6911,7 @@
           "title",
           "description",
           "h1",
-          "keywords",
-          "links"
+          "keywords"
         ],
         "title": "MatrixSourceCellsDTO",
         "type": "object"
