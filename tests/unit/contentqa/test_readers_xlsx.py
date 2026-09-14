@@ -5,6 +5,7 @@ import io
 import pytest
 from openpyxl import Workbook
 
+from app.contentqa.readers.tabular import sheet_role
 from app.contentqa.readers.xlsx import (
     UnknownSheetError,
     inspect_strategy_xlsx,
@@ -161,3 +162,61 @@ def test_inspect_reports_load_bearing_and_row_counts_without_building_items() ->
     assert by_name["Q3 Strategy"].row_count == 2
     assert by_name["Structure v 2.0"].load_bearing is False
     assert inspection.suggested_sheets == ("Q3 Strategy",)
+
+
+# ── task-97: роль аркуша (page/blog/structure/other) ───────────────────────
+
+
+@pytest.mark.parametrize(
+    ("name", "columns", "expected"),
+    [
+        ("Blog", (), "blog"),
+        ("Blogs", (), "blog"),
+        ("Blogs Q3-Q4", (), "blog"),
+        ("Structure / Features / Description", (), "structure"),
+        ("Q3 2026 Strategy", (), "page"),
+        ("Q4 2026", (), "page"),
+        ("Keywords", (), "other"),
+        # Назва нічого не каже — фолбек на колонки (§1.4/§1.5 плану).
+        ("Sheet1", ("url", "intent", "title"), "page"),
+        ("Sheet1", ("keywords_csv", "title"), "blog"),
+        ("Sheet1", (), "other"),
+    ],
+)
+def test_sheet_role_by_name_with_column_fallback(name, columns, expected) -> None:
+    assert sheet_role(name, columns) == expected
+
+
+def test_inspect_prefers_page_sheets_over_all_load_bearing_sheets() -> None:
+    """Дефолт форми (task-97 §2.1) — несучі аркуші з роллю `page`, а не
+    "усі несучі" (task-90 дефолт): `Blog` тут теж несучий (title+description),
+    але не входить у `suggested_sheets`, бо тул задуманий для сторінок."""
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "Q3 2026 Strategy"
+    ws1.append(["Title", "Description"])
+    ws1.append(["Page title", "Page description"])
+    ws2 = wb.create_sheet("Blog")
+    ws2.append(["Title", "Description"])
+    ws2.append(["Blog title", "Blog description"])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    inspection = inspect_strategy_xlsx(buf.getvalue())
+    assert inspection.suggested_sheets == ("Q3 2026 Strategy",)
+
+
+def test_inspect_falls_back_to_all_load_bearing_when_no_page_sheet_found() -> None:
+    """Коли жоден несучий аркуш не розпізнався як `page` — старе
+    поводження (усі несучі), не порожній дефолт (§2.1 плану: широкий
+    дефолт кращий за порожній)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Blog"
+    ws.append(["Title", "Description"])
+    ws.append(["Blog title", "Blog description"])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    inspection = inspect_strategy_xlsx(buf.getvalue())
+    assert inspection.suggested_sheets == ("Blog",)

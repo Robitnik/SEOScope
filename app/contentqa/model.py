@@ -42,12 +42,23 @@ class ContentItem:
 # а рядок у блоці Scope звіту.
 SheetState = Literal["checked", "not_selected", "no_recognized_columns"]
 
+# task-97: класифікація аркуша за тим, ЩО він описує — сторінки сайту,
+# блог-пости, довідкова структура/фічі, чи щось нерозпізнане. Не про
+# розпізнані колонки (те вже каже `SheetState`/`load_bearing`) — навіть
+# аркуш із title/description може описувати блог, не сторінку. Рушить
+# дефолтний вибір форми (`suggested_sheets` в `readers/tabular.py`) і
+# групування кандидатів-фреймворків у UI: тул задуманий для перевірки
+# **сторінок**, блоговий аркуш/фреймворк ніколи не мав входити в дефолт
+# (заміряно живо — жодного `blog_only`-прогону за всю історію портфеля).
+SheetRole = Literal["page", "blog", "structure", "other"]
+
 
 @dataclass(frozen=True)
 class SheetInfo:
     name: str
     state: SheetState
     item_count: int
+    role: SheetRole = "other"
 
 
 @dataclass(frozen=True)

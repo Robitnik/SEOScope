@@ -152,6 +152,18 @@ def test_framework_missing_field_is_none_not_empty_string() -> None:
     assert item.title is None  # no row at all
 
 
+def test_framework_dash_placeholder_url_reads_as_present_but_empty() -> None:
+    """task-97 §2.5: a `Page: -` row (placeholder, no real URL yet) must
+    NOT read as a real URL — the same class of bug fix `0674487` closed on
+    the strategy side (`readers/tabular.py:_row_to_item`): a literal `-`
+    would otherwise build the key `url:-` in `crosscheck.py:_item_key()`
+    and remain a candidate for a false match. `""`, not `None` — the row
+    IS present, only its value is a placeholder (PLAN §12)."""
+    tab = _tab("Framework", [_table((["URL"], ["-"]))])
+    item = read_framework_tab(tab, source="doc")
+    assert item.url == ""
+
+
 # ── Content tab: literal HTML heading tags, not native styles ────────────────
 
 

@@ -58,7 +58,7 @@ from app.tools.http_safety import HostThrottle
 # "порожньої" групи (найдовше заміряне "порожнє" значення — 319).
 MIN_COPY_CHARS = 600
 
-FrameworkState = Literal["checked", "not_accessible", "no_recognized_tabs"]
+FrameworkState = Literal["checked", "not_accessible", "no_recognized_tabs", "out_of_scope"]
 
 
 @dataclass(frozen=True)
@@ -379,6 +379,15 @@ def run_framework(
     )
 
 
+def _sheet_from_ref(ref: str) -> str:
+    """`"Blog!row 8"` -> `"Blog"` — `ContentItem.ref` формату завжди
+    `f"{sheet}!row {n}"` (`readers/tabular.py:SheetScan.build_items`).
+    Фолбек на сирий `ref`, якщо формат раптом інший — для тексту причини,
+    не для логіки зіставлення."""
+    sheet, sep, _row = ref.rpartition("!row ")
+    return sheet if sep else ref
+
+
 def run_package(
     strategy: ContentDoc,
     sources: list[FrameworkSource],
@@ -403,6 +412,25 @@ def run_package(
 
     def _run_one(source: FrameworkSource) -> FrameworkOutcome:
         known_row = strategy_by_ref.get(source.strategy_ref) if source.strategy_ref else None
+        if source.strategy_ref is not None and known_row is None:
+            # task-97 §1.6/§2.4: цей фреймворк лінкований на конкретний
+            # рядок стратегії (`known_row` мав ІСНУВАТИ, за докстрінгом
+            # `check_frame_strategy` — жодного вгадування за URL/назвою тут
+            # ніколи не було задумано), але рядка нема серед `strategy.
+            # items`, бо його аркуш не входить у поточний скоуп прогону
+            # (`sheets=` у `/check`). Чесний `out_of_scope`, обчислений ДО
+            # `docs_client.get_document`/фетчу сайту — не 21 зайвий виклик
+            # Docs API на прогін (SHB, живо заміряно), і не тихий провал
+            # у режим вгадування (`crosscheck.py:check_frame_strategy`),
+            # що на цьому самому класі даних уже раз хибно зіставив рядки
+            # (фікс `0674487`).
+            return FrameworkOutcome(
+                source=source, state="out_of_scope",
+                reason=(
+                    f"Linked from {_sheet_from_ref(source.strategy_ref)}, which is not "
+                    f"in this run's sheet scope."
+                ),
+            )
         try:
             return framework_runner(
                 source, docs_client=docs_client, strategy=strategy, profile=profile,

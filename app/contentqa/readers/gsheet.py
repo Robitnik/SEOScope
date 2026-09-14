@@ -25,13 +25,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.contentqa.model import ContentDoc
+from app.contentqa.model import ContentDoc, SheetRole
 from app.contentqa.readers.tabular import (
     WorkbookInspection,
     build_content_doc,
     build_inspection,
     check_requested_sheets,
     scan_sheets,
+    sheet_role,
 )
 from app.integrations.google_api.sheets_client import CellLink, SheetGrid
 
@@ -79,6 +80,12 @@ class FrameworkLinkCandidate:
     form: str  # "chip" | "hyperlink" | "text_run" | "formula"
     document_id: str
     display_text: str | None  # formattedValue клітинки — назва документа, якщо є
+    # task-97: роль АРКУША-джерела (`sheet_role()`, за назвою — тут без
+    # фолбеку на колонки: повний скан аркуша для кожного кандидата
+    # дублював би `scan_sheets`, і назва вже достатній сигнал за §1.4
+    # плану). Рушить дефолтний вибір фреймворків у формі — `page`-роль
+    # означає «лінія на сторінку», не на блог-пост.
+    role: SheetRole
 
 
 def find_framework_links(grid: tuple[SheetGrid, ...]) -> tuple[FrameworkLinkCandidate, ...]:
@@ -100,6 +107,7 @@ def find_framework_links(grid: tuple[SheetGrid, ...]) -> tuple[FrameworkLinkCand
                             sheet=sheet.title, row=row_idx, col=col_idx,
                             form=link.form, document_id=doc_id,
                             display_text=cell.formatted_value,
+                            role=sheet_role(sheet.title),
                         ))
     return tuple(found)
 

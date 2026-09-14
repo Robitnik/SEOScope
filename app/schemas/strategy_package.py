@@ -26,6 +26,7 @@ from app.schemas.content_qa import (
     ContentQaLocale,
     ContentQaSheetDTO,
     ContentQaSheetPreviewDTO,
+    ContentQaSheetRole,
 )
 
 # "spreadsheet" — нативний Google Sheet; "xlsx_blob" — завантажений .xlsx на
@@ -33,7 +34,16 @@ from app.schemas.content_qa import (
 # `unsupported_source`); "unsupported" — інший mimeType.
 SourceKind = Literal["spreadsheet", "xlsx_blob", "document", "unsupported"]
 FrameworkOrigin = Literal["strategy_link", "drive_search"]
-FrameworkState = Literal["checked", "not_accessible", "no_recognized_tabs"]
+# task-97: `out_of_scope` — фреймворк лінкований на рядок аркуша, якого
+# немає в поточному скоупі прогону (аркуш не обраний). Обчислюється ДО
+# будь-якого виклику Docs API/живого сайту (§2.4 плану) — на відміну від
+# `not_accessible`/`no_recognized_tabs`, тут документ навіть не читався.
+FrameworkState = Literal["checked", "not_accessible", "no_recognized_tabs", "out_of_scope"]
+# Роль кандидата-фреймворка (task-97 §2.2): роль аркуша-джерела для
+# `origin="strategy_link"`; `"unknown"` для `origin="drive_search"` —
+# резервний пошук по Диску не має аркуша-джерела взагалі (§1.5 плану:
+# ім'я ДОКУМЕНТА ненадійне, довіряти йому як вердикту не можна).
+FrameworkCandidateRole = ContentQaSheetRole | Literal["unknown"]
 CrossCheckState = Literal["checked", "not_checked", "not_applicable"]
 # task-91 §2.2: три стани клітинки/вердикту — той самий інваріант PLAN §12
 # (`None` ≠ `""`), піднятий на рівень порівняльної таблиці.
@@ -85,6 +95,9 @@ class FrameworkCandidateDTO(BaseModel):
     sheet: str | None = None
     row: int | None = None
     strategy_ref: str | None = None
+    # task-97: роль для групування/дефолтного вибору у формі. `None` лише
+    # для пакетів, персистованих до цього поля.
+    role: FrameworkCandidateRole | None = None
 
 
 class StrategyPackageInspectDTO(BaseModel):

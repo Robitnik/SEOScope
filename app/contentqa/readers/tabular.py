@@ -21,9 +21,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
-from app.contentqa.model import ContentDoc, ContentItem, SheetInfo
+from app.contentqa.model import ContentDoc, ContentItem, SheetInfo, SheetRole
 
 _HEADER_MIN_SCORE = 2
 
@@ -74,6 +75,38 @@ _ALIASES: dict[str, str] = {
     "copy link": "framework_link",
 }
 _LOAD_BEARING = {"title", "description"}
+
+# task-97 §1.4 (заміряно живо на 8 клієнтах): назва аркуша — стабільний
+# сигнал ролі по всьому портфелю (`Blog`/`Blogs`/`Blogs Q3-Q4`,
+# `Structure`/`Structure / Features / Description`, `Q3 2026 Strategy`/
+# `Q4 2026`/…). Патерни впорядковані за пріоритетом — перше влучання
+# вирішує, не найспецифічніше: `blog`/`structure` перевіряються ДО
+# `page`, бо назва на кшталт "Blog Q3 2026 Strategy" (гіпотетична, але
+# можлива) мала б лишитись блогом, не сторінкою.
+_BLOG_SHEET_RE = re.compile(r"^blogs?\b", re.IGNORECASE)
+_STRUCTURE_SHEET_RE = re.compile(r"^structure\b", re.IGNORECASE)
+_PAGE_SHEET_RE = re.compile(r"\bq[1-4]\b|\bstrategy\b", re.IGNORECASE)
+
+
+def sheet_role(name: str, columns: Iterable[str] = ()) -> SheetRole:
+    """Роль аркуша — за назвою, з фолбеком на розпізнані колонки, коли
+    назва нічого не каже (§1.4/§1.5 плану task-97: назва документа
+    фреймворка ненадійна, назва АРКУША стратегії — так). `columns=()` —
+    легкий виклик лише на назві (кандидати-фреймворки з `find_framework_
+    links()`, де повний скан колонок аркуша не робиться навмисно)."""
+    stripped = (name or "").strip()
+    if _BLOG_SHEET_RE.match(stripped):
+        return "blog"
+    if _STRUCTURE_SHEET_RE.match(stripped):
+        return "structure"
+    if _PAGE_SHEET_RE.search(stripped):
+        return "page"
+    cols = set(columns)
+    if "url" in cols and "intent" in cols:
+        return "page"
+    if "keywords_csv" in cols and "url" not in cols:
+        return "blog"
+    return "other"
 
 
 class UnknownSheetError(ValueError):
@@ -262,16 +295,17 @@ def build_content_doc(
     sheet_states: list[SheetInfo] = []
 
     for scan in scans:
+        role = sheet_role(scan.name, scan.columns())
         if scan.name not in selected:
-            sheet_states.append(SheetInfo(scan.name, "not_selected", scan.row_count()))
+            sheet_states.append(SheetInfo(scan.name, "not_selected", scan.row_count(), role))
             continue
         if not scan.is_load_bearing:
             skipped.append(scan.name)
-            sheet_states.append(SheetInfo(scan.name, "no_recognized_columns", 0))
+            sheet_states.append(SheetInfo(scan.name, "no_recognized_columns", 0, role))
             continue
         sheet_items = scan.build_items()
         items.extend(sheet_items)
-        sheet_states.append(SheetInfo(scan.name, "checked", len(sheet_items)))
+        sheet_states.append(SheetInfo(scan.name, "checked", len(sheet_items), role))
 
     return ContentDoc(
         source=source, doc_type=doc_type,
@@ -288,12 +322,18 @@ class SheetPreview:
     columns: tuple[str, ...]
     row_count: int
     blocks: int
+    role: SheetRole = "other"
 
 
 @dataclass(frozen=True)
 class WorkbookInspection:
     sheets: tuple[SheetPreview, ...]
-    suggested_sheets: tuple[str, ...]  # усі несучі — дефолтний вибір форми
+    # Дефолтний вибір форми (task-97): несучі аркуші з роллю `page`, а не
+    # "усі несучі" (task-90 дефолт) — тул задуманий для перевірки сторінок,
+    # не для «все, що вміє прочитатись». Фолбек на старе поводження, коли
+    # жоден несучий аркуш не розпізнався як `page` (§2.1 плану) — краще
+    # широкий дефолт, ніж порожній.
+    suggested_sheets: tuple[str, ...]
 
 
 def build_inspection(scans: list[SheetScan]) -> WorkbookInspection:
@@ -303,9 +343,10 @@ def build_inspection(scans: list[SheetScan]) -> WorkbookInspection:
         SheetPreview(
             name=scan.name, index=scan.index, load_bearing=scan.is_load_bearing,
             columns=tuple(scan.columns()), row_count=scan.row_count(),
-            blocks=len(scan.blocks),
+            blocks=len(scan.blocks), role=sheet_role(scan.name, scan.columns()),
         )
         for scan in scans
     )
-    suggested = tuple(p.name for p in previews if p.load_bearing)
+    page_sheets = tuple(p.name for p in previews if p.load_bearing and p.role == "page")
+    suggested = page_sheets or tuple(p.name for p in previews if p.load_bearing)
     return WorkbookInspection(sheets=previews, suggested_sheets=suggested)

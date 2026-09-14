@@ -221,6 +221,36 @@ def test_run_package_aggregate_finding_only_for_unmatched_rows() -> None:
     assert "Strategy!row 2" not in unmatched_refs
 
 
+def test_run_package_out_of_scope_when_linked_sheet_not_in_run_scope() -> None:
+    """task-97 §1.6/§2.4: a framework linked to an exact strategy row
+    (`strategy_ref` set) must never fall through to URL/name guessing when
+    that row isn't in `strategy.items` — its sheet wasn't part of this
+    run's scope (`sheets=` at `/check`). Honest `out_of_scope`, computed
+    BEFORE any Docs API call — `_ExplodingDocsClient` fails the test if
+    `get_document` is ever reached, proving the short-circuit."""
+
+    class _ExplodingDocsClient(DocsClient):
+        def __init__(self) -> None:
+            pass
+
+        def get_document(self, document_id: str) -> tuple[DocTab, ...] | None:
+            raise AssertionError("out_of_scope must short-circuit before any Docs API call")
+
+    source = FrameworkSource(
+        document_id="d1", document_name="Blog Post", origin="strategy_link",
+        strategy_ref="Blog!row 3",
+    )
+    page_row = ContentItem(ref="Q3 Strategy!row 2", url="https://example.com/a")
+    result = run_package(
+        _strategy(page_row), [source], docs_client=_ExplodingDocsClient(), profile=Profile(),
+        check_site=False, check_published=False,
+    )
+    assert len(result.frameworks) == 1
+    outcome = result.frameworks[0]
+    assert outcome.state == "out_of_scope"
+    assert outcome.reason is not None and "Blog" in outcome.reason
+
+
 # ── run_framework: site comparison wiring (monkeypatched fetch) ──────────────
 
 

@@ -77,6 +77,7 @@ from app.schemas.strategy_package import (
     DriveFileDTO,
     DriveFilesPageDTO,
     FrameworkCandidateDTO,
+    FrameworkCandidateRole,
     FrameworkOutcomeDTO,
     InspectPackageRequestDTO,
     MatrixRowDTO,
@@ -148,6 +149,16 @@ def _client_prefix(source_name: str) -> str | None:
     `SHB_FRAMEWORK_*`). `None`, якщо в імені взагалі немає `_`."""
     prefix, sep, _rest = source_name.partition("_")
     return prefix if sep and prefix else None
+
+
+def _drive_search_role_hint(document_name: str) -> FrameworkCandidateRole:
+    """`origin="drive_search"` кандидати не мають аркуша-джерела взагалі
+    (резервний пошук по Диску за іменем клієнта) — точної ролі тут не
+    дізнатись. `"_BLOG_"` у назві документа — слабка підказка, не вердикт
+    (task-97 §1.5: назви документів ненадійні — EFFYS має сторінкові
+    фрейми без слова FRAMEWORK, SWM віддає сирий URL замість імені), тому
+    лише позначаємо `blog` для явного випадку, інакше чесне `unknown`."""
+    return "blog" if "_BLOG_" in document_name.upper() else "unknown"
 
 
 def _run_in_google_api_error(exc: GoogleApiError, *, code: str) -> HTTPException:
@@ -285,7 +296,7 @@ async def inspect_package(body: InspectPackageRequestDTO) -> StrategyPackageInsp
             candidates.append(FrameworkCandidateDTO(
                 document_id=c.document_id, document_name=c.display_text,
                 origin="strategy_link", sheet=c.sheet, row=c.row,
-                strategy_ref=f"{c.sheet}!row {c.row}",
+                strategy_ref=f"{c.sheet}!row {c.row}", role=c.role,
             ))
 
         prefix = _client_prefix(file.name)
@@ -303,7 +314,7 @@ async def inspect_package(body: InspectPackageRequestDTO) -> StrategyPackageInsp
                 seen_ids.add(f.id)
                 candidates.append(FrameworkCandidateDTO(
                     document_id=f.id, document_name=f.name, mime_type=f.mime_type,
-                    origin="drive_search",
+                    origin="drive_search", role=_drive_search_role_hint(f.name),
                 ))
         return inspection, None, candidates
 
@@ -320,6 +331,7 @@ async def inspect_package(body: InspectPackageRequestDTO) -> StrategyPackageInsp
             ContentQaSheetPreviewDTO(
                 name=s.name, index=s.index, load_bearing=s.load_bearing,
                 columns=list(s.columns), row_count=s.row_count, blocks=s.blocks,
+                role=s.role,
             )
             for s in inspection.sheets
         ],
@@ -380,7 +392,10 @@ def _framework_outcome_dict(outcome: FrameworkOutcome) -> dict[str, Any]:
 
 
 def _sheet_state_dicts(sheet_states: tuple[Any, ...]) -> list[dict[str, object]]:
-    return [{"name": s.name, "state": s.state, "item_count": s.item_count} for s in sheet_states]
+    return [
+        {"name": s.name, "state": s.state, "item_count": s.item_count, "role": s.role}
+        for s in sheet_states
+    ]
 
 
 def _matrix_row_dicts(rows: list[MatrixRow]) -> list[dict[str, Any]]:

@@ -22,6 +22,10 @@ ContentQaKind = Literal["page", "blog"]
 ContentQaIntent = Literal["commercial", "informational", "navigational"]
 ContentQaLocale = Literal["en-US", "en-GB", "sv-SE"]
 ContentQaSheetState = Literal["checked", "not_selected", "no_recognized_columns"]
+# task-97: роль аркуша (`app.contentqa.model.SheetRole`) — сторінки/блог/
+# структура/нерозпізнане. `None` лише для пакетів, персистованих до цього
+# поля (`sheets_json` без ключа `role`) — не додумуємо заднім числом.
+ContentQaSheetRole = Literal["page", "blog", "structure", "other"]
 
 
 class ContentQaProfileDTO(BaseModel):
@@ -39,6 +43,7 @@ class ContentQaSheetDTO(BaseModel):
     name: str
     state: ContentQaSheetState
     item_count: int
+    role: ContentQaSheetRole | None = None
 
 
 class ContentQaSheetPreviewDTO(BaseModel):
@@ -50,6 +55,7 @@ class ContentQaSheetPreviewDTO(BaseModel):
     columns: list[str]
     row_count: int
     blocks: int
+    role: ContentQaSheetRole | None = None
 
 
 class ContentQaInspectDTO(BaseModel):

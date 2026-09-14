@@ -4913,6 +4913,23 @@
             "title": "Name",
             "type": "string"
           },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "page",
+                  "blog",
+                  "structure",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
           "state": {
             "enum": [
               "checked",
@@ -4956,6 +4973,23 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "page",
+                  "blog",
+                  "structure",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
           },
           "row_count": {
             "title": "Row Count",
@@ -5802,6 +5836,27 @@
             "title": "Origin",
             "type": "string"
           },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "page",
+                  "blog",
+                  "structure",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "unknown",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
           "row": {
             "anyOf": [
               {
@@ -5941,7 +5996,8 @@
             "enum": [
               "checked",
               "not_accessible",
-              "no_recognized_tabs"
+              "no_recognized_tabs",
+              "out_of_scope"
             ],
             "title": "State",
             "type": "string"

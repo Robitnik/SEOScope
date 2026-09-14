@@ -224,6 +224,19 @@ def _first(fields: dict[str, list[str]], tag: str) -> str | None:
     return lines[0] if lines else ""
 
 
+def _first_url(fields: dict[str, list[str]]) -> str | None:
+    """`_first(fields, "url")`, але плейсхолдер ("-"/"n/a"/...) читається
+    як порожнє поле, не як справжній URL (task-97 §2.5) — той самий клас
+    багу, що фікс `0674487` закрив з боку стратегії
+    (`readers/tabular.py:_row_to_item`): фрейм із `Page: -` інакше будує
+    ключ `url:-` у `crosscheck.py:_item_key()` і лишається кандидатом на
+    хибний матч. Лише `url` — `title`/`description`/`h1` тут не чіпаємо,
+    бо для них "-" може бути свідомим значенням і хибний матч неможливий
+    (вони не живлять `_item_key()`)."""
+    value = _first(fields, "url")
+    return "" if value is not None and value.strip().lower() in _NO_VALUE else value
+
+
 def _tab_ref(source: str, tab: DocTab, *, default_title: str) -> str:
     path = tab.path if tab.path and tab.path != (default_title,) else ()
     return f"{source} › {' › '.join(path)}" if path else source
@@ -236,7 +249,7 @@ def read_framework_tab(tab: DocTab, *, source: str) -> ContentItem:
     fields = _collect_table_fields(tab)
     return ContentItem(
         ref=_tab_ref(source, tab, default_title="Framework"),
-        url=_first(fields, "url"),
+        url=_first_url(fields),
         intent=_first(fields, "intent"),
         title=_first(fields, "title"),
         description=_first(fields, "description"),

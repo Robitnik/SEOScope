@@ -175,3 +175,34 @@ def test_multiple_candidates_in_different_rows_are_all_returned() -> None:
 def test_no_links_returns_empty_tuple() -> None:
     grid = (SheetGrid(title="Sheet1", index=0, rows=((_cell("plain text"),),)),)
     assert find_framework_links(grid) == ()
+
+
+# ── task-97: роль кандидата за аркушем-джерелом ────────────────────────────
+
+
+def test_candidate_role_is_page_for_a_strategy_sheet() -> None:
+    candidates = find_framework_links(
+        (SheetGrid(title="Q3-Q4 2026 Strategy", index=0, rows=((_cell("x", links=(
+            CellLink(
+                form="chip", uri="https://docs.google.com/document/d/doc1",
+                mime_type=_GOOGLE_DOC_MIME,
+            ),
+        )),),)),),
+    )
+    assert candidates[0].role == "page"
+
+
+def test_candidate_role_is_blog_for_a_blog_sheet() -> None:
+    chip = CellLink(
+        form="chip", uri="https://docs.google.com/document/d/doc2", mime_type=_GOOGLE_DOC_MIME,
+    )
+    grid = (SheetGrid(title="Blogs", index=0, rows=((_cell("b", links=(chip,)),),)),)
+    assert find_framework_links(grid)[0].role == "blog"
+
+
+def test_candidate_role_is_other_for_an_unrecognized_sheet_name() -> None:
+    chip = CellLink(
+        form="chip", uri="https://docs.google.com/document/d/doc3", mime_type=_GOOGLE_DOC_MIME,
+    )
+    grid = (SheetGrid(title="Keywords", index=0, rows=((_cell("k", links=(chip,)),),)),)
+    assert find_framework_links(grid)[0].role == "other"

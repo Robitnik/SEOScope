@@ -47,7 +47,19 @@ const FRAMEWORK_STATE_META = {
   checked: { icon: "circle-check", cls: "sp-state--ok", label: "Checked" },
   not_accessible: { icon: "lock", cls: "sp-state--bad", label: "Not accessible" },
   no_recognized_tabs: { icon: "table-off", cls: "sp-state--warn", label: "No Frame/Content tab" },
+  out_of_scope: { icon: "filter-off", cls: "sp-state--warn", label: "Out of scope" },
 };
+
+// task-97: групи кандидатів у кроці 2, у порядку показу — "page" відкрита
+// за замовчуванням (це і є дефолтний скоуп прогону), решта згорнуті:
+// оператор має бачити, що блог/інше існує, не гортати повз нього щоразу.
+const CANDIDATE_GROUPS = [
+  { key: "page", label: "Pages", open: true },
+  { key: "blog", label: "Blog", open: false },
+  { key: "structure", label: "Structure", open: false },
+  { key: "other", label: "Other", open: false },
+  { key: "unknown", label: "Found by name search", open: false },
+];
 
 const CROSS_STATE_META = {
   checked: { icon: "circle-check", cls: "sp-cross--ok", label: "Checked" },
@@ -327,8 +339,14 @@ async function handleInspect(fileId) {
     if (token !== requestToken || wizard.resolved?.file.id !== fileId) return;
     wizard.inspection = inspection;
     wizard.selectedSheets = new Set(inspection.suggested_sheets);
+    // task-97: дефолт форми — лише сторінкові кандидати, лінковані зі
+    // стратегії. Блог/структура/резервний пошук по Диску існують у
+    // списку (див. групи нижче), але свідомо поза дефолтним скоупом —
+    // тул задуманий для перевірки сторінок (§1.1/§1.2 плану task-97).
     wizard.selectedFrameworks = new Map(
-      inspection.candidates.filter((c) => c.origin === "strategy_link").map((c) => [c.document_id, c])
+      inspection.candidates
+        .filter((c) => c.origin === "strategy_link" && c.role === "page")
+        .map((c) => [c.document_id, c])
     );
   } catch (error) {
     if (token !== requestToken || wizard.resolved?.file.id !== fileId) return;
@@ -409,6 +427,18 @@ function wireSheetPicker(mount) {
   });
 }
 
+// task-97: група кандидата — роль аркуша-джерела для лінкованих зі
+// стратегії, "unknown" для резервного пошуку по Диску (той не має
+// аркуша-джерела взагалі, §1.5 плану — окрема відра, не змішана з роллю).
+function candidateGroupKey(c) {
+  return c.origin === "strategy_link" ? (c.role || "other") : "unknown";
+}
+
+function isMixedScope() {
+  const roles = new Set([...wizard.selectedFrameworks.values()].map((c) => c.role));
+  return roles.has("page") && roles.has("blog");
+}
+
 function renderFrameworkPickerMarkup(candidates) {
   if (!candidates.length) {
     return `
@@ -416,17 +446,35 @@ function renderFrameworkPickerMarkup(candidates) {
         <span>No framework links found in this strategy — the check will still run against the strategy sheet
           alone. You can re-run once frameworks are linked.</span></p>`;
   }
+  const groups = CANDIDATE_GROUPS
+    .map((g) => ({ ...g, items: candidates.filter((c) => candidateGroupKey(c) === g.key) }))
+    .filter((g) => g.items.length);
   return `
     <div class="sp-framework-picker">
       <div class="sp-framework-picker__head">
         <p class="cq-sheet-picker__label">Frameworks to check (${wizard.selectedFrameworks.size} of ${candidates.length} selected)</p>
-        <div>
-          <button type="button" class="button button--quiet" data-sp-fw-all>All</button>
-          <button type="button" class="button button--quiet" data-sp-fw-none>None</button>
-        </div>
       </div>
+      ${groups.map(renderCandidateGroup).join("")}
+      <p class="sp-scope-warning" id="sp-scope-warning" ${isMixedScope() ? "" : "hidden"}>
+        ${icon("alert-triangle", "icon icon--tiny")}
+        <span>Mixed scope: page and blog frameworks are checked with different rules (Framework type applies to the whole run).</span>
+      </p>
+    </div>`;
+}
+
+function renderCandidateGroup(group) {
+  const selected = group.items.filter((c) => wizard.selectedFrameworks.has(c.document_id)).length;
+  return `
+    <details class="sp-fw-group" data-sp-fw-group="${group.key}" ${group.open ? "open" : ""}>
+      <summary class="sp-fw-group__summary">
+        <span>${escapeHtml(group.label)} · <span class="sp-fw-group__count">${selected} of ${group.items.length} selected</span></span>
+        <span class="sp-fw-group__actions">
+          <button type="button" class="button button--quiet" data-sp-fw-all="${group.key}">All</button>
+          <button type="button" class="button button--quiet" data-sp-fw-none="${group.key}">None</button>
+        </span>
+      </summary>
       <ul class="sp-framework-picker__list">
-        ${candidates.map((c) => `
+        ${group.items.map((c) => `
           <li>
             <label>
               <input type="checkbox" data-sp-fw="${escapeHtml(c.document_id)}" ${wizard.selectedFrameworks.has(c.document_id) ? "checked" : ""}>
@@ -437,27 +485,53 @@ function renderFrameworkPickerMarkup(candidates) {
             </label>
           </li>`).join("")}
       </ul>
-    </div>`;
+    </details>`;
 }
 
 function wireFrameworkPicker(mount, candidates) {
   const byId = new Map(candidates.map((c) => [c.document_id, c]));
+
+  function syncCounts() {
+    const head = mount.querySelector(".sp-framework-picker__head .cq-sheet-picker__label");
+    if (head) head.textContent = `Frameworks to check (${wizard.selectedFrameworks.size} of ${candidates.length} selected)`;
+    mount.querySelectorAll("[data-sp-fw-group]").forEach((details) => {
+      const key = details.dataset.spFwGroup;
+      const items = candidates.filter((c) => candidateGroupKey(c) === key);
+      const selected = items.filter((c) => wizard.selectedFrameworks.has(c.document_id)).length;
+      const count = details.querySelector(".sp-fw-group__count");
+      if (count) count.textContent = `${selected} of ${items.length} selected`;
+    });
+    const warning = mount.querySelector("#sp-scope-warning");
+    if (warning) warning.hidden = !isMixedScope();
+  }
+
   mount.querySelectorAll("[data-sp-fw]").forEach((checkbox) => {
     checkbox.addEventListener("change", () => {
       const id = checkbox.dataset.spFw;
       if (checkbox.checked) wizard.selectedFrameworks.set(id, byId.get(id));
       else wizard.selectedFrameworks.delete(id);
-      const label = mount.querySelector(".sp-framework-picker__head .cq-sheet-picker__label");
-      if (label) label.textContent = `Frameworks to check (${wizard.selectedFrameworks.size} of ${candidates.length} selected)`;
+      syncCounts();
     });
   });
-  mount.querySelector("[data-sp-fw-all]")?.addEventListener("click", () => {
-    wizard.selectedFrameworks = new Map(candidates.map((c) => [c.document_id, c]));
-    renderScopeStep();
+  mount.querySelectorAll("[data-sp-fw-all]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault(); // не дати <summary> згорнути групу цим самим кліком
+      button.closest("[data-sp-fw-group]").querySelectorAll("[data-sp-fw]").forEach((checkbox) => {
+        checkbox.checked = true;
+        wizard.selectedFrameworks.set(checkbox.dataset.spFw, byId.get(checkbox.dataset.spFw));
+      });
+      syncCounts();
+    });
   });
-  mount.querySelector("[data-sp-fw-none]")?.addEventListener("click", () => {
-    wizard.selectedFrameworks = new Map();
-    renderScopeStep();
+  mount.querySelectorAll("[data-sp-fw-none]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      button.closest("[data-sp-fw-group]").querySelectorAll("[data-sp-fw]").forEach((checkbox) => {
+        checkbox.checked = false;
+        wizard.selectedFrameworks.delete(checkbox.dataset.spFw);
+      });
+      syncCounts();
+    });
   });
 }
 

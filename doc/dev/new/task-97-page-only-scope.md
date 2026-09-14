@@ -2,10 +2,13 @@
 
 **Depends on:** 90 (живе), 91 (живе), 92 ✅, 95 ✅, 96 ✅
 **Owned paths:** `app/contentqa/readers/tabular.py`, `app/contentqa/readers/gsheet.py`,
-`app/contentqa/readers/gdoc.py`, `app/contentqa/package.py`,
+`app/contentqa/readers/gdoc.py`, `app/contentqa/package.py`, `app/contentqa/model.py`,
 `app/api/tools_strategy_package.py`, `app/schemas/strategy_package.py`,
+адитивно `app/schemas/content_qa.py` (спільний з task-53's Strategy Check/Framework
+Check — лише новий optional `role` на `ContentQaSheetDTO`/`ContentQaSheetPreviewDTO`,
+той тул його не читає, дефолт `None`),
 `frontend/js/strategy-package-tool.js`, `frontend/css/strategy-package.css`,
-`tests/unit/contentqa/{test_readers_xlsx,test_readers_gsheet,test_package}.py`,
+`tests/unit/contentqa/{test_readers_xlsx,test_readers_gsheet,test_readers_gdoc,test_package}.py`,
 `tests/unit/api/test_tools_strategy_package.py`,
 `tests/unit/api/data/openapi_snapshot.json`,
 `tests/e2e/frontend/tools-strategy-package.cjs`.

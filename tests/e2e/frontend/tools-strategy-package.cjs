@@ -57,11 +57,23 @@ async function main() {
   assert.ok(candidateCount > 0, "real framework candidates were found via chipRuns/hyperlinks");
 
   // 5. Keep the run small and deterministic: select only the first framework.
-  await page.locator("[data-sp-fw-none]").click();
+  // task-97: candidates are grouped by role (Pages/Blog/Structure/Other/
+  // Found by name search), each group with its own All/None — `.first()`
+  // targets the "Pages" group (rendered first, open by default, and this
+  // real strategy sheet has one).
+  await page.locator("[data-sp-fw-none]").first().click();
   await page.locator("[data-sp-fw]").first().check();
   assert.match(
     await page.locator(".sp-framework-picker__head .cq-sheet-picker__label").innerText(),
     /1 of \d+ selected/i, // CSS text-transform:uppercase changes rendered innerText casing
+  );
+
+  // 5a (task-97): candidates arrive grouped, the "Pages" group is open by
+  // default and lists only page-role candidates linked from the strategy.
+  await page.locator('[data-sp-fw-group="page"]').waitFor();
+  assert.ok(
+    await page.locator('[data-sp-fw-group="page"]').getAttribute("open") !== null,
+    "the Pages group is expanded by default",
   );
 
   await page.locator("#sp-profile-form").waitFor();
