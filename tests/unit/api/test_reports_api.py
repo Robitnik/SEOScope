@@ -12,9 +12,12 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from app.db.models import ReportFile
 from app.db.repositories.clients import ClientRepository
 from app.db.repositories.reports import ReportRepository
+from app.db.repositories.users import UserRepository
 from app.db.session import worker_session_scope
 from app.reports import ninja_browser, ninja_catalog
 from app.reports.batch import reconcile_batches
@@ -1207,3 +1210,135 @@ def test_rebuild_run_409_while_still_queued(client, db):
     )
     assert response.status_code == 409
     assert response.json()["detail"]["error_code"] == "run_not_retryable"
+
+
+# --- Authorship (task-93) -----------------------------------------------------
+#
+# `client`/`db` run with `AUTH_ENABLED=false` (see tests/conftest.py's
+# `_auth_disabled_unless_asked`), so `Attribution.from_actor` sees `Actor.
+# system()` there. Real-role coverage needs `auth_client` (task-71's own
+# fixture) plus `auth_db` (`tests/unit/api/conftest.py`) — a sync session on
+# ITS engine, not `client`'s. Every such test is `@pytest.mark.auth`
+# (CLAUDE.md: the gate is off by default for the rest of this file,
+# precisely so both fixtures can coexist here).
+
+
+def test_create_run_records_system_attribution_when_auth_is_disabled(client, db):
+    """Default dev/test posture (plan §2 D2): no guessed author, but not a
+    silent `NULL` either — `Actor.system()` is an honest fact about who
+    actually made this request."""
+    client_id = _create_client(db, slug="task93-system")
+    run_id = client.post(
+        "/api/v1/reports/runs",
+        json={"client_id": client_id, "kind": "monthly", "source": "api"},
+    ).json()["run_id"]
+
+    run = ReportRepository(db).get(run_id)
+    assert run.created_by_kind == "system"
+    assert run.created_by_user_id is None
+
+
+@pytest.mark.auth
+def test_create_run_records_the_real_signed_in_user(auth_client, auth_db, make_user, sign_in):
+    client_id = _create_client(auth_db, slug="task93-member")
+    email, password = make_user("member93a@theyovth.com", role="member")
+    headers = sign_in(email, password)
+
+    run_id = auth_client.post(
+        "/api/v1/reports/runs",
+        json={"client_id": client_id, "kind": "monthly", "source": "api"},
+        headers=headers,
+    ).json()["run_id"]
+
+    run = ReportRepository(auth_db).get(run_id)
+    user = UserRepository(auth_db).get_by_email(email)
+    assert run.created_by_kind == "user"
+    assert run.created_by_user_id == user.id
+
+
+@pytest.mark.auth
+def test_rebuild_run_is_attributed_to_whoever_clicked_rebuild(
+    auth_client, auth_db, make_user, sign_in
+):
+    """task-93 plan §2 D5: a rebuild's author is whoever clicked it NOW —
+    never the source run's original author."""
+    # `sign_in` logs into the ONE shared `auth_client` cookie jar — signing
+    # in as the second user before the first has finished acting would swap
+    # the active session out from under it, so each identity signs in and
+    # acts immediately, never both live at once.
+    client_id = _create_client(auth_db, slug="task93-rebuild")
+    author_email, author_password = make_user("author93@theyovth.com", role="member")
+    author_headers = sign_in(author_email, author_password)
+    run_id = auth_client.post(
+        "/api/v1/reports/runs",
+        json={"client_id": client_id, "kind": "monthly", "source": "api"},
+        headers=author_headers,
+    ).json()["run_id"]
+    # No scheduler runs in this test file — flip the run terminal by hand,
+    # same convention as `test_rebuild_run_409_while_still_queued` above.
+    ReportRepository(auth_db).get(run_id).status = "succeeded"
+    auth_db.commit()
+
+    rebuilder_email, rebuilder_password = make_user("rebuilder93@theyovth.com", role="admin")
+    rebuilder_headers = sign_in(rebuilder_email, rebuilder_password)
+    rebuild = auth_client.post(
+        f"/api/v1/reports/runs/{run_id}/rebuild",
+        json={"force_refresh": False},
+        headers=rebuilder_headers,
+    )
+    assert rebuild.status_code == 202
+    new_run_id = rebuild.json()["run_id"]
+
+    new_run = ReportRepository(auth_db).get(new_run_id)
+    author = UserRepository(auth_db).get_by_email(author_email)
+    rebuilder = UserRepository(auth_db).get_by_email(rebuilder_email)
+    assert new_run.created_by_user_id == rebuilder.id
+    assert new_run.created_by_user_id != author.id
+
+
+@pytest.mark.auth
+def test_created_by_filter_is_admin_only_and_lists_stay_role_invariant_without_it(
+    auth_client, auth_db, make_user, sign_in
+):
+    """task-93 plan §2 D4: a filter over who ran what is an oracle, so even
+    SETTING it as a non-admin is `403`, never a silently-ignored param — and
+    the plain list (no filter) must be byte-identical for every role, since
+    that's the only thing safe to cache (plan §1.5's Cloudflare tunnel
+    incident: a role-conditional list body could leak through a cached
+    response)."""
+    # Same one-identity-live-at-a-time constraint as the rebuild test above:
+    # `admin_plain` is captured BEFORE switching the shared cookie jar to
+    # member, not re-fetched afterwards under the wrong session.
+    client_id = _create_client(auth_db, slug="task93-filter")
+    admin_email, admin_password = make_user("admin93a@theyovth.com", role="admin")
+    admin_headers = sign_in(admin_email, admin_password)
+
+    auth_client.post(
+        "/api/v1/reports/runs",
+        json={"client_id": client_id, "kind": "monthly", "source": "api"},
+        headers=admin_headers,
+    )
+
+    admin_filtered = auth_client.get(
+        "/api/v1/reports/runs?created_by_kind=user", headers=admin_headers
+    )
+    assert admin_filtered.status_code == 200
+    assert admin_filtered.json()["total"] == 1
+    admin_plain = auth_client.get("/api/v1/reports/runs", headers=admin_headers).json()
+
+    member_email, member_password = make_user("member93c@theyovth.com", role="member")
+    member_headers = sign_in(member_email, member_password)
+
+    member_filtered_by_kind = auth_client.get(
+        "/api/v1/reports/runs?created_by_kind=user", headers=member_headers
+    )
+    assert member_filtered_by_kind.status_code == 403
+
+    member_filtered_by_user = auth_client.get(
+        f"/api/v1/reports/runs?created_by_user_id={admin_email}", headers=member_headers
+    )
+    assert member_filtered_by_user.status_code == 403
+
+    member_plain = auth_client.get("/api/v1/reports/runs", headers=member_headers).json()
+    assert admin_plain == member_plain
+    assert "created_by" not in str(admin_plain)  # no field leaked onto the shared DTO

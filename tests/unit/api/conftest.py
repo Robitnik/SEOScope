@@ -102,6 +102,21 @@ def auth_client(tmp_path, monkeypatch) -> Iterator[TestClient]:
 
 
 @pytest.fixture
+def auth_db(auth_client: TestClient):
+    """A sync `Session` on `auth_client`'s own temp DB — same relationship
+    `db` has to `client` above, but for tests that need real roles (task-93
+    onward): seed a client/integration directly, or read back a row a
+    request just wrote, without a second HTTP round trip.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    maker = sessionmaker(bind=db_session.get_sync_engine(), expire_on_commit=False)
+    with maker() as session:
+        yield session
+        session.commit()
+
+
+@pytest.fixture
 def audit_events(auth_client: TestClient):
     """Флашить чергу журналу і читає рядки напряму через репозиторій —
     для тестів, що перевіряють САМЕ що і як журналюється."""

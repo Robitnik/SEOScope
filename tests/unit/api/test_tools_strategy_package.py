@@ -7,6 +7,7 @@ from __future__ import annotations
 import io
 from typing import Any
 
+import pytest
 from openpyxl import load_workbook
 
 import app.api.tools_strategy_package as router_module
@@ -380,3 +381,82 @@ def test_matrix_xlsx_unknown_package_gives_404(client: Any) -> None:
     r = client.get("/api/v1/tools/strategy-package/reports/does-not-exist/matrix.xlsx")
     assert r.status_code == 404
     assert r.json()["detail"]["error_code"] == "package_not_found"
+
+
+# ── authorship (task-93) ─────────────────────────────────────────────────────
+#
+# Same conventions as `tests/unit/api/test_reports_api.py`'s own task-93
+# section: `client`/`db` run with `AUTH_ENABLED=false` (system attribution);
+# real-role coverage needs `auth_client` + a sync session bound to ITS
+# engine, and `_install_fake_clients` patches `router_module._open_clients`
+# regardless of which `TestClient` fixture calls into it.
+
+
+def test_check_records_system_attribution_when_auth_is_disabled(
+    client: Any, db: Any, monkeypatch: Any
+) -> None:
+    _install_fake_clients(
+        monkeypatch,
+        files={STRATEGY_ID: _strategy_file(), FRAMEWORK_ID: _framework_file()},
+        grids={STRATEGY_ID: _strategy_grid()},
+        docs={FRAMEWORK_ID: _framework_tabs()},
+    )
+    package_id = client.post(
+        "/api/v1/tools/strategy-package/check", json=_check_body()
+    ).json()["id"]
+
+    from app.db.repositories.content_qa_packages import ContentQaPackageRepository
+
+    package = ContentQaPackageRepository(db).get_package(package_id)
+    assert package is not None
+    assert package.created_by_kind == "system"
+    assert package.created_by_user_id is None
+
+
+@pytest.mark.auth
+def test_check_records_the_real_signed_in_user_and_filter_is_admin_only(
+    auth_client: Any, auth_db: Any, make_user: Any, sign_in: Any, monkeypatch: Any
+) -> None:
+    _install_fake_clients(
+        monkeypatch,
+        files={STRATEGY_ID: _strategy_file(), FRAMEWORK_ID: _framework_file()},
+        grids={STRATEGY_ID: _strategy_grid()},
+        docs={FRAMEWORK_ID: _framework_tabs()},
+    )
+    admin_email, admin_password = make_user("qa-admin93@theyovth.com", role="admin")
+    admin_headers = sign_in(admin_email, admin_password)
+
+    package_id = auth_client.post(
+        "/api/v1/tools/strategy-package/check", json=_check_body(), headers=admin_headers
+    ).json()["id"]
+
+    from app.db.repositories.content_qa_packages import ContentQaPackageRepository
+    from app.db.repositories.users import UserRepository
+
+    package = ContentQaPackageRepository(auth_db).get_package(package_id)
+    admin_user = UserRepository(auth_db).get_by_email(admin_email)
+    assert package is not None
+    assert package.created_by_kind == "user"
+    assert package.created_by_user_id == admin_user.id
+
+    admin_filtered = auth_client.get(
+        "/api/v1/tools/strategy-package/reports?created_by_kind=user", headers=admin_headers
+    )
+    assert admin_filtered.status_code == 200
+    assert admin_filtered.json()["total"] == 1
+    admin_plain = auth_client.get(
+        "/api/v1/tools/strategy-package/reports", headers=admin_headers
+    ).json()
+
+    member_email, member_password = make_user("qa-member93@theyovth.com", role="member")
+    member_headers = sign_in(member_email, member_password)
+
+    member_filtered = auth_client.get(
+        "/api/v1/tools/strategy-package/reports?created_by_kind=user", headers=member_headers
+    )
+    assert member_filtered.status_code == 403
+
+    member_plain = auth_client.get(
+        "/api/v1/tools/strategy-package/reports", headers=member_headers
+    ).json()
+    assert admin_plain == member_plain
