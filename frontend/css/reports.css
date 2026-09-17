@@ -143,9 +143,13 @@ tr:has(.reports-cross-check.state-mismatch) { border-left: 3px solid var(--dange
    replacing the plain checkbox list — the binding state and the report name
    are columns now, not a single label's worth of text. Scrolls internally
    like the list it replaces (`max-height`/`overflow-y`), same dialog-body
-   constraint. */
+   constraint. Two tables share this: the Scope step's client picker and the
+   Source step's Reporting Ninja readiness list. */
 .reports-bindings-table-scroll { max-height: 360px; overflow: auto; border: 1px solid var(--line); }
 .reports-bindings-table { width: 100%; min-width: 560px; border-collapse: collapse; }
+/* The picker carries three columns, not five — 560px would force a
+   horizontal scrollbar on a table that has nothing to scroll to. */
+.reports-bindings-table--picker { min-width: 0; }
 .reports-bindings-table thead th {
   position: sticky; top: 0; z-index: 1; background: var(--surface); text-align: left;
   padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-muted);

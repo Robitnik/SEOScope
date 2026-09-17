@@ -336,81 +336,111 @@ async function main() {
   await page.waitForFunction(() => document.querySelector(".status-label")?.textContent.includes("Cancelled"), { timeout: 8000 });
   await page.locator("#rr-body .reports-run-section, #rr-body .state-panel").first().waitFor({ timeout: 5000 });
 
-  // --- Wizard: "All clients" bindings table (task-49 §2.1/§2.2) -----------
-  // The live incident this task closes: 9/12 clients failed at 0s because the
-  // form had no way to know a report name was never saved. `dashboard-all-
-  // states.json`'s 4 clients are fixed to one of each binding state
-  // (`getNinjaBindings`'s fixture in api.js) so every state is exercised here.
+  // --- Wizard: client picker + source-gated Ninja readiness ---------------
+  // The live incident task-49 closes: 9/12 clients failed at 0s because the
+  // form had no way to know a report name was never saved. The check still
+  // exists — it just lives in the SOURCE step now, because two of the three
+  // sources never read a report name at all (`_run_api` needs only
+  // `connection_key`, `_run_google` needs no Reporting Ninja whatsoever), so
+  // gating the client list on a binding warned about clients that were fine.
+  // `dashboard-all-states.json`'s 4 clients are fixed to one of each binding
+  // state (`getNinjaBindings`'s fixture in api.js) so every state is covered.
   await page.goto(`${baseUrl}/?fixture=all-states#/reports`, { waitUntil: "networkidle" });
   await page.locator(".reports-table").waitFor();
   await generateButton.click();
   await page.locator('[data-scope="all"]').click();
-  await page.locator(".reports-bindings-table").waitFor({ timeout: 5000 });
+  await page.locator(".reports-bindings-table--picker").waitFor({ timeout: 5000 });
+
+  // Step 1 is a picker and nothing else: no binding state, no Connect, and —
+  // the point of the whole change — nothing disabled by a Reporting Ninja
+  // fact that may be irrelevant to the source about to be chosen.
   assert.equal(await page.locator(".reports-binding-row").count(), 4, "one row per portfolio client");
-  assert.equal(await page.locator(".status-label.state-ready").count(), 1);
-  assert.equal(await page.locator(".status-label.state-no_report_name").count(), 1);
-  assert.equal(await page.locator(".status-label.state-foreign_binding").count(), 1);
-  assert.equal(await page.locator(".status-label.state-not_connected").count(), 1);
-  await page.screenshot({ path: path.join(screenshots, "reports-wizard-bindings-1440.png") });
-  await assertNoOverflow(page, "wizard bindings table");
+  assert.equal(await page.locator(".reports-bindings-table--picker .status-label[class*='state-n']").count(), 0,
+    "the picker shows no binding state");
+  assert.equal(await page.locator("[data-scope-connect]").count(), 0, "no Connect in the picker");
+  assert.equal(await page.locator(".reports-binding-row input[type=checkbox]:disabled").count(), 0,
+    "no client is blocked before the source is known");
+  await page.screenshot({ path: path.join(screenshots, "reports-wizard-picker-1440.png") });
+  await assertNoOverflow(page, "wizard client picker");
 
-  // `Select all` never re-creates the live incident: only the Ready client.
+  // `Select all` means all of them now — there is no binding left to filter on.
   await page.locator("#rw-select-all").click();
-  assert.equal(await page.locator(".reports-binding-row input[type=checkbox]:checked").count(), 1, "Select all picks only Ready clients");
-  assert.match(await page.locator(".reports-scope-count").innerText(), /1 of 4 selected/);
+  assert.match(await page.locator(".reports-scope-count").innerText(), /4 of 4 selected/);
 
-  // A `no_report_name` row is still manually selectable — an informed choice,
-  // not a form bug — and the Start step names the exact cost, without
-  // disabling Start (task-49 §2.2's "стартувати все одно можна").
-  await page.locator(".reports-binding-row[data-state='no_report_name'] input[type=checkbox]").check({ force: true });
   await page.locator("#rw-primary").click(); // -> Type
   await page.locator('[data-kind="monthly"]').click();
   await page.locator("#rw-primary").click(); // -> Parameters
   await page.locator("#rw-primary").click(); // -> Source
-  await page.locator('[data-source="pdf"]').click();
+
+  const readinessTable = ".reports-bindings-table:not(.reports-bindings-table--picker)";
+
+  // Google API: Reporting Ninja is not in the chain, so nothing about it is
+  // checked, shown, or claimed.
+  await page.locator('[data-source="google_api"]').click();
   await page.waitForFunction(
-    () => document.getElementById("reports-wizard-reason")?.textContent.includes("will fail"),
+    () => !document.querySelector(".reports-bindings-table:not(.reports-bindings-table--picker)"),
     { timeout: 3000 },
   );
-  assert.match(await page.locator("#reports-wizard-reason").innerText(), /1 of 2 clients will fail/);
+  assert.doesNotMatch(await page.locator("#reports-wizard-reason").innerText(), /will fail/,
+    "google_api never predicts a Reporting Ninja failure");
+  assert.equal(await page.locator("#rw-primary").isDisabled(), false);
+  await page.screenshot({ path: path.join(screenshots, "reports-wizard-source-google-api-1440.png") });
+
+  // Ninja API: only a missing CONNECTION can break it — a missing report name
+  // cannot, because `_run_api` never reads one.
+  await page.locator('[data-source="api"]').click();
+  await page.locator(readinessTable).waitFor({ timeout: 3000 });
+  assert.deepEqual(
+    await page.locator(`${readinessTable} tr[data-state]`).evaluateAll((rows) => rows.map((r) => r.dataset.state)),
+    ["not_connected"],
+    "the API source flags only a missing Reporting Ninja connection",
+  );
+
+  // PDF: the full task-49 check — every non-ready state is a real failure.
+  await page.locator('[data-source="pdf"]').click();
+  await page.waitForFunction(
+    () => document.querySelectorAll(".reports-bindings-table:not(.reports-bindings-table--picker) tr[data-state]").length === 3,
+    { timeout: 3000 },
+  );
+  assert.match(await page.locator("#reports-wizard-reason").innerText(), /3 of 4 clients will fail/);
   assert.equal(await page.locator("#reports-wizard-reason").evaluate((el) => el.classList.contains("reports-wizard-reason--warning")), true);
   assert.equal(await page.locator("#rw-primary").isDisabled(), false, "Start stays enabled — the operator chose this deliberately");
-  // Navigating to the identical URL (same hash) below is a same-document
-  // no-op in Chromium — it would leave THIS dialog open underneath the next
-  // section's own `openReportsWizard` call, so close it explicitly first.
-  await page.keyboard.press("Escape");
-  await page.locator("#reports-wizard-dialog[open]").waitFor({ state: "hidden" });
+  await page.screenshot({ path: path.join(screenshots, "reports-wizard-readiness-1440.png") });
+  await assertNoOverflow(page, "wizard ninja readiness");
 
-  // Inline Connect resolves a row to Ready without a full wizard reload, and
-  // Exclude keeps a row visible (never a silent "12 of 14" guessing game).
-  await page.goto(`${baseUrl}/?fixture=all-states#/reports`, { waitUntil: "networkidle" });
-  await page.locator(".reports-table").waitFor();
-  await generateButton.click();
-  await page.locator('[data-scope="all"]').click();
-  await page.locator(".reports-bindings-table").waitFor({ timeout: 5000 });
-  await page.locator(".reports-binding-row[data-state='no_report_name'] [data-scope-connect]").click();
+  // Inline Connect resolves a row without a full wizard reload — the row then
+  // leaves the readiness list because it is no longer at risk.
+  await page.locator(`${readinessTable} tr[data-state='no_report_name'] [data-scope-connect]`).first().click();
   await page.locator(".reports-binding-row__connect").waitFor({ timeout: 5000 });
   await page.locator(".reports-binding-row__connect .reports-ninja-candidate").first().locator("input").check();
   await page.locator(".reports-binding-row__connect [data-inline-save]").click();
-  await page.waitForFunction(() => document.querySelectorAll(".reports-binding-row[data-state='ready']").length === 2, { timeout: 5000 });
+  await page.waitForFunction(
+    () => document.querySelectorAll(".reports-bindings-table:not(.reports-bindings-table--picker) tr[data-state]").length === 2,
+    { timeout: 5000 },
+  );
   assert.equal(await page.locator(".reports-binding-row__connect").count(), 0, "the inline panel closes once bound");
+  assert.match(await page.locator("#reports-wizard-reason").innerText(), /2 of 4 clients will fail/);
 
-  // Exclude is driven by keyboard alone here (AGENTS §7): focus the row's own
-  // button and press Enter, never a synthetic click — the bindings table is
-  // new UI, so its actions have to be proven reachable without a pointer.
-  const excludeButton = page.locator(".reports-binding-row[data-state='foreign_binding'] [data-scope-exclude]");
-  await excludeButton.focus();
-  await page.keyboard.press("Enter");
+  // Dropping a client is keyboard-only here (AGENTS §7): focus its checkbox
+  // and press Space. The row must STAY, marked `Excluded` — a row that
+  // vanishes turns "12 of 14" into a guess about who is missing.
+  const dropBox = page.locator(`${readinessTable} input[data-readiness-client]`).first();
+  await dropBox.focus();
+  await page.keyboard.press("Space");
   await page.locator(".reports-binding-row--excluded").waitFor({ timeout: 3000 });
-  assert.equal(await page.locator(".reports-binding-row--excluded").count(), 1, "an excluded client stays visible, marked, not hidden");
+  assert.equal(await page.locator(".reports-binding-row--excluded").count(), 1, "a dropped client stays visible, marked, not hidden");
+  assert.match(await page.locator("#reports-wizard-reason").innerText(), /1 of 3 clients will fail/);
 
   // The same for Connect: focus + Enter must open the inline discovery panel.
-  const connectByKeyboard = page.locator(".reports-binding-row[data-state='no_report_name'] [data-scope-connect]").first();
+  const connectByKeyboard = page.locator(`${readinessTable} [data-scope-connect]`).first();
   if (await connectByKeyboard.count()) {
     await connectByKeyboard.focus();
     await page.keyboard.press("Enter");
     await page.locator(".reports-binding-row__connect").waitFor({ timeout: 5000 });
   }
+  // Navigating to the identical URL (same hash) below is a same-document
+  // no-op in Chromium — it would leave THIS dialog open underneath the next
+  // section's own `openReportsWizard` call, so close it explicitly first.
   await page.keyboard.press("Escape");
   await page.locator("#reports-wizard-dialog[open]").waitFor({ state: "hidden" });
 
@@ -422,6 +452,11 @@ async function main() {
   await generateButton.click();
   await page.locator('[data-scope="all"]').click();
   await page.locator(".reports-bindings-table").waitFor({ timeout: 5000 });
+  // All four are checkable now (the picker disables nobody), where the
+  // `not_connected` client used to be locked out at step 1 — hence 4 below,
+  // not 3. Its PDF run is exactly the per-client failure the matrix exists to
+  // show, and the readiness table on the Source step is where an operator
+  // would untick it first.
   const allCheckboxes = page.locator(".reports-binding-row input[type=checkbox]:not(:disabled)");
   const checkableCount = await allCheckboxes.count();
   for (let i = 0; i < checkableCount; i += 1) await allCheckboxes.nth(i).check({ force: true });
@@ -457,7 +492,7 @@ async function main() {
   page.once("dialog", (dialog) => { rebuildPrompt = dialog.message(); void dialog.dismiss(); });
   await page.locator("#rb-rebuild-all").click();
   for (let i = 0; i < 50 && !rebuildPrompt; i += 1) await page.waitForTimeout(100);
-  assert.match(rebuildPrompt, /Rebuild 3 clients/, "the confirmation names how many clients");
+  assert.match(rebuildPrompt, /Rebuild 4 clients/, "the confirmation names how many clients");
   assert.match(rebuildPrompt, /about ~\d/, "the confirmation carries a time estimate");
   assert.match(rebuildPrompt, /ignoring the PDF cache/, "and says the cache will be bypassed");
 

@@ -17,7 +17,7 @@ import {
   escapeHtml, formatDuration, formatTimestamp, icon, isTerminal, stateClass, statusIcon,
 } from "./formatters.js?v=20260907-t84";
 import { sectionSkeleton } from "./skeleton.js?v=20260821-spin3";
-import { openReportsWizard } from "./reports-wizard.js?v=20260907-t84";
+import { openReportsWizard } from "./reports-wizard.js?v=20260917-nsrc";
 import { authorPlaceholder, loadAuthors, patchAuthorCells } from "./authorship.js?v=20260914-t93";
 import { isAdmin } from "./session.js?v=20260906-t72";
 

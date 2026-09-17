@@ -61,11 +61,13 @@ function defaultState() {
     // checklist shows a short loading line rather than treating "not loaded
     // yet" as "not connected". Keyed by `client_id` once loaded.
     bindings: null,
-    // task-49 §2.2: a client removed from the batch stays visible with an
-    // `Excluded` mark instead of disappearing — "12 of 14" must never turn
-    // into a guess about who is missing.
-    excludedClientIds: new Set(),
-    // task-49 §2.2: per-client inline discovery state for the bindings
+    // task-49 §2.2, moved to the Source step: a client dropped because its
+    // Reporting Ninja binding is not usable stays VISIBLE with an `Excluded`
+    // mark instead of disappearing — "12 of 14" must never turn into a guess
+    // about who is missing. Only the readiness table writes to this; a plain
+    // unselect in the Scope step is not a "drop", it is just a selection.
+    readinessDropped: new Set(),
+    // task-49 §2.2: per-client inline discovery state for the readiness
     // table (a client can be reconnected without leaving the wizard). Keyed
     // by `client_id`, shape mirrors the single-client `ninja*` fields above:
     // `{ open, status: "idle"|"checking"|"known"|"error", name, matches,
@@ -98,22 +100,16 @@ function clientNinjaConfigured(client) {
   return Boolean(rn && rn.state !== "not_configured");
 }
 
-// --- Scope step: "All clients" bindings table (task-47 §3.1, task-49 §2.1-2.2) --
+// --- Scope step: "All clients" picker (task-47 §3.1) ----------------------
 //
-// The account's saved Reporting Ninja report NAME per client is not on the
-// dashboard card, and reading it cheaply (task-45's `_client_identity`) is
-// fine — `GET /reports/ninja-bindings` (task-49) is exactly this cheap DB
-// read, one call for the whole portfolio. A client stays disabled only for
-// the one thing the form genuinely cannot fix from here: no Reporting Ninja
-// connection at all. `no_report_name`/`foreign_binding` are fixable INLINE
-// (Connect) or via Exclude, so they are selectable-with-a-warning instead —
-// the live incident this closes was 9 clients the wizard silently let
-// through with no warning at all, not 9 clients that needed blocking.
-function clientDisabledReason(client) {
-  const binding = bindingFor(client.client_id);
-  if (binding.state === "not_connected") return "Reporting Ninja isn't connected";
-  return null;
-}
+// Picking clients is all this step does. It deliberately says NOTHING about
+// Reporting Ninja: the source is chosen two steps later, and two of the three
+// sources (`api`, `google_api`) do not need a bound Ninja report at all —
+// `_run_api` needs only the integration's `connection_key`, `_run_google`
+// needs neither (it reads GA4/GSC directly). Gating the client list on a
+// binding therefore warned about, and withheld, clients that were perfectly
+// fine for the source actually about to run. The binding check still exists
+// — see `renderBatchReadiness` in the Source step, where the source is known.
 
 function sortedClients() {
   return [...context.clients].sort((a, b) => a.name.localeCompare(b.name));
@@ -126,27 +122,40 @@ function filteredScopeClients() {
   return all.filter((client) => client.name.toLowerCase().includes(query) || (client.domain || "").toLowerCase().includes(query));
 }
 
-function selectableClientIds() {
-  return context.clients
-    .filter((client) => !clientDisabledReason(client) && !state.excludedClientIds.has(client.client_id))
-    .map((client) => client.client_id);
+function isSelected(clientId) {
+  return state.selectedClientIds.includes(clientId);
 }
 
-function toggleClientSelected(clientId) {
-  state.selectedClientIds = state.selectedClientIds.includes(clientId)
-    ? state.selectedClientIds.filter((id) => id !== clientId)
-    : [...state.selectedClientIds, clientId];
+function setSelected(clientId, selected) {
+  state.selectedClientIds = selected
+    ? [...state.selectedClientIds.filter((id) => id !== clientId), clientId]
+    : state.selectedClientIds.filter((id) => id !== clientId);
+}
+
+function toggleScopeClient(clientId) {
+  const selected = !isSelected(clientId);
+  setSelected(clientId, selected);
+  // Re-selecting in the Scope step also un-drops the client: the readiness
+  // table must not keep showing it as `Excluded` once it is back in.
+  if (selected) state.readinessDropped.delete(clientId);
   rerenderScopeStep();
 }
 
-// task-49 §2.2: "Select all" answers the live incident directly — a mass
-// selection must never silently include a client that is guaranteed to fail.
-// Only `ready` (never `no_report_name`/`foreign_binding`, even though those
-// ARE individually selectable) and never something already excluded.
+// Unchecking a client in the readiness table IS the old `Exclude` button —
+// but the row stays on screen, marked `Excluded`, because a client that
+// disappears the moment it is dropped turns "12 of 14" into a guess about
+// who is missing (task-49 §2.2).
+function toggleReadinessClient(clientId) {
+  const selected = !isSelected(clientId);
+  setSelected(clientId, selected);
+  if (selected) state.readinessDropped.delete(clientId);
+  else state.readinessDropped.add(clientId);
+  rerenderSourceStep(`[data-readiness-client="${cssEscape(clientId)}"]`);
+}
+
 function selectAllScopeClients() {
-  state.selectedClientIds = context.clients
-    .filter((client) => bindingFor(client.client_id).state === "ready" && !state.excludedClientIds.has(client.client_id))
-    .map((client) => client.client_id);
+  state.selectedClientIds = context.clients.map((client) => client.client_id);
+  state.readinessDropped.clear();
   rerenderScopeStep();
 }
 
@@ -155,29 +164,18 @@ function clearScopeClients() {
   rerenderScopeStep();
 }
 
-function excludeScopeClient(clientId) {
-  state.excludedClientIds.add(clientId);
-  state.selectedClientIds = state.selectedClientIds.filter((id) => id !== clientId);
-  rerenderScopeStep();
-}
-
-function includeScopeClient(clientId) {
-  state.excludedClientIds.delete(clientId);
-  rerenderScopeStep();
-}
-
-// Every inline action (pick a candidate, check confirm, save) re-renders the
-// WHOLE step-1 body, same as every other render path in this file — but
-// unlike those, this one fires from deep inside a long, scrolled table, and
-// resetting scroll to the top on each click reads as the interaction fighting
-// the operator. Both scroll positions that matter — the table's own internal
-// scroll and the dialog body around it — are captured and restored around
-// the re-render, so nothing visibly jumps.
-function rerenderScopeStep() {
+// Every in-step action (tick a client, pick a candidate, save) re-renders the
+// WHOLE step body, same as every other render path in this file — but unlike
+// those, these fire from deep inside a long, scrolled table, and resetting
+// scroll to the top on each click reads as the interaction fighting the
+// operator. Both scroll positions that matter — the table's own internal
+// scroll and the dialog body around it — are captured and restored around the
+// re-render, so nothing visibly jumps.
+function rerenderPreservingScroll(renderBody, focusSelector) {
   const tableScroll = body.querySelector(".reports-bindings-table-scroll");
   const savedTableScroll = tableScroll ? { top: tableScroll.scrollTop, left: tableScroll.scrollLeft } : null;
   const savedBodyScrollTop = body.scrollTop;
-  body.innerHTML = renderStep1();
+  body.innerHTML = renderBody();
   renderFooter();
   const restoredTableScroll = body.querySelector(".reports-bindings-table-scroll");
   if (restoredTableScroll && savedTableScroll) {
@@ -185,19 +183,20 @@ function rerenderScopeStep() {
     restoredTableScroll.scrollLeft = savedTableScroll.left;
   }
   body.scrollTop = savedBodyScrollTop;
+  if (focusSelector) body.querySelector(focusSelector)?.focus();
 }
 
-// Default selection is every `ready` client (task-47 §3.1, tightened by
-// task-49 §2.2 for the same reason as `selectAllScopeClients` — the very
-// first thing shown when "All clients" is chosen must not already contain a
-// guaranteed failure) that's enabled and not paused. A paused client stays
-// visible and addable, just unchecked by default, matching task-34's own
-// "paused stays visible, drops out of mass operations unless named
-// explicitly" rule.
+function rerenderScopeStep() {
+  rerenderPreservingScroll(renderStep1);
+}
+
+// Default selection is every client that isn't paused (task-47 §3.1). A
+// paused client stays visible and addable, just unchecked by default,
+// matching task-34's own "paused stays visible, drops out of mass operations
+// unless named explicitly" rule. Reporting Ninja readiness deliberately does
+// NOT narrow this — see the Scope-step note above.
 function defaultSelectedClientIds() {
-  return context.clients
-    .filter((client) => bindingFor(client.client_id).state === "ready" && !isPaused(client))
-    .map((client) => client.client_id);
+  return context.clients.filter((client) => !isPaused(client)).map((client) => client.client_id);
 }
 
 function selectScope(scope) {
@@ -232,15 +231,12 @@ export function openReportsWizard({ clients, trigger, onCreated, onBatchCreated,
   dialog.showModal();
   getReportTypes().then((result) => { types = result; if (state.step === 3) renderStep(); }).catch(() => {});
   // task-49 §2.1: fetched once per wizard open, alongside `types` — cheap
-  // (no browser call, see `getNinjaBindings`) and needed before Start can be
-  // pressed, not only after "All clients" is chosen.
+  // (no browser call, see `getNinjaBindings`) and read by the Source step's
+  // readiness table, which is the only place a binding can change the answer.
   getNinjaBindings({ requestKey: "reports-wizard-ninja-bindings" }).then((result) => {
     if (!state) return;
     state.bindings = Object.fromEntries(result.rows.map((row) => [row.client_id, row]));
-    if (state.scope === "all" && state.selectedClientIds.length === 0) {
-      state.selectedClientIds = defaultSelectedClientIds();
-    }
-    if (state.step === 1) renderStep();
+    if (state.step === 4) renderStep();
   }).catch(() => {
     if (state) state.bindings = {};
   });
@@ -291,8 +287,8 @@ function step4Reason() {
     return "The Google API source can't build a comparator — that report compares the PDF and API transports. Pick API or PDF, or a different report type.";
   }
   // The per-client Reporting Ninja discovery flow (Find/save a report name)
-  // only makes sense for one client — a batch's PDF children are validated
-  // per-client at run time instead (see `clientDisabledReason`'s docstring).
+  // only makes sense for one client — a batch's children are validated by
+  // `renderBatchReadiness` below, non-blocking, and again at run time.
   if (state.source === "pdf" && state.scope === "one") {
     if (state.ninjaState === "checking") return "Checking the saved Reporting Ninja report name…";
     if (state.ninjaState !== "known" || !state.ninjaName) return "Find and save the Reporting Ninja report name for this client first.";
@@ -307,20 +303,44 @@ function reasonForCurrentStep() {
   return step4Reason();
 }
 
-// task-49 §2.2: a `no_report_name`/`foreign_binding` client is selectable on
-// purpose (the operator's own informed choice, not a form bug) — but the
-// Start button still has to say exactly what that choice costs, not stay
-// silent about it. Non-blocking: `renderFooter` never disables Start for this.
-function notReadySelectedCount() {
-  if (state.scope !== "all" || !state.bindings) return 0;
-  return state.selectedClientIds.filter((id) => bindingFor(id).state !== "ready").length;
+// --- What each source actually needs from Reporting Ninja ------------------
+//
+// Measured in the runner, not assumed — this is the whole point of moving the
+// check here, and the three answers are genuinely different:
+//
+// - `pdf`   — `_run_pdf` raises `ReportNameMissingError` without a saved
+//             `ninja_report_name`, so every non-`ready` state is a real
+//             failure ahead (`not_connected`, `no_report_name`,
+//             `foreign_binding`).
+// - `api`   — `_run_api` needs only `config_json["connection_key"]`; the
+//             report NAME is never read. Only `not_connected` matters.
+// - `google_api` — `_run_google` never touches Reporting Ninja. Nothing here
+//             can predict its outcome, so nothing is claimed.
+function ninjaGateStates(source) {
+  if (source === "pdf") return ["not_connected", "no_report_name", "foreign_binding"];
+  if (source === "api") return ["not_connected"];
+  return [];
+}
+
+// task-49 §2.2: an at-risk client stays selectable on purpose (the operator's
+// own informed choice, not a form bug) — but the Start button still has to say
+// exactly what that choice costs. Non-blocking: `renderFooter` never disables
+// Start for this. The dropped ones stay in the list so the table can keep
+// showing them as `Excluded` rather than silently losing the row.
+function readinessClients() {
+  const gate = ninjaGateStates(state.source);
+  if (state.scope !== "all" || !gate.length || !state.bindings) return [];
+  const ids = new Set([...state.selectedClientIds, ...state.readinessDropped]);
+  return context.clients
+    .filter((client) => ids.has(client.client_id) && gate.includes(bindingFor(client.client_id).state))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function step4Notice() {
-  if (state.source !== "pdf") return "";
-  const atRisk = notReadySelectedCount();
+  const atRisk = readinessClients().filter((client) => isSelected(client.client_id)).length;
   if (!atRisk) return "";
-  return `${atRisk} of ${state.selectedClientIds.length} client${state.selectedClientIds.length === 1 ? "" : "s"} will fail — connect or exclude them.`;
+  const total = state.selectedClientIds.length;
+  return `${atRisk} of ${total} client${total === 1 ? "" : "s"} will fail — connect ${atRisk === 1 ? "it" : "them"} or untick ${atRisk === 1 ? "it" : "them"} below.`;
 }
 
 // --- Rendering: chrome -------------------------------------------------
@@ -428,24 +448,6 @@ function renderScopeChecklist() {
   const selected = new Set(state.selectedClientIds);
   const total = context.clients.length;
 
-  const tableOrLoading = state.bindings === null
-    ? `<p class="field-help">${statusIcon("loader-2")}Loading Reporting Ninja bindings…</p>`
-    : `<div class="reports-bindings-table-scroll"><table class="reports-bindings-table">
-        <thead>
-          <tr>
-            <th class="visually-hidden">Select</th>
-            <th>Client</th>
-            <th>Reporting Ninja report</th>
-            <th>State</th>
-            <th class="visually-hidden">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${clients.map((client) => renderBindingRow(client, selected)).join("")
-            || `<tr><td colspan="5"><p class="field-help">No client matches "${escapeHtml(state.clientQuery)}".</p></td></tr>`}
-        </tbody>
-      </table></div>`;
-
   return `
     <div class="reports-step-section reports-scope-checklist">
       <div class="reports-scope-toolbar">
@@ -457,47 +459,110 @@ function renderScopeChecklist() {
         <button type="button" class="button button--quiet" id="rw-clear-clients">Clear</button>
         <span class="reports-scope-count">${state.selectedClientIds.length} of ${total} selected</span>
       </div>
-      ${tableOrLoading}
+      <div class="reports-bindings-table-scroll"><table class="reports-bindings-table reports-bindings-table--picker">
+        <thead>
+          <tr>
+            <th class="visually-hidden">Select</th>
+            <th>Client</th>
+            <th>Domain</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${clients.map((client) => renderScopeClientRow(client, selected)).join("")
+            || `<tr><td colspan="3"><p class="field-help">No client matches "${escapeHtml(state.clientQuery)}".</p></td></tr>`}
+        </tbody>
+      </table></div>
     </div>`;
 }
 
-function renderBindingRow(client, selected) {
-  const binding = bindingFor(client.client_id);
-  const excluded = state.excludedClientIds.has(client.client_id);
-  const paused = isPaused(client);
-  const meta = BINDING_STATE_META[binding.state];
-  const inline = state.inlineConnect[client.client_id];
-
-  let action = "";
-  if (excluded) {
-    action = `<button type="button" class="button button--quiet" data-scope-include="${escapeHtml(client.client_id)}">Include</button>`;
-  } else if (binding.state === "not_connected") {
-    action = `<a class="button button--quiet" href="${buildClientHash(client.client_id)}">Open client page</a>`;
-  } else if (binding.state === "no_report_name" || binding.state === "foreign_binding") {
-    action = `
-      <button type="button" class="button button--quiet" data-scope-connect="${escapeHtml(client.client_id)}" aria-expanded="${Boolean(inline?.open)}">Connect</button>
-      <button type="button" class="button button--quiet" data-scope-exclude="${escapeHtml(client.client_id)}">Exclude</button>`;
-  }
-
-  const row = `
-    <tr class="reports-binding-row${excluded ? " reports-binding-row--excluded" : ""}" data-state="${binding.state}">
+function renderScopeClientRow(client, selected) {
+  return `
+    <tr class="reports-binding-row">
       <td>
         <input type="checkbox" data-scope-client="${escapeHtml(client.client_id)}"
-          ${selected.has(client.client_id) && !excluded ? "checked" : ""}
-          ${binding.state === "not_connected" || excluded ? "disabled" : ""}
+          ${selected.has(client.client_id) ? "checked" : ""}
           aria-label="Select ${escapeHtml(client.name)}">
       </td>
       <td>
         <span class="reports-binding-row__name" translate="no">${escapeHtml(client.name)}</span>
-        ${paused ? `<span class="status-label state-paused">${icon("player-pause", "icon icon--tiny")}Paused</span>` : ""}
-        ${excluded ? `<span class="status-label state-not_connected">Excluded</span>` : ""}
+        ${isPaused(client) ? `<span class="status-label state-paused">${icon("player-pause", "icon icon--tiny")}Paused</span>` : ""}
+      </td>
+      <td class="reports-binding-row__report" translate="no">${client.domain ? escapeHtml(client.domain) : "—"}</td>
+    </tr>`;
+}
+
+// --- Source step: Reporting Ninja readiness (task-49 §2.2, moved here) -----
+//
+// The same table task-49 built, with the one thing it was missing: the chosen
+// source. `ninjaGateStates` decides whether it appears at all, so a Google API
+// batch never sees a Reporting Ninja warning — there is nothing for Reporting
+// Ninja to be wrong about on that path.
+function renderBatchReadiness() {
+  if (state.scope !== "all" || !ninjaGateStates(state.source).length) return "";
+  if (state.bindings === null) {
+    return `<p class="field-help">${statusIcon("loader-2")}Checking Reporting Ninja bindings…</p>`;
+  }
+  const clients = readinessClients();
+  const selected = new Set(state.selectedClientIds);
+  if (!clients.length) {
+    const n = state.selectedClientIds.length;
+    return `<p class="reports-client-hint">${icon("circle-check")}
+      All ${n} selected client${n === 1 ? "" : "s"} ${n === 1 ? "is" : "are"} ready for this source.</p>`;
+  }
+  const explain = state.source === "pdf"
+    ? "This source downloads each client's own report from the Reporting Ninja cabinet, so it needs a saved report name. A client below fails on its own — the rest of the batch keeps going."
+    : "This source reads Reporting Ninja's API. A client below has no Reporting Ninja connection at all, so it fails on its own — the rest of the batch keeps going.";
+  return `
+    <div class="reports-step-section reports-scope-checklist">
+      <h3>Reporting Ninja readiness</h3>
+      <p class="field-help">${escapeHtml(explain)} Connect it, or untick it to leave it out of this batch.</p>
+      <div class="reports-bindings-table-scroll"><table class="reports-bindings-table">
+        <thead>
+          <tr>
+            <th class="visually-hidden">Keep in batch</th>
+            <th>Client</th>
+            <th>Reporting Ninja report</th>
+            <th>State</th>
+            <th class="visually-hidden">Action</th>
+          </tr>
+        </thead>
+        <tbody>${clients.map((client) => renderReadinessRow(client, selected)).join("")}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function renderReadinessRow(client, selected) {
+  const binding = bindingFor(client.client_id);
+  const dropped = !selected.has(client.client_id);
+  const meta = BINDING_STATE_META[binding.state];
+  const inline = state.inlineConnect[client.client_id];
+  // Inline Connect saves a report NAME, so it is offered only where a name is
+  // the missing piece. `not_connected` is a whole missing integration — the
+  // wizard cannot create one, and saying "Connect" here would promise a fix
+  // this form does not have (AGENTS §6: every failed state names a real next
+  // action).
+  const canConnectInline = binding.state === "no_report_name" || binding.state === "foreign_binding";
+  const action = canConnectInline
+    ? `<button type="button" class="button button--quiet" data-scope-connect="${escapeHtml(client.client_id)}" aria-expanded="${Boolean(inline?.open)}">Connect</button>`
+    : `<a class="button button--quiet" href="${buildClientHash(client.client_id)}">Open client page</a>`;
+
+  return `
+    <tr class="reports-binding-row${dropped ? " reports-binding-row--excluded" : ""}" data-state="${binding.state}">
+      <td>
+        <input type="checkbox" data-readiness-client="${escapeHtml(client.client_id)}"
+          ${dropped ? "" : "checked"}
+          aria-label="Keep ${escapeHtml(client.name)} in this batch">
+      </td>
+      <td>
+        <span class="reports-binding-row__name" translate="no">${escapeHtml(client.name)}</span>
+        ${isPaused(client) ? `<span class="status-label state-paused">${icon("player-pause", "icon icon--tiny")}Paused</span>` : ""}
+        ${dropped ? `<span class="status-label state-not_connected">Excluded</span>` : ""}
       </td>
       <td class="reports-binding-row__report" translate="no">${binding.ninja_report_name ? escapeHtml(binding.ninja_report_name) : "—"}</td>
       <td><span class="status-label state-${binding.state}">${icon(meta.icon, "icon icon--tiny")}${meta.label}</span></td>
       <td class="reports-binding-row__actions">${action}</td>
     </tr>
     ${inline?.open ? `<tr class="reports-binding-row__connect"><td></td><td colspan="4">${renderInlineConnect(client)}</td></tr>` : ""}`;
-  return row;
 }
 
 // --- Inline Connect (task-49 §2.2) ------------------------------------------
@@ -604,13 +669,13 @@ function inlineCandidateIsForeign(entry) {
 
 function openInlineConnect(clientId, { refresh = false } = {}) {
   const existing = state.inlineConnect[clientId];
-  if (existing?.open && !refresh) { existing.open = false; rerenderScopeStep(); return; }
+  if (existing?.open && !refresh) { existing.open = false; rerenderSourceStep(); return; }
   state.inlineConnect[clientId] = {
     open: true, status: "checking", name: null, matches: [], others: [],
     selectedCandidate: "", confirmed: false, message: "", saving: false, saveError: null,
     lookupError: null, snapshotAgeSeconds: null, refreshing: refresh,
   };
-  rerenderScopeStep();
+  rerenderSourceStep();
   getNinjaReportName(clientId, { refresh }).then((result) => {
     if (!state) return;
     const entry = state.inlineConnect[clientId];
@@ -622,14 +687,14 @@ function openInlineConnect(clientId, { refresh = false } = {}) {
     entry.lookupError = result.lookup_error || null;
     entry.snapshotAgeSeconds = result.snapshot_age_seconds ?? null;
     entry.selectedCandidate = entry.matches[0]?.name || "";
-    rerenderScopeStep();
+    rerenderSourceStep();
   }).catch((error) => {
     if (isAbortError(error) || !state) return;
     const entry = state.inlineConnect[clientId];
     if (!entry) return;
     entry.status = "error";
     entry.message = `Could not search Reporting Ninja: ${error.message}`;
-    rerenderScopeStep();
+    rerenderSourceStep();
   });
 }
 
@@ -639,7 +704,7 @@ function saveInlineConnect(clientId) {
   if (!name || entry.saving || (inlineCandidateIsForeign(entry) && !entry.confirmed)) return;
   entry.saving = true;
   entry.saveError = null;
-  rerenderScopeStep();
+  rerenderSourceStep();
   putNinjaReportName(clientId, name, { confirmMismatch: inlineCandidateIsForeign(entry) }).then(() => {
     if (!state) return;
     // task-49 §2.2: the row flips to `Ready` in place — no wizard reload.
@@ -647,7 +712,7 @@ function saveInlineConnect(clientId) {
       state.bindings[clientId] = { ...bindingFor(clientId), ninja_report_name: name, state: "ready" };
     }
     delete state.inlineConnect[clientId];
-    rerenderScopeStep();
+    rerenderSourceStep();
   }).catch((error) => {
     if (isAbortError(error) || !state) return;
     const live = state.inlineConnect[clientId];
@@ -655,7 +720,7 @@ function saveInlineConnect(clientId) {
     // stays "known") — losing them meant the only way to try again was to
     // close and reopen Connect, re-running discovery for nothing.
     if (live) { live.saving = false; live.saveError = `Could not save the report name: ${error.message}`; }
-    rerenderScopeStep();
+    rerenderSourceStep();
   });
 }
 
@@ -847,7 +912,8 @@ function renderStep4() {
       </button>
     </div>
     ${state.source === "pdf" ? (state.scope === "one" ? renderPdfExtras() : renderBatchPdfNote()) : ""}
-    ${state.source === "google_api" ? renderGoogleApiNote() : ""}`;
+    ${state.source === "google_api" ? renderGoogleApiNote() : ""}
+    ${renderBatchReadiness()}`;
 }
 
 // task-49: a batch had NO force-refresh control at all — `force_refresh`
@@ -867,18 +933,15 @@ function renderForceRefreshToggle() {
 }
 
 function renderBatchPdfNote() {
-  return `
-    ${renderForceRefreshToggle()}
-    <p class="reports-client-hint">${icon("info-circle")}
-      A client with no saved Reporting Ninja report name fails on its own — the rest of the batch keeps going.
-      Connect or exclude it in the Scope step above.
-    </p>`;
+  return renderForceRefreshToggle();
 }
 
 // task-84 §4.1: the direct source has no per-client setup step — the GA4
-// property id and GSC site are already stored. The two things worth saying
-// are the missing dependency (the point of the source) and the one hard
-// limit the operator can actually hit: GSC's 16-month history ceiling.
+// property id and GSC site are already stored, and no Reporting Ninja report
+// name is ever read, which is why `ninjaGateStates` shows no readiness table
+// for it. The two things worth saying are the missing dependency (the point
+// of the source) and the one hard limit the operator can actually hit: GSC's
+// 16-month history ceiling.
 function renderGoogleApiNote() {
   const historyLimited = state.kind === "yearly" || state.kind === "custom_months";
   return `
@@ -1003,7 +1066,10 @@ function onBodyClick(event) {
   if (scopeCard) { selectScope(scopeCard.dataset.scope); return; }
 
   const scopeClient = event.target.closest("[data-scope-client]");
-  if (scopeClient && !scopeClient.disabled) { toggleClientSelected(scopeClient.dataset.scopeClient); return; }
+  if (scopeClient) { toggleScopeClient(scopeClient.dataset.scopeClient); return; }
+
+  const readinessClient = event.target.closest("[data-readiness-client]");
+  if (readinessClient) { toggleReadinessClient(readinessClient.dataset.readinessClient); return; }
 
   if (event.target.closest("#rw-select-all")) { selectAllScopeClients(); return; }
   if (event.target.closest("#rw-clear-clients")) { clearScopeClients(); return; }
@@ -1016,12 +1082,6 @@ function onBodyClick(event) {
     openInlineConnect(rereadButton.dataset.inlineReread, { refresh: true });
     return;
   }
-
-  const excludeButton = event.target.closest("[data-scope-exclude]");
-  if (excludeButton) { excludeScopeClient(excludeButton.dataset.scopeExclude); return; }
-
-  const includeButton = event.target.closest("[data-scope-include]");
-  if (includeButton) { includeScopeClient(includeButton.dataset.scopeInclude); return; }
 
   // "Open client page" navigates away — close the modal so it doesn't sit
   // open behind/in front of the page the operator just asked to see.
@@ -1089,12 +1149,12 @@ function onBodyChange(event) {
     entry.selectedCandidate = event.target.value;
     entry.confirmed = false; // a fresh choice always re-arms the foreign-binding guard
     entry.saveError = null; // and clears a stale error from a previous, different attempt
-    rerenderScopeStep();
+    rerenderSourceStep();
   } else if (event.target.dataset.inlineConfirm) {
     const entry = state.inlineConnect[event.target.dataset.inlineConfirm];
     if (!entry) return;
     entry.confirmed = event.target.checked;
-    rerenderScopeStep();
+    rerenderSourceStep();
   }
 }
 
@@ -1119,12 +1179,7 @@ function onBodyInput(event) {
 // would throw the operator back to the top of the dialog on every radio click.
 // Here the control that caused the change keeps focus and stays in view.
 function rerenderSourceStep(focusSelector) {
-  body.innerHTML = renderStep4();
-  renderFooter();
-  const target = focusSelector ? body.querySelector(focusSelector) : null;
-  if (!target) return;
-  target.focus();
-  target.scrollIntoView({ block: "nearest" });
+  rerenderPreservingScroll(renderStep4, focusSelector);
 }
 
 function toggleYear(year) {
