@@ -168,6 +168,8 @@ ROUTE_ACTIONS: dict[tuple[str, str], ActionSpec] = {
     ): ActionSpec("tool.redirects.run_target", "redirect_check", "check_id"),
     ("POST", "/api/v1/tools/redirects/trace"): ActionSpec("tool.redirects.trace"),
     ("POST", "/api/v1/tools/schema-markup/checks"): ActionSpec("tool.schema_markup.run"),
+    # task-98: єдина мутація тула GA4 Events by Month — сам прогін.
+    ("POST", "/api/v1/tools/ga4-events/reports"): ActionSpec("tool.ga4_events.run"),
     ("POST", "/api/v1/tools/strategy-check/inspect"): ActionSpec("tool.strategy_check.inspect"),
     ("POST", "/api/v1/tools/strategy-check/check"): ActionSpec("tool.strategy_check.run"),
     ("POST", "/api/v1/tools/framework-check/check"): ActionSpec("tool.framework_check.run"),

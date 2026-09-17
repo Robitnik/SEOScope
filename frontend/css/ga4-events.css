@@ -1,0 +1,136 @@
+/* GA4 Events by Month (task-98).
+ *
+ * Only tokens from tokens.css, and it reuses `.tool-header`/`.tool-panel`/
+ * `.state-panel`/`.table-scroll`/`.analytics-table`/`.button`/`.search-field`
+ * from app.css/client-page.css/tools.css — same discipline as
+ * schema-markup.css. Nothing here is a new color or radius.
+ *
+ * `contain: paint` on the scroll wrapper is deliberate: a wide <table> inside
+ * an `overflow-x:auto` wrapper still scrolls the whole page in Chromium
+ * without it (measured on this project before, client-page.css carries the
+ * same note).
+ */
+
+.ge-form { display: grid; gap: 18px; }
+.ge-form select { display: block; width: 100%; max-width: 420px; margin-top: 6px; }
+
+.ge-months { min-height: 24px; }
+.ge-months-empty, .ge-months-loading { color: var(--ink-muted); font-size: 12px; margin: 0; }
+.ge-months-loading { display: inline-flex; align-items: center; gap: 8px; }
+.ge-months-loading .icon { width: 15px; height: 15px; color: var(--accent); }
+
+.ge-fieldset { border: 1px solid var(--line); padding: 14px 16px 16px; margin: 0; }
+.ge-fieldset legend {
+  padding: 0 8px; color: var(--ink-dim); font-size: 10px;
+  letter-spacing: .07em; text-transform: uppercase;
+}
+.ge-count { color: var(--ink-muted); text-transform: none; letter-spacing: 0; }
+
+.ge-year-list { display: grid; gap: 12px; }
+.ge-year { display: grid; grid-template-columns: 54px 1fr; gap: 12px; align-items: start; }
+.ge-year__label {
+  margin: 6px 0 0; color: var(--ink-dim); font-size: 11px;
+  font-variant-numeric: tabular-nums; letter-spacing: .06em;
+}
+.ge-year__months { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Мітка і чекбокс — одна суцільна ціль ≥24px, без мертвих зон (AGENTS.md §8). */
+.ge-month {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 30px;
+  padding: 4px 11px; border: 1px solid var(--line); background: var(--canvas-raised);
+  color: var(--ink-muted); font-size: 12px; cursor: pointer;
+}
+.ge-month:hover { border-color: var(--line-accent); color: var(--ink); }
+.ge-month input { accent-color: var(--accent); margin: 0; }
+.ge-month:has(input:checked) { border-color: var(--line-accent); color: var(--ink); background: var(--surface-strong); }
+.ge-month:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.ge-submit-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.ge-submit-hint { margin: 0; color: var(--ink-muted); font-size: 12px; }
+.ge-submit-row .icon { width: 15px; height: 15px; }
+
+/* --- report --- */
+#ge-result-actions { display: inline-flex; gap: 8px; }
+#ge-result-actions .icon { width: 14px; height: 14px; }
+
+.ge-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); }
+.ge-tab {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 36px;
+  padding: 7px 14px; border: 1px solid transparent; border-bottom: none;
+  background: transparent; color: var(--ink-muted); font-family: var(--font-body);
+  font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.ge-tab:hover { color: var(--ink); }
+.ge-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ge-tab[aria-selected="true"] {
+  border-color: var(--line); background: var(--surface-strong); color: var(--ink);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.ge-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px;
+  border: 1px solid var(--line); font-size: 10px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; white-space: nowrap;
+}
+.ge-chip .icon { width: 12px; height: 12px; }
+.ge-chip--partial { color: var(--warning); border-color: var(--warning); }
+.ge-chip--failed { color: var(--danger); border-color: var(--danger); }
+.ge-chip--ok { color: var(--success); border-color: var(--success); }
+.ge-chip--key { color: var(--accent); border-color: var(--line-accent); text-transform: none; letter-spacing: 0; }
+
+.ge-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin: 16px 0 4px; }
+.ge-search { min-width: 240px; flex: 0 1 320px; }
+.ge-toggle {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 30px;
+  color: var(--ink-muted); font-size: 12px; cursor: pointer;
+}
+.ge-toggle input { accent-color: var(--accent); }
+.ge-toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.ge-partial-note, .ge-note {
+  display: flex; align-items: flex-start; gap: 8px; margin: 14px 0 0;
+  color: var(--ink-muted); font-size: 11px; line-height: 1.5;
+}
+.ge-partial-note { color: var(--warning); }
+.ge-partial-note .icon { width: 15px; height: 15px; flex: none; }
+
+.ge-totals {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1px; margin-top: 16px; background: var(--line); border: 1px solid var(--line);
+}
+.ge-total { background: var(--surface); padding: 12px 14px; }
+.ge-total__label {
+  margin: 0; color: var(--ink-dim); font-size: 10px;
+  letter-spacing: .07em; text-transform: uppercase;
+}
+.ge-total__value {
+  margin: 4px 0 0; color: var(--ink); font-family: var(--font-display);
+  font-size: 22px; font-variant-numeric: tabular-nums;
+}
+.ge-total__sub { margin: 2px 0 0; color: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.ge-table-wrap { contain: paint; }
+.ge-table th:first-child { min-width: 260px; }
+/* `eventName` is a case-sensitive GA4 identifier: `.analytics-table th`
+   uppercases headers, which would rename "Book Now" to "BOOK NOW" on screen
+   while the API, the Excel sheet and GA4 itself all say otherwise. */
+.ge-table tbody th { font-weight: 400; text-align: left; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.ge-event { color: var(--ink); font-weight: 700; overflow-wrap: anywhere; }
+.ge-table tbody th { display: table-cell; }
+.ge-table tbody th .ge-chip { margin-left: 8px; vertical-align: middle; }
+.ge-row--key td, .ge-row--key th { background: rgb(255 74 23 / 5%); }
+.ge-empty-cell { color: var(--ink-muted); text-align: center; padding: 18px 10px; }
+
+.ge-share { color: var(--ink-dim); }
+.ge-comparison { color: var(--ink-muted); text-align: left !important; white-space: nowrap; }
+/* Рядок-початок групи несе верхню лінію — три рядки читаються як один івент. */
+.ge-row--group-start > * { border-top: 1px solid var(--line); }
+.ge-name-cell { vertical-align: middle; }
+
+.ge-open-cell { text-align: right; }
+
+@media (max-width: 720px) {
+  .ge-year { grid-template-columns: 1fr; gap: 4px; }
+  .ge-totals { grid-template-columns: repeat(2, 1fr); }
+  .ge-tab { flex: 1 1 auto; justify-content: center; }
+}

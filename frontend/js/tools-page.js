@@ -21,6 +21,7 @@ const TOOL_MODULES = {
   "strategy-package": () => import("./strategy-package-tool.js?v=20260914-t96"),
   "schema-markup": () => import("./schema-markup-tool.js?v=20260821-spin3"),
   "prompt-launcher": () => import("./prompt-launcher-tool.js?v=20260914-t94"),
+  "ga4-events": () => import("./ga4-events-tool.js?v=20260917-t98"),
 };
 
 export async function initToolsRoute(route) {

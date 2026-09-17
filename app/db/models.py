@@ -2395,3 +2395,45 @@ event.listen(
 # Журнал — append-only (task-72): рядок не редагують ніколи. Той самий
 # запобіжник, що стоїть на снапшотах і метриках вище.
 event.listen(AuditEvent, "before_update", _reject_update)
+
+
+# --- Added by task-98 (GA4 Events by Month tool) ---------------------------
+
+
+class Ga4EventMonthReport(Base):
+    """Один прогін тула «GA4 Events by Month» (task-98 §2.3).
+
+    Та сама форма, що `SchemaMarkupCheck`/`ContentQaPackage`: один незмінний
+    рядок на прогін, без per-month мутабельного стану всередині.
+
+    Чому взагалі зберігаємо, якщо дані перезапитуються за секунди: **GA4
+    переглядає числа** (~48 год після дня) і клієнт може змінити набір
+    ключових івентів у property. Посилання на прогін має показувати те, що
+    бачив оператор у той момент, а не сьогоднішній перерахунок — тому
+    `rows_json` це ЗНІМОК відповіді Google, а не кеш.
+
+    `property_id` — не секрет (`properties/<id>`, PLAN §13), і тримати його
+    тут потрібно: клієнту могли перепідключити GA4, а звіт мусить лишитись
+    прочитним разом із тим, кого саме питали.
+    """
+
+    __tablename__ = "ga4_event_month_reports"
+    __table_args__ = (Index("ix_ga4_event_month_reports_created_at", "created_at"),)
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="SET NULL"), default=None
+    )
+    property_id: Mapped[str] = mapped_column(String(64))
+    # Місяці як їх обрав оператор ("YYYY-MM"), найновіший перший.
+    months_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # "ok" | "partial" | "failed" — `app.tools.ga4_events.service.ReportState`.
+    # `not_configured` сюди не потрапляє ніколи: такий прогін не створює рядка.
+    state: Mapped[str] = mapped_column(String(16))
+    # Список `MonthResult` у jsonable-формі (`app/api/tools_ga4_events.py`).
+    rows_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    created_by_kind: Mapped[str | None] = mapped_column(String(16), default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)

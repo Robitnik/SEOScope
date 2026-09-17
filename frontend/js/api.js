@@ -2946,6 +2946,48 @@ export async function getSchemaMarkupCheck(checkId) {
   );
 }
 
+// GA4 Events by Month (task-98): every GA4 event for the months the operator
+// picks, one tab per month. Request keys are explicit purposes, never derived
+// from the params — a derived key silently shares an in-flight request between
+// two different questions (hit twice on this project already).
+export async function getGa4EventsClients() {
+  return request("/tools/ga4-events/clients", {}, "ga4-events-clients");
+}
+
+export async function getGa4EventsMonths(clientId) {
+  return request(
+    `/tools/ga4-events/clients/${encodeURIComponent(clientId)}/months`,
+    {},
+    "ga4-events-months",
+  );
+}
+
+export async function runGa4EventsReport(clientId, months) {
+  return request(
+    "/tools/ga4-events/reports",
+    { method: "POST", body: JSON.stringify({ client_id: clientId, months }) },
+    "ga4-events-run",
+  );
+}
+
+export async function getGa4EventsReports(clientId) {
+  const params = new URLSearchParams({ limit: "25" });
+  if (clientId) params.set("client_id", clientId);
+  return request(`/tools/ga4-events/reports?${params}`, {}, "ga4-events-reports");
+}
+
+export async function getGa4EventsReport(reportId) {
+  return request(
+    `/tools/ga4-events/reports/${encodeURIComponent(reportId)}`,
+    {},
+    `ga4-events-report-${reportId}`,
+  );
+}
+
+export function ga4EventsExportUrl(reportId) {
+  return `/api/v1/tools/ga4-events/reports/${encodeURIComponent(reportId)}/export.xlsx`;
+}
+
 // Page Inventory (task-57): architecture table + per-field SEO/slop QA,
 // built from monitor data already collected. `Re-crawl site` in the UI
 // does NOT call anything here — it drives the existing

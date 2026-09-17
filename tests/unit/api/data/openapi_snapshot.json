@@ -6010,6 +6010,467 @@
         "title": "FrameworkOutcomeDTO",
         "type": "object"
       },
+      "Ga4EventMonthDTO": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "is_partial": {
+            "default": false,
+            "title": "Is Partial",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Ga4EventRowDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "no_data",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "totals": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Ga4EventTotalsDTO"
+            },
+            "default": {},
+            "title": "Totals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "month",
+          "label",
+          "state"
+        ],
+        "title": "Ga4EventMonthDTO",
+        "type": "object"
+      },
+      "Ga4EventRowDTO": {
+        "properties": {
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "is_key_event": {
+            "default": false,
+            "title": "Is Key Event",
+            "type": "boolean"
+          },
+          "key_events": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Events"
+          },
+          "segments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Ga4EventSegmentDTO"
+            },
+            "default": {},
+            "title": "Segments",
+            "type": "object"
+          }
+        },
+        "required": [
+          "event_name"
+        ],
+        "title": "Ga4EventRowDTO",
+        "type": "object"
+      },
+      "Ga4EventSegmentDTO": {
+        "description": "\u041e\u0434\u043d\u0430 \u043a\u043b\u0456\u0442\u0438\u043d\u043a\u0430 \u0442\u0430\u0431\u043b\u0438\u0446\u0456 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0430: \u043f\u043e\u0440\u0456\u0437 \u043e\u0434\u043d\u043e\u0433\u043e \u0456\u0432\u0435\u043d\u0442\u0430.\n\n`event_share_pct`/`user_share_pct` \u0440\u0430\u0445\u0443\u044e\u0442\u044c\u0441\u044f \u0432\u0456\u0434 \u0442\u043e\u0442\u0430\u043b\u0456\u0432 \u0426\u042c\u041e\u0413\u041e \u043f\u043e\u0440\u0456\u0437\u0443\n(`Ga4EventTotalsDTO` \u0437 \u0442\u0438\u043c \u0441\u0430\u043c\u0438\u043c \u043a\u043b\u044e\u0447\u0435\u043c), \u043d\u0435 \u0432\u0456\u0434 \u0437\u0430\u0433\u0430\u043b\u044c\u043d\u0438\u0445 \u2014 \u0441\u0430\u043c\u0435 \u0442\u0430\u043a\n\u0441\u0445\u043e\u0434\u044f\u0442\u044c\u0441\u044f \u0436\u0438\u0432\u0456 \u0447\u0438\u0441\u043b\u0430 GA4 (1.16%, \u0430 \u043d\u0435 1.22%).",
+        "properties": {
+          "event_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Count"
+          },
+          "event_share_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Share Pct"
+          },
+          "per_user": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per User"
+          },
+          "user_share_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Share Pct"
+          },
+          "users": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Users"
+          }
+        },
+        "title": "Ga4EventSegmentDTO",
+        "type": "object"
+      },
+      "Ga4EventTotalsDTO": {
+        "description": "\u0422\u043e\u0442\u0430\u043b\u0438 \u043f\u043e\u0440\u0456\u0437\u0443 \u043d\u0430 \u0440\u0456\u0432\u043d\u0456 property \u2014 \u0437 \u0432\u043b\u0430\u0441\u043d\u043e\u0433\u043e \u0437\u0430\u043f\u0438\u0442\u0443 \u0431\u0435\u0437 `eventName`.\n`users` \u0442\u0443\u0442 \u041d\u0415 \u0434\u043e\u0440\u0456\u0432\u043d\u044e\u0454 \u0441\u0443\u043c\u0456 \u043e\u0434\u043d\u043e\u0439\u043c\u0435\u043d\u043d\u043e\u0457 \u043a\u043e\u043b\u043e\u043d\u043a\u0438 \u0432 \u0440\u044f\u0434\u043a\u0430\u0445 \u0456 \u043d\u0435 \u043f\u043e\u0432\u0438\u043d\u0435\u043d:\n\u043e\u0434\u0438\u043d \u043a\u043e\u0440\u0438\u0441\u0442\u0443\u0432\u0430\u0447 \u0442\u0440\u0438\u0433\u0435\u0440\u0438\u0442\u044c \u0431\u0430\u0433\u0430\u0442\u043e \u0456\u0432\u0435\u043d\u0442\u0456\u0432.",
+        "properties": {
+          "event_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Count"
+          },
+          "key_events": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Events"
+          },
+          "users": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Users"
+          }
+        },
+        "title": "Ga4EventTotalsDTO",
+        "type": "object"
+      },
+      "Ga4EventsClientDTO": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "configured"
+        ],
+        "title": "Ga4EventsClientDTO",
+        "type": "object"
+      },
+      "Ga4EventsClientsDTO": {
+        "properties": {
+          "clients": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Ga4EventsClientDTO"
+            },
+            "title": "Clients",
+            "type": "array"
+          }
+        },
+        "title": "Ga4EventsClientsDTO",
+        "type": "object"
+      },
+      "Ga4EventsMonthsDTO": {
+        "description": "\u041c\u0456\u0441\u044f\u0446\u0456, \u0443 \u044f\u043a\u0438\u0445 \u0443 property \u0440\u0435\u0430\u043b\u044c\u043d\u043e \u0454 \u043f\u043e\u0434\u0456\u0457 (\u043e\u0434\u0438\u043d \u0437\u0430\u043f\u0438\u0442 `yearMonth`).",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "months": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Months",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id"
+        ],
+        "title": "Ga4EventsMonthsDTO",
+        "type": "object"
+      },
+      "Ga4EventsReportDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "months": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "months_data": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Ga4EventMonthDTO"
+            },
+            "title": "Months Data",
+            "type": "array"
+          },
+          "property_id": {
+            "title": "Property Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "partial",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "property_id",
+          "state",
+          "created_at"
+        ],
+        "title": "Ga4EventsReportDTO",
+        "type": "object"
+      },
+      "Ga4EventsReportRequest": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "months": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Months",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id",
+          "months"
+        ],
+        "title": "Ga4EventsReportRequest",
+        "type": "object"
+      },
+      "Ga4EventsReportSummaryDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "months": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "property_id": {
+            "title": "Property Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "ok",
+              "partial",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "property_id",
+          "state",
+          "created_at"
+        ],
+        "title": "Ga4EventsReportSummaryDTO",
+        "type": "object"
+      },
+      "Ga4EventsReportsPageDTO": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "reports": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Ga4EventsReportSummaryDTO"
+            },
+            "title": "Reports",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Ga4EventsReportsPageDTO",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -28424,6 +28885,300 @@
         "summary": "Get Framework Report",
         "tags": [
           "content-qa"
+        ]
+      }
+    },
+    "/api/v1/tools/ga4-events/clients": {
+      "get": {
+        "description": "\u041a\u043b\u0456\u0454\u043d\u0442\u0438 + \u0447\u0438 \u0454 \u0432 \u043d\u0438\u0445 GA4-property. \u041d\u0435\u043d\u0430\u043b\u0430\u0448\u0442\u043e\u0432\u0430\u043d\u0456 \u041d\u0415 \u0445\u043e\u0432\u0430\u044e\u0442\u044c\u0441\u044f: \u0437\u043d\u0438\u043a\u043d\u0443\u0442\u0438\n\u0437\u0456 \u0441\u043f\u0438\u0441\u043a\u0443 \u2014 \u0433\u0456\u0440\u0448\u0435 \u0437\u0430 \u0447\u0435\u0441\u043d\u0435 \u00abGA4 isn't connected\u00bb, \u0431\u043e \u0432\u0438\u0433\u043b\u044f\u0434\u0430\u0454 \u044f\u043a \u00ab\u043a\u043b\u0456\u0454\u043d\u0442\u0430\n\u043d\u0435 \u0456\u0441\u043d\u0443\u0454\u00bb.",
+        "operationId": "list_clients_api_v1_tools_ga4_events_clients_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ga4EventsClientsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Clients",
+        "tags": [
+          "ga4-events"
+        ]
+      }
+    },
+    "/api/v1/tools/ga4-events/clients/{client_id}/months": {
+      "get": {
+        "description": "\u041c\u0456\u0441\u044f\u0446\u0456, \u0443 \u044f\u043a\u0438\u0445 \u0443 property \u0440\u0435\u0430\u043b\u044c\u043d\u043e \u0454 \u043f\u043e\u0434\u0456\u0457 (\u043e\u0434\u0438\u043d \u0437\u0430\u043f\u0438\u0442, 1.0-1.3 \u0441).\n\n\u0424\u043e\u0440\u043c\u0430 \u0432\u0438\u0431\u043e\u0440\u0443 \u0431\u0443\u0434\u0443\u0454\u0442\u044c\u0441\u044f \u0437 \u0446\u044c\u043e\u0433\u043e \u0441\u043f\u0438\u0441\u043a\u0443, \u0442\u043e\u0436 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440 \u043d\u0435 \u043c\u043e\u0436\u0435 \u043e\u0431\u0440\u0430\u0442\u0438 \u043c\u0456\u0441\u044f\u0446\u044c,\n\u044f\u043a\u043e\u0433\u043e \u043d\u0435 \u0456\u0441\u043d\u0443\u0454, \u0456 \u043d\u0435 \u043e\u0442\u0440\u0438\u043c\u0443\u0454 \u043f\u043e\u0440\u043e\u0436\u043d\u044e \u0432\u043a\u043b\u0430\u0434\u043a\u0443 \u044f\u043a \u00ab\u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442\u00bb.",
+        "operationId": "list_months_api_v1_tools_ga4_events_clients__client_id__months_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ga4EventsMonthsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "List Months",
+        "tags": [
+          "ga4-events"
+        ]
+      }
+    },
+    "/api/v1/tools/ga4-events/reports": {
+      "get": {
+        "operationId": "list_reports_api_v1_tools_ga4_events_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ga4EventsReportsPageDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Reports",
+        "tags": [
+          "ga4-events"
+        ]
+      },
+      "post": {
+        "operationId": "create_report_api_v1_tools_ga4_events_reports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Ga4EventsReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ga4EventsReportDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Create Report",
+        "tags": [
+          "ga4-events"
+        ]
+      }
+    },
+    "/api/v1/tools/ga4-events/reports/{report_id}": {
+      "get": {
+        "operationId": "get_report_api_v1_tools_ga4_events_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ga4EventsReportDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Report",
+        "tags": [
+          "ga4-events"
+        ]
+      }
+    },
+    "/api/v1/tools/ga4-events/reports/{report_id}/export.xlsx": {
+      "get": {
+        "description": "Excel \u0456\u0437 \u0422\u041e\u0413\u041e \u0421\u0410\u041c\u041e\u0413\u041e \u0437\u043d\u0456\u043c\u043a\u0430, \u0449\u043e \u0439 \u043d\u0430 \u0435\u043a\u0440\u0430\u043d\u0456 \u2014 \u043d\u0456\u043a\u043e\u043b\u0438 \u043d\u0435 \u0434\u0440\u0443\u0433\u0438\u0439,\n\u043d\u0435\u0437\u0430\u043b\u0435\u0436\u043d\u043e \u0437\u0434\u043e\u0431\u0443\u0442\u0438\u0439 \u043d\u0430\u0431\u0456\u0440 \u0447\u0438\u0441\u0435\u043b (\u043f\u0440\u0430\u0432\u0438\u043b\u043e `pageinventory/xlsx.py`).",
+        "operationId": "export_report_api_v1_tools_ga4_events_reports__report_id__export_xlsx_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Report",
+        "tags": [
+          "ga4-events"
         ]
       }
     },

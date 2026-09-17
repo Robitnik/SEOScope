@@ -19,7 +19,13 @@ from sqlalchemy.orm import Session
 
 from app.api import register_router
 from app.api.deps import SessionDep
-from app.db.models import AltTextReport, ContentQaPackage, RedirectCheck, SchemaMarkupCheck
+from app.db.models import (
+    AltTextReport,
+    ContentQaPackage,
+    Ga4EventMonthReport,
+    RedirectCheck,
+    SchemaMarkupCheck,
+)
 from app.schemas.tools import ToolCardDTO, ToolsCatalogDTO
 
 router = APIRouter(prefix="/api/v1", tags=["tools"])
@@ -120,6 +126,18 @@ _TOOLS: tuple[_ToolEntry, ...] = (
         icon="braces",
     ),
     _ToolEntry(
+        key="ga4-events",
+        name="GA4 Events by Month",
+        summary=(
+            "Pick a client and the months you care about and get every GA4 event in "
+            "three comparisons — All Users, Direct and Organic — one tab per month, "
+            "one Excel sheet per month."
+        ),
+        tags=("ga4", "analytics", "events", "conversions", "monthly", "xlsx"),
+        route="#/tools/ga4-events",
+        icon="activity",
+    ),
+    _ToolEntry(
         key="prompt-launcher",
         name="Prompt Launcher",
         summary=(
@@ -159,6 +177,13 @@ def _schema_markup_stat(session: Session) -> tuple[str | None, str | None]:
     return ("check" if total == 1 else "checks"), str(total)
 
 
+def _ga4_events_stat(session: Session) -> tuple[str | None, str | None]:
+    total = session.scalar(select(func.count()).select_from(Ga4EventMonthReport)) or 0
+    if not total:
+        return None, None
+    return ("report" if total == 1 else "reports"), str(total)
+
+
 def _strategy_package_stat(session: Session) -> tuple[str | None, str | None]:
     total = session.scalar(select(func.count()).select_from(ContentQaPackage)) or 0
     if not total:
@@ -177,6 +202,7 @@ _STATS: dict[str, Callable[[Session], tuple[str | None, str | None]]] = {
     "redirects": _redirects_stat,
     "schema-markup": _schema_markup_stat,
     "strategy-package": _strategy_package_stat,
+    "ga4-events": _ga4_events_stat,
 }
 
 
