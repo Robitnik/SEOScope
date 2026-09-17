@@ -362,7 +362,7 @@ Client [ SHB ▾ ]   Months [ Aug 2026 ×][ Jul 2026 ×][ Jun 2026 ×] [+ Add]  
 ## ✅ Completion report
 
 - **Дата:** 2026-09-17
-- **Гілка / комміт:** `feat/task-98-ga4-events-by-month` @ (див. комміт нижче)
+- **Гілка / комміт:** `feat/task-98-ga4-events-by-month` @ `11eb7af`
 - **Статус:** done
 
 ### Що зроблено
