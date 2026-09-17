@@ -66,19 +66,9 @@ services:
     # shell or `.env`. They must match the owner of ~/.local/share/seo-audit, not of this repo.
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     env_file:
-      # One env file, this repo's own (gitignored, never baked into the image).
-      #
-      # Provider secrets used to live in `${AISEOTOOLS_PATH}/.env` and be read
-      # from there. Two files that both had to be right is what broke the PDF
-      # source on 2026-09-17: an `env_file` is read when the CONTAINER starts,
-      # so the cabinet password updated in the OTHER repo never reached an
-      # 8-day-old container, and every PDF run failed at the Reporting Ninja
-      # login wall. One file, one place to look.
-      #
-      # `docker compose up -d` is still required after editing it — env_file is
-      # container-start state, unlike the same file read by pydantic Settings
-      # through the /app bind mount.
-      - .env
+      # Provider secrets stay owned by AISeoTools and are injected only at
+      # runtime. They are never copied into this repository or image.
+      - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}/.env
     environment:
       SEOTOOLS_ROOT: /seo/runtime
       # A uid with no /etc/passwd entry inherits the image's HOME=/root, which it cannot write.
@@ -195,8 +185,7 @@ services:
     # land in the operator's shared `state/locks` and `downloads`.
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
     env_file:
-      # Same single file as the api service — see the rationale there.
-      - .env
+      - ${AISEOTOOLS_PATH:-../../seo/AISeoTools}/.env
     environment:
       SEOTOOLS_ROOT: /seo/runtime
       # See the api service — a non-root uid has no writable HOME without these.
