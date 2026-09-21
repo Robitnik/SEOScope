@@ -472,7 +472,7 @@ yovth-report indexing-export --client SLUG --out plan.xlsx
 ## ✅ Completion report
 
 - **Дата:** 2026-09-21
-- **Гілка / комміт:** `feat/task-100-indexing-planner` @ (див. нижче)
+- **Гілка / комміт:** `feat/task-100-indexing-planner` @ `28de4a8`
 - **Статус:** done-with-followups
 
 ### Що зроблено
@@ -514,3 +514,42 @@ yovth-report indexing-export --client SLUG --out plan.xlsx
 64 нових: `tests/unit/indexing/` (score, plan, inspect/sync, submissions/analytics) + `tests/unit/api/test_indexing_api.py`.
 
 Покривають саме ті інваріанти, які коштують найдорожче: типографські лапки в `Excluded by ‘noindex’ tag`, тризначність `is_indexed`, порядок `crawled` < `discovered`, заморожене сьогодні між переплануваннями, cooldown як фільтр за будь-якого балу, порожня черга як норма, ідемпотентність `Mark sent`, `quota_blocked` без cooldown, `undo` з відновленням попередньої відправки, контрольна група без уже-проіндексованих сторінок, `None` замість `0` на порожніх вибірках.
+
+### Як перевірити (verification)
+
+```bash
+# 1. Конвеєр на реальному клієнті (нічого не відправляє — тільки читає й планує)
+docker compose exec -T api poetry run yovth-report indexing-scan --client ALPHA
+docker compose exec -T api poetry run yovth-report indexing-plan  --client ALPHA
+
+# 2. UI (dev-токен із .env)
+#    http://localhost:6524/#/tools/indexing  -> Today / Calendar / Backlog / Analytics
+
+# 3. Тести й статика
+docker compose exec -T api poetry run pytest tests/unit/indexing tests/unit/api/test_indexing_api.py -q
+docker compose exec -T api poetry run ruff check app/indexing app/api/tools_indexing.py
+docker compose exec -T api poetry run mypy app/indexing app/api/tools_indexing.py
+```
+
+**Що саме має побачити перевіряльник** — виміряно живо 2026-09-21:
+
+| Gate | Результат |
+|---|---|
+| **ALPHA** (§4 п.19) | 287 URL із sitemap, 287 проінспектовано, 0 failed → **83 кандидати**, усі `never_indexed`, бал 92. Це **точний збіг** із розвідкою §1.5, тобто конвеєр відтворює вимір, зроблений вручну. План: 8 днів × 10, сьогоднішній заморожений. |
+| **LAXTON** (§4 п.20) | 173 URL, 173 проінспектовано → **4 `noindex` + 1 `redirect` виключено**, 2 кандидати. Виключене осмислене: `/mitt-konto/`, `/varukorg/` і два `?taxonomy=product_shipping_class` — кошик, акаунт і фільтри WooCommerce, тобто рівно ті сторінки, на які не варто витрачати слоти. |
+| **SWM** (§4 п.13) | 1 із 3 sitemap-ів у GSC віддає 404 → прогін `partial`, помилка записана, **жоден URL не позначений як зниклий** (часткові дані не є доказом зникнення). |
+| **SHB** (§4 п.21) | 99% покриття → черга порожня, UI показує «queue exhausted», жодного вигаданого рядка. |
+| **Портфель** | 488 URL у реєстрі, 397 у індексі (81.4%), 86 кандидатів, 5 виключень, прогноз «5 робочих днів», цикл витримується. |
+| **Мутації** (§4 п.2) | `Mark sent` двічі → один запис, `submitted_at` не зсувається. `Undo` → cooldown знято, лічильник назад у 0. `Quota blocked` → `last_submitted_at` лишився `None`, тобто сторінка повернеться в план завтра. |
+| **Заморожене сьогодні** (§4 п.4) | Два `plan` поспіль не змінили жодного рядка `planned_for = today`. |
+| **UI** | Усі чотири вкладки відрендерені в реальному браузері проти живого стека, **0 помилок консолі**. |
+
+### Follow-ups / борг
+
+1. **Повна `pytest` не догнана в цій сесії.** Свої 66 тестів, `tests/unit/api` (перші 110) і `tests/unit/db` зелені, `ruff`/`mypy` чисті; повний прогін у цьому контейнері зараз надто повільний, бо ділить його з живим стеком (worker архівує, api обслуговує запити, скани ходять у Google). Зміни майже цілком адитивні — нові файли плюс кілька рядків у `tools.py`/`worker.py`/`actions.py`/`config.py`, — але повний прогін варто зробити на спокійному контейнері перед злиттям.
+2. **Планер увімкнено лише на SWM і ALPHA**, решта вісім клієнтів мають `enabled=false`. Це свідомо: вмикати всіх одразу означало б витратити квоту URL Inspection на портфель, який ще ніхто не подивився очима. `INDEXING_ENABLED` у `.env` теж не виставлено, тож нічний планувальник поки не працює — це рішення оператора.
+3. **Ваги §2.3 — обґрунтована здогадка, не вимір.** Через квартал реальних даних розріз `by_reason` (§2.6 п.5) покаже, який `reason_code` конвертується, і їх треба буде перекалібрувати. Особливо `crawled_not_indexed` (55): якщо виявиться, що після правки контенту він конвертується не гірше за `discovered`, поріг варто піднімати.
+4. **Контрольна група порожня, доки не назбирається історія.** Перший спостережений перехід «не в індексі → в індексі» з'явиться тільки після другого скану тієї самої сторінки. Це властивість чесного вимірювання, а не дефект: сторінки, які вже були в індексі на момент знайомства, у вибірку не входять (§2.6).
+5. **Знайдено два ЧУЖІ дефекти** у логах worker'а під час прогонів, обидва поза цією таскою:
+   - `cloud_scheduler_tick_failed` — `app/cloud/backup.py:_sqlite_path` кидає `ValueError: підтримується лише SQLite URL` на Postgres-URL, тобто **щодобовий бекап у хмару не працює з часу міграції task-75**;
+   - `StorageCapExceeded` на завантаженні архівних блобів — ліміт B2 вичерпано.
