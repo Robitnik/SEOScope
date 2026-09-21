@@ -20,18 +20,18 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
 from app.db.base import utcnow
 from app.db.models import (
     Client,
-    ClientStatus,
     IndexingScan,
     IndexingSettings,
     IndexingSubmission,
     IndexingUrl,
 )
+from app.schemas.enums import ClientStatus
 
 # Вікно, протягом якого помилковий `Mark sent` ще можна відкликати.
 UNDO_WINDOW = timedelta(hours=24)

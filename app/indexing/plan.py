@@ -154,7 +154,9 @@ def ensure_today(
     return created
 
 
-def forecast(*, queue_size: int, daily_capacity: int, cycle_days: int) -> tuple[int | None, bool | None]:
+def forecast(
+    *, queue_size: int, daily_capacity: int, cycle_days: int
+) -> tuple[int | None, bool | None]:
     """«Черга пройдеться за N робочих днів» + чи витримується цикл повтору.
 
     `None` на порожній черзі — це не «0 днів», це «нема чого проходити»;

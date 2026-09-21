@@ -130,7 +130,9 @@ def detect_exclusion(row: IndexingUrl, facts: PageFacts) -> tuple[bool, str | No
     return False, None
 
 
-def _traffic_reason(facts: PageFacts, *, indexed_for_days: int | None) -> tuple[str, dict] | None:
+def _traffic_reason(
+    facts: PageFacts, *, indexed_for_days: int | None
+) -> tuple[str, dict[str, Any]] | None:
     recent = facts.clicks_recent
     previous = facts.clicks_previous
     if previous is not None and previous > 0 and recent is not None:

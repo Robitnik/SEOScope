@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import utcnow
 from app.db.models import Client, IndexingScan, IndexingSettings, IndexingSubmission, IndexingUrl
-from app.db.repositories.indexing import UNDO_WINDOW, IndexingRepository
+from app.db.repositories.indexing import UNDO_WINDOW
 from app.indexing.context import ClientContext
 from app.indexing.score import action_for
 from app.schemas.indexing import (

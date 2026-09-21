@@ -13,16 +13,18 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api import register_router
 from app.api.deps import AttributionDep, SessionDep
 from app.core.config import get_settings
 from app.db.base import utcnow
-from app.db.models import User
+from app.db.models import IndexingSubmission, User
 from app.db.repositories.indexing import IndexingRepository
 from app.indexing.analytics import build_analytics
 from app.indexing.context import load_client_context
@@ -65,7 +67,7 @@ def _user_name(sync_session: Session, user_id: str | None) -> str | None:
     if not user_id:
         return None
     user = sync_session.get(User, user_id)
-    return user.display_name if user is not None else None
+    return user.name if user is not None else None
 
 
 # --- клієнти й зведення ---------------------------------------------------
@@ -184,7 +186,7 @@ def _day_groups(
     client_ids = [only_client] if only_client else None
     submissions = repo.submissions_for_day(day, client_ids=client_ids)
 
-    by_client: dict[str, list] = {}
+    by_client: dict[str, list[IndexingSubmission]] = {}
     for row in submissions:
         by_client.setdefault(row.client_id, []).append(row)
 
@@ -358,8 +360,8 @@ async def queue(
     response_model=dict,
     responses={404: {"model": ErrorDTO}},
 )
-async def url_detail(url_id: str, session: SessionDep) -> dict:
-    def _read(sync_session: Session) -> dict:
+async def url_detail(url_id: str, session: SessionDep) -> dict[str, Any]:
+    def _read(sync_session: Session) -> dict[str, Any]:
         repo = IndexingRepository(sync_session)
         row = repo.get_url(url_id)
         if row is None:
@@ -600,6 +602,53 @@ async def analytics(
         return build_analytics(sync_session, window_days=window_days)
 
     return await session.run_sync(_read)
+
+
+@router.get("/export.xlsx")
+async def export_workbook(
+    session: SessionDep, client_id: str | None = None, window_days: int = 180
+) -> StreamingResponse:
+    """Черга + аналітика однією книгою, з тих самих DTO, що й екран."""
+
+    def _read(sync_session: Session) -> bytes:
+        from app.indexing.xlsx import build_workbook
+
+        repo = IndexingRepository(sync_session)
+        names = repo.client_names()
+        settings_map = repo.settings_map()
+        rows, total = repo.queue(
+            client_ids=[client_id] if client_id else None, offset=0, limit=2000
+        )
+        contexts: dict[str, object] = {}
+        items = []
+        for row in rows:
+            if row.client_id not in contexts:
+                contexts[row.client_id] = load_client_context(
+                    sync_session, client_id=row.client_id
+                )
+            settings = settings_map.get(row.client_id)
+            items.append(
+                url_dto(
+                    row,
+                    client_name=names.get(row.client_id, row.client_id),
+                    context=contexts[row.client_id],  # type: ignore[arg-type]
+                    resubmit_after_days=settings.resubmit_after_days if settings else 90,
+                )
+            )
+        queue_dto = IndexingQueueDTO(urls=items, total=total, offset=0, limit=2000)
+        return build_workbook(
+            queue_dto, build_analytics(sync_session, window_days=window_days)
+        )
+
+    payload = await session.run_sync(_read)
+    stamp = utcnow().date().isoformat()
+    return StreamingResponse(
+        iter([payload]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="indexing-planner-{stamp}.xlsx"'
+        },
+    )
 
 
 register_router(router)

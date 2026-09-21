@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import logging
 import socket
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -72,7 +73,7 @@ def scan_client(
     today: date | None = None,
     full: bool = False,
     quota_budget: int | None = None,
-    heartbeat: "callable[[], None] | None" = None,
+    heartbeat: Callable[[], None] | None = None,
 ) -> ClientScanResult:
     """sync -> inspect -> score -> plan для одного клієнта."""
     conf = settings or get_settings()

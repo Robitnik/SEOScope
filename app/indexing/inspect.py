@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -138,7 +139,7 @@ def inspect_urls(
     rows: list[IndexingUrl],
     workers: int = 8,
     quota_budget: int | None = None,
-    heartbeat: "callable[[], None] | None" = None,
+    heartbeat: Callable[[], None] | None = None,
 ) -> InspectResult:
     """Проінспектувати перелік URL і записати зрізи.
 

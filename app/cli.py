@@ -503,6 +503,32 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Actually write resolved authors (default: report only, write nothing)",
     )
 
+    indexing_scan_cmd = subparsers.add_parser(
+        "indexing-scan",
+        help=(
+            "Indexing Planner (task-100): sitemap -> URL Inspection -> score -> plan. "
+            "Nothing is submitted to Google — the tool only decides what is worth "
+            "carrying to GSC by hand and records it"
+        ),
+    )
+    indexing_scan_cmd.add_argument(
+        "--client", help="Client code/name; omit to scan every active client"
+    )
+    indexing_scan_cmd.add_argument(
+        "--full",
+        action="store_true",
+        help="Inspect the client's whole sitemap instead of the rotating subset",
+    )
+
+    indexing_plan_cmd = subparsers.add_parser(
+        "indexing-plan",
+        help="Show the current Indexing Planner queue and the next days' plan",
+    )
+    indexing_plan_cmd.add_argument("--client", help="Client code/name")
+    indexing_plan_cmd.add_argument(
+        "--days", type=int, default=8, help="How many days of the calendar to print"
+    )
+
     subparsers.add_parser(  # noqa: F841 - no extra arguments
         "db-maintenance",
         help=(
@@ -530,6 +556,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(render_report(report, dry_run=args.dry_run))
         return 0
+
+    if args.command in {"indexing-scan", "indexing-plan"}:
+        return _run_indexing_command(args)
 
     if args.command in {"audit-tail", "audit-retention"}:
         return _run_audit_command(args)
@@ -2391,4 +2420,73 @@ def _run_audit_command(args: argparse.Namespace) -> int:
                 f"{event.ts.isoformat(timespec='seconds')}  {who:32} {event.action:26} "
                 f"{event.outcome:8} {event.status_code or '-':>4}  {event.path or ''}"
             )
+        return 0
+
+
+def _run_indexing_command(args: argparse.Namespace) -> int:
+    """CLI Indexing Planner (task-100 §2.9).
+
+    Потрібен для двох речей: разовий прогін без UI і перевірка того, що
+    планувальник робить уночі, не чекаючи ночі.
+    """
+    from datetime import timedelta
+
+    from app.db.base import utcnow
+    from app.db.repositories.indexing import IndexingRepository
+    from app.indexing.service import run_portfolio_scan
+
+    session_factory = get_sync_sessionmaker()
+    with session_factory() as session:
+        client_id: str | None = None
+        if args.client:
+            client = _resolve_client_ref(session, args.client)
+            if client is None:
+                print(f"error: no client matches {args.client!r}", file=sys.stderr)
+                return 2
+            client_id = client.id
+
+        repo = IndexingRepository(session)
+
+        if args.command == "indexing-scan":
+            result = run_portfolio_scan(
+                session,
+                trigger="manual",
+                client_id=client_id,
+                full=bool(args.full),
+            )
+            print(f"scan {result.scan_id} -> {result.status}")
+            for row in result.clients:
+                reasons = ", ".join(f"{k}={v}" for k, v in sorted(row.reasons.items()))
+                print(
+                    f"  {row.client_name:<12} {row.state:<15} "
+                    f"sitemap +{row.sitemap_added}/-{row.sitemap_gone} "
+                    f"inspected={row.inspected} failed={row.failed} "
+                    f"planned={row.planned}  {reasons or '-'}"
+                )
+                for problem in row.sitemap_errors:
+                    print(f"      ! unreadable sitemap {problem['url']} ({problem['error']})")
+                if row.detail:
+                    print(f"      {row.detail}")
+            return 0 if result.status != "failed" else 1
+
+        names = repo.client_names()
+        today = utcnow().date()
+        client_ids = [client_id] if client_id else None
+        rows, total = repo.queue(client_ids=client_ids, limit=20)
+        print(f"queue: {total} candidate(s)")
+        for row in rows:
+            print(
+                f"  {names.get(row.client_id, '?'):<12} {str(row.priority_score or '-'):>5}  "
+                f"{str(row.reason_code):<24} {row.url[:70]}"
+            )
+        print()
+        for offset in range(max(args.days, 1)):
+            day = today + timedelta(days=offset)
+            subs = repo.submissions_for_day(day, client_ids=client_ids)
+            marker = " (frozen)" if offset == 0 else ""
+            if not subs:
+                print(f"  {day}{marker}: —")
+                continue
+            done = sum(1 for item in subs if item.status == "sent")
+            print(f"  {day}{marker}: {len(subs)} planned, {done} sent")
         return 0

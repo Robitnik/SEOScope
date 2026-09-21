@@ -18,6 +18,7 @@ from app.cloud.scheduler import CloudScheduler
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.db.maintenance_scheduler import DbMaintenanceScheduler
+from app.indexing.scheduler import IndexingScheduler
 from app.db.session import worker_session_scope
 from app.integrations.browser_session import check_session
 from app.jobs.dispatcher import Dispatcher
@@ -122,6 +123,16 @@ def main() -> None:
     # point-of-contact touch to `app/jobs/worker.py` (task-05 zone), same
     # pattern as MonitorScheduler/ReportScheduler/CloudScheduler/
     # ArchiveScheduler above.
+    # task-100: власний добовий цикл Indexing Planner, незалежний від
+    # п'яти планувальників вище (PLAN §14 "scheduler loop inside the single
+    # worker"). Вимкнений за замовчуванням — ходить у Google API і
+    # витрачає чужу квоту, тож вмикається рішенням оператора, а не фактом
+    # деплою.
+    indexing_scheduler = IndexingScheduler(
+        session_scope=worker_session_scope, settings=settings
+    )
+    indexing_scheduler.start()
+
     db_maintenance_scheduler = DbMaintenanceScheduler(
         session_scope=worker_session_scope, settings=settings
     )
@@ -134,6 +145,7 @@ def main() -> None:
         report_scheduler.stop()
         cloud_scheduler.stop()
         archive_scheduler.stop()
+        indexing_scheduler.stop()
         db_maintenance_scheduler.stop()
 
     signal.signal(signal.SIGTERM, _handle_signal)
