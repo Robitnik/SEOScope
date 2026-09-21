@@ -2528,6 +2528,14 @@ class IndexingUrl(Base):
 
     is_indexed: Mapped[bool | None] = mapped_column(Boolean, default=None)
     first_indexed_seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # Коли ми ВПЕРШЕ побачили цю сторінку НЕ в індексі. Без цього поля
+    # контрольна група аналітики бреше: сторінка, яка вже була в індексі на
+    # момент першого скану, дає `first_indexed_seen_at == first_seen_at`,
+    # тобто лаг 0 днів. Живо це намалювало «медіана 0.0d на 27 сторінках» —
+    # тобто «сторінки заходять миттєво самі», і на цій підставі тул зробив
+    # би висновок, що ручна робота марна. Спостереженням вважається лише
+    # перехід, який ми бачили обома кінцями (task-100 §2.6).
+    first_not_indexed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     left_index_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
     # --- рішення планера ---

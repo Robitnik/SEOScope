@@ -2988,6 +2988,106 @@ export function ga4EventsExportUrl(reportId) {
   return `/api/v1/tools/ga4-events/reports/${encodeURIComponent(reportId)}/export.xlsx`;
 }
 
+// Indexing Planner (task-100): which pages to carry to Search Console by
+// hand today, why, and whether it helps. Nothing here submits anything to
+// Google — no such API exists; these endpoints plan and record.
+// Request keys are explicit purposes, never derived from params.
+export async function getIndexingOverview() {
+  return request("/tools/indexing/overview", {}, "indexing-overview");
+}
+
+export async function getIndexingClients() {
+  return request("/tools/indexing/clients", {}, "indexing-clients");
+}
+
+export async function getIndexingToday() {
+  return request("/tools/indexing/today", {}, "indexing-today");
+}
+
+export async function getIndexingCalendar(days = 8) {
+  return request(`/tools/indexing/calendar?days=${days}`, {}, "indexing-calendar");
+}
+
+export async function getIndexingQueue({ clientId, reasonCode, excluded, offset = 0, limit = 100 } = {}) {
+  const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  if (clientId) params.set("client_id", clientId);
+  if (reasonCode) params.set("reason_code", reasonCode);
+  if (excluded) params.set("excluded", "true");
+  return request(`/tools/indexing/queue?${params}`, {}, "indexing-queue");
+}
+
+export async function getIndexingUrl(urlId) {
+  return request(
+    `/tools/indexing/urls/${encodeURIComponent(urlId)}`,
+    {},
+    `indexing-url-${urlId}`,
+  );
+}
+
+export async function getIndexingAnalytics(windowDays = 180) {
+  return request(
+    `/tools/indexing/analytics?window_days=${windowDays}`,
+    {},
+    "indexing-analytics",
+  );
+}
+
+export async function markIndexingSent(submissionId) {
+  return request(
+    `/tools/indexing/submissions/${encodeURIComponent(submissionId)}/sent`,
+    { method: "POST" },
+    `indexing-sent-${submissionId}`,
+  );
+}
+
+export async function markIndexingQuotaBlocked(submissionId) {
+  return request(
+    `/tools/indexing/submissions/${encodeURIComponent(submissionId)}/quota-blocked`,
+    { method: "POST" },
+    `indexing-quota-${submissionId}`,
+  );
+}
+
+export async function undoIndexingSubmission(submissionId) {
+  return request(
+    `/tools/indexing/submissions/${encodeURIComponent(submissionId)}/undo`,
+    { method: "POST" },
+    `indexing-undo-${submissionId}`,
+  );
+}
+
+export async function setIndexingUrlExcluded(urlId, excluded) {
+  const action = excluded ? "exclude" : "include";
+  return request(
+    `/tools/indexing/urls/${encodeURIComponent(urlId)}/${action}`,
+    { method: "POST" },
+    `indexing-exclude-${urlId}`,
+  );
+}
+
+export async function updateIndexingSettings(clientId, payload) {
+  return request(
+    `/tools/indexing/clients/${encodeURIComponent(clientId)}/settings`,
+    { method: "PUT", body: JSON.stringify(payload) },
+    `indexing-settings-${clientId}`,
+  );
+}
+
+export async function startIndexingScan({ clientId = null, full = false } = {}) {
+  return request(
+    "/tools/indexing/scans",
+    { method: "POST", body: JSON.stringify({ client_id: clientId, full }) },
+    "indexing-scan-start",
+  );
+}
+
+export function indexingExportUrl(clientId) {
+  const params = new URLSearchParams();
+  if (clientId) params.set("client_id", clientId);
+  const query = params.toString();
+  return `/api/v1/tools/indexing/export.xlsx${query ? `?${query}` : ""}`;
+}
+
 // Page Inventory (task-57): architecture table + per-field SEO/slop QA,
 // built from monitor data already collected. `Re-crawl site` in the UI
 // does NOT call anything here — it drives the existing

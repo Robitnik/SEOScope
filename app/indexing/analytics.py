@@ -63,16 +63,29 @@ def build_analytics(
     funnel_raw = repo.funnel(since=since)
     funnel = IndexingFunnelDTO(**funnel_raw)
 
-    submitted_samples = repo.lag_samples(since=since)
-    organic_samples = repo.control_group_samples(since=since, client_ids=client_ids)
-    submitted_lag = _lag(submitted_samples)
-    organic_lag = _lag(organic_samples)
+    # Операційна метрика — «скільки днів від нашої відправки»: саме її
+    # питає оператор.
+    submitted_lag = _lag(repo.lag_samples(since=since))
+    # Метрика порівняння — обидві групи від ОДНОГО нуль-моменту (коли ми
+    # самі бачили сторінку поза індексом). Змішати ці два визначення
+    # означало б порівнювати різні речі й видавати різницю визначень за
+    # ефект роботи.
+    submitted_observed = _lag(
+        repo.observed_transition_samples(
+            since=since, client_ids=client_ids, submitted=True
+        )
+    )
+    organic_lag = _lag(
+        repo.observed_transition_samples(
+            since=since, client_ids=client_ids, submitted=False
+        )
+    )
 
     # Різниця з невідомим не є нулем: доки хоч одна вибірка порожня,
     # відповіді «чи працює» просто немає.
     difference: Decimal | None = None
-    if submitted_lag.median_days is not None and organic_lag.median_days is not None:
-        difference = organic_lag.median_days - submitted_lag.median_days
+    if submitted_observed.median_days is not None and organic_lag.median_days is not None:
+        difference = organic_lag.median_days - submitted_observed.median_days
 
     by_reason = [
         IndexingReasonStatDTO(
@@ -136,7 +149,7 @@ def build_analytics(
         funnel=funnel,
         lag=submitted_lag,
         control_group=IndexingControlGroupDTO(
-            submitted=submitted_lag, organic=organic_lag, difference_days=difference
+            submitted=submitted_observed, organic=organic_lag, difference_days=difference
         ),
         by_reason=by_reason,
         retention=retention,

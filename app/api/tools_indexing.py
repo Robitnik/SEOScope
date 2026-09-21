@@ -141,7 +141,9 @@ async def overview(session: SessionDep) -> IndexingOverviewDTO:
                 (counts["indexed"] / counts["urls_total"]) if has_data else None  # type: ignore[arg-type]
             ),
             daily_capacity=capacity,
-            planned_today=sum(1 for row in submissions if row.status == "planned"),
+            # УСЯ сьогоднішня робота, не лише ще не зроблена: «1/0» у
+            # шапці читалось як «одну відправив, хоча планувалось нуль».
+            planned_today=len(submissions),
             sent_today=sum(1 for row in submissions if row.status == "sent"),
             last_scan_at=last.started_at if last else None,
             last_scan_status=last.status if last else None,  # type: ignore[arg-type]

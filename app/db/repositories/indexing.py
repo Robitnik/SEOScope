@@ -136,8 +136,11 @@ class IndexingRepository:
             if row.first_indexed_seen_at is None:
                 row.first_indexed_seen_at = moment
             row.left_index_at = None
-        elif is_indexed is False and was_indexed is True:
-            row.left_index_at = moment
+        elif is_indexed is False:
+            if row.first_not_indexed_at is None:
+                row.first_not_indexed_at = moment
+            if was_indexed is True:
+                row.left_index_at = moment
 
     def urls_for_client(self, client_id: str) -> list[IndexingUrl]:
         return list(
@@ -535,12 +538,52 @@ class IndexingRepository:
             stmt = stmt.where(IndexingSubmission.client_id == client_id)
         return [int(v) for v in self._session.scalars(stmt).all() if v is not None]
 
+    def observed_transition_samples(
+        self, *, since: datetime, client_ids: list[str], submitted: bool
+    ) -> list[int]:
+        """Спостережені переходи «не в індексі -> в індексі», одним мірилом.
+
+        Обидві групи — відправлені й ні — міряються від `first_not_indexed_at`
+        до `first_indexed_seen_at`. Інакше порівняння було б між різними
+        нуль-моментами: для відправлених «від відправки», для решти «від
+        першої появи», і різниця медіан вимірювала б не ефект відправки, а
+        різницю визначень.
+        """
+        if not client_ids:
+            return []
+        sent_ids = select(IndexingSubmission.indexing_url_id).where(
+            IndexingSubmission.status == "sent"
+        )
+        membership = (
+            IndexingUrl.id.in_(sent_ids) if submitted else IndexingUrl.id.not_in(sent_ids)
+        )
+        rows = self._session.execute(
+            select(
+                IndexingUrl.first_not_indexed_at, IndexingUrl.first_indexed_seen_at
+            ).where(
+                IndexingUrl.client_id.in_(client_ids),
+                IndexingUrl.first_not_indexed_at.is_not(None),
+                IndexingUrl.first_indexed_seen_at.is_not(None),
+                IndexingUrl.first_indexed_seen_at >= since,
+                IndexingUrl.first_indexed_seen_at > IndexingUrl.first_not_indexed_at,
+                membership,
+            )
+        ).all()
+        return [max((seen - first).days, 0) for first, seen in rows if first and seen]
+
     def control_group_samples(self, *, since: datetime, client_ids: list[str]) -> list[int]:
         """Сторінки, що зайшли в індекс БЕЗ жодної нашої відправки.
 
-        Лаг рахується від `first_seen_at` (коли URL з'явився у нас) до
-        `first_indexed_seen_at`. Це не ідеальний нуль-момент, але єдиний,
-        який у нас справді є, і він однаковий для обох груп.
+        Лаг рахується від `first_not_indexed_at` — моменту, коли ми **самі
+        бачили**, що сторінки в індексі немає, — до `first_indexed_seen_at`.
+        Брати за нуль-момент `first_seen_at` не можна: сторінка, яка вже
+        була в індексі на момент першого скану, дала б лаг 0 днів. Живо це
+        намалювало медіану 0.0d на 27 сторінках і зробило б висновок
+        «ручна робота нічого не дає» на підставі артефакту.
+
+        Тобто в контрольну групу входить лише СПОСТЕРЕЖЕНИЙ перехід
+        «не в індексі -> в індексі», і рівно те саме визначення діє для
+        відправлених сторінок — інакше групи були б непорівнянні.
         """
         if not client_ids:
             return []
@@ -548,10 +591,14 @@ class IndexingRepository:
             IndexingSubmission.status == "sent"
         )
         rows = self._session.execute(
-            select(IndexingUrl.first_seen_at, IndexingUrl.first_indexed_seen_at).where(
+            select(
+                IndexingUrl.first_not_indexed_at, IndexingUrl.first_indexed_seen_at
+            ).where(
                 IndexingUrl.client_id.in_(client_ids),
+                IndexingUrl.first_not_indexed_at.is_not(None),
                 IndexingUrl.first_indexed_seen_at.is_not(None),
                 IndexingUrl.first_indexed_seen_at >= since,
+                IndexingUrl.first_indexed_seen_at > IndexingUrl.first_not_indexed_at,
                 IndexingUrl.id.not_in(submitted),
             )
         ).all()

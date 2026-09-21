@@ -1,0 +1,210 @@
+/* Indexing Planner (task-100).
+ *
+ * Only tokens from tokens.css; `.button`/`.state-panel`/`.field`/`.back-link`
+ * come from app.css/tools.css. No new colour, no new radius.
+ *
+ * `contain: paint` on every scroll wrapper is deliberate: a wide <table>
+ * inside `overflow-x:auto` still scrolls the whole page in Chromium without
+ * it (measured on this project before; client-page.css carries the same note).
+ */
+
+.indexing-page { display: grid; gap: 20px; }
+
+.indexing-head h1 { margin: 4px 0 6px; }
+.indexing-lead { margin: 0; color: var(--ink-muted); max-width: 72ch; }
+
+/* --- зведення --------------------------------------------------------- */
+
+.indexing-stats {
+  display: grid; gap: 1px; margin: 0;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  background: var(--line-soft); border: 1px solid var(--line);
+}
+.indexing-stat { background: var(--canvas-raised); padding: 12px 14px; }
+.indexing-stat dt {
+  margin: 0 0 4px; color: var(--ink-dim); font-size: 10px;
+  letter-spacing: .07em; text-transform: uppercase;
+}
+.indexing-stat dd {
+  margin: 0; font-family: var(--font-display); font-size: 24px; line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.indexing-stat__hint { margin: 4px 0 0; color: var(--ink-muted); font-size: 11px; }
+
+/* --- вкладки ---------------------------------------------------------- */
+
+.indexing-tabs {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--line); padding-bottom: 0;
+}
+.indexing-tabs__spacer { flex: 1 1 auto; }
+.indexing-tab {
+  appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--ink-muted); font: inherit; font-size: 13px; padding: 9px 14px;
+  min-height: 38px; cursor: pointer;
+}
+.indexing-tab:hover { color: var(--ink); }
+.indexing-tab.is-active { color: var(--ink); border-bottom-color: var(--accent); }
+.indexing-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.indexing-body { display: grid; gap: 22px; }
+
+/* --- групи дня -------------------------------------------------------- */
+
+.indexing-group { border: 1px solid var(--line); background: var(--canvas-raised); }
+.indexing-group__head {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 12px 16px; border-bottom: 1px solid var(--line-soft);
+}
+.indexing-group__head h2 { margin: 0; font-size: 17px; }
+.indexing-group__progress {
+  margin: 0; color: var(--ink-muted); font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.indexing-group__quota { color: var(--ink-dim); }
+.indexing-group__head .button { margin-left: auto; }
+.indexing-group__note {
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  padding: 10px 16px; color: var(--ink-muted); font-size: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.indexing-group__note .icon { width: 15px; height: 15px; color: var(--success); }
+
+/* --- таблиці ---------------------------------------------------------- */
+
+.indexing-table-wrap, .indexing-cal-wrap {
+  overflow-x: auto; contain: paint; border: 1px solid var(--line);
+}
+.indexing-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.indexing-table th, .indexing-table td {
+  text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+.indexing-table thead th {
+  color: var(--ink-dim); font-size: 10px; letter-spacing: .07em;
+  text-transform: uppercase; font-weight: 600;
+}
+.indexing-table tbody tr:last-child td { border-bottom: 0; }
+.indexing-table--compact td, .indexing-table--compact th { padding: 7px 12px; }
+.indexing-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.indexing-cell-url a { word-break: break-all; }
+.indexing-cell-title { margin: 3px 0 0; color: var(--ink-muted); font-size: 11px; }
+
+.indexing-evidence { margin: 4px 0 0; color: var(--ink-muted); font-size: 11px; }
+.indexing-action-hint {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 5px;
+  color: var(--warning); font-size: 11px;
+}
+.indexing-action-hint .icon { width: 13px; height: 13px; }
+
+/* Причина — текстова мітка з кольоровою межею зліва, не капсула:
+   капсули на кожному рядку перетворюють таблицю на розсип пігулок. */
+.indexing-reason {
+  display: inline-block; padding-left: 9px; border-left: 2px solid var(--line);
+  font-size: 12px; line-height: 1.3;
+}
+.indexing-reason--dropped_out { border-left-color: var(--danger); }
+.indexing-reason--never_indexed { border-left-color: var(--accent); }
+.indexing-reason--discovered_not_indexed { border-left-color: var(--warning); }
+.indexing-reason--crawled_not_indexed { border-left-color: var(--info); }
+.indexing-reason--new_page { border-left-color: var(--success); }
+.indexing-reason--excluded { border-left-color: var(--ink-dim); color: var(--ink-muted); }
+
+.indexing-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.indexing-status .icon { width: 14px; height: 14px; }
+.indexing-status--sent { color: var(--success); }
+.indexing-status--blocked { color: var(--warning); }
+.indexing-status--planned { color: var(--ink-muted); }
+
+.indexing-cooldown {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--ink-dim); font-size: 11px;
+}
+.indexing-cooldown .icon { width: 13px; height: 13px; }
+
+.indexing-table__actions { white-space: nowrap; width: 1%; }
+/* Кнопки дії — один рядок рівних елементів. Без цього `a.button` тягнеться
+   на всю ширину комірки і ряд виглядає зламаним. */
+td.indexing-table__actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.indexing-table__actions .button { margin: 0; flex: none; }
+
+/* --- календар --------------------------------------------------------- */
+
+.indexing-cal { width: 100%; border-collapse: collapse; font-size: 13px; }
+.indexing-cal th, .indexing-cal td {
+  padding: 9px 12px; border-bottom: 1px solid var(--line-soft);
+  border-right: 1px solid var(--line-soft); text-align: center;
+}
+.indexing-cal thead th { color: var(--ink-dim); font-weight: 600; }
+.indexing-cal tbody th { text-align: left; white-space: nowrap; }
+.indexing-cal__weekday {
+  display: block; font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+}
+.indexing-cal__date { display: block; color: var(--ink); font-size: 12px; }
+.indexing-cal__frozen {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 3px;
+  color: var(--accent); font-size: 10px; text-transform: none; letter-spacing: 0;
+}
+.indexing-cal__frozen .icon { width: 11px; height: 11px; }
+.indexing-cal th.is-frozen, .indexing-cal__cell.is-frozen { background: var(--surface); }
+.indexing-cal__count { font-family: var(--font-display); font-size: 18px; }
+.indexing-cal__sent { display: block; color: var(--success); font-size: 10px; }
+.indexing-cal__none { color: var(--ink-dim); }
+.indexing-cal__quota { display: block; color: var(--ink-dim); font-size: 10px; }
+
+.indexing-forecast { border: 1px solid var(--line); padding: 14px 16px; }
+.indexing-forecast p { margin: 0 0 6px; font-size: 13px; }
+.indexing-forecast__note { color: var(--ink-muted); font-size: 11px; margin-bottom: 0; }
+.indexing-forecast__warn {
+  display: flex; align-items: center; gap: 8px; color: var(--warning);
+}
+.indexing-forecast__warn .icon { width: 15px; height: 15px; }
+
+/* --- фільтри й налаштування ------------------------------------------- */
+
+.indexing-filters {
+  display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+}
+.indexing-filters .result-count { margin-left: auto; }
+
+.indexing-toggle { display: inline-flex; border: 1px solid var(--line); }
+.indexing-toggle button {
+  appearance: none; background: var(--canvas-raised); border: 0; color: var(--ink-muted);
+  font: inherit; font-size: 12px; padding: 8px 15px; min-height: 36px; cursor: pointer;
+}
+.indexing-toggle button.is-active { background: var(--surface-strong); color: var(--ink); }
+.indexing-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.indexing-settings {
+  display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  border: 1px solid var(--line); padding: 14px 16px; background: var(--canvas-raised);
+}
+.indexing-settings input[type="number"] { width: 110px; }
+.indexing-settings__warn {
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  color: var(--warning); font-size: 12px;
+}
+.indexing-settings__warn .icon { width: 15px; height: 15px; }
+
+/* --- аналітика -------------------------------------------------------- */
+
+.indexing-panel, .indexing-verdict {
+  border: 1px solid var(--line); padding: 16px; background: var(--canvas-raised);
+}
+.indexing-panel h2, .indexing-verdict h2 { margin: 0 0 12px; font-size: 16px; }
+.indexing-note { color: var(--ink-muted); font-size: 11px; margin: 10px 0 0; max-width: 80ch; }
+
+.indexing-verdict p { display: flex; align-items: center; gap: 9px; margin: 0 0 14px; font-size: 14px; }
+.indexing-verdict .icon { width: 18px; height: 18px; flex: none; }
+.indexing-verdict__good { color: var(--success); }
+.indexing-verdict__bad { color: var(--danger); }
+.indexing-verdict__flat { color: var(--warning); }
+.indexing-verdict__none { color: var(--ink-muted); }
+
+@media (max-width: 720px) {
+  .indexing-group__head { align-items: flex-start; }
+  .indexing-group__head .button { margin-left: 0; }
+  .indexing-filters .result-count { margin-left: 0; }
+  .indexing-stats { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}
