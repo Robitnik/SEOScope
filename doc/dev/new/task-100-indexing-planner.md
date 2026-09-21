@@ -466,3 +466,51 @@ yovth-report indexing-export --client SLUG --out plan.xlsx
 - **`sitemaps.submit`** — вимагає повного scope `webmasters`, який заразом відкриває `sites.delete`. Рішення 2026-09-09 не розширювати scope лишається чинним.
 - **Портфельна кнопка «Send all»** — фізично неможлива й концептуально шкідлива: відправляє людина.
 - **Автокалібрування ваг §2.3** — після кварталу реальних даних, на основі розрізу по `reason_code` (§2.6 п.5). Поки ваги — обґрунтована здогадка, і план це визнає.
+
+---
+
+## ✅ Completion report
+
+- **Дата:** 2026-09-21
+- **Гілка / комміт:** `feat/task-100-indexing-planner` @ (див. нижче)
+- **Статус:** done-with-followups
+
+### Що зроблено
+
+Тул **Indexing Planner** (`#/tools/indexing`) — повний вертикальний зріз: конвеєр, API, планувальник, UI, CLI, Excel, тести.
+
+- **Конвеєр** `sync_sitemap → inspect → score → plan` (`app/indexing/`). Перелік сторінок береться з sitemap-ів, зареєстрованих у GSC; стан індексації — з `urlInspection` у 8 потоків; кожен кандидат отримує причину з доказами і бал; план розкладається по днях у межах per-client квоти.
+- **Чотири таблиці** (`indexing_settings`/`urls`/`submissions`/`scans`), дві міграції.
+- **15 REST-ендпоінтів** + Excel-експорт, усі мутації в журналі дій.
+- **UI з чотирма вкладками**: `Today` (робочий екран дня з `Copy`/`Open in GSC`/`Mark sent`), `Calendar` (8 днів, сьогодні заморожене), `Backlog` (черга + виключені + per-client налаштування), `Analytics` (воронка, лаг, контрольна група).
+- **Планувальник** у worker (вимкнений за замовчуванням) і дві CLI-команди.
+
+### Як зроблено (ключові рішення)
+
+- **Тул нічого не відправляє.** API для запиту індексації не існує (§1.1), тому центральна дія — рішення й облік, а найнебезпечніша мутація — `Mark sent`, що ставить 90-денний cooldown. Звідси `Undo` на 24 год і **окрема** кнопка `Quota blocked`, яка cooldown не ставить: GSC відмовляє після ~10–12 URL на добу, і записати це як відправку означало б сховати сторінку, якої ніхто не подав.
+- **`is_indexed` тризначний.** `NULL` («ще не інспектували») ніде не читається як `False`. Інакше непросканований портфель дав би 2311 фантомних кандидатів замість 274 реальних.
+- **`crawled_not_indexed` скориться НИЖЧЕ за `discovered_not_indexed`** (55 проти 85). Це не смак: `Discovered` — Google ще не дійшов краулити, там відправка працює; `Crawled — not indexed` — уже подивився й не взяв, там потрібні правки контенту. Таких 78, третина беклогу, і рядок веде оператора в контент (`Review content, then submit`), а не в чергу.
+- **Сьогодні заморожене на рівні `DELETE`.** `replace_future_plan` фізично не може зачепити `planned_for <= today` — умова в самому запиті, а не в викличнику.
+- **Ізоляція клієнтів** (PLAN §9.1): виняток на одному не валить портфельний прогін; клієнт без GSC — `not_configured`.
+
+Головні файли: `app/indexing/{sync,inspect,score,plan,service,analytics,scheduler,context,dto,xlsx}.py`, `app/api/tools_indexing.py`, `app/db/repositories/indexing.py`, `app/schemas/indexing.py`, `frontend/js/indexing-{tool,calendar,backlog,analytics}.js`, `frontend/css/indexing.css`.
+
+**Відхилення від плану:** додано `excluded_reason="redirect"` окремо від `http_error` (редирект — не поламана сторінка, і оператора не варто слати лагодити те, що не зламане) і колонку `first_not_indexed_at` (див. нижче).
+
+### Контрактні зміни (Contract changes)
+
+Усе адитивне, нічого наявного не змінено:
+
+- нові таблиці `indexing_settings`, `indexing_urls`, `indexing_submissions`, `indexing_scans` (міграції `a7f31c92e4d8`, `c8a2d5f10b73`);
+- новий DTO-модуль `app/schemas/indexing.py` (нічого не імпортує з чужих схем);
+- новий запис `indexing` у каталозі тулів (`app/api/tools.py`) і в `TOOL_MODULES`;
+- сім нових дій у `app/audit/actions.py`;
+- п'ять нових налаштувань у `app/core/config.py` (усі з дефолтами, `indexing_enabled=false`).
+
+Споживачі: лише сам тул. `task-02` правити не довелось.
+
+### Тести
+
+64 нових: `tests/unit/indexing/` (score, plan, inspect/sync, submissions/analytics) + `tests/unit/api/test_indexing_api.py`.
+
+Покривають саме ті інваріанти, які коштують найдорожче: типографські лапки в `Excluded by ‘noindex’ tag`, тризначність `is_indexed`, порядок `crawled` < `discovered`, заморожене сьогодні між переплануваннями, cooldown як фільтр за будь-якого балу, порожня черга як норма, ідемпотентність `Mark sent`, `quota_blocked` без cooldown, `undo` з відновленням попередньої відправки, контрольна група без уже-проіндексованих сторінок, `None` замість `0` на порожніх вибірках.

@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Select, and_, func, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.base import utcnow
@@ -506,6 +506,34 @@ class IndexingRepository:
             .limit(1)
         )
         return found is not None
+
+    def reclaim_stale_scans(self, *, stale_after: timedelta) -> int:
+        """Позначити `failed` прогони, від яких давно немає серцебиття.
+
+        Без цього обірваний скан (kill, рестарт контейнера, таймаут CLI)
+        лишається `running` НАЗАВЖДИ: він блокує наступний портфельний
+        прогін і показує оператору вічне «scanning…». Живо це сталось на
+        першому ж довгому клієнті. Ознака життя — `heartbeat_at`, а не
+        пам'ять процесу (урок task-62: CLI-прогін у власному процесі для
+        неї невидимий).
+        """
+        cutoff = utcnow() - stale_after
+        rows = self._session.scalars(
+            select(IndexingScan).where(
+                IndexingScan.status == "running",
+                or_(
+                    IndexingScan.heartbeat_at.is_(None),
+                    IndexingScan.heartbeat_at < cutoff,
+                ),
+                IndexingScan.started_at < cutoff,
+            )
+        ).all()
+        for row in rows:
+            row.status = "failed"
+            row.finished_at = utcnow()
+            row.error_code = "interrupted"
+            row.error_message = "No heartbeat — the run was killed or the process died."
+        return len(rows)
 
     def running_portfolio_scan(self, *, stale_after: timedelta) -> IndexingScan | None:
         """Живий портфельний прогін — щоб другий не стартував паралельно.

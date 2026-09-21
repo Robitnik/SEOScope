@@ -158,3 +158,34 @@ def test_forecast_distinguishes_empty_from_unknown() -> None:
     assert forecast(queue_size=50, daily_capacity=0, cycle_days=90) == (None, None)
     assert forecast(queue_size=274, daily_capacity=100, cycle_days=90) == (3, True)
     assert forecast(queue_size=3182, daily_capacity=30, cycle_days=90) == (107, False)
+
+
+def test_stale_scan_is_reclaimed_not_left_running(session: Session, client_row) -> None:
+    """Обірваний прогін (kill, рестарт, таймаут CLI) не має лишатись
+    `running` назавжди: він блокує наступний портфельний скан і показує
+    оператору вічне «scanning…». Живо це сталось на першому ж довгому
+    клієнті."""
+    from datetime import timedelta
+
+    from app.db.base import utcnow
+
+    repo = IndexingRepository(session)
+    scan = repo.start_scan(client_id=client_row.id, trigger="manual")
+    scan.started_at = utcnow() - timedelta(hours=3)
+    scan.heartbeat_at = utcnow() - timedelta(hours=3)
+    repo.commit()
+
+    assert repo.reclaim_stale_scans(stale_after=timedelta(minutes=30)) == 1
+    repo.commit()
+    assert scan.status == "failed"
+    assert scan.error_code == "interrupted"
+    assert scan.finished_at is not None
+
+
+def test_live_scan_is_not_reclaimed(session: Session, client_row) -> None:
+    from datetime import timedelta
+
+    repo = IndexingRepository(session)
+    repo.start_scan(client_id=client_row.id, trigger="manual")
+    repo.commit()
+    assert repo.reclaim_stale_scans(stale_after=timedelta(minutes=30)) == 0

@@ -83,6 +83,8 @@ class IndexingScheduler:
 
         with self._session_scope() as session:
             repo = IndexingRepository(session)
+            if repo.reclaim_stale_scans(stale_after=SCAN_STALE_AFTER):
+                session.commit()
             if repo.has_successful_scan_since(due_at):
                 return False
             if repo.running_portfolio_scan(stale_after=SCAN_STALE_AFTER) is not None:

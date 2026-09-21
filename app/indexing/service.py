@@ -172,6 +172,9 @@ def run_portfolio_scan(
     repo = IndexingRepository(session)
     anchor = today or utcnow().date()
 
+    # Прибрати мертві прогони перед тим, як заводити свій: інакше вони
+    # вічно блокують портфельний скан і показують «scanning…».
+    repo.reclaim_stale_scans(stale_after=SCAN_STALE_AFTER)
     scan = repo.start_scan(
         client_id=client_id,
         trigger=trigger,
