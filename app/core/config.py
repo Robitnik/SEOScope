@@ -458,6 +458,23 @@ class Settings(BaseSettings):
     # Comfortably above the 5s/20-URL counter-flush interval that also
     # drives the heartbeat write (`capture.py`'s `_COUNTER_FLUSH_SECONDS`).
     archive_heartbeat_stale_seconds: float = 90.0
+    # --- Indexing Planner (task-100) -------------------------------------
+    #
+    # Вимкнено за замовчуванням: планувальник — фоновий потік, який ходить
+    # у Google API і пише в БД, і вмикати його самим лише фактом деплою
+    # означало б витрачати чужу квоту без рішення оператора.
+    indexing_enabled: bool = False
+    # UTC "HH:MM" — один добовий тік конвеєра sync -> inspect -> score -> plan.
+    indexing_scan_at_utc: str = "02:00"
+    # Заміряно (план §1.4): URL Inspection не серіалізується, 8 потоків дають
+    # 0.83-0.88 с/URL проти 6.8 с одиничним викликом. Вище піднімати немає
+    # сенсу — упремось у 600 запитів/хв на property.
+    indexing_inspect_workers: int = 8
+    # 80% від документованих 2000/добу НА PROPERTY. Скан, що вперся в цю
+    # межу, закінчується як `partial` — це чесніше, ніж ловити 429.
+    indexing_inspection_daily_cap: int = 1600
+    # Сьогодні заморожене + стільки днів наперед (рішення користувача).
+    indexing_plan_horizon_days: int = 7
     archive_local_retention_days: int = 30
     archive_blob_cache_gb: float = 20.0
     archive_cloud_prefix: str = "webarchive"

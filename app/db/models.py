@@ -2437,3 +2437,208 @@ class Ga4EventMonthReport(Base):
     )
     created_by_kind: Mapped[str | None] = mapped_column(String(16), default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+# --- Added by task-100 (Indexing Planner, PLAN §16 wave-U extension) ------
+#
+# Планування РУЧНОГО індексування в GSC. Відправити сторінку програмно
+# неможливо — у Search Console API такого методу немає взагалі, а Indexing
+# API обмежений `JobPosting`/`BroadcastEvent` (task-100 §1.1). Тому ці
+# таблиці не тримають «завдання на відправку», вони тримають РІШЕННЯ (які
+# сторінки варто нести руками), його ДОКАЗИ і ОБЛІК того, що людина
+# справді зробила.
+
+
+class IndexingSettings(Base):
+    """Per-client політика планера (task-100 §2.2).
+
+    Створюється ліниво на першому дотику — та сама форма, що
+    `MonitorSettings`/`ArchiveSettings`. `enabled=False` за замовчуванням:
+    новий клієнт дає стан `not_configured`, а не нуль і не краш (PLAN §12).
+    """
+
+    __tablename__ = "indexing_settings"
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Ручний ліміт GSC на property. Per-client, а не глобальний: заміряно
+    # (task-100 §1.5), що беклог сконцентрований — більшість клієнтів не
+    # вибере й двох слотів на день, а SAPHNY варті всіх десяти.
+    daily_quota: Mapped[int] = mapped_column(Integer, default=10)
+    resubmit_after_days: Mapped[int] = mapped_column(Integer, default=90)
+    # "rotating" — решта портфеля ротацією раз на 7 днів (за замовчуванням);
+    # "full" — весь портфель клієнта щодня (task-100 §2.3, крок 2).
+    scan_mode: Mapped[str] = mapped_column(String(16), default="rotating")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class IndexingUrl(Base):
+    """Один URL із sitemap клієнта + останній відомий стан індексації.
+
+    `is_indexed` СВІДОМО тризначний. `None` («ще не інспектували») і `False`
+    («Google каже, що ні») — різні факти. Змішати їх означає або поставити
+    в чергу весь непросканований портфель (2311 URL замість 274 реальних
+    кандидатів, task-100 §1.5), або тихо його пропустити. PLAN §12:
+    відсутність даних ніколи не підміняється значенням.
+
+    `gone_from_sitemap_at` замість видалення рядка: сторінка, прибрана з
+    sitemap, зберігає свою історію відправок, інакше аналітика §2.6 почала
+    б брехати заднім числом.
+    """
+
+    __tablename__ = "indexing_urls"
+    __table_args__ = (
+        UniqueConstraint("client_id", "url_key", name="uq_indexing_urls_client_id_url_key"),
+        Index("ix_indexing_urls_client_indexed", "client_id", "is_indexed"),
+        Index("ix_indexing_urls_client_score", "client_id", "priority_score"),
+        Index("ix_indexing_urls_inspected_at", "inspected_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    url: Mapped[str] = mapped_column(String(2048))
+    url_key: Mapped[str] = mapped_column(String(2048))
+
+    # --- походження ---
+    first_seen_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_seen_in_sitemap_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    gone_from_sitemap_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    sitemap_lastmod: Mapped[date | None] = mapped_column(Date, default=None)
+
+    # --- останній зріз URL Inspection (усе nullable: None = Google не сказав) ---
+    coverage_state: Mapped[str | None] = mapped_column(String(100), default=None)
+    verdict: Mapped[str | None] = mapped_column(String(32), default=None)
+    robots_txt_state: Mapped[str | None] = mapped_column(String(32), default=None)
+    indexing_state: Mapped[str | None] = mapped_column(String(48), default=None)
+    page_fetch_state: Mapped[str | None] = mapped_column(String(48), default=None)
+    google_canonical: Mapped[str | None] = mapped_column(String(2048), default=None)
+    user_canonical: Mapped[str | None] = mapped_column(String(2048), default=None)
+    last_crawl_time: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # Deep-link у GSC. НЕ будується з URL: заміряно, що `id` у ньому —
+    # непрозорий хеш (`&id=YsE6BUOtgaXYGOLfUP9YAg`), а не адреса сторінки
+    # (task-100 §2.5). Його віддає тільки `urlInspection`.
+    inspection_result_link: Mapped[str | None] = mapped_column(String(1000), default=None)
+    inspected_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
+    is_indexed: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    first_indexed_seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    left_index_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
+    # --- рішення планера ---
+    excluded: Mapped[bool] = mapped_column(Boolean, default=False)
+    # "noindex"|"robots_blocked"|"non_canonical"|"http_error"|"manual"
+    excluded_reason: Mapped[str | None] = mapped_column(String(32), default=None)
+    excluded_by_user_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    priority_score: Mapped[Decimal | None] = mapped_column(DecimalString, default=None)
+    reason_code: Mapped[str | None] = mapped_column(String(32), default=None)
+    # Докази, а не готове речення: {"coverage_state":…, "clicks_prev":41, …}.
+    # UI будує текст із цього, інакше причину неможливо перерахувати.
+    reason_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    last_submitted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    submissions_count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class IndexingSubmission(Base):
+    """Одна клітинка календаря І один запис історії — це та сама сутність.
+
+    «Понеділок, SDS, 10 URL» — це десять рядків зі `planned_for` = понеділок.
+    Окремої таблиці календаря немає навмисно: інакше план і факт роз'їхались
+    би, і «що ми планували» перестало б збігатися з «що ми зробили».
+
+    `reason_code`/`reason_json` КОПІЮЮТЬСЯ сюди в момент планування, а не
+    читаються з `IndexingUrl` на екрані. Через місяць стан URL інший, і
+    питання «чому ми його тоді послали» має отримати відповідь того часу.
+    """
+
+    __tablename__ = "indexing_submissions"
+    __table_args__ = (
+        UniqueConstraint(
+            "indexing_url_id", "planned_for", name="uq_indexing_submissions_url_planned_for"
+        ),
+        Index("ix_indexing_submissions_client_planned", "client_id", "planned_for", "status"),
+        Index("ix_indexing_submissions_submitted_at", "submitted_at"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), index=True
+    )
+    indexing_url_id: Mapped[str] = mapped_column(
+        GUID, ForeignKey("indexing_urls.id", ondelete="CASCADE"), index=True
+    )
+    planned_for: Mapped[date] = mapped_column(Date)
+    # "planned" | "sent" | "quota_blocked" | "skipped" | "cancelled"
+    status: Mapped[str] = mapped_column(String(16), default="planned")
+
+    # --- заморожений на момент планування доказ ---
+    reason_code: Mapped[str] = mapped_column(String(32))
+    reason_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    state_at_plan: Mapped[str | None] = mapped_column(String(100), default=None)
+
+    # --- факт ---
+    submitted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    submitted_by_user_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    state_at_submission: Mapped[str | None] = mapped_column(String(100), default=None)
+
+    # --- результат ---
+    indexed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    days_to_index: Mapped[int | None] = mapped_column(Integer, default=None)
+    note: Mapped[str | None] = mapped_column(String(500), default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+class IndexingScan(Base):
+    """Один прогін конвеєра sync -> inspect -> score -> plan (task-100 §2.3).
+
+    `owner`/`heartbeat_at` — урок task-62: «чи цей прогін ще живий» не можна
+    тримати в пам'яті потоку, бо CLI-прогін у власному процесі невидимий для
+    неї і його помилково оголошують перерваним.
+
+    `urls_total` саме nullable: прогін, який упав до того, як порахував свій
+    обсяг, не має показувати `0` (PLAN §12).
+    """
+
+    __tablename__ = "indexing_scans"
+    __table_args__ = (
+        Index("ix_indexing_scans_client_started", "client_id", "started_at"),
+        Index("ix_indexing_scans_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(GUID, primary_key=True, default=new_uuid)
+    # `None` = портфельний прогін (усі увімкнені клієнти).
+    client_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("clients.id", ondelete="CASCADE"), default=None, index=True
+    )
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # "running" | "ok" | "partial" | "failed"
+    status: Mapped[str] = mapped_column(String(16), default="running")
+    trigger: Mapped[str] = mapped_column(String(16), default="scheduled")
+    urls_total: Mapped[int | None] = mapped_column(Integer, default=None)
+    urls_inspected: Mapped[int] = mapped_column(Integer, default=0)
+    urls_failed: Mapped[int] = mapped_column(Integer, default=0)
+    sitemap_added: Mapped[int] = mapped_column(Integer, default=0)
+    sitemap_gone: Mapped[int] = mapped_column(Integer, default=0)
+    # Недоступні sitemap-и: [{"url":…, "error":…}]. Заміряно живо, що в 3XE
+    # мертві 4 з 6 зареєстрованих у GSC (task-100 §1.5) — проковтнути це
+    # означало б мовчки скоротити реєстр сторінок клієнта.
+    sitemap_errors_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    error_code: Mapped[str | None] = mapped_column(String(100), default=None)
+    error_message: Mapped[str | None] = mapped_column(String(1000), default=None)
+    owner: Mapped[str | None] = mapped_column(String(64), default=None)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        GUID, ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
