@@ -23,6 +23,7 @@ from app.db.models import (
     AltTextReport,
     ContentQaPackage,
     Ga4EventMonthReport,
+    IndexingSubmission,
     RedirectCheck,
     SchemaMarkupCheck,
 )
@@ -138,6 +139,17 @@ _TOOLS: tuple[_ToolEntry, ...] = (
         icon="activity",
     ),
     _ToolEntry(
+        key="indexing",
+        name="Indexing Planner",
+        summary=(
+            "Plan which pages to submit to Search Console by hand today, keep the "
+            "reason and the evidence, and measure whether it actually helps."
+        ),
+        tags=("gsc", "indexing", "sitemap", "coverage", "queue", "calendar"),
+        route="#/tools/indexing",
+        icon="calendar-clock",
+    ),
+    _ToolEntry(
         key="prompt-launcher",
         name="Prompt Launcher",
         summary=(
@@ -184,6 +196,26 @@ def _ga4_events_stat(session: Session) -> tuple[str | None, str | None]:
     return ("report" if total == 1 else "reports"), str(total)
 
 
+def _indexing_stat(session: Session) -> tuple[str | None, str | None]:
+    """Одиниця роботи тула — відправлена сторінка, не прогін скану.
+
+    Сканів буде по одному щодня незалежно від того, чи хтось щось робив;
+    показувати їх на картці означало б малювати активність там, де її
+    немає.
+    """
+    total = (
+        session.scalar(
+            select(func.count())
+            .select_from(IndexingSubmission)
+            .where(IndexingSubmission.status == "sent")
+        )
+        or 0
+    )
+    if not total:
+        return None, None
+    return ("page submitted" if total == 1 else "pages submitted"), str(total)
+
+
 def _strategy_package_stat(session: Session) -> tuple[str | None, str | None]:
     total = session.scalar(select(func.count()).select_from(ContentQaPackage)) or 0
     if not total:
@@ -203,6 +235,7 @@ _STATS: dict[str, Callable[[Session], tuple[str | None, str | None]]] = {
     "schema-markup": _schema_markup_stat,
     "strategy-package": _strategy_package_stat,
     "ga4-events": _ga4_events_stat,
+    "indexing": _indexing_stat,
 }
 
 

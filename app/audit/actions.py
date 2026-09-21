@@ -170,6 +170,28 @@ ROUTE_ACTIONS: dict[tuple[str, str], ActionSpec] = {
     ("POST", "/api/v1/tools/schema-markup/checks"): ActionSpec("tool.schema_markup.run"),
     # task-98: єдина мутація тула GA4 Events by Month — сам прогін.
     ("POST", "/api/v1/tools/ga4-events/reports"): ActionSpec("tool.ga4_events.run"),
+    # task-100: мутації Indexing Planner. `sent` тут найважливіша — саме
+    # вона ставить 90-денний cooldown, тож помилкове натискання має бути
+    # видно в журналі разом з автором.
+    ("POST", "/api/v1/tools/indexing/scans"): ActionSpec("tool.indexing.scan"),
+    ("PUT", "/api/v1/tools/indexing/clients/{client_id}/settings"): ActionSpec(
+        "tool.indexing.settings", "client", "client_id"
+    ),
+    ("POST", "/api/v1/tools/indexing/submissions/{submission_id}/sent"): ActionSpec(
+        "tool.indexing.submission_sent", "indexing_submission", "submission_id"
+    ),
+    ("POST", "/api/v1/tools/indexing/submissions/{submission_id}/quota-blocked"): ActionSpec(
+        "tool.indexing.submission_quota_blocked", "indexing_submission", "submission_id"
+    ),
+    ("POST", "/api/v1/tools/indexing/submissions/{submission_id}/undo"): ActionSpec(
+        "tool.indexing.submission_undo", "indexing_submission", "submission_id"
+    ),
+    ("POST", "/api/v1/tools/indexing/urls/{url_id}/exclude"): ActionSpec(
+        "tool.indexing.url_excluded", "indexing_url", "url_id"
+    ),
+    ("POST", "/api/v1/tools/indexing/urls/{url_id}/include"): ActionSpec(
+        "tool.indexing.url_included", "indexing_url", "url_id"
+    ),
     ("POST", "/api/v1/tools/strategy-check/inspect"): ActionSpec("tool.strategy_check.inspect"),
     ("POST", "/api/v1/tools/strategy-check/check"): ActionSpec("tool.strategy_check.run"),
     ("POST", "/api/v1/tools/framework-check/check"): ActionSpec("tool.framework_check.run"),
