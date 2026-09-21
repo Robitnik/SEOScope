@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.db.base import utcnow
 from app.db.models import (
     DimensionKind,
     GscDimensionMetric,
@@ -67,7 +68,7 @@ def load_client_context(
     window_days: int = 90,
 ) -> ClientContext:
     context = ClientContext()
-    anchor = today or datetime.utcnow().date()
+    anchor = today or utcnow().date()
     recent_start = anchor - timedelta(days=window_days)
     previous_start = recent_start - timedelta(days=window_days)
 

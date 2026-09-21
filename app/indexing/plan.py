@@ -79,8 +79,19 @@ def plan_client(
     index = 0
     while day_offset <= horizon_days and index < len(eligible):
         target_day = today + timedelta(days=day_offset)
+        # Уже наявні рядки цього дня (`sent`/`quota_blocked`, які
+        # `replace_future_plan` свідомо не чіпає) З'ЇДАЮТЬ квоту дня.
+        # Без цього переплан дописував би до них ще `daily_quota` нових і
+        # тихо видавав удвічі більше роботи, ніж клієнт погодився робити.
+        already = len(
+            [
+                row
+                for row in repo.submissions_for_day(target_day, client_ids=[settings.client_id])
+                if row.client_id == settings.client_id
+            ]
+        )
         placed = 0
-        while placed < quota and index < len(eligible):
+        while placed + already < quota and index < len(eligible):
             row = eligible[index]
             index += 1
             repo.add_submission(
