@@ -57,6 +57,20 @@ _TECHAUDIT_LAUNCHER = (
     "URL:     {{URL}}\n"
 )
 
+# SCOPE зафіксовано на "full" (не поле форми): це не властивість клієнта,
+# а вибір, який тайп і так робить CLI-дефолтом (`seo-audit gsc-report`
+# без `--scope` == full). Оператору, який хоче вужчий звіт (errors/traffic),
+# лишається відредагувати рядок SCOPE у скопійованому лаунчер-тексті вручну —
+# окреме поле форми під це поза обсягом (Follow-ups task-94 §10).
+_GSC_AUDIT_LAUNCHER = (
+    "Read {{DOC_PATH}} and run it end to end.\n"
+    "\n"
+    "MODE:      gsc\n"
+    "SCOPE:     full\n"
+    "CLIENT:    {{CLIENT}}\n"
+    "PROPERTY:  {{TARGET_URL}}\n"
+)
+
 # Порядок тут = порядок пунктів у селекторі шаблону.
 TEMPLATES: tuple[PromptTemplate, ...] = (
     PromptTemplate(
@@ -71,6 +85,20 @@ TEMPLATES: tuple[PromptTemplate, ...] = (
         fields=(
             PromptField(key="CLIENT", label="CLIENT", source=FieldSource.client_label),
             PromptField(key="URL", label="URL", source=FieldSource.site_url),
+        ),
+    ),
+    PromptTemplate(
+        key="gsc",
+        name="GSC Audit",
+        summary=(
+            "Google Search Console audit — indexing errors, traffic decay, CTR-gap rewrites "
+            "and opportunities, every reported URL live-verified before it reaches the report."
+        ),
+        doc_relpath="docs/GSC_Audit.md",
+        launcher=_GSC_AUDIT_LAUNCHER,
+        fields=(
+            PromptField(key="CLIENT", label="CLIENT", source=FieldSource.client_label),
+            PromptField(key="TARGET_URL", label="PROPERTY", source=FieldSource.site_url),
         ),
     ),
 )

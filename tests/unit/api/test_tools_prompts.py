@@ -55,7 +55,7 @@ def test_list_templates_reports_doc_available_and_host_path(client: Any, tmp_pat
 
     body = client.get("/api/v1/tools/prompts").json()
 
-    assert [t["key"] for t in body["templates"]] == ["techaudit"]
+    assert [t["key"] for t in body["templates"]] == ["techaudit", "gsc"]
     template = body["templates"][0]
     assert template["doc_available"] is True
     assert template["doc_relpath"] == "docs/TechAudit.md"

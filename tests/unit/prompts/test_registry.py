@@ -20,7 +20,32 @@ from app.schemas.enums import Provider
 
 def test_get_template_known_and_unknown_key() -> None:
     assert get_template("techaudit") is TEMPLATES[0]
+    assert get_template("gsc") is TEMPLATES[1]
     assert get_template("does-not-exist") is None
+
+
+def test_render_gsc_audit_uses_target_url_field(temp_db: TempDatabase) -> None:
+    template = get_template("gsc")
+    assert template is not None
+
+    with temp_db.session_scope() as session:
+        c = ClientRepository(session).create(
+            name="Acme Dental", slug="acme-gsc", domain="acme.com", timezone="America/New_York"
+        )
+        values, rendered, blocked_reason = render_for_client(
+            template, c, session, doc_host_path="/home/elon/dev/seo/AISeoTools/docs/GSC_Audit.md"
+        )
+
+    assert blocked_reason is None
+    assert values == {"CLIENT": "Acme Dental", "TARGET_URL": "https://acme.com"}
+    assert rendered == (
+        "Read /home/elon/dev/seo/AISeoTools/docs/GSC_Audit.md and run it end to end.\n"
+        "\n"
+        "MODE:      gsc\n"
+        "SCOPE:     full\n"
+        "CLIENT:    Acme Dental\n"
+        "PROPERTY:  https://acme.com\n"
+    )
 
 
 def test_render_uses_client_name_when_no_integration_label(temp_db: TempDatabase) -> None:
