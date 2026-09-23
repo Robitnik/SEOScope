@@ -30,6 +30,10 @@ class FieldSource(StrEnum):
     # але порожній рядок теоретично можливий (легасі-рядок) — тоді поле
     # резолвиться в `None`, а не в биту URL з порожнім хостом.
     site_url = "site_url"
+    # Голий `Client.domain`, без схеми — для полів, куди інструмент чекає
+    # домен, а не URL (напр. `DOMAIN:` у AhrefsAudit.md). Той самий
+    # порожній-рядок-як-None інваріант, що й у `site_url`.
+    domain = "domain"
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,14 @@ _TECHAUDIT_LAUNCHER = (
     "MODE:    tech\n"
     "CLIENT:  {{CLIENT}}\n"
     "URL:     {{URL}}\n"
+)
+
+_AHREFS_AUDIT_LAUNCHER = (
+    "Read {{DOC_PATH}} and run it end to end.\n"
+    "\n"
+    "MODE:      ahrefs\n"
+    "CLIENT:    {{CLIENT}}\n"
+    "DOMAIN:    {{DOMAIN}}\n"
 )
 
 # SCOPE зафіксовано на "full" (не поле форми): це не властивість клієнта,
@@ -85,6 +97,20 @@ TEMPLATES: tuple[PromptTemplate, ...] = (
         fields=(
             PromptField(key="CLIENT", label="CLIENT", source=FieldSource.client_label),
             PromptField(key="URL", label="URL", source=FieldSource.site_url),
+        ),
+    ),
+    PromptTemplate(
+        key="ahrefs",
+        name="Ahrefs Audit",
+        summary=(
+            "Ahrefs Site Audit, developer-ready — one sheet per issue type, every URL "
+            "live-verified against the current page, not the crawl's stale snapshot."
+        ),
+        doc_relpath="docs/AhrefsAudit.md",
+        launcher=_AHREFS_AUDIT_LAUNCHER,
+        fields=(
+            PromptField(key="CLIENT", label="CLIENT", source=FieldSource.client_label),
+            PromptField(key="DOMAIN", label="DOMAIN", source=FieldSource.domain),
         ),
     ),
     PromptTemplate(

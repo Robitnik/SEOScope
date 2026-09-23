@@ -45,16 +45,23 @@ def _site_url(client: Client) -> str | None:
     return f"https://{domain}"
 
 
+def _domain(client: Client) -> str | None:
+    domain = (client.domain or "").strip()
+    return domain or None
+
+
 def _resolve_field(source: FieldSource, session: Session, client: Client) -> str | None:
     if source is FieldSource.client_label:
         return _client_label(session, client)
     if source is FieldSource.site_url:
         return _site_url(client)
+    if source is FieldSource.domain:
+        return _domain(client)
     raise AssertionError(f"unhandled FieldSource: {source!r}")  # pragma: no cover
 
 
 def _blocked_reason(source: FieldSource) -> str:
-    if source is FieldSource.site_url:
+    if source is FieldSource.site_url or source is FieldSource.domain:
         return "client has no domain to audit"
     # pragma: no cover — every other source always resolves a value.
     return f"could not resolve {source.value}"

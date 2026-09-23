@@ -20,7 +20,8 @@ from app.schemas.enums import Provider
 
 def test_get_template_known_and_unknown_key() -> None:
     assert get_template("techaudit") is TEMPLATES[0]
-    assert get_template("gsc") is TEMPLATES[1]
+    assert get_template("ahrefs") is TEMPLATES[1]
+    assert get_template("gsc") is TEMPLATES[2]
     assert get_template("does-not-exist") is None
 
 
@@ -108,6 +109,29 @@ def test_render_falls_back_to_ahrefs_label_when_tech_audit_missing(temp_db: Temp
 
     assert blocked_reason is None
     assert values["CLIENT"] == "ACME_AHREFS"
+
+
+def test_render_ahrefs_audit_uses_bare_domain_field(temp_db: TempDatabase) -> None:
+    template = get_template("ahrefs")
+    assert template is not None
+
+    with temp_db.session_scope() as session:
+        c = ClientRepository(session).create(
+            name="Acme Dental", slug="acme-ahrefs", domain="acme.com", timezone="America/New_York"
+        )
+        values, rendered, blocked_reason = render_for_client(
+            template, c, session, doc_host_path="/home/elon/dev/seo/AISeoTools/docs/AhrefsAudit.md"
+        )
+
+    assert blocked_reason is None
+    assert values == {"CLIENT": "Acme Dental", "DOMAIN": "acme.com"}
+    assert rendered == (
+        "Read /home/elon/dev/seo/AISeoTools/docs/AhrefsAudit.md and run it end to end.\n"
+        "\n"
+        "MODE:      ahrefs\n"
+        "CLIENT:    Acme Dental\n"
+        "DOMAIN:    acme.com\n"
+    )
 
 
 @pytest.mark.parametrize("domain", ["", "   "])
