@@ -20,7 +20,7 @@ const TOOL_MODULES = {
   "framework-check": () => import("./framework-check-tool.js?v=20260908-t87"),
   "strategy-package": () => import("./strategy-package-tool.js?v=20260914-t96"),
   "schema-markup": () => import("./schema-markup-tool.js?v=20260821-spin3"),
-  "prompt-launcher": () => import("./prompt-launcher-tool.js?v=20260914-t94"),
+  "prompt-launcher": () => import("./prompt-launcher-tool.js?v=20260930-t102b"),
   "ga4-events": () => import("./ga4-events-tool.js?v=20260917-t98"),
   "indexing": () => import("./indexing-tool.js?v=20260921-t100"),
 };

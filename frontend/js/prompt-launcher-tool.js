@@ -13,6 +13,7 @@ import { buildToolsHash } from "./router.js?v=20260914-t94";
 import { CLIENT_STATUS_META, devBadge } from "./client-status.js?v=20260914-t94";
 import { escapeHtml, formatTimestamp, icon } from "./formatters.js?v=20260914-t94";
 import { panelSkeleton } from "./skeleton.js?v=20260914-t94";
+import { renderStrategyPanel } from "./prompt-launcher-strategy.js?v=20260930-t102b";
 
 let root = null;
 let templates = [];
@@ -121,7 +122,7 @@ function shell() {
     <section class="tool-panel" id="pl-clients" aria-labelledby="pl-clients-title">
       <div class="section-heading">
         <div><h2 id="pl-clients-title">Clients</h2></div>
-        <div class="pl-clients-meta">
+        <div class="pl-clients-meta" id="pl-clients-meta">
           <p class="pl-copy-count" id="pl-copy-count" aria-live="polite"></p>
           <button class="button button--quiet" type="button" id="pl-reset">Reset</button>
         </div>
@@ -233,9 +234,18 @@ function renderSource(body, source) {
 
 async function loadClients() {
   const body = root.querySelector("#pl-clients-body");
-  body.innerHTML = panelSkeleton({ label: "clients", rows: 6, columns: 4 });
   const template = currentTemplate();
   if (!template) return;
+  // Шаблони зі стратегії (task-102): рядок — сторінка/стаття з таблиці стратега,
+  // а не клієнт; свою шапку, лічильник і Reset вони малюють самі.
+  const isStrategy = template.kind === "strategy";
+  root.querySelector("#pl-clients-title").textContent = isStrategy ? "Strategy" : "Clients";
+  root.querySelector("#pl-clients-meta").hidden = isStrategy;
+  if (isStrategy) {
+    renderStrategyPanel(body, template, { toast });
+    return;
+  }
+  body.innerHTML = panelSkeleton({ label: "clients", rows: 6, columns: 4 });
   try {
     const data = await getPromptClients(template.key);
     currentRows = data.rows || [];

@@ -13,6 +13,7 @@ safe-методу поза allowlist'ами — тут гейти не потр�
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -41,6 +42,10 @@ class PromptTemplateDTO(BaseModel):
     doc_updated_at: datetime | None = None
     doc_bytes: int | None = None
     fields: list[PromptFieldDTO]
+    # Адитивно (task-102): `strategy` — рядок таблиці це сторінка/стаття зі
+    # стратегії (`POST /{key}/strategy`), а не клієнт (`GET /{key}/clients`).
+    kind: Literal["client", "strategy"] = "client"
+    strategy_role: Literal["page", "blog"] | None = None
 
 
 class PromptTemplatesDTO(BaseModel):
@@ -77,3 +82,82 @@ class PromptClientsDTO(BaseModel):
 class PromptSourceDTO(BaseModel):
     text: str
     truncated: bool
+
+
+# ── Шаблони зі стратегії (task-102) ──────────────────────────────────────────
+
+
+class PromptStrategyRequestDTO(BaseModel):
+    # Посилання на Google Sheets/Drive, голий Drive-id або шлях до .xlsx у
+    # AISeoTools (хостовий чи відносний).
+    source: str
+    sheet: str | None = None
+    # Ручний вибір клієнта, коли автоматично його не визначено.
+    client_id: str | None = None
+
+
+class PromptStrategySourceDTO(BaseModel):
+    name: str
+    kind: Literal["gsheet", "xlsx"]
+    ref: str
+    modified_time: str | None = None
+    web_view_link: str | None = None
+
+
+class PromptStrategyClientDTO(BaseModel):
+    id: str
+    name: str
+    label: str
+    resolved_by: Literal["manual", "domain", "filename_prefix"]
+
+
+class PromptStrategySheetDTO(BaseModel):
+    name: str
+    role: str
+    # `True` — роль аркуша збігається з роллю шаблону й знайдено заголовок рядків.
+    selectable: bool
+    row_count: int
+
+
+class PromptStrategyRowDTO(BaseModel):
+    # Стабільний ключ рядка (URL сторінки / slug теми), НЕ номер рядка: стратег
+    # додає рядки, і номери зсуваються — на ньому тримаються відмітки прогресу.
+    row_key: str
+    ref: str
+    title: str
+    mode: Literal["existing", "new"] | None = None
+    url: str | None = None
+    primary_keyword: str | None = None
+    prefilled: list[str]
+    has_framework: bool
+    framework_link: str | None = None
+    warnings: list[str]
+    # Готовий текст лаунчера; `None` тоді й лише тоді, коли `blocked_reason` заповнений.
+    rendered: str | None = None
+    blocked_reason: str | None = None
+
+
+class PromptStrategyDTO(BaseModel):
+    template_key: str
+    generated_at: datetime
+    source: PromptStrategySourceDTO
+    # `None` — клієнта не визначено (усі рядки заблоковані, UI просить обрати).
+    client: PromptStrategyClientDTO | None = None
+    sheets: list[PromptStrategySheetDTO]
+    sheet: str | None = None
+    # Усі мітки, які лаунчер цього шаблону вміє заповнити з таблиці —
+    # знаменник для `prefilled` ("4 of 8").
+    prefillable: list[str]
+    rows: list[PromptStrategyRowDTO]
+    warnings: list[str]
+
+
+class PromptLocalStrategyDTO(BaseModel):
+    path_host: str
+    name: str
+    modified_at: datetime
+    size: int
+
+
+class PromptLocalStrategiesDTO(BaseModel):
+    files: list[PromptLocalStrategyDTO]

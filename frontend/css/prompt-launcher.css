@@ -86,3 +86,61 @@
     white-space: normal;
   }
 }
+
+/* ── Шаблони зі стратегії (task-102) ─────────────────────────────────────── */
+
+.pls-form { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.pls-input-field { flex: 1 1 360px; margin: 0; }
+.pls-input-field input {
+  display: block; width: 100%; margin-top: 6px; font: inherit; padding: 9px 10px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--canvas-raised); color: var(--ink);
+}
+.pls-input-field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pls-hint { margin: 10px 0 0; font-size: 12px; color: var(--ink-dim); max-width: 72ch; }
+.pls-form-error {
+  margin: 12px 0 0; padding: 10px 12px; font-size: 13px; color: var(--danger);
+  border: 1px solid var(--danger); border-radius: var(--radius-sm);
+}
+#pls-result { margin-top: 18px; }
+
+.pls-summary { margin: 0 0 12px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.pls-summary a { display: inline-flex; align-items: center; gap: 4px; }
+.pls-summary .icon { width: 12px; height: 12px; }
+.pls-client-note { color: var(--ink-muted); font-size: 13px; }
+
+.pls-controls { display: flex; align-items: flex-end; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.pls-select-field { margin: 0; min-width: 180px; }
+.pls-select-field select {
+  display: block; width: 100%; margin-top: 6px; font: inherit; padding: 9px 34px 9px 10px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--canvas-raised); color: var(--ink);
+}
+.pls-select-field select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pls-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-muted); padding-bottom: 10px; }
+
+.pls-notice {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 10px; font-size: 13px; color: var(--warning);
+}
+.pls-notice .icon { width: 14px; height: 14px; }
+
+.pls-url { max-width: 280px; overflow-wrap: anywhere; color: var(--ink-muted); }
+.pls-prefilled { font-variant-numeric: tabular-nums; white-space: nowrap; cursor: help; }
+.pls-fw-link { text-decoration: none; }
+.pl-badge--done { color: var(--success); background: var(--surface-strong); margin-left: 0; }
+.pl-badge--warn { color: var(--warning); background: var(--surface-strong); }
+.pl-badge--mode-existing { color: var(--ink-muted); background: var(--surface-strong); margin-left: 0; }
+.pl-badge--mode-new { color: var(--accent); background: var(--surface-strong); margin-left: 0; }
+
+.pls-fallback { margin-top: 14px; }
+.pls-fallback textarea {
+  display: block; width: 100%; margin-top: 6px; padding: 10px 12px; font: 12px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink);
+}
+
+/* На вузькому екрані таблиця не стискається до колонки-стовпчика з URL по
+ * літері: тримає природну ширину, а скролиться її власна обгортка. */
+@media (max-width: 640px) {
+  .pls-table { min-width: 820px; }
+  .pls-table td.pls-url { min-width: 240px; }
+}

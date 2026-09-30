@@ -6505,6 +6505,1538 @@
         "title": "HealthPointDTO",
         "type": "object"
       },
+      "IndexingAnalyticsDTO": {
+        "properties": {
+          "by_client": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IndexingClientStatDTO"
+            },
+            "title": "By Client",
+            "type": "array"
+          },
+          "by_reason": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IndexingReasonStatDTO"
+            },
+            "title": "By Reason",
+            "type": "array"
+          },
+          "control_group": {
+            "$ref": "#/components/schemas/IndexingControlGroupDTO"
+          },
+          "funnel": {
+            "$ref": "#/components/schemas/IndexingFunnelDTO"
+          },
+          "lag": {
+            "$ref": "#/components/schemas/IndexingLagDTO"
+          },
+          "retention": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IndexingRetentionDTO"
+            },
+            "title": "Retention",
+            "type": "array"
+          },
+          "window_days": {
+            "title": "Window Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_days",
+          "funnel",
+          "lag",
+          "control_group"
+        ],
+        "title": "IndexingAnalyticsDTO",
+        "type": "object"
+      },
+      "IndexingCalendarCellDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "planned": {
+            "title": "Planned",
+            "type": "integer"
+          },
+          "reason_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Reason Counts",
+            "type": "object"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_id",
+          "day",
+          "planned",
+          "sent"
+        ],
+        "title": "IndexingCalendarCellDTO",
+        "type": "object"
+      },
+      "IndexingCalendarDTO": {
+        "properties": {
+          "cells": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IndexingCalendarCellDTO"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "clients": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IndexingClientDTO"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "cycle_holds": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cycle Holds"
+          },
+          "daily_capacity": {
+            "title": "Daily Capacity",
+            "type": "integer"
+          },
+          "days": {
+            "default": [],
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "days_to_clear_queue": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days To Clear Queue"
+          },
+          "frozen_day": {
+            "format": "date",
+            "title": "Frozen Day",
+            "type": "string"
+          },
+          "queue_size": {
+            "title": "Queue Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frozen_day",
+          "queue_size",
+          "daily_capacity"
+        ],
+        "title": "IndexingCalendarDTO",
+        "type": "object"
+      },
+      "IndexingClientDTO": {
+        "properties": {
+          "candidates": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidates"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "coverage_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Ratio"
+          },
+          "excluded": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excluded"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "indexed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexed"
+          },
+          "last_scan_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scan At"
+          },
+          "last_scan_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "running",
+                  "ok",
+                  "partial",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scan Status"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "never_inspected": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Never Inspected"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/IndexingSettingsDTO"
+          },
+          "site_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Url"
+          },
+          "urls_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urls Total"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "configured",
+          "settings"
+        ],
+        "title": "IndexingClientDTO",
+        "type": "object"
+      },
+      "IndexingClientStatDTO": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "coverage_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Ratio"
+          },
+          "cycle_holds": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cycle Holds"
+          },
+          "median_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Days"
+          },
+          "queue": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue"
+          },
+          "sent_30d": {
+            "title": "Sent 30D",
+            "type": "integer"
+          },
+          "urls_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urls Total"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "sent_30d"
+        ],
+        "title": "IndexingClientStatDTO",
+        "type": "object"
+      },
+      "IndexingClientsDTO": {
+        "properties": {
+          "clients": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IndexingClientDTO"
+            },
+            "title": "Clients",
+            "type": "array"
+          }
+        },
+        "title": "IndexingClientsDTO",
+        "type": "object"
+      },
+      "IndexingControlGroupDTO": {
+        "description": "\u041a\u043e\u043d\u0442\u0440\u043e\u043b\u044c\u043d\u0430 \u0433\u0440\u0443\u043f\u0430: \u0441\u0442\u043e\u0440\u0456\u043d\u043a\u0438, \u0449\u043e \u0437\u0430\u0439\u0448\u043b\u0438 \u0432 \u0456\u043d\u0434\u0435\u043a\u0441 \u0411\u0415\u0417 \u043d\u0430\u0448\u043e\u0457 \u0432\u0456\u0434\u043f\u0440\u0430\u0432\u043a\u0438.\n\n\u0426\u0435 \u0456 \u0454 \u0454\u0434\u0438\u043d\u0430 \u0447\u0435\u0441\u043d\u0430 \u0432\u0456\u0434\u043f\u043e\u0432\u0456\u0434\u044c \u043d\u0430 \u043f\u0438\u0442\u0430\u043d\u043d\u044f \u00ab\u0447\u0438 \u0440\u0443\u0447\u043d\u0435 \u0456\u043d\u0434\u0435\u043a\u0441\u0443\u0432\u0430\u043d\u043d\u044f \u0432\u0437\u0430\u0433\u0430\u043b\u0456\n\u0449\u043e\u0441\u044c \u0434\u0430\u0454\u00bb. \u042f\u043a\u0449\u043e \u0440\u0456\u0437\u043d\u0438\u0446\u0456 \u043d\u0435\u043c\u0430\u0454 \u2014 \u0442\u0443\u043b \u0437\u043e\u0431\u043e\u0432'\u044f\u0437\u0430\u043d\u0438\u0439 \u0446\u0435 \u043f\u043e\u043a\u0430\u0437\u0430\u0442\u0438.",
+        "properties": {
+          "difference_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difference Days"
+          },
+          "organic": {
+            "$ref": "#/components/schemas/IndexingLagDTO"
+          },
+          "submitted": {
+            "$ref": "#/components/schemas/IndexingLagDTO"
+          }
+        },
+        "required": [
+          "submitted",
+          "organic"
+        ],
+        "title": "IndexingControlGroupDTO",
+        "type": "object"
+      },
+      "IndexingDayGroupDTO": {
+        "description": "\u041e\u0434\u0438\u043d \u043a\u043b\u0456\u0454\u043d\u0442 \u0432 \u043e\u0434\u0438\u043d \u0434\u0435\u043d\u044c \u2014 \u0433\u0440\u0443\u043f\u0430 \u0440\u044f\u0434\u043a\u0456\u0432 \u043d\u0430 \u0435\u043a\u0440\u0430\u043d\u0456 Today.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "daily_quota": {
+            "title": "Daily Quota",
+            "type": "integer"
+          },
+          "planned": {
+            "title": "Planned",
+            "type": "integer"
+          },
+          "queue_exhausted": {
+            "default": false,
+            "title": "Queue Exhausted",
+            "type": "boolean"
+          },
+          "quota_blocked": {
+            "title": "Quota Blocked",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          },
+          "submissions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IndexingSubmissionDTO"
+            },
+            "title": "Submissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "daily_quota",
+          "planned",
+          "sent",
+          "quota_blocked"
+        ],
+        "title": "IndexingDayGroupDTO",
+        "type": "object"
+      },
+      "IndexingFunnelDTO": {
+        "properties": {
+          "in_flight": {
+            "title": "In Flight",
+            "type": "integer"
+          },
+          "indexed": {
+            "title": "Indexed",
+            "type": "integer"
+          },
+          "planned": {
+            "title": "Planned",
+            "type": "integer"
+          },
+          "quota_blocked": {
+            "title": "Quota Blocked",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "planned",
+          "sent",
+          "quota_blocked",
+          "indexed",
+          "in_flight"
+        ],
+        "title": "IndexingFunnelDTO",
+        "type": "object"
+      },
+      "IndexingLagDTO": {
+        "description": "\u0420\u043e\u0437\u043f\u043e\u0434\u0456\u043b \u0434\u043d\u0456\u0432 \u00ab\u0432\u0456\u0434\u043f\u0440\u0430\u0432\u0438\u043b\u0438 -> \u043f\u043e\u0431\u0430\u0447\u0438\u043b\u0438 \u0432 \u0456\u043d\u0434\u0435\u043a\u0441\u0456\u00bb.",
+        "properties": {
+          "median_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Days"
+          },
+          "p25_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P25 Days"
+          },
+          "p75_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P75 Days"
+          },
+          "sample": {
+            "title": "Sample",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sample"
+        ],
+        "title": "IndexingLagDTO",
+        "type": "object"
+      },
+      "IndexingOverviewDTO": {
+        "description": "\u041f\u043e\u0440\u0442\u0444\u0435\u043b\u044c\u043d\u0435 \u0437\u0432\u0435\u0434\u0435\u043d\u043d\u044f \u0434\u043b\u044f \u0448\u0430\u043f\u043a\u0438 \u0441\u0442\u043e\u0440\u0456\u043d\u043a\u0438.",
+        "properties": {
+          "candidates": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidates"
+          },
+          "clients_configured": {
+            "title": "Clients Configured",
+            "type": "integer"
+          },
+          "clients_enabled": {
+            "title": "Clients Enabled",
+            "type": "integer"
+          },
+          "coverage_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Ratio"
+          },
+          "cycle_holds": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cycle Holds"
+          },
+          "daily_capacity": {
+            "title": "Daily Capacity",
+            "type": "integer"
+          },
+          "days_to_clear_queue": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days To Clear Queue"
+          },
+          "excluded": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excluded"
+          },
+          "indexed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexed"
+          },
+          "last_scan_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scan At"
+          },
+          "last_scan_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "running",
+                  "ok",
+                  "partial",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Scan Status"
+          },
+          "never_inspected": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Never Inspected"
+          },
+          "planned_today": {
+            "title": "Planned Today",
+            "type": "integer"
+          },
+          "sent_today": {
+            "title": "Sent Today",
+            "type": "integer"
+          },
+          "urls_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urls Total"
+          }
+        },
+        "required": [
+          "clients_enabled",
+          "clients_configured",
+          "daily_capacity",
+          "planned_today",
+          "sent_today"
+        ],
+        "title": "IndexingOverviewDTO",
+        "type": "object"
+      },
+      "IndexingQueueDTO": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "urls": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IndexingUrlDTO"
+            },
+            "title": "Urls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "IndexingQueueDTO",
+        "type": "object"
+      },
+      "IndexingReasonStatDTO": {
+        "properties": {
+          "conversion": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion"
+          },
+          "in_flight": {
+            "title": "In Flight",
+            "type": "integer"
+          },
+          "indexed": {
+            "title": "Indexed",
+            "type": "integer"
+          },
+          "median_days": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Days"
+          },
+          "reason_code": {
+            "enum": [
+              "dropped_out",
+              "never_indexed",
+              "discovered_not_indexed",
+              "crawled_not_indexed",
+              "new_page",
+              "stale_crawl",
+              "traffic_lost",
+              "no_traffic",
+              "periodic_refresh"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reason_code",
+          "sent",
+          "indexed",
+          "in_flight"
+        ],
+        "title": "IndexingReasonStatDTO",
+        "type": "object"
+      },
+      "IndexingRetentionDTO": {
+        "properties": {
+          "dropped": {
+            "title": "Dropped",
+            "type": "integer"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "observed": {
+            "title": "Observed",
+            "type": "integer"
+          },
+          "still_indexed": {
+            "title": "Still Indexed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "horizon_days",
+          "observed",
+          "still_indexed",
+          "dropped"
+        ],
+        "title": "IndexingRetentionDTO",
+        "type": "object"
+      },
+      "IndexingScanDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Name"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "sitemap_added": {
+            "default": 0,
+            "title": "Sitemap Added",
+            "type": "integer"
+          },
+          "sitemap_errors": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IndexingSitemapErrorDTO"
+            },
+            "title": "Sitemap Errors",
+            "type": "array"
+          },
+          "sitemap_gone": {
+            "default": 0,
+            "title": "Sitemap Gone",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "ok",
+              "partial",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "scheduled",
+              "manual"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          },
+          "urls_failed": {
+            "default": 0,
+            "title": "Urls Failed",
+            "type": "integer"
+          },
+          "urls_inspected": {
+            "default": 0,
+            "title": "Urls Inspected",
+            "type": "integer"
+          },
+          "urls_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urls Total"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "trigger",
+          "started_at"
+        ],
+        "title": "IndexingScanDTO",
+        "type": "object"
+      },
+      "IndexingScanRequest": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "full": {
+            "default": false,
+            "title": "Full",
+            "type": "boolean"
+          }
+        },
+        "title": "IndexingScanRequest",
+        "type": "object"
+      },
+      "IndexingSettingsDTO": {
+        "properties": {
+          "daily_quota": {
+            "title": "Daily Quota",
+            "type": "integer"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "resubmit_after_days": {
+            "title": "Resubmit After Days",
+            "type": "integer"
+          },
+          "scan_mode": {
+            "enum": [
+              "rotating",
+              "full"
+            ],
+            "title": "Scan Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "daily_quota",
+          "resubmit_after_days",
+          "scan_mode"
+        ],
+        "title": "IndexingSettingsDTO",
+        "type": "object"
+      },
+      "IndexingSettingsUpdate": {
+        "properties": {
+          "daily_quota": {
+            "anyOf": [
+              {
+                "maximum": 50.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Quota"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "resubmit_after_days": {
+            "anyOf": [
+              {
+                "maximum": 365.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resubmit After Days"
+          },
+          "scan_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rotating",
+                  "full"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan Mode"
+          }
+        },
+        "title": "IndexingSettingsUpdate",
+        "type": "object"
+      },
+      "IndexingSitemapErrorDTO": {
+        "properties": {
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "error"
+        ],
+        "title": "IndexingSitemapErrorDTO",
+        "type": "object"
+      },
+      "IndexingSubmissionDTO": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "submit",
+                  "review_then_submit"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "days_to_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days To Index"
+          },
+          "gsc_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gsc Link"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "indexed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexed At"
+          },
+          "indexing_url_id": {
+            "title": "Indexing Url Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "planned_for": {
+            "format": "date",
+            "title": "Planned For",
+            "type": "string"
+          },
+          "reason": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Reason",
+            "type": "object"
+          },
+          "reason_code": {
+            "enum": [
+              "dropped_out",
+              "never_indexed",
+              "discovered_not_indexed",
+              "crawled_not_indexed",
+              "new_page",
+              "stale_crawl",
+              "traffic_lost",
+              "no_traffic",
+              "periodic_refresh"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "state_at_plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State At Plan"
+          },
+          "state_at_submission": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State At Submission"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "sent",
+              "quota_blocked",
+              "skipped",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "submitted_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted By"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "undoable": {
+            "default": false,
+            "title": "Undoable",
+            "type": "boolean"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "client_name",
+          "indexing_url_id",
+          "url",
+          "planned_for",
+          "status",
+          "reason_code"
+        ],
+        "title": "IndexingSubmissionDTO",
+        "type": "object"
+      },
+      "IndexingTodayDTO": {
+        "properties": {
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "groups": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IndexingDayGroupDTO"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "planned_total": {
+            "title": "Planned Total",
+            "type": "integer"
+          },
+          "sent_total": {
+            "title": "Sent Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "planned_total",
+          "sent_total"
+        ],
+        "title": "IndexingTodayDTO",
+        "type": "object"
+      },
+      "IndexingUrlDTO": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "submit",
+                  "review_then_submit"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "cooldown_days_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cooldown Days Left"
+          },
+          "coverage_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage State"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "excluded": {
+            "default": false,
+            "title": "Excluded",
+            "type": "boolean"
+          },
+          "excluded_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "noindex",
+                  "robots_blocked",
+                  "non_canonical",
+                  "redirect",
+                  "http_error",
+                  "manual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excluded Reason"
+          },
+          "gsc_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gsc Link"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "in_sitemap": {
+            "default": true,
+            "title": "In Sitemap",
+            "type": "boolean"
+          },
+          "inspected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspected At"
+          },
+          "is_indexed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Indexed"
+          },
+          "last_crawl_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Crawl Time"
+          },
+          "last_submitted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Submitted At"
+          },
+          "priority_score": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Score"
+          },
+          "reason": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Reason",
+            "type": "object"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "dropped_out",
+                  "never_indexed",
+                  "discovered_not_indexed",
+                  "crawled_not_indexed",
+                  "new_page",
+                  "stale_crawl",
+                  "traffic_lost",
+                  "no_traffic",
+                  "periodic_refresh"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "submissions_count": {
+            "default": 0,
+            "title": "Submissions Count",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "client_name",
+          "url"
+        ],
+        "title": "IndexingUrlDTO",
+        "type": "object"
+      },
       "InspectPackageRequestDTO": {
         "properties": {
           "file_id": {
@@ -11388,6 +12920,51 @@
         "title": "PromptFieldDTO",
         "type": "object"
       },
+      "PromptLocalStrategiesDTO": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/PromptLocalStrategyDTO"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "PromptLocalStrategiesDTO",
+        "type": "object"
+      },
+      "PromptLocalStrategyDTO": {
+        "properties": {
+          "modified_at": {
+            "format": "date-time",
+            "title": "Modified At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path_host": {
+            "title": "Path Host",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path_host",
+          "name",
+          "modified_at",
+          "size"
+        ],
+        "title": "PromptLocalStrategyDTO",
+        "type": "object"
+      },
       "PromptSourceDTO": {
         "properties": {
           "text": {
@@ -11404,6 +12981,341 @@
           "truncated"
         ],
         "title": "PromptSourceDTO",
+        "type": "object"
+      },
+      "PromptStrategyClientDTO": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "resolved_by": {
+            "enum": [
+              "manual",
+              "domain",
+              "filename_prefix"
+            ],
+            "title": "Resolved By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "label",
+          "resolved_by"
+        ],
+        "title": "PromptStrategyClientDTO",
+        "type": "object"
+      },
+      "PromptStrategyDTO": {
+        "properties": {
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromptStrategyClientDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "prefillable": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Prefillable",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/PromptStrategyRowDTO"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheet"
+          },
+          "sheets": {
+            "items": {
+              "$ref": "#/components/schemas/PromptStrategySheetDTO"
+            },
+            "title": "Sheets",
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PromptStrategySourceDTO"
+          },
+          "template_key": {
+            "title": "Template Key",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "template_key",
+          "generated_at",
+          "source",
+          "sheets",
+          "prefillable",
+          "rows",
+          "warnings"
+        ],
+        "title": "PromptStrategyDTO",
+        "type": "object"
+      },
+      "PromptStrategyRequestDTO": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheet"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "PromptStrategyRequestDTO",
+        "type": "object"
+      },
+      "PromptStrategyRowDTO": {
+        "properties": {
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "framework_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Framework Link"
+          },
+          "has_framework": {
+            "title": "Has Framework",
+            "type": "boolean"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "existing",
+                  "new"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "prefilled": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Prefilled",
+            "type": "array"
+          },
+          "primary_keyword": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Keyword"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "rendered": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rendered"
+          },
+          "row_key": {
+            "title": "Row Key",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "row_key",
+          "ref",
+          "title",
+          "prefilled",
+          "has_framework",
+          "warnings"
+        ],
+        "title": "PromptStrategyRowDTO",
+        "type": "object"
+      },
+      "PromptStrategySheetDTO": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "selectable": {
+            "title": "Selectable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "role",
+          "selectable",
+          "row_count"
+        ],
+        "title": "PromptStrategySheetDTO",
+        "type": "object"
+      },
+      "PromptStrategySourceDTO": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "gsheet",
+              "xlsx"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "modified_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified Time"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "web_view_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Web View Link"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "ref"
+        ],
+        "title": "PromptStrategySourceDTO",
         "type": "object"
       },
       "PromptTemplateDTO": {
@@ -11454,9 +13366,33 @@
             "title": "Key",
             "type": "string"
           },
+          "kind": {
+            "default": "client",
+            "enum": [
+              "client",
+              "strategy"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "strategy_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "page",
+                  "blog"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Role"
           },
           "summary": {
             "title": "Summary",
@@ -29182,6 +31118,807 @@
         ]
       }
     },
+    "/api/v1/tools/indexing/analytics": {
+      "get": {
+        "operationId": "analytics_api_v1_tools_indexing_analytics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window_days",
+            "required": false,
+            "schema": {
+              "default": 180,
+              "maximum": 730,
+              "minimum": 7,
+              "title": "Window Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingAnalyticsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analytics",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/calendar": {
+      "get": {
+        "operationId": "calendar_api_v1_tools_indexing_calendar_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 8,
+              "maximum": 31,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingCalendarDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Calendar",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/clients": {
+      "get": {
+        "description": "\u0423\u0441\u0456 \u0430\u043a\u0442\u0438\u0432\u043d\u0456 \u043a\u043b\u0456\u0454\u043d\u0442\u0438. \u041d\u0435\u043d\u0430\u043b\u0430\u0448\u0442\u043e\u0432\u0430\u043d\u0456 \u041d\u0415 \u0445\u043e\u0432\u0430\u044e\u0442\u044c\u0441\u044f: \u0437\u043d\u0438\u043a\u043d\u0443\u0442\u0438 \u0437\u0456 \u0441\u043f\u0438\u0441\u043a\u0443\n\u0433\u0456\u0440\u0448\u0435 \u0437\u0430 \u0447\u0435\u0441\u043d\u0435 \u00abSearch Console isn't connected\u00bb.",
+        "operationId": "list_clients_api_v1_tools_indexing_clients_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingClientsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Clients",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/clients/{client_id}/settings": {
+      "put": {
+        "operationId": "update_settings_api_v1_tools_indexing_clients__client_id__settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexingSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingSettingsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Settings",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/export.xlsx": {
+      "get": {
+        "description": "\u0427\u0435\u0440\u0433\u0430 + \u0430\u043d\u0430\u043b\u0456\u0442\u0438\u043a\u0430 \u043e\u0434\u043d\u0456\u0454\u044e \u043a\u043d\u0438\u0433\u043e\u044e, \u0437 \u0442\u0438\u0445 \u0441\u0430\u043c\u0438\u0445 DTO, \u0449\u043e \u0439 \u0435\u043a\u0440\u0430\u043d.",
+        "operationId": "export_workbook_api_v1_tools_indexing_export_xlsx_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_days",
+            "required": false,
+            "schema": {
+              "default": 180,
+              "title": "Window Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Workbook",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/overview": {
+      "get": {
+        "operationId": "overview_api_v1_tools_indexing_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingOverviewDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Overview",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/queue": {
+      "get": {
+        "operationId": "queue_api_v1_tools_indexing_queue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "client_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "excluded",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Excluded",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingQueueDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Queue",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/scans": {
+      "post": {
+        "operationId": "start_scan_api_v1_tools_indexing_scans_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexingScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingScanDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Scan",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/scans/{scan_id}": {
+      "get": {
+        "operationId": "scan_status_api_v1_tools_indexing_scans__scan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingScanDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan Status",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/submissions/{submission_id}/quota-blocked": {
+      "post": {
+        "description": "GSC \u0432\u0456\u0434\u043c\u043e\u0432\u0438\u0432 \u043f\u043e \u043a\u0432\u043e\u0442\u0456 \u2014 \u0446\u0435 \u041d\u0415 \u0432\u0456\u0434\u043f\u0440\u0430\u0432\u043a\u0430: cooldown \u043d\u0435 \u0441\u0442\u0430\u0432\u0438\u0442\u044c\u0441\u044f, \u0456\n\u0437\u0430\u0432\u0442\u0440\u0430\u0448\u043d\u0456\u0439 \u043f\u0435\u0440\u0435\u043f\u043b\u0430\u043d \u0432\u0456\u0437\u044c\u043c\u0435 \u0446\u0435\u0439 URL \u0437\u043d\u043e\u0432\u0443.",
+        "operationId": "mark_quota_blocked_api_v1_tools_indexing_submissions__submission_id__quota_blocked_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingSubmissionDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Quota Blocked",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/submissions/{submission_id}/sent": {
+      "post": {
+        "description": "\u0406\u0434\u0435\u043c\u043f\u043e\u0442\u0435\u043d\u0442\u043d\u043e: \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u0438\u0439 \u0432\u0438\u043a\u043b\u0438\u043a \u043d\u0435 \u0441\u0442\u0432\u043e\u0440\u044e\u0454 \u0434\u0440\u0443\u0433\u043e\u0457 \u0432\u0456\u0434\u043f\u0440\u0430\u0432\u043a\u0438 \u0439 \u043d\u0435\n\u0437\u0441\u0443\u0432\u0430\u0454 cooldown.",
+        "operationId": "mark_sent_api_v1_tools_indexing_submissions__submission_id__sent_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingSubmissionDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Sent",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/submissions/{submission_id}/undo": {
+      "post": {
+        "operationId": "undo_submission_api_v1_tools_indexing_submissions__submission_id__undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingSubmissionDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Submission",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/today": {
+      "get": {
+        "operationId": "today_plan_api_v1_tools_indexing_today_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingTodayDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Today Plan",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/urls/{url_id}": {
+      "get": {
+        "operationId": "url_detail_api_v1_tools_indexing_urls__url_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "url_id",
+            "required": true,
+            "schema": {
+              "title": "Url Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Url Detail Api V1 Tools Indexing Urls  Url Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Url Detail",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/urls/{url_id}/exclude": {
+      "post": {
+        "operationId": "exclude_url_api_v1_tools_indexing_urls__url_id__exclude_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "url_id",
+            "required": true,
+            "schema": {
+              "title": "Url Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingUrlDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exclude Url",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
+    "/api/v1/tools/indexing/urls/{url_id}/include": {
+      "post": {
+        "operationId": "include_url_api_v1_tools_indexing_urls__url_id__include_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "url_id",
+            "required": true,
+            "schema": {
+              "title": "Url Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingUrlDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Include Url",
+        "tags": [
+          "indexing"
+        ]
+      }
+    },
     "/api/v1/tools/prompts": {
       "get": {
         "operationId": "list_templates_api_v1_tools_prompts_get",
@@ -29198,6 +31935,27 @@
           }
         },
         "summary": "List Templates",
+        "tags": [
+          "prompts"
+        ]
+      }
+    },
+    "/api/v1/tools/prompts/strategy/local": {
+      "get": {
+        "operationId": "local_strategies_api_v1_tools_prompts_strategy_local_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptLocalStrategiesDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Local Strategies",
         "tags": [
           "prompts"
         ]
@@ -29302,6 +32060,88 @@
           }
         },
         "summary": "Get Source",
+        "tags": [
+          "prompts"
+        ]
+      }
+    },
+    "/api/v1/tools/prompts/{key}/strategy": {
+      "post": {
+        "operationId": "load_strategy_rows_api_v1_tools_prompts__key__strategy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptStrategyRequestDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptStrategyDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "summary": "Load Strategy Rows",
         "tags": [
           "prompts"
         ]

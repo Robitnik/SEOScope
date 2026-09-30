@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
 
 
 class FieldSource(StrEnum):
@@ -36,6 +37,17 @@ class FieldSource(StrEnum):
     domain = "domain"
 
 
+class TemplateKind(StrEnum):
+    """Що таке рядок таблиці цього шаблону (task-102)."""
+
+    # Рядок = клієнт; значення полів резолвляться з БД (`render_for_client`).
+    client = "client"
+    # Рядок = сторінка/стаття зі стратегії (Google Sheets чи xlsx), яку оператор
+    # вказує посиланням або шляхом (`app/prompts/strategy_*.py`). Вхідні поля
+    # тут — колонки таблиці стратега, а не властивості клієнта в БД.
+    strategy = "strategy"
+
+
 @dataclass(frozen=True)
 class PromptField:
     key: str  # "CLIENT" — ім'я плейсхолдера в лаунчері, без дужок
@@ -51,6 +63,11 @@ class PromptTemplate:
     doc_relpath: str  # відносно кореня AISeoTools, напр. "docs/TechAudit.md"
     launcher: str  # текст із `{{DOC_PATH}}` + полями з `fields`
     fields: tuple[PromptField, ...]
+    # Адитивно (task-102): дефолти лишають три наявні шаблони без змін.
+    kind: TemplateKind = TemplateKind.client
+    # Лише для `kind=strategy`: яку роль аркуша стратегії шаблон споживає
+    # (`app/contentqa/readers/tabular.py::sheet_role`).
+    strategy_role: Literal["page", "blog"] | None = None
 
 
 _TECHAUDIT_LAUNCHER = (
@@ -126,6 +143,35 @@ TEMPLATES: tuple[PromptTemplate, ...] = (
             PromptField(key="CLIENT", label="CLIENT", source=FieldSource.client_label),
             PromptField(key="TARGET_URL", label="PROPERTY", source=FieldSource.site_url),
         ),
+    ),
+    # Шапка-форма для цих двох шаблонів будується з рядка стратегії на льоту
+    # (`app/prompts/strategy_render.py`), тому `launcher`/`fields` порожні:
+    # значення живуть у таблиці стратега, а не в БД клієнтів.
+    PromptTemplate(
+        key="page_framework",
+        name="Page Framework",
+        summary=(
+            "Content framework for one page from the strategy sheet — competitors, keywords, "
+            "outline, meta and (for an existing page) a verdict for every block, built into a DOCX."
+        ),
+        doc_relpath="docs/PageFramework.md",
+        launcher="",
+        fields=(),
+        kind=TemplateKind.strategy,
+        strategy_role="page",
+    ),
+    PromptTemplate(
+        key="blog_framework",
+        name="Blog Framework",
+        summary=(
+            "Content framework for one blog article from the strategy sheet — SERP research, "
+            "outline, FAQ, meta and internal links to the money pages, built into a DOCX."
+        ),
+        doc_relpath="docs/BlogFramework.md",
+        launcher="",
+        fields=(),
+        kind=TemplateKind.strategy,
+        strategy_role="blog",
     ),
 )
 

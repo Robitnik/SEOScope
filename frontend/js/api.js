@@ -3494,3 +3494,20 @@ export async function getPromptSource(templateKey) {
     "prompt-source",
   );
 }
+
+// ── Prompt Launcher: шаблони зі стратегії (task-102) ─────────────────────
+// `POST`, не `GET`: бек читає Google/xlsx за `source`, а `GET /api/*` через
+// тунель кешується годинами — правка стратега не була б видна. `request-key` —
+// явні призначення (task-36 gotcha), не похідні від параметрів.
+
+export async function loadPromptStrategy(templateKey, { source, sheet = null, clientId = null }) {
+  return request(
+    `/tools/prompts/${encodeURIComponent(templateKey)}/strategy`,
+    { method: "POST", body: JSON.stringify({ source, sheet, client_id: clientId }) },
+    "prompt-strategy",
+  );
+}
+
+export async function getPromptLocalStrategies() {
+  return request("/tools/prompts/strategy/local", {}, "prompt-strategy-local");
+}

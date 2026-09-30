@@ -9,6 +9,12 @@
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Literal
+from urllib.parse import urlparse
+
 from sqlalchemy.orm import Session
 
 from app.db.models import Client
@@ -96,3 +102,62 @@ def render_for_client(
         assert value is not None  # гарантовано відсутністю blocked_reason вище
         rendered = rendered.replace("{{" + key + "}}", value)
     return values, rendered, None
+
+
+# ── Клієнт для шаблонів зі стратегії (task-102 §3.4) ─────────────────────────
+
+
+@dataclass(frozen=True)
+class ResolvedClient:
+    client: Client | None
+    label: str | None
+    # Як клієнта знайдено — UI показує це, щоб здогадка не видавалась за факт.
+    resolved_by: Literal["manual", "domain", "filename_prefix", "none"]
+
+
+def _host(value: str) -> str | None:
+    text = value.strip()
+    if not text:
+        return None
+    parsed = urlparse(text if "://" in text else f"https://{text}")
+    host = (parsed.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host or None
+
+
+def resolve_client(
+    session: Session,
+    *,
+    file_name: str,
+    urls: Iterable[str],
+    client_id: str | None,
+) -> ResolvedClient:
+    """Порядок, перше влучання виграє: ручний вибір -> домен рядків стратегії ->
+    перший `_`-токен імені файлу -> нічого (`none`, рядки блокуються)."""
+    repo = ClientRepository(session)
+    if client_id:
+        chosen = repo.get(client_id)
+        if chosen is not None:
+            return ResolvedClient(chosen, _client_label(session, chosen), "manual")
+
+    clients = repo.list_all()
+    by_host: dict[str, Client] = {}
+    for c in clients:
+        host = _host(c.domain or "")
+        if host:
+            by_host.setdefault(host, c)
+    counts = Counter(h for h in (_host(u) for u in urls) if h)
+    for host, _n in counts.most_common():
+        if host in by_host:
+            match = by_host[host]
+            return ResolvedClient(match, _client_label(session, match), "domain")
+
+    prefix, sep, _rest = file_name.partition("_")
+    if sep and prefix:
+        wanted = prefix.casefold()
+        for c in clients:
+            label = _client_label(session, c)
+            if wanted in {label.casefold(), c.slug.casefold(), c.name.casefold()}:
+                return ResolvedClient(c, label, "filename_prefix")
+    return ResolvedClient(None, None, "none")
