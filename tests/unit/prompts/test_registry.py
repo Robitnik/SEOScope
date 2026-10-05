@@ -21,7 +21,8 @@ from app.schemas.enums import Provider
 def test_get_template_known_and_unknown_key() -> None:
     assert get_template("techaudit") is TEMPLATES[0]
     assert get_template("ahrefs") is TEMPLATES[1]
-    assert get_template("gsc") is TEMPLATES[2]
+    assert get_template("semrush") is TEMPLATES[2]
+    assert get_template("gsc") is TEMPLATES[3]
     assert get_template("does-not-exist") is None
 
 
@@ -129,6 +130,32 @@ def test_render_ahrefs_audit_uses_bare_domain_field(temp_db: TempDatabase) -> No
         "Read /home/elon/dev/seo/AISeoTools/docs/AhrefsAudit.md and run it end to end.\n"
         "\n"
         "MODE:      ahrefs\n"
+        "CLIENT:    Acme Dental\n"
+        "DOMAIN:    acme.com\n"
+    )
+
+
+def test_render_semrush_audit_uses_bare_domain_and_its_own_mode(temp_db: TempDatabase) -> None:
+    """Semrush Site Audit проєкт шукається за доменом, як і Ahrefs; MODE — той, що в
+    таблиці режимів AISeoTools (`semrushaudit`), інакше агент не знайде runbook."""
+    template = get_template("semrush")
+    assert template is not None
+    assert template.doc_relpath == "docs/SemrushAudit.md"
+
+    with temp_db.session_scope() as session:
+        c = ClientRepository(session).create(
+            name="Acme Dental", slug="acme-semrush", domain="acme.com", timezone="America/New_York"
+        )
+        values, rendered, blocked_reason = render_for_client(
+            template, c, session, doc_host_path="/home/elon/dev/seo/AISeoTools/docs/SemrushAudit.md"
+        )
+
+    assert blocked_reason is None
+    assert values == {"CLIENT": "Acme Dental", "DOMAIN": "acme.com"}
+    assert rendered == (
+        "Read /home/elon/dev/seo/AISeoTools/docs/SemrushAudit.md and run it end to end.\n"
+        "\n"
+        "MODE:      semrushaudit\n"
         "CLIENT:    Acme Dental\n"
         "DOMAIN:    acme.com\n"
     )

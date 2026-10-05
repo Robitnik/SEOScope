@@ -86,6 +86,17 @@ _AHREFS_AUDIT_LAUNCHER = (
     "DOMAIN:    {{DOMAIN}}\n"
 )
 
+# `MODE: semrushaudit` — рядок із таблиці режимів AISeoTools/CLAUDE.md §2 і шапки
+# docs/SemrushAudit.md. Поля ті самі, що в Ahrefs Audit: проєкт Site Audit у Semrush
+# шукається за голим доменом (`browser-semrush-audit <domain>`), а не за URL.
+_SEMRUSH_AUDIT_LAUNCHER = (
+    "Read {{DOC_PATH}} and run it end to end.\n"
+    "\n"
+    "MODE:      semrushaudit\n"
+    "CLIENT:    {{CLIENT}}\n"
+    "DOMAIN:    {{DOMAIN}}\n"
+)
+
 # SCOPE зафіксовано на "full" (не поле форми): це не властивість клієнта,
 # а вибір, який тайп і так робить CLI-дефолтом (`seo-audit gsc-report`
 # без `--scope` == full). Оператору, який хоче вужчий звіт (errors/traffic),
@@ -125,6 +136,21 @@ TEMPLATES: tuple[PromptTemplate, ...] = (
         ),
         doc_relpath="docs/AhrefsAudit.md",
         launcher=_AHREFS_AUDIT_LAUNCHER,
+        fields=(
+            PromptField(key="CLIENT", label="CLIENT", source=FieldSource.client_label),
+            PromptField(key="DOMAIN", label="DOMAIN", source=FieldSource.domain),
+        ),
+    ),
+    PromptTemplate(
+        key="semrush",
+        name="Semrush Audit",
+        summary=(
+            "Semrush Site Audit, developer-ready — one sheet per issue type, each row names "
+            "the page and the exact element that failed, live-verified; rows the site has "
+            "already fixed stay at the bottom of their tab, in green."
+        ),
+        doc_relpath="docs/SemrushAudit.md",
+        launcher=_SEMRUSH_AUDIT_LAUNCHER,
         fields=(
             PromptField(key="CLIENT", label="CLIENT", source=FieldSource.client_label),
             PromptField(key="DOMAIN", label="DOMAIN", source=FieldSource.domain),

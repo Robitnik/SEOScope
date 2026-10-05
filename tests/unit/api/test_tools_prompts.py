@@ -56,7 +56,7 @@ def test_list_templates_reports_doc_available_and_host_path(client: Any, tmp_pat
     body = client.get("/api/v1/tools/prompts").json()
 
     assert [t["key"] for t in body["templates"]] == [
-        "techaudit", "ahrefs", "gsc", "page_framework", "blog_framework",
+        "techaudit", "ahrefs", "semrush", "gsc", "page_framework", "blog_framework",
     ]
     template = body["templates"][0]
     assert template["doc_available"] is True
@@ -282,7 +282,7 @@ def test_templates_expose_kind_and_existing_ones_stay_client_kind(
 
     templates = {t["key"]: t for t in client.get("/api/v1/tools/prompts").json()["templates"]}
 
-    assert {templates[k]["kind"] for k in ("techaudit", "ahrefs", "gsc")} == {"client"}
+    assert {templates[k]["kind"] for k in ("techaudit", "ahrefs", "semrush", "gsc")} == {"client"}
     assert templates["page_framework"]["kind"] == "strategy"
     assert templates["page_framework"]["strategy_role"] == "page"
     assert templates["blog_framework"]["strategy_role"] == "blog"
