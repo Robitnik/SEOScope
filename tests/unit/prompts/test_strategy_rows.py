@@ -120,6 +120,29 @@ def test_blog_goreport_layout_splits_newline_joined_cells() -> None:
     assert article.framework_text is None  # `—`
 
 
+def test_blog_keywords_in_one_newline_joined_cell() -> None:
+    # NYCHA: стаття — один рядок, усі ключі однією клітинкою; дубль і `—` не ключі.
+    header = ["Article Topic", "Keyword", "Volume", "Title"]
+    parsed = parse_sheet(
+        sheet(
+            "Blogs",
+            cells(*header),
+            cells(
+                "misophonia",
+                "misophonia\nmisophonia vs hyperacusis\n\n—\nMisophonia",
+                "137000\n150",
+                "T",
+            ),
+            cells("pulsatile tinnitus", "pulsatile tinnitus", "28000", "T2"),
+        )
+    )
+
+    first, second = parsed.articles
+    assert first.keywords == ("misophonia", "misophonia vs hyperacusis")
+    assert second.keywords == ("pulsatile tinnitus",)
+    assert parsed.orphan_rows == 0
+
+
 def test_blog_rows_before_first_article_are_counted() -> None:
     header = ["Article Topic", "Keyword", "Title"]
     parsed = parse_sheet(

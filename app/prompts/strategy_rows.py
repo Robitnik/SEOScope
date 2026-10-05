@@ -340,10 +340,12 @@ def _article_from(state: dict[str, object]) -> ArticleRow:
     fw_text: str | None = None
     fw_link: str | None = None
     for row in rows:
-        kw = _text(row, mapped, "keyword", placeholders=True)
-        if kw is not None and kw.lower() not in seen:
-            seen.add(kw.lower())
-            keywords.append(kw)
+        # По ключу на рядок аркуша (GRP, GOREPORT) або всі ключі однією
+        # клітинкою через `\n` (NYCHA): клітинка — не обов'язково один ключ.
+        for kw in _lines(_cell(row, mapped, "keyword")):
+            if kw.lower() not in seen:
+                seen.add(kw.lower())
+                keywords.append(kw)
         pairs, lost = _pair_lines(
             _cell(row, mapped, "anchors"), _cell(row, mapped, "internal_links")
         )
